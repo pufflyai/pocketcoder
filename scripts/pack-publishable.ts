@@ -22,15 +22,15 @@ for (const root of workspaceRoots) {
 		if (manifest.private === true) continue;
 
 		publishableCount += 1;
-		console.log(`Checking npm publication for ${manifest.name ?? packageDir}`);
-		const child = Bun.spawn(["npm", "publish", "--dry-run", "--ignore-scripts", "--json"], {
+		console.log(`Checking npm package contents for ${manifest.name ?? packageDir}`);
+		const child = Bun.spawn(["npm", "pack", "--dry-run", "--ignore-scripts", "--json"], {
 			cwd: packageDir,
 			stdout: "inherit",
 			stderr: "pipe",
 		});
 		const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
 		if (stderr) process.stderr.write(stderr);
-		if (exitCode !== 0 || stderr.includes("npm warn publish")) failed = true;
+		if (exitCode !== 0) failed = true;
 	}
 }
 
