@@ -1,0 +1,56 @@
+{
+	"apiVersion": "pocketcoder.dev/v1alpha1",
+	"kind": "Template",
+	"metadata": {
+		"name": "pi-harness",
+		"description": "Pi SDK harness behind PocketCoder's conversation relay"
+	},
+	"spec": {
+		"version": "1.0.0",
+		"image": "example.invalid/pocketcoder-pi@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		"harness": {
+			"command": ["bun", "/opt/pi-harness/index.ts"],
+			"cwd": "/workspace",
+			"env": {
+				"PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
+				"PI_GATEWAY_MODEL": "replace-with-your-model",
+				"PI_GATEWAY_PROVIDER": "pocketcoder-gateway",
+				"PI_CODING_AGENT_DIR": "/home/agent/.pi/agent",
+				"PI_WORKSPACE_DIR": "/workspace"
+			}
+		},
+		"env": {
+			"HOME": "/home/agent"
+		},
+		"resources": { "cpu": "2", "memory": "2Gi" },
+		"timeouts": {
+			"start": "5m",
+			"maxAge": "2h",
+			"idle": "20m",
+			"disconnectGrace": "5m",
+			"terminateGrace": "15s"
+		},
+		"services": {
+			"agent": {
+				"baseUrl": "http://127.0.0.1:3284",
+				"healthPath": "/status",
+				"routes": [
+					{ "method": "GET", "path": "/status", "maxResponseBytes": 65536 },
+					{ "method": "GET", "path": "/messages", "query": ["after"], "maxResponseBytes": 1048576 },
+					{
+						"method": "POST",
+						"path": "/message",
+						"maxRequestBytes": 65536,
+						"maxResponseBytes": 65536
+					}
+				]
+			}
+		},
+		"security": {
+			"uid": 10001,
+			"gid": 10001,
+			"readOnlyRoot": true,
+			"writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"]
+		}
+	}
+}

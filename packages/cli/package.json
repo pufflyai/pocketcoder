@@ -1,0 +1,40 @@
+{
+	"name": "@pocketcoder/cli",
+	"version": "0.1.0",
+	"private": false,
+	"description": "Operator and diagnostics CLI for Pocketcoder.",
+	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/pufflyai/pocketcoder.git",
+		"directory": "packages/cli"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"bin": {
+		"pocketcoderctl": "dist/index.js"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"engines": {
+		"bun": ">=1.3.14"
+	},
+	"scripts": {
+		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
+		"compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoderctl",
+		"start": "bun ./src/index.ts",
+		"typecheck": "tsc --project ./tsconfig.json --noEmit"
+	},
+	"devDependencies": {
+		"@pocketcoder/auth": "workspace:*",
+		"@pocketcoder/contracts": "workspace:*",
+		"@pocketcoder/db": "workspace:*",
+		"@pocketcoder/runtime-core": "workspace:*"
+	}
+}

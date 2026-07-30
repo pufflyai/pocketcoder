@@ -1,0 +1,30 @@
+{
+	"name": "@pocketcoder/server",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/app.ts"
+	},
+	"scripts": {
+		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
+		"compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-server",
+		"dev": "bun --watch ./src/index.ts",
+		"start": "bun ./src/index.ts",
+		"test": "bun test",
+		"typecheck": "tsc --project ./tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@pocketcoder/auth": "workspace:*",
+		"@pocketcoder/contracts": "workspace:*",
+		"@pocketcoder/db": "workspace:*",
+		"@pocketcoder/drivers": "workspace:*",
+		"@pocketcoder/runtime-core": "workspace:*",
+		"@hono/zod-openapi": "^1.1.0",
+		"hono": "^4.8.0",
+		"zod": "^4.0.0"
+	},
+	"devDependencies": {
+		"@pocketcoder/testkit": "workspace:*"
+	}
+}

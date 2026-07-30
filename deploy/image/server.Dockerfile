@@ -1,0 +1,19 @@
+# pocketcoder-server image: the Hono control plane plus pocketcoderctl and the
+# docker CLI (for the Docker workspace driver via a mounted socket).
+#
+# Build from the repository root:
+#   docker build -f deploy/image/server.Dockerfile -t pocketcoder-server:dev .
+
+FROM oven/bun:1.3-slim AS build
+WORKDIR /src
+COPY . .
+RUN bun install --frozen-lockfile \
+	&& bun build apps/pocketcoder-server/src/index.ts --target bun --outdir /out/server \
+	&& bun build packages/cli/src/index.ts --target bun --outdir /out/ctl
+
+FROM oven/bun:1.3-slim
+COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=build /out/server/index.js /opt/pocketcoder/server.js
+COPY --from=build /out/ctl/index.js /opt/pocketcoder/ctl.js
+
+CMD ["bun", "/opt/pocketcoder/server.js"]

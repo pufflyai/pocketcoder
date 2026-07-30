@@ -1,0 +1,119 @@
+# HTTP API
+
+Base path `/v1`, JSON only, UUIDv7-style identifiers, RFC 3339 UTC
+timestamps. The generated OpenAPI document is served unauthenticated at
+`GET /v1/openapi.json`; `GET /healthz` is the liveness probe.
+
+## Authentication
+
+Every `/v1` route (except the OpenAPI document and the agent connect
+endpoint) requires a machine key:
+
+```text
+Authorization: Bearer pkt_<key-id>_<secret>
+```
+
+Keys belong to principals, carry scopes, and can be revoked instantly.
+Failures return the stable error envelope used everywhere:
+
+```json
+{ "error": { "code": "auth.invalid_key", "message": "…", "request_id": "uuid" } }
+```
+
+Secret values, SQL/provider errors, and stack traces never appear in errors.
+
+## Templates
+
+```text
+GET /v1/templates             scope templates:read   → { items: [{name, version, digest, description?, status}] }
+GET /v1/templates/{name}      scope templates:read   → { name, versions: [...] }
+```
+
+Only templates on the principal's allowlist are visible; others 404.
+
+## Workspaces
+
+### Create — `POST /v1/workspaces` (scope `workspaces:create`)
+
+Requires an `Idempotency-Key` header.
+
+```json
+{
+	"external_id": "your-task-uuid",
+	"template": { "name": "claude-code-agent", "version": "1.0.0" },
+	"launch_input": { "bootstrap_code": "opaque-single-use-value" },
+	"metadata": { "source": "backend" }
+}
+```
+
+- Repeating the same `Idempotency-Key` with the same body returns the original
+  workspace (`200` instead of `201`); a different body returns
+  `409 idempotency.conflict`.
+- `external_id` is unique per principal among nonterminal workspaces.
+- `version` omitted → current active version, resolved once into an immutable
+  snapshot.
+- `launch_input` is opaque, size-limited by the template, delivered to the
+  harness in memory, and erased server-side at readiness.
+- A full queue returns `429 capacity.queue_full`.
+
+### Read and cancel
+
+```text
+GET  /v1/workspaces                    scope workspaces:read    filters: external_id, state, template, limit, cursor
+GET  /v1/workspaces/{id}               scope workspaces:read
+POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; returns the current resource
+GET  /v1/workspaces/{id}/logs          scope logs:read          query: after (seq), limit
+```
+
+States: `queued → provisioning → connected → ready → terminating →
+succeeded | failed | canceled | expired`. Terminal states never reopen;
+`reason_code` distinguishes clean exit, setup failure, registration timeout,
+health failure, crash, provider loss, disconnect timeout, cancellation, and
+deadline/idle expiry.
+
+## Service relay
+
+```text
+GET/POST/… /v1/workspaces/{id}/services/{service}/{path}     scope services:relay
+```
+
+The template snapshot owns the allowlist: only declared method+path
+combinations with declared query fields pass; bodies are size-capped both
+ways; each route has a deadline. Requests are forwarded over the workspace's
+outbound WSS connection to the loopback service (e.g. AgentAPI) — there is no
+inbound network path to a workspace and no generic forwarding.
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 404 | `workspace.not_found` | Unknown or unauthorized workspace |
+| 409 | `workspace.not_ready` | Lifecycle does not allow relay yet |
+| 410 | `workspace.terminal` | Workspace has ended |
+| 413 | `relay.body_too_large` | Request or response exceeded the template limit |
+| 422 | `relay.route_not_allowed` | Route/method/query not declared |
+| 503 | `workspace.disconnected` | Within reconnect grace, no live supervisor |
+| 504 | `relay.deadline_exceeded` | Loopback service missed the deadline |
+
+Relay activity counts as workspace activity for the idle timeout.
+
+## Lifecycle events
+
+When `POCKETCODER_EVENT_SINK_URL` is configured, every state transition is
+delivered at least once from a transactional outbox with bounded exponential
+backoff:
+
+```text
+POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
+              X-Pocketcoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
+```
+
+The body is `{ id, type: "workspace.<state>", occurred_at, workspace: { id,
+external_id, state, reason_code, template } }`. Verify the signature and
+timestamp, deduplicate on the event id, and poll nonterminal workspaces for
+convergence — delivery is at-least-once, ordering is not guaranteed.
+
+## Agent connect (internal)
+
+`GET /v1/agent/connect` is the WebSocket endpoint used exclusively by
+`pocketcoder-agent` inside workspaces. It authenticates with a one-time
+registration secret (first connection) or a server-issued reconnect
+credential — never with machine keys. Callers never use it.

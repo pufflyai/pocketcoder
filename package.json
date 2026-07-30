@@ -1,0 +1,42 @@
+{
+	"name": "pocketcoder",
+	"version": "0.0.0",
+	"private": true,
+	"packageManager": "bun@1.3.14",
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
+	"scripts": {
+		"build": "lerna run build",
+		"check": "biome check .",
+		"check:fix": "biome check --write .",
+		"changeset": "changeset",
+		"changeset:status": "changeset status",
+		"ctl": "bun run --filter '@pocketcoder/cli' start",
+		"dev": "lerna run dev --parallel",
+		"example:e2e": "bun examples/e2e/run.ts",
+		"example:e2e:local": "bun examples/e2e/local.ts --harness echo",
+		"example:e2e:pi": "bun examples/e2e/local.ts --harness pi",
+		"example:test": "bun test examples/e2e",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"lint": "biome lint .",
+		"pack:check": "bun scripts/pack-publishable.ts",
+		"packages": "lerna list --all",
+		"release": "bun run build && changeset publish",
+		"start": "bun run --filter '@pocketcoder/server' start",
+		"test": "lerna run test",
+		"typecheck": "lerna run typecheck",
+		"version-packages": "changeset version"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.6",
+		"@changesets/changelog-github": "^0.7.0",
+		"@changesets/cli": "^2.31.1",
+		"@types/bun": "1.3.14",
+		"lerna": "^9.0.7",
+		"nx": "^23.1.0",
+		"typescript": "5.9.3"
+	}
+}

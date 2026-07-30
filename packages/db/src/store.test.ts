@@ -1,0 +1,183 @@
+import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { digestOf, parseTemplateManifest, snapshotOf } from "@pocketcoder/contracts";
+import { SQL } from "bun";
+import { migrate, migrationStatus } from "./migrate";
+import { advisoryLockKey, assertValidSchema } from "./schema";
+import { PostgresStore } from "./store";
+
+// Integration tests run only when a disposable PostgreSQL is provided:
+//   POCKETCODER_TEST_DATABASE_URL=postgres://... bun test
+// The same suite runs against a dedicated database and a non-default schema
+// inside an existing database; both placements must behave identically.
+
+const TEST_URL = process.env.POCKETCODER_TEST_DATABASE_URL;
+
+describe("schema helpers", () => {
+	test("schema names are validated before qualification", () => {
+		expect(assertValidSchema("pocketcoder")).toBe("pocketcoder");
+		expect(() => assertValidSchema('bad"; DROP SCHEMA public;')).toThrow();
+		expect(() => assertValidSchema("Capitals")).toThrow();
+	});
+
+	test("advisory lock keys are stable per schema and distinct across schemas", () => {
+		expect(advisoryLockKey("pocketcoder")).toBe(advisoryLockKey("pocketcoder"));
+		expect(advisoryLockKey("pocketcoder")).not.toBe(advisoryLockKey("other_schema"));
+	});
+});
+
+describe.skipIf(!TEST_URL)("postgres store", () => {
+	const schema = `pkt_test_${randomUUID().slice(0, 8)}`;
+
+	function fixture() {
+		return parseTemplateManifest({
+			apiVersion: "pocketcoder.dev/v1alpha1",
+			kind: "Template",
+			metadata: { name: "pg-fixture", description: "pg" },
+			spec: {
+				version: "1.0.0",
+				image: `example.test/pg@sha256:${"d".repeat(64)}`,
+				harness: { command: ["sleep", "1"] },
+				resources: { cpu: "1", memory: "256Mi" },
+				services: {},
+			},
+		});
+	}
+
+	test("migrates into an isolated schema and round-trips core entities", async () => {
+		const url = TEST_URL as string;
+		const sql = new SQL(url);
+		await migrate(sql, schema);
+		// Re-running is a no-op with matching checksums.
+		expect(await migrate(sql, schema)).toEqual([]);
+		const status = await migrationStatus(sql, schema);
+		expect(status.every((m) => m.appliedAt !== null && !m.drifted)).toBe(true);
+
+		const store = new PostgresStore(url, schema);
+		try {
+			const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
+			const parsed = fixture();
+			const { row: template, created } = await store.upsertTemplate({
+				name: "pg-fixture",
+				version: "1.0.0",
+				digest: parsed.digest,
+				description: null,
+				spec: parsed.manifest.spec,
+			});
+			expect(created).toBe(true);
+			// Same content is idempotent; different content conflicts.
+			expect(
+				(
+					await store.upsertTemplate({
+						name: "pg-fixture",
+						version: "1.0.0",
+						digest: parsed.digest,
+						description: null,
+						spec: parsed.manifest.spec,
+					})
+				).conflict,
+			).toBe(false);
+			expect(
+				(
+					await store.upsertTemplate({
+						name: "pg-fixture",
+						version: "1.0.0",
+						digest: "sha256:different",
+						description: null,
+						spec: parsed.manifest.spec,
+					})
+				).conflict,
+			).toBe(true);
+
+			const insert = await store.insertWorkspace({
+				id: randomUUID(),
+				principalId: principal.id,
+				externalId: "pg-task",
+				idempotencyKey: "pg-task",
+				requestDigest: digestOf({ x: 1 }),
+				templateId: template.id,
+				templateSnapshot: snapshotOf(parsed),
+				launchInput: { code: "opaque" },
+				metadata: { source: "test" },
+				deadlineAt: new Date(Date.now() + 60_000),
+				createdAt: new Date(),
+			});
+			expect(insert.created).toBe(true);
+			const repeat = await store.insertWorkspace({
+				...{
+					id: randomUUID(),
+					principalId: principal.id,
+					externalId: "pg-task",
+					idempotencyKey: "pg-task",
+					requestDigest: digestOf({ x: 1 }),
+					templateId: template.id,
+					templateSnapshot: snapshotOf(parsed),
+					launchInput: { code: "opaque" },
+					metadata: {},
+					deadlineAt: new Date(Date.now() + 60_000),
+					createdAt: new Date(),
+				},
+			});
+			expect(repeat.created).toBe(false);
+			expect(repeat.workspace.id).toBe(insert.workspace.id);
+
+			const provisioning = await store.transition(insert.workspace.id, {
+				from: ["queued"],
+				to: "provisioning",
+				at: new Date(),
+				patch: { launchAttempts: 1 },
+			});
+			expect(provisioning?.state).toBe("provisioning");
+			// Illegal transition is refused.
+			expect(
+				await store.transition(insert.workspace.id, {
+					from: ["provisioning"],
+					to: "ready",
+					at: new Date(),
+				}),
+			).toBeNull();
+
+			// Terminal transition with a patch that overlaps the automatic
+			// launch_input/registration_digest clears must not produce
+			// duplicate column assignments.
+			const failed = await store.transition(insert.workspace.id, {
+				from: ["provisioning"],
+				to: "failed",
+				reason: "launch_failed",
+				at: new Date(),
+				patch: { launchInput: null, registrationDigest: null },
+			});
+			expect(failed?.state).toBe("failed");
+			expect(failed?.terminalAt).not.toBeNull();
+
+			const events = await store.claimDueEvents(new Date(), 10);
+			expect(events.map((e) => e.eventType)).toEqual([
+				"workspace.queued",
+				"workspace.provisioning",
+				"workspace.failed",
+			]);
+
+			await store.appendLogs(insert.workspace.id, [
+				{
+					stream: "runtime",
+					occurredAt: new Date(),
+					content: new TextEncoder().encode("hello"),
+				},
+			]);
+			const logs = await store.readLogs(insert.workspace.id, 0, 10);
+			expect(logs.length).toBe(1);
+			expect(new TextDecoder().decode(logs[0]?.content)).toBe("hello");
+
+			// The runtime never created anything outside its schema.
+			const foreign = (await sql.unsafe(
+				`SELECT count(*)::int AS n FROM information_schema.tables
+				 WHERE table_schema = 'public' AND table_name LIKE 'workspace%'`,
+			)) as Array<{ n: number }>;
+			expect(foreign[0]?.n).toBe(0);
+		} finally {
+			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+			await sql.end();
+			await store.close();
+		}
+	}, 30_000);
+});
