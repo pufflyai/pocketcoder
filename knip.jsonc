@@ -14,7 +14,8 @@
 			"entry": ["src/**/*.test.ts"]
 		},
 		"examples/clients/*": {
-			"entry": ["remote-agentapi.ts", "*.test.ts"]
+			"entry": ["remote-agentapi.ts", "*.test.ts"],
+			"ignoreBinaries": ["pi"]
 		},
 		"examples/harnesses/*": {
 			"entry": ["agentapi-compat.ts", "*.test.ts"]
