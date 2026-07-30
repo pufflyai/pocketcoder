@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -18,8 +18,8 @@ export const WORKSPACE_LABEL = "pocketcoder.workspace";
 export const DIGEST_LABEL = "pocketcoder.template-digest";
 
 export interface DockerDriverOptions {
-	// Directory for temporary provider input files (0600, removed on
-	// termination and after registration).
+	// Private directory for temporary provider input files, removed on
+	// termination and after registration.
 	inputDir?: string;
 	// Docker network to attach; defaults to the docker default bridge.
 	network?: string;
@@ -80,8 +80,12 @@ export class DockerDriver implements WorkspaceDriver {
 		const { workspace, input } = launch;
 		const spec = workspace.templateSnapshot.spec;
 		await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
+		await chmod(this.opts.inputDir, 0o700);
 		const inputFile = this.inputPath(workspace.id);
-		await writeFile(inputFile, JSON.stringify(input), { mode: 0o600 });
+		// The non-root workspace UID normally differs from the host server UID
+		// on Linux. The private 0700 directory protects the file on the host;
+		// 0644 lets that workspace UID read the individual read-only bind mount.
+		await writeFile(inputFile, JSON.stringify(input), { mode: 0o644 });
 
 		const args = [
 			"run",
