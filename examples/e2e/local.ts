@@ -293,7 +293,9 @@ try {
 		env: {
 			...process.env,
 			...adminEnv,
-			POCKETCODER_HOST: "127.0.0.1",
+			// Linux containers reach the host through the Docker bridge gateway,
+			// so the E2E server must listen beyond the host loopback interface.
+			POCKETCODER_HOST: "0.0.0.0",
 			POCKETCODER_PORT: String(serverPort),
 			POCKETCODER_TEMPLATE_DIR: templateDir,
 			POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
