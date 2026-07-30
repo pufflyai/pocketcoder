@@ -1,4 +1,8 @@
-import { type ParsedTemplate, parseTemplateManifest, snapshotOf } from "@pocketcoder/contracts";
+import {
+	type ParsedTemplate,
+	parseTemplateManifest,
+	snapshotOf,
+} from "@pstdio/pocketcoder-contracts";
 
 // Two distinct fixture templates proving template selection changes the
 // environment (image, setup, harness) without changing the execution path.

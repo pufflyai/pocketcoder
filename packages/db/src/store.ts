@@ -5,7 +5,7 @@ import {
 	type ReasonCode,
 	type TemplateSnapshot,
 	type WorkspaceState,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 import {
 	type ActiveCounts,
 	buildEventEnvelope,
@@ -24,7 +24,7 @@ import {
 	type WorkspaceListFilter,
 	type WorkspacePatch,
 	type WorkspaceRow,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
 import { migrate } from "./migrate";
 import { assertValidSchema } from "./schema";

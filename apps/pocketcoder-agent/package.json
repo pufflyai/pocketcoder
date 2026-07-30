@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/agent",
+	"name": "@pstdio/pocketcoder-agent",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
@@ -10,6 +10,6 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pocketcoder/contracts": "workspace:*"
+		"@pstdio/pocketcoder-contracts": "workspace:*"
 	}
 }

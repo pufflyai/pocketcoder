@@ -3,10 +3,10 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { issueMachineKey } from "@pocketcoder/auth";
-import { isScope } from "@pocketcoder/contracts";
-import { migrate, migrationStatus, PostgresStore } from "@pocketcoder/db";
-import { loadTemplateFile, type Store } from "@pocketcoder/runtime-core";
+import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { isScope } from "@pstdio/pocketcoder-contracts";
+import { migrate, migrationStatus, PostgresStore } from "@pstdio/pocketcoder-db";
+import { loadTemplateFile, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
 import { parse as parseDotenv } from "dotenv";
 import yargs, { type Argv } from "yargs";

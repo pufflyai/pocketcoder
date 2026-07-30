@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/contracts",
+	"name": "@pstdio/pocketcoder-contracts",
 	"version": "0.1.0",
 	"private": true,
 	"description": "Schemas and protocol contracts for Pocketcoder.",

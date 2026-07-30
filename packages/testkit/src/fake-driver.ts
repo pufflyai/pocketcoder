@@ -4,7 +4,7 @@ import type {
 	ProviderState,
 	WorkspaceDriver,
 	WorkspaceLaunch,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 
 // Deterministic in-memory driver for scheduler and server tests.
 

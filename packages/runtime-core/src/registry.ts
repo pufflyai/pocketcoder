@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type ParsedTemplate, parseTemplateManifest } from "@pocketcoder/contracts";
+import { type ParsedTemplate, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import type { Store, TemplateRow } from "./types";
 
 // Template registry: loads reviewed template files from a deployment

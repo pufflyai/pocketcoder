@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@pocketcoder/example-pi-client",
+      "name": "@pstdio/pocketcoder-example-pi-client",
       "dependencies": {
         "@earendil-works/pi-ai": "0.83.0",
         "@earendil-works/pi-coding-agent": "0.83.0",

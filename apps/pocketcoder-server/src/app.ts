@@ -1,19 +1,19 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { digestOpaque, generateOpaqueSecret } from "@pocketcoder/auth";
+import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
 import {
 	ApiError,
 	TemplateListItemSchema,
 	WorkspaceCreateRequestSchema,
 	WorkspaceListQuerySchema,
 	WorkspaceResourceSchema,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 import {
 	type AdmissionLimits,
 	Scheduler,
 	type Store,
 	type TemplateRow,
 	type WorkspaceDriver,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { Hub } from "./hub";

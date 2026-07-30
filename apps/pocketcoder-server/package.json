@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/server",
+	"name": "@pstdio/pocketcoder-server",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
@@ -15,16 +15,16 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pocketcoder/auth": "workspace:*",
-		"@pocketcoder/contracts": "workspace:*",
-		"@pocketcoder/db": "workspace:*",
-		"@pocketcoder/drivers": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*",
+		"@pstdio/pocketcoder-auth": "workspace:*",
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-db": "workspace:*",
+		"@pstdio/pocketcoder-drivers": "workspace:*",
+		"@pstdio/pocketcoder-runtime-core": "workspace:*",
 		"@hono/zod-openapi": "^1.1.0",
 		"hono": "^4.8.0",
 		"zod": "^4.0.0"
 	},
 	"devDependencies": {
-		"@pocketcoder/testkit": "workspace:*"
+		"@pstdio/pocketcoder-testkit": "workspace:*"
 	}
 }

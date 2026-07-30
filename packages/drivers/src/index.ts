@@ -4,5 +4,5 @@ export type {
 	ProviderState,
 	WorkspaceDriver,
 	WorkspaceLaunch,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 export * from "./docker";

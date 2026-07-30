@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/drivers",
+	"name": "@pstdio/pocketcoder-drivers",
 	"version": "0.1.0",
 	"private": true,
 	"description": "Workspace driver implementations for Pocketcoder.",
@@ -25,7 +25,7 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pocketcoder/contracts": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*"
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-runtime-core": "workspace:*"
 	}
 }

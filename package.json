@@ -28,7 +28,7 @@
 		"pack:check": "bun scripts/pack-publishable.ts",
 		"packages": "lerna list --all",
 		"release": "bun run build && changeset publish",
-		"start": "bun run --filter '@pocketcoder/server' start",
+		"start": "bun run --filter '@pstdio/pocketcoder-server' start",
 		"test": "lerna run test",
 		"typecheck": "lerna run typecheck",
 		"version-packages": "changeset version"

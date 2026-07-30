@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/db",
+	"name": "@pstdio/pocketcoder-db",
 	"version": "0.1.0",
 	"private": true,
 	"description": "PostgreSQL persistence for Pocketcoder.",
@@ -27,8 +27,8 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pocketcoder/contracts": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*",
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-runtime-core": "workspace:*",
 		"drizzle-orm": "1.0.0-rc.4"
 	},
 	"devDependencies": {

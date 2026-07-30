@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { parseMachineKey, verifySecret } from "@pocketcoder/auth";
-import { ApiError, errorEnvelope, hasScope, type Scope } from "@pocketcoder/contracts";
-import type { PrincipalRow, Store } from "@pocketcoder/runtime-core";
+import { parseMachineKey, verifySecret } from "@pstdio/pocketcoder-auth";
+import { ApiError, errorEnvelope, hasScope, type Scope } from "@pstdio/pocketcoder-contracts";
+import type { PrincipalRow, Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Context, MiddlewareHandler } from "hono";
 
 export interface AppVariables {

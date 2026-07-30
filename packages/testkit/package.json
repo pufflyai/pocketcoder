@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/testkit",
+	"name": "@pstdio/pocketcoder-testkit",
 	"version": "0.1.0",
 	"private": true,
 	"description": "In-memory test utilities for Pocketcoder integrations.",
@@ -24,7 +24,7 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pocketcoder/contracts": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*"
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-runtime-core": "workspace:*"
 	}
 }

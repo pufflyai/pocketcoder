@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf, snapshotOf } from "@pocketcoder/contracts";
+import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import {
 	FakeDriver,
 	fixtureTemplateEcho,
 	fixtureTemplateSleep,
 	MemoryStore,
-} from "@pocketcoder/testkit";
+} from "@pstdio/pocketcoder-testkit";
 import { type ConnectionHub, DEFAULT_LIMITS, Scheduler, type Store } from "./index";
 
 const noHub: ConnectionHub = {

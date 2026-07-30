@@ -12,7 +12,7 @@ import {
 	type ProxyRequest,
 	parseDurationMs,
 	ServerFrameSchema,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 
 // pocketcoder-agent supervise: PID 1 inside every workspace. It registers with
 // pocketcoder-server over one outbound WSS connection, runs the template's

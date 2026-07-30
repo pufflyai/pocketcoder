@@ -1,13 +1,13 @@
-import { signEvent } from "@pocketcoder/auth";
-import { PostgresStore } from "@pocketcoder/db";
-import { DockerDriver } from "@pocketcoder/drivers";
+import { signEvent } from "@pstdio/pocketcoder-auth";
+import { PostgresStore } from "@pstdio/pocketcoder-db";
+import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import {
 	loadTemplateDir,
 	OutboxDispatcher,
 	reconcileProviders,
 	type Store,
-} from "@pocketcoder/runtime-core";
-import { MemoryStore } from "@pocketcoder/testkit";
+} from "@pstdio/pocketcoder-runtime-core";
+import { MemoryStore } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
 import { loadConfig } from "./config";
 

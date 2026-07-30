@@ -3,7 +3,7 @@ import {
 	parseDurationMs,
 	type ReasonCode,
 	type WorkspaceState,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceDriver } from "./driver";
 import type { ActiveCounts, Store, WorkspaceRow } from "./types";
 

@@ -163,10 +163,10 @@ provides the project graph and task cache configured in `nx.json`.
 
 ## Releasing packages
 
-`@pocketcoder/cli` is the only public npm package. It bundles the private
+`@pstdio/pocketcoder-cli` is the only public npm package. It bundles the private
 implementation packages into the `pocketcoderctl` executable. Every other
 workspace remains private, is linked by Bun with `workspace:*`, and is imported
-through its `@pocketcoder/*` package boundary. The server and agent are
+through its `@pstdio/pocketcoder-*` package boundary. The server and agent are
 distributed as binaries or container images.
 
 The `Release Packages` workflow and Changesets configuration version and
@@ -184,7 +184,8 @@ request for non-private packages only. Merging that pull request publishes
 those packages and creates GitHub releases.
 
 For tokenless publishing, configure an npm trusted publisher for
-`@pocketcoder/cli`, using organization `pufflyai`, repository `pocketcoder`, and
+`@pstdio/pocketcoder-cli`, using organization `pufflyai`, repository
+`pocketcoder`, and
 workflow filename `release-packages.yml`. An `NPM_TOKEN` repository secret can
 bootstrap the package before trusted publishing is configured.
 

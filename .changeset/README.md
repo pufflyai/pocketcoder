@@ -1,8 +1,8 @@
 # Changesets
 
-`@pocketcoder/cli` is Pocketcoder's public npm package. Every other workspace is
-private and imported directly inside the monorepo. Do not add changesets for
-changes that affect only private packages.
+`@pstdio/pocketcoder-cli` is Pocketcoder's public npm package. Every other
+workspace is private and imported directly inside the monorepo. Do not add
+changesets for changes that affect only private packages.
 
 Add a changeset for every user-visible CLI change:
 

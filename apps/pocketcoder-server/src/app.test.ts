@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { issueMachineKey } from "@pocketcoder/auth";
-import { DEFAULT_LIMITS, type Store } from "@pocketcoder/runtime-core";
+import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { DEFAULT_LIMITS, type Store } from "@pstdio/pocketcoder-runtime-core";
 import {
 	FakeDriver,
 	fixtureTemplateEcho,
 	fixtureTemplateSleep,
 	MemoryStore,
-} from "@pocketcoder/testkit";
+} from "@pstdio/pocketcoder-testkit";
 import type { WSContext } from "hono/ws";
 import { type BuiltServer, buildServer } from "./app";
 

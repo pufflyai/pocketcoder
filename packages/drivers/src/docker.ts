@@ -7,7 +7,7 @@ import type {
 	ProviderState,
 	WorkspaceDriver,
 	WorkspaceLaunch,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 
 // Docker implementation of the workspace-driver contract, intended for local
 // development. It launches one immutable, resource-limited container per

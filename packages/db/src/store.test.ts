@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf, parseTemplateManifest, snapshotOf } from "@pocketcoder/contracts";
+import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { SQL } from "bun";
 import { migrate, migrationStatus } from "./migrate";
 import { advisoryLockKey, assertValidSchema } from "./schema";

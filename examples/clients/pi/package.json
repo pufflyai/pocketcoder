@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/example-pi-client",
+	"name": "@pstdio/pocketcoder-example-pi-client",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",

@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/auth",
+	"name": "@pstdio/pocketcoder-auth",
 	"version": "0.1.0",
 	"private": true,
 	"description": "Authentication and event-signing primitives for Pocketcoder.",

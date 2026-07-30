@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { canTransition, isTerminal, type WorkspaceState } from "@pocketcoder/contracts";
+import { canTransition, isTerminal, type WorkspaceState } from "@pstdio/pocketcoder-contracts";
 import {
 	type ActiveCounts,
 	buildEventEnvelope,
@@ -18,10 +18,10 @@ import {
 	type WorkspaceListFilter,
 	type WorkspacePatch,
 	type WorkspaceRow,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 
 // In-memory Store used by tests and single-process development. PostgreSQL
-// (@pocketcoder/db) is the durable implementation; both must satisfy the same
+// (@pstdio/pocketcoder-db) is the durable implementation; both must satisfy the same
 // behavior suite.
 
 const ACTIVE_STATES: readonly WorkspaceState[] = [

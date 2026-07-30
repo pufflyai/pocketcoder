@@ -1,4 +1,4 @@
-# `@pocketcoder/cli`
+# `@pstdio/pocketcoder-cli`
 
 The operator and diagnostics CLI for Pocketcoder.
 
@@ -7,7 +7,7 @@ The operator and diagnostics CLI for Pocketcoder.
 Pocketcoderctl requires Bun 1.3.14 or newer:
 
 ```sh
-bun add --global @pocketcoder/cli
+bun add --global @pstdio/pocketcoder-cli
 pocketcoderctl --help
 ```
 

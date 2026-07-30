@@ -7,14 +7,14 @@ import {
 	type TemplateSnapshot,
 	type WorkspaceCreateRequest,
 	type WorkspaceResource,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 import type {
 	AdmissionLimits,
 	PrincipalRow,
 	Scheduler,
 	Store,
 	WorkspaceRow,
-} from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-runtime-core";
 
 // Application service behind the workspace routes. Handlers stay focused on
 // request flow; scheduling, SQL, and driver logic live below this layer.

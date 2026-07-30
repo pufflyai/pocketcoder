@@ -1,4 +1,4 @@
-import { digestOpaque, generateOpaqueSecret, verifyOpaque } from "@pocketcoder/auth";
+import { digestOpaque, generateOpaqueSecret, verifyOpaque } from "@pstdio/pocketcoder-auth";
 import {
 	type AgentFrame,
 	AgentFrameSchema,
@@ -12,8 +12,8 @@ import {
 	MAX_FRAME_BYTES,
 	PROTOCOL_VERSION,
 	type WorkspaceState,
-} from "@pocketcoder/contracts";
-import type { Scheduler, Store, WorkspaceRow } from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-contracts";
+import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { MiddlewareHandler } from "hono";
 import type { WSContext, WSEvents } from "hono/ws";
 import { type Hub, type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";

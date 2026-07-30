@@ -15,35 +15,35 @@
       },
     },
     "apps/pocketcoder-agent": {
-      "name": "@pocketcoder/agent",
+      "name": "@pstdio/pocketcoder-agent",
       "version": "0.1.0",
       "dependencies": {
-        "@pocketcoder/contracts": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
       },
     },
     "apps/pocketcoder-server": {
-      "name": "@pocketcoder/server",
+      "name": "@pstdio/pocketcoder-server",
       "version": "0.1.0",
       "dependencies": {
         "@hono/zod-openapi": "^1.1.0",
-        "@pocketcoder/auth": "workspace:*",
-        "@pocketcoder/contracts": "workspace:*",
-        "@pocketcoder/db": "workspace:*",
-        "@pocketcoder/drivers": "workspace:*",
-        "@pocketcoder/runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-auth": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-db": "workspace:*",
+        "@pstdio/pocketcoder-drivers": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "hono": "^4.8.0",
         "zod": "^4.0.0",
       },
       "devDependencies": {
-        "@pocketcoder/testkit": "workspace:*",
+        "@pstdio/pocketcoder-testkit": "workspace:*",
       },
     },
     "packages/auth": {
-      "name": "@pocketcoder/auth",
+      "name": "@pstdio/pocketcoder-auth",
       "version": "0.1.0",
     },
     "packages/cli": {
-      "name": "@pocketcoder/cli",
+      "name": "@pstdio/pocketcoder-cli",
       "version": "0.1.0",
       "bin": {
         "pocketcoderctl": "dist/index.js",
@@ -53,26 +53,26 @@
         "yargs": "^17.7.2",
       },
       "devDependencies": {
-        "@pocketcoder/auth": "workspace:*",
-        "@pocketcoder/contracts": "workspace:*",
-        "@pocketcoder/db": "workspace:*",
-        "@pocketcoder/runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-auth": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-db": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "@types/yargs": "^17.0.35",
       },
     },
     "packages/contracts": {
-      "name": "@pocketcoder/contracts",
+      "name": "@pstdio/pocketcoder-contracts",
       "version": "0.1.0",
       "dependencies": {
         "zod": "^4.0.0",
       },
     },
     "packages/db": {
-      "name": "@pocketcoder/db",
+      "name": "@pstdio/pocketcoder-db",
       "version": "0.1.0",
       "dependencies": {
-        "@pocketcoder/contracts": "workspace:*",
-        "@pocketcoder/runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "drizzle-orm": "1.0.0-rc.4",
       },
       "devDependencies": {
@@ -80,29 +80,29 @@
       },
     },
     "packages/drivers": {
-      "name": "@pocketcoder/drivers",
+      "name": "@pstdio/pocketcoder-drivers",
       "version": "0.1.0",
       "dependencies": {
-        "@pocketcoder/contracts": "workspace:*",
-        "@pocketcoder/runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
       },
     },
     "packages/runtime-core": {
-      "name": "@pocketcoder/runtime-core",
+      "name": "@pstdio/pocketcoder-runtime-core",
       "version": "0.1.0",
       "dependencies": {
-        "@pocketcoder/contracts": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
       },
       "devDependencies": {
-        "@pocketcoder/testkit": "workspace:*",
+        "@pstdio/pocketcoder-testkit": "workspace:*",
       },
     },
     "packages/testkit": {
-      "name": "@pocketcoder/testkit",
+      "name": "@pstdio/pocketcoder-testkit",
       "version": "0.1.0",
       "dependencies": {
-        "@pocketcoder/contracts": "workspace:*",
-        "@pocketcoder/runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
       },
     },
   },
@@ -373,23 +373,23 @@
 
     "@octokit/types": ["@octokit/types@13.10.0", "", { "dependencies": { "@octokit/openapi-types": "^24.2.0" } }, "sha512-ifLaO34EbbPj0Xgro4G5lP5asESjwHracYJvVaPIyXMuiuXLlhic3S47cBdTb+jfODkTE5YtGCLt3Ay3+J97sA=="],
 
-    "@pocketcoder/agent": ["@pocketcoder/agent@workspace:apps/pocketcoder-agent"],
+    "@pstdio/pocketcoder-agent": ["@pstdio/pocketcoder-agent@workspace:apps/pocketcoder-agent"],
 
-    "@pocketcoder/auth": ["@pocketcoder/auth@workspace:packages/auth"],
+    "@pstdio/pocketcoder-auth": ["@pstdio/pocketcoder-auth@workspace:packages/auth"],
 
-    "@pocketcoder/cli": ["@pocketcoder/cli@workspace:packages/cli"],
+    "@pstdio/pocketcoder-cli": ["@pstdio/pocketcoder-cli@workspace:packages/cli"],
 
-    "@pocketcoder/contracts": ["@pocketcoder/contracts@workspace:packages/contracts"],
+    "@pstdio/pocketcoder-contracts": ["@pstdio/pocketcoder-contracts@workspace:packages/contracts"],
 
-    "@pocketcoder/db": ["@pocketcoder/db@workspace:packages/db"],
+    "@pstdio/pocketcoder-db": ["@pstdio/pocketcoder-db@workspace:packages/db"],
 
-    "@pocketcoder/drivers": ["@pocketcoder/drivers@workspace:packages/drivers"],
+    "@pstdio/pocketcoder-drivers": ["@pstdio/pocketcoder-drivers@workspace:packages/drivers"],
 
-    "@pocketcoder/runtime-core": ["@pocketcoder/runtime-core@workspace:packages/runtime-core"],
+    "@pstdio/pocketcoder-runtime-core": ["@pstdio/pocketcoder-runtime-core@workspace:packages/runtime-core"],
 
-    "@pocketcoder/server": ["@pocketcoder/server@workspace:apps/pocketcoder-server"],
+    "@pstdio/pocketcoder-server": ["@pstdio/pocketcoder-server@workspace:apps/pocketcoder-server"],
 
-    "@pocketcoder/testkit": ["@pocketcoder/testkit@workspace:packages/testkit"],
+    "@pstdio/pocketcoder-testkit": ["@pstdio/pocketcoder-testkit@workspace:packages/testkit"],
 
     "@sigstore/bundle": ["@sigstore/bundle@4.0.0", "", { "dependencies": { "@sigstore/protobuf-specs": "^0.5.0" } }, "sha512-NwCl5Y0V6Di0NexvkTqdoVfmjTaQwoLM236r89KEojGmq/jMls8S+zb7yOwAPdXvbwfKDlP+lmXgAL4vKSQT+A=="],
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EventEnvelope } from "@pocketcoder/contracts";
+import type { EventEnvelope } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "./types";
 
 // Builds the signed lifecycle event payload for a state transition. Inserted

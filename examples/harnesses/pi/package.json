@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/example-pi-agentapi",
+	"name": "@pstdio/pocketcoder-example-pi-agentapi",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",

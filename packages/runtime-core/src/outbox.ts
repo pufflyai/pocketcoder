@@ -2,7 +2,7 @@ import {
 	EVENT_HEADER_ID,
 	EVENT_HEADER_SIGNATURE,
 	EVENT_HEADER_TIMESTAMP,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 import type { Store } from "./types";
 
 // At-least-once delivery of signed lifecycle events with bounded exponential

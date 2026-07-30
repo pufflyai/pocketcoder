@@ -1,5 +1,5 @@
 {
-	"name": "@pocketcoder/cli",
+	"name": "@pstdio/pocketcoder-cli",
 	"version": "0.1.0",
 	"private": false,
 	"description": "Operator and diagnostics CLI for Pocketcoder.",
@@ -36,10 +36,10 @@
 		"yargs": "^17.7.2"
 	},
 	"devDependencies": {
-		"@pocketcoder/auth": "workspace:*",
-		"@pocketcoder/contracts": "workspace:*",
-		"@pocketcoder/db": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*",
+		"@pstdio/pocketcoder-auth": "workspace:*",
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-db": "workspace:*",
+		"@pstdio/pocketcoder-runtime-core": "workspace:*",
 		"@types/yargs": "^17.0.35"
 	}
 }

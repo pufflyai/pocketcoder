@@ -4,8 +4,8 @@ import {
 	type ProxyRequest,
 	type ProxyResponse,
 	type ServerFrame,
-} from "@pocketcoder/contracts";
-import type { ConnectionHub } from "@pocketcoder/runtime-core";
+} from "@pstdio/pocketcoder-contracts";
+import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
 
 // In-memory registry of live supervisor connections. Exactly one connection

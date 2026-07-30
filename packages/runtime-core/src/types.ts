@@ -3,7 +3,7 @@ import type {
 	TemplateSnapshot,
 	TemplateSpec,
 	WorkspaceState,
-} from "@pocketcoder/contracts";
+} from "@pstdio/pocketcoder-contracts";
 
 // Row shapes shared by the PostgreSQL store and the in-memory test store.
 // PostgreSQL is the durable store; the memory store exists for tests and

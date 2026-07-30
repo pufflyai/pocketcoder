@@ -1,9 +1,10 @@
 # pocketcoderctl reference
 
 `pocketcoderctl` is the operator and diagnostics CLI. Install it with
-`bun add --global @pocketcoder/cli`, run it via `bun run ctl -- <args>` from the
+`bun add --global @pstdio/pocketcoder-cli`, run it via
+`bun run ctl -- <args>` from the
 repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
-(`bun run --filter '@pocketcoder/cli' compile`), or run it inside the server
+(`bun run --filter '@pstdio/pocketcoder-cli' compile`), or run it inside the server
 container (`bun /opt/pocketcoder/ctl.js`).
 
 Commands use one of two access paths:

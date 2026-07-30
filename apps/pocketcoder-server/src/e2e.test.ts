@@ -2,10 +2,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { issueMachineKey } from "@pocketcoder/auth";
-import { parseTemplateManifest, snapshotOf } from "@pocketcoder/contracts";
-import { DEFAULT_LIMITS } from "@pocketcoder/runtime-core";
-import { FakeDriver, MemoryStore } from "@pocketcoder/testkit";
+import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
+import { FakeDriver, MemoryStore } from "@pstdio/pocketcoder-testkit";
 import { supervise } from "../../pocketcoder-agent/src/supervisor";
 import { buildServer } from "./app";
 

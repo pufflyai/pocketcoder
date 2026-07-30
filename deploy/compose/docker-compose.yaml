@@ -4,8 +4,8 @@
 #   docker compose -f deploy/compose/docker-compose.yaml up -d
 #   export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
 #   export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
-#   bun run --filter '@pocketcoder/cli' start db migrate
-#   POCKETCODER_TEMPLATE_DIR=deploy/templates bun run --filter '@pocketcoder/server' start
+#   bun run --filter '@pstdio/pocketcoder-cli' start db migrate
+#   POCKETCODER_TEMPLATE_DIR=deploy/templates bun run --filter '@pstdio/pocketcoder-server' start
 
 services:
   postgres:

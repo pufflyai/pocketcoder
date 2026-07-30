@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { type AdmissionLimits, DEFAULT_LIMITS } from "@pocketcoder/runtime-core";
+import { type AdmissionLimits, DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 
 export interface ServerConfig {
 	listenHost: string;

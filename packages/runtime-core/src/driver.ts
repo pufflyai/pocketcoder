@@ -1,4 +1,4 @@
-import type { ProviderInput } from "@pocketcoder/contracts";
+import type { ProviderInput } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "./types";
 
 // The single workspace-driver contract. Docker (development) and Kubernetes
