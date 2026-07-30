@@ -11,7 +11,7 @@
 
 - [#2](https://github.com/pufflyai/pocketcoder/pull/2) [`deb6b65`](https://github.com/pufflyai/pocketcoder/commit/deb6b655fe784748008bb6d1b589384505bfa1db) Thanks [@au-re](https://github.com/au-re)! - Make `pcd doctor` require a correlated request/response turn, expose
   failure diagnostics and workspace change cursors, and document the complete
-  coder-lite migration and digest-pinned release flow.
+  PocketCoder migration and digest-pinned release flow.
 
 - [`5aee0dd`](https://github.com/pufflyai/pocketcoder/commit/5aee0dd5c9124fd8d58a640a97e161580bc6a8a5) Thanks [@au-re](https://github.com/au-re)! - Add attach, preserve, restore, recreate, checkpoint, output, and storage maintenance commands for durable remote workspaces.
 
