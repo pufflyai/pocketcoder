@@ -1,13 +1,15 @@
 {
-	"name": "@pocketcoder/example-pi-agentapi",
+	"name": "@pocketcoder/example-pi-client",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"start": "pi --provider pocketcoder-agentapi --model remote-agent --api-key local-ui --extension ./remote-agentapi.ts --no-tools --no-extensions --no-skills --no-context-files --no-prompt-templates --offline",
 		"test": "bun test",
 		"typecheck": "tsc --project tsconfig.json --noEmit"
 	},
 	"dependencies": {
+		"@earendil-works/pi-ai": "0.83.0",
 		"@earendil-works/pi-coding-agent": "0.83.0"
 	},
 	"devDependencies": {

@@ -84,6 +84,7 @@ deploy/
   compose/             local PostgreSQL for development
 examples/
   e2e/                 reusable create → converse → cancel harness contract
+  clients/             host-side clients, including local Pi as a remote-agent UI
   harnesses/           runnable echo and Pi harness examples
 ```
 
@@ -146,7 +147,8 @@ bun run packages    # list packages managed by Lerna
 bun run start       # pocketcoder-server
 bun run ctl -- …    # pocketcoderctl
 bun run example:e2e:local  # disposable full-stack E2E with the echo harness
-bun run example:e2e:pi     # same path with the real Pi SDK and a fake model gateway
+bun run example:e2e:pi     # remote Pi reads a workspace fixture through AgentAPI
+bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses OpenAI)
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
@@ -183,9 +185,10 @@ bootstrap the package before trusted publishing is configured.
 `POCKETCODER_TEST_DATABASE_URL=postgres://…` additionally runs the PostgreSQL
 integration suite (migrations, schema isolation, store behavior).
 
-Harness integrations live under [`examples/`](examples/). The deterministic
-echo harness runs without model credentials; the Pi SDK harness uses the same
-E2E contract when an OpenAI-compatible model gateway is available. Consumer
+Harness and client integrations live under [`examples/`](examples/). The
+deterministic Pi E2E runs the remote Pi CLI through AgentAPI and proves a real
+workspace file read. The interactive variant runs Pi on the host as the UI,
+while the coding agent and tools remain inside the workspace. Consumer
 applications remain separate projects and integrate through the machine API.
 
 ## Configuration

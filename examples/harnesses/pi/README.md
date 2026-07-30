@@ -1,16 +1,27 @@
-# Pi harness
+# Pi through AgentAPI
 
-This example uses the pinned
-`@earendil-works/pi-coding-agent` SDK directly. It exposes PocketCoder's
-allowlisted conversation contract on loopback:
+This example exercises PocketCoder's intended coding-agent integration path:
 
-- `GET /status`
-- `GET /messages`
-- `POST /message`
+```text
+local client → PocketCoder → AgentAPI → remote Pi CLI → model gateway
+```
 
-Pi remains a harness dependency, not a PocketCoder control-plane dependency.
+AgentAPI owns the loopback HTTP API (`GET /status`, `GET /messages`, and
+`POST /message`) and launches Pi as an interactive terminal process. There is
+no PocketCoder-specific Pi HTTP adapter.
 
-## Validate the adapter
+The image pins Pi to `0.83.0` and AgentAPI to `0.12.2`. The Dockerfile verifies
+AgentAPI's downloaded checksum for both supported Linux architectures.
+AgentAPI does not yet include a native Pi terminal profile, so
+`agentapi-compat.ts` displays a `>` immediately above Pi's editor for
+AgentAPI's generic input-readiness detector. It does not implement HTTP routes,
+store messages, or invoke Pi.
+
+The image also stores a test fixture at `/opt/pocketcoder-fixtures/test.txt`.
+The template's `setup` step copies it into the tmpfs-backed
+`/workspace/test.txt` before AgentAPI and Pi start.
+
+## Validate the fixture
 
 ```sh
 cd examples/harnesses/pi
@@ -21,17 +32,29 @@ bun test
 
 ## Run the full local E2E
 
-No credentials are needed for the deterministic Pi SDK path:
+No credentials are needed for the deterministic path:
 
 ```sh
 bun run example:e2e:pi
 ```
 
-This starts a tiny OpenAI-compatible fake gateway on the host. Pi still parses
-the request and streaming response through its real SDK; only the model answer
-is fixed.
+This starts a tiny OpenAI-compatible fake gateway on the host. The gateway
+requests Pi's real `read` tool, Pi reads `/workspace/test.txt`, and the test
+verifies the returned fixture text. AgentAPI still drives Pi through its
+terminal and serves the conversation API.
 
-To test a real OpenAI Chat Completions-compatible gateway, set both variables.
+To test a real OpenAI connection without opening the interactive UI:
+
+```sh
+OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:e2e:pi:openai
+```
+
+This starts a short-lived gateway on the host, keeps `OPENAI_API_KEY` out of
+the workspace, and forwards the remote Pi agent's requests to the OpenAI
+Responses API. `OPENAI_MODEL` is required; `OPENAI_ORGANIZATION` and
+`OPENAI_PROJECT` are forwarded when set.
+
+To test a different OpenAI-compatible gateway, set both variables.
 The gateway must be reachable from a workspace container; local gateways
 normally use `host.docker.internal`, not `127.0.0.1`:
 
@@ -41,11 +64,24 @@ PI_GATEWAY_MODEL=your-model-id \
 bun examples/e2e/local.ts --harness pi
 ```
 
-The example sends a fixed non-secret gateway credential. This is appropriate
-for an internal development gateway that ignores client credentials and owns
-the real provider secret. A production deployment should resolve a reviewed
-`secretRef:` through its deployment secret mechanism; never place provider
-credentials in a template or `launch_input`.
+`PI_GATEWAY_API` selects `openai-completions` (the default) or
+`openai-responses`. `PI_GATEWAY_BEARER` is the workspace-to-gateway
+credential. A production deployment should resolve real provider credentials
+through its deployment secret mechanism; never place provider credentials in
+a template or `launch_input`.
+
+## Open the workspace agent in local Pi
+
+From the repository root:
+
+```sh
+OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:pi:ui
+```
+
+This opens a Pi TUI on the host using [`examples/clients/pi`](../../clients/pi/).
+The local Pi process disables its own coding tools and sends turns through
+PocketCoder's relay to AgentAPI. The coding agent and all file operations stay
+inside the disposable workspace. Exit Pi to cancel the workspace.
 
 The checked-in template contains a placeholder image digest and gateway model.
 The local runner replaces both in a generated template. For a deployed setup,

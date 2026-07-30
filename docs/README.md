@@ -12,7 +12,7 @@ API drives the whole lifecycle.
 | [Templates](templates.md) | The template contract: images, setup commands, harnesses, relay routes, security |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the service relay, signed events |
 | [Deployment](deployment.md) | Container images, docker compose, PostgreSQL placement, configuration reference |
-| [Harness examples](../examples/README.md) | Full-stack echo E2E and a Pi SDK harness behind the same relay contract |
+| [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |
 | [Architecture](architecture.md) | Components, workspace state machine, agent protocol |
 
 ## The short version

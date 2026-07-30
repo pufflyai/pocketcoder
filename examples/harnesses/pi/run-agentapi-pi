@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+: "${PI_GATEWAY_URL:?PI_GATEWAY_URL is required}"
+: "${PI_GATEWAY_MODEL:?PI_GATEWAY_MODEL is required}"
+
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/home/agent/.pi/agent}"
+PI_PROVIDER="${PI_GATEWAY_PROVIDER:-pocketcoder-gateway}"
+PI_API="${PI_GATEWAY_API:-openai-completions}"
+PI_GATEWAY_BEARER="${PI_GATEWAY_BEARER:-pocketcoder-local-gateway}"
+PI_CONTEXT_WINDOW="${PI_GATEWAY_CONTEXT_WINDOW:-128000}"
+PI_MAX_TOKENS="${PI_GATEWAY_MAX_TOKENS:-16384}"
+AGENTAPI_PORT="${HARNESS_PORT:-3284}"
+
+mkdir -p "$PI_AGENT_DIR"
+
+bun -e '
+const [path, provider, baseUrl, model, api, apiKey, contextWindow, maxTokens] = process.argv.slice(1);
+const positiveInteger = (value, name) => {
+	const parsed = Number(value);
+	if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+	return parsed;
+};
+if (!["openai-completions", "openai-responses"].includes(api)) {
+	throw new Error("PI_GATEWAY_API must be openai-completions or openai-responses");
+}
+const config = {
+	providers: {
+		[provider]: {
+			name: "PocketCoder model gateway",
+			baseUrl,
+			api,
+			apiKey,
+			compat: {
+				supportsDeveloperRole: false,
+				supportsReasoningEffort: false,
+			},
+			models: [{
+				id: model,
+				name: model,
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: positiveInteger(contextWindow, "PI_GATEWAY_CONTEXT_WINDOW"),
+				maxTokens: positiveInteger(maxTokens, "PI_GATEWAY_MAX_TOKENS"),
+			}],
+		},
+	},
+};
+await Bun.write(path, `${JSON.stringify(config, null, 2)}\n`);
+' "$PI_AGENT_DIR/models.json" "$PI_PROVIDER" "$PI_GATEWAY_URL" "$PI_GATEWAY_MODEL" "$PI_API" "$PI_GATEWAY_BEARER" "$PI_CONTEXT_WINDOW" "$PI_MAX_TOKENS"
+
+exec /usr/local/bin/agentapi server \
+	--type custom \
+	--port "$AGENTAPI_PORT" \
+	-- \
+	/opt/pi/node_modules/.bin/pi \
+	--provider "$PI_PROVIDER" \
+	--model "$PI_GATEWAY_MODEL" \
+	--api-key "$PI_GATEWAY_BEARER" \
+	--extension /opt/pi/agentapi-compat.ts \
+	--no-session \
+	--approve \
+	--offline

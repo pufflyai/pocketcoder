@@ -14,6 +14,23 @@ export interface HarnessE2EConfig {
 	pollIntervalMs?: number;
 }
 
+export interface HarnessWorkspaceConfig {
+	baseUrl: string;
+	key: string;
+	template: string;
+	templateVersion?: string;
+	readyTimeoutMs?: number;
+	pollIntervalMs?: number;
+}
+
+export interface ReadyHarnessWorkspace {
+	workspaceId: string;
+	template: string;
+	readyInMs: number;
+	request(path: string, init?: RequestInit): Promise<Response>;
+	cancel(): Promise<string>;
+}
+
 export interface HarnessE2EReport {
 	workspaceId: string;
 	template: string;
@@ -116,13 +133,12 @@ async function waitFor<T>(
 	throw new Error(`timed out waiting for ${description} after ${timeoutMs}ms`);
 }
 
-export async function runHarnessE2E(
-	config: HarnessE2EConfig,
+export async function createHarnessWorkspace(
+	config: HarnessWorkspaceConfig,
 	fetchImpl: FetchLike = fetch,
-): Promise<HarnessE2EReport> {
+): Promise<ReadyHarnessWorkspace> {
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
 	const readyTimeoutMs = config.readyTimeoutMs ?? 120_000;
-	const messageTimeoutMs = config.messageTimeoutMs ?? 300_000;
 	const pollIntervalMs = config.pollIntervalMs ?? 500;
 	const externalId = `example-${Date.now()}-${randomUUID()}`;
 	const headers = {
@@ -136,7 +152,6 @@ export async function runHarnessE2E(
 		});
 
 	let workspaceId: string | null = null;
-	let completed = false;
 	try {
 		const createResponse = await request("/v1/workspaces", {
 			method: "POST",
@@ -178,6 +193,65 @@ export async function runHarnessE2E(
 			"workspace readiness",
 		);
 		const readyInMs = Date.now() - readyStartedAt;
+		const id = workspaceId;
+
+		return {
+			workspaceId: id,
+			template: config.template,
+			readyInMs,
+			request,
+			async cancel(): Promise<string> {
+				const cancelResponse = await request(`/v1/workspaces/${id}/cancel`, {
+					method: "POST",
+				});
+				if (!cancelResponse.ok) {
+					throw new Error(
+						`workspace cancel failed (${cancelResponse.status}): ${errorBody(await readBody(cancelResponse))}`,
+					);
+				}
+				const terminal = await waitFor(
+					async () => {
+						const response = await request(`/v1/workspaces/${id}`);
+						if (!response.ok) return null;
+						const workspace = (await readBody(response)) as WorkspaceResource;
+						return TERMINAL_STATES.has(workspace.state) ? workspace : null;
+					},
+					30_000,
+					pollIntervalMs,
+					"workspace cancellation",
+				);
+				return terminal.state;
+			},
+		};
+	} catch (error) {
+		if (workspaceId) {
+			await request(`/v1/workspaces/${workspaceId}/cancel`, { method: "POST" }).catch(() => {});
+		}
+		throw error;
+	}
+}
+
+export async function runHarnessE2E(
+	config: HarnessE2EConfig,
+	fetchImpl: FetchLike = fetch,
+): Promise<HarnessE2EReport> {
+	const messageTimeoutMs = config.messageTimeoutMs ?? 300_000;
+	const pollIntervalMs = config.pollIntervalMs ?? 500;
+	let workspace: ReadyHarnessWorkspace | null = null;
+	let completed = false;
+	try {
+		workspace = await createHarnessWorkspace(
+			{
+				baseUrl: config.baseUrl,
+				key: config.key,
+				template: config.template,
+				templateVersion: config.templateVersion,
+				readyTimeoutMs: config.readyTimeoutMs,
+				pollIntervalMs,
+			},
+			fetchImpl,
+		);
+		const { request, workspaceId, readyInMs } = workspace;
 
 		const statusResponse = await request(`/v1/workspaces/${workspaceId}/services/agent/status`);
 		if (!statusResponse.ok) {
@@ -219,27 +293,9 @@ export async function runHarnessE2E(
 		);
 		const responseInMs = Date.now() - messageStartedAt;
 
-		const cancelResponse = await request(`/v1/workspaces/${workspaceId}/cancel`, {
-			method: "POST",
-		});
-		if (!cancelResponse.ok) {
-			throw new Error(
-				`workspace cancel failed (${cancelResponse.status}): ${errorBody(await readBody(cancelResponse))}`,
-			);
-		}
-		const terminal = await waitFor(
-			async () => {
-				const response = await request(`/v1/workspaces/${workspaceId}`);
-				if (!response.ok) return null;
-				const workspace = (await readBody(response)) as WorkspaceResource;
-				return TERMINAL_STATES.has(workspace.state) ? workspace : null;
-			},
-			30_000,
-			pollIntervalMs,
-			"workspace cancellation",
-		);
-		if (terminal.state !== "canceled") {
-			throw new Error(`expected canceled workspace, got ${terminal.state}`);
+		const terminalState = await workspace.cancel();
+		if (terminalState !== "canceled") {
+			throw new Error(`expected canceled workspace, got ${terminalState}`);
 		}
 		completed = true;
 		return {
@@ -247,12 +303,12 @@ export async function runHarnessE2E(
 			template: config.template,
 			readyInMs,
 			responseInMs,
-			terminalState: terminal.state,
+			terminalState,
 			responseText: observedText,
 		};
 	} finally {
-		if (workspaceId && !completed) {
-			await request(`/v1/workspaces/${workspaceId}/cancel`, { method: "POST" }).catch(() => {});
+		if (workspace && !completed) {
+			await workspace.cancel().catch(() => {});
 		}
 	}
 }

@@ -18,6 +18,8 @@
 		"example:e2e": "bun examples/e2e/run.ts",
 		"example:e2e:local": "bun examples/e2e/local.ts --harness echo",
 		"example:e2e:pi": "bun examples/e2e/local.ts --harness pi",
+		"example:e2e:pi:openai": "bun examples/e2e/local.ts --harness pi --openai",
+		"example:pi:ui": "bun examples/e2e/local.ts --harness pi --ui --openai",
 		"example:test": "bun test examples/e2e",
 		"format": "biome format --write .",
 		"format:check": "biome format .",

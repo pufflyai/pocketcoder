@@ -2,8 +2,9 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { startFakePiGateway } from "../harnesses/pi/fake-gateway";
-import { runHarnessE2E } from "./contract";
+import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
+import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
+import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
@@ -63,12 +64,33 @@ function flag(name: string): string | undefined {
 	return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
+function hasFlag(name: string): boolean {
+	return process.argv.includes(name);
+}
+
 const harness = flag("--harness") ?? "echo";
 if (!["echo", "pi"].includes(harness)) {
 	throw new Error("--harness must be echo or pi");
 }
+const localPiUi = hasFlag("--ui");
+const useOpenAI = hasFlag("--openai");
+const openAIApiKey = process.env.OPENAI_API_KEY;
+const openAIModel = process.env.OPENAI_MODEL;
+if ((localPiUi || useOpenAI) && harness !== "pi") {
+	throw new Error("--ui and --openai require --harness pi");
+}
+if (useOpenAI && (process.env.PI_GATEWAY_URL || process.env.PI_GATEWAY_MODEL)) {
+	throw new Error("--openai cannot be combined with PI_GATEWAY_URL or PI_GATEWAY_MODEL");
+}
+if (useOpenAI && !openAIApiKey) {
+	throw new Error("OPENAI_API_KEY is required with --openai");
+}
+if (useOpenAI && !openAIModel) {
+	throw new Error("OPENAI_MODEL is required with --openai");
+}
 if (
 	harness === "pi" &&
+	!useOpenAI &&
 	((process.env.PI_GATEWAY_URL && !process.env.PI_GATEWAY_MODEL) ||
 		(!process.env.PI_GATEWAY_URL && process.env.PI_GATEWAY_MODEL))
 ) {
@@ -83,10 +105,21 @@ const postgresName = `pocketcoder-example-postgres-${runId}`;
 const localImage = `pocketcoder-example-${harness}:${runId}`;
 let postgresId = "";
 let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
-let fakeGateway: ReturnType<typeof Bun.serve> | null = null;
+let localPiProcess: ReturnType<typeof Bun.spawn> | null = null;
+let modelGateway: ReturnType<typeof Bun.serve> | null = null;
+let usesFakeGateway = false;
+let uiWorkspace: ReadyHarnessWorkspace | null = null;
 
 async function cleanup(): Promise<void> {
-	fakeGateway?.stop(true);
+	if (uiWorkspace) {
+		await uiWorkspace.cancel().catch(() => {});
+		uiWorkspace = null;
+	}
+	if (localPiProcess?.exitCode === null) {
+		localPiProcess.kill("SIGTERM");
+		await Promise.race([localPiProcess.exited, Bun.sleep(5000)]).catch(() => {});
+	}
+	modelGateway?.stop(true);
 	if (serverProcess) {
 		serverProcess.kill("SIGTERM");
 		await Promise.race([serverProcess.exited, Bun.sleep(5000)]).catch(() => {});
@@ -181,15 +214,30 @@ try {
 	};
 	template.spec.image = `${localImage}@${imageId}`;
 	if (harness === "pi") {
-		if (!process.env.PI_GATEWAY_URL) {
-			fakeGateway = startFakePiGateway();
+		const gatewayBearer = process.env.PI_GATEWAY_BEARER ?? randomBytes(24).toString("base64url");
+		if (useOpenAI) {
+			modelGateway = startOpenAIGateway({
+				apiKey: openAIApiKey ?? "",
+				clientBearer: gatewayBearer,
+				organization: process.env.OPENAI_ORGANIZATION,
+				project: process.env.OPENAI_PROJECT,
+			});
+		} else if (!process.env.PI_GATEWAY_URL) {
+			modelGateway = startFakePiGateway(gatewayBearer);
+			usesFakeGateway = true;
 		}
 		template.spec.harness.env = {
 			...template.spec.harness.env,
 			PI_GATEWAY_URL:
-				process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${fakeGateway?.port ?? 0}/v1`,
-			PI_GATEWAY_MODEL: process.env.PI_GATEWAY_MODEL ?? "pocketcoder-test",
-			PI_GATEWAY_PROVIDER: process.env.PI_GATEWAY_PROVIDER ?? "pocketcoder-gateway",
+				process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
+			PI_GATEWAY_MODEL:
+				process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test"),
+			PI_GATEWAY_PROVIDER:
+				process.env.PI_GATEWAY_PROVIDER ??
+				(useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
+			PI_GATEWAY_API:
+				process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
+			PI_GATEWAY_BEARER: gatewayBearer,
 		};
 	}
 	const templateDir = resolve(tempDir, "templates");
@@ -268,25 +316,84 @@ try {
 		"pocketcoder-server",
 	);
 
-	const report = await runHarnessE2E({
-		baseUrl,
-		key,
-		template: `${harness}-harness`,
-		prompt:
-			process.env.POCKETCODER_EXAMPLE_PROMPT ??
-			(harness === "echo" ? "hello from the local E2E" : "Reply with pocketcoder pi ok"),
-		expectedResponse:
-			process.env.POCKETCODER_EXAMPLE_EXPECT ??
-			(harness === "echo"
-				? "echo: hello from the local E2E"
-				: fakeGateway
-					? "pocketcoder pi ok"
-					: undefined),
-		readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
-		messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
-	});
-	console.log("PocketCoder local harness E2E passed:");
-	console.log(JSON.stringify(report, null, 2));
+	const prompt =
+		process.env.POCKETCODER_EXAMPLE_PROMPT ??
+		(harness === "echo"
+			? "hello from the local E2E"
+			: "Read /workspace/test.txt with the read tool. Reply with exactly the file contents and nothing else.");
+	if (localPiUi) {
+		uiWorkspace = await createHarnessWorkspace({
+			baseUrl,
+			key,
+			template: "pi-harness",
+			readyTimeoutMs: 300_000,
+		});
+		const clientDir = resolve(ROOT, "examples/clients/pi");
+		await command(["bun", "install", "--frozen-lockfile"], { cwd: clientDir, quiet: true });
+		console.log(
+			`Opening local Pi for workspace ${uiWorkspace.workspaceId}. Exit Pi to cancel and remove the workspace.`,
+		);
+		localPiProcess = Bun.spawn(
+			[
+				resolve(clientDir, "node_modules/.bin/pi"),
+				"--provider",
+				"pocketcoder-agentapi",
+				"--model",
+				"remote-agent",
+				"--api-key",
+				"local-ui",
+				"--extension",
+				resolve(clientDir, "remote-agentapi.ts"),
+				"--no-tools",
+				"--no-extensions",
+				"--no-skills",
+				"--no-context-files",
+				"--no-prompt-templates",
+				"--no-session",
+				"--offline",
+				prompt,
+			],
+			{
+				cwd: ROOT,
+				env: {
+					...process.env,
+					OPENAI_API_KEY: undefined,
+					POCKETCODER_URL: baseUrl,
+					POCKETCODER_KEY: key,
+					POCKETCODER_WORKSPACE_ID: uiWorkspace.workspaceId,
+				},
+				stdin: "inherit",
+				stdout: "inherit",
+				stderr: "inherit",
+			},
+		);
+		const exitCode = await localPiProcess.exited;
+		localPiProcess = null;
+		if (exitCode !== 0) throw new Error(`local Pi exited with code ${exitCode}`);
+		const terminalState = await uiWorkspace.cancel();
+		uiWorkspace = null;
+		if (terminalState !== "canceled") {
+			throw new Error(`expected canceled workspace, got ${terminalState}`);
+		}
+	} else {
+		const report = await runHarnessE2E({
+			baseUrl,
+			key,
+			template: `${harness}-harness`,
+			prompt,
+			expectedResponse:
+				process.env.POCKETCODER_EXAMPLE_EXPECT ??
+				(harness === "echo"
+					? "echo: hello from the local E2E"
+					: usesFakeGateway
+						? PI_FIXTURE_CONTENT
+						: undefined),
+			readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
+			messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
+		});
+		console.log("PocketCoder local harness E2E passed:");
+		console.log(JSON.stringify(report, null, 2));
+	}
 } finally {
 	await cleanup();
 }

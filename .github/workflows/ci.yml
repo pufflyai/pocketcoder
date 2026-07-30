@@ -40,12 +40,20 @@ jobs:
       - run: bun run typecheck
       - name: Test reusable harness E2E contract
         run: bun run example:test
-      - name: Validate the standalone Pi harness example
+      - name: Validate the Pi and AgentAPI E2E fixture
         working-directory: examples/harnesses/pi
         run: |
           bun install --frozen-lockfile
           bun run typecheck
           bun test
+      - name: Validate the local Pi AgentAPI client
+        working-directory: examples/clients/pi
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun test
+      - name: Run Pi through AgentAPI full-stack E2E
+        run: bun run example:e2e:pi
       - name: Unit, route, e2e, and PostgreSQL integration tests
         run: bun run test
         env:

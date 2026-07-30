@@ -3,13 +3,21 @@
 	"kind": "Template",
 	"metadata": {
 		"name": "pi-harness",
-		"description": "Pi SDK harness behind PocketCoder's conversation relay"
+		"description": "Pi CLI integrated through AgentAPI"
 	},
 	"spec": {
 		"version": "1.0.0",
 		"image": "example.invalid/pocketcoder-pi@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		"setup": [
+			{
+				"name": "load-test-workspace",
+				"command": ["cp", "-R", "/opt/pocketcoder-fixtures/.", "/workspace"],
+				"cwd": "/workspace",
+				"timeoutSeconds": 30
+			}
+		],
 		"harness": {
-			"command": ["bun", "/opt/pi-harness/index.ts"],
+			"command": ["/usr/local/bin/run-agentapi-pi"],
 			"cwd": "/workspace",
 			"env": {
 				"PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
