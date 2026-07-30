@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { WORKSPACE_STATES, type WorkspaceState } from "./workspace";
+import { AGENT_STATES, REASON_CODES, WORKSPACE_STATES, type WorkspaceState } from "./workspace";
 
 // Signed lifecycle events delivered at least once from the outbox. Consumers
 // verify the HMAC signature, deduplicate by event ID, and independently poll
@@ -26,6 +26,16 @@ export const EventEnvelopeSchema = z.object({
 		external_id: z.string(),
 		state: z.enum(WORKSPACE_STATES),
 		reason_code: z.string().nullable(),
+		agent_state: z.enum(AGENT_STATES),
+		change_cursor: z.number().int().nonnegative(),
+		failure: z
+			.object({
+				reason_code: z.enum(REASON_CODES),
+				log_tail: z.string(),
+				log_tail_truncated: z.boolean(),
+				last_log_seq: z.number().int().nonnegative().nullable(),
+			})
+			.nullable(),
 		template: z.object({
 			name: z.string(),
 			version: z.string(),

@@ -8,7 +8,13 @@ import {
 	fixtureTemplateSleep,
 	MemoryStore,
 } from "@pstdio/pocketcoder-testkit";
-import { type ConnectionHub, DEFAULT_LIMITS, Scheduler, type Store } from "./index";
+import {
+	type ConnectionHub,
+	DEFAULT_LIMITS,
+	decodeFailureLogTail,
+	Scheduler,
+	type Store,
+} from "./index";
 
 const noHub: ConnectionHub = {
 	isConnected: () => false,
@@ -83,6 +89,17 @@ function makeScheduler(store: Store, driver: FakeDriver, overrides = {}) {
 	});
 }
 
+describe("failure log summary", () => {
+	test("drops partial UTF-8 and line prefixes and redacts credentials", () => {
+		const encoded = new TextEncoder().encode(
+			"épartial line\nAuthorization: Bearer secret-value\nPermissionError: /home/onefin/.pi\n",
+		);
+		expect(decodeFailureLogTail(encoded.subarray(1), true)).toBe(
+			"[redacted]\nPermissionError: /home/onefin/.pi\n",
+		);
+	});
+});
+
 describe("scheduler admission", () => {
 	test("launches queued workspaces through the driver with provider input", async () => {
 		const store = new MemoryStore();
@@ -156,6 +173,12 @@ describe("scheduler admission", () => {
 		const after = await store.getWorkspace(ws.id);
 		expect(after?.state).toBe("failed");
 		expect(after?.reasonCode).toBe("launch_failed");
+		expect(after?.failureLogTail).toContain("fake driver create failure");
+		expect(after?.failureLastLogSeq).toBe(1);
+		const logs = await store.readLogs(ws.id, 0, 10);
+		expect(new TextDecoder().decode(logs[0]?.content)).toContain(
+			"workspace launch failed: fake driver create failure",
+		);
 	});
 });
 

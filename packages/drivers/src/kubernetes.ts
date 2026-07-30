@@ -189,6 +189,8 @@ export class KubernetesDriver implements WorkspaceDriver {
 							runAsUser: spec.security.uid,
 							runAsGroup: spec.security.gid,
 							runAsNonRoot: true,
+							fsGroup: spec.security.gid,
+							fsGroupChangePolicy: "OnRootMismatch",
 							seccompProfile: { type: spec.security.seccomp },
 						},
 						containers: [

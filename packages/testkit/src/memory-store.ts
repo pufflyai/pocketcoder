@@ -45,6 +45,18 @@ const ACTIVE_STATES: readonly WorkspaceState[] = [
 	"terminating",
 ];
 const MAX_LOG_BYTES = 10 * 1024 * 1024;
+const CHANGE_PATCH_KEYS = new Set([
+	"connectedAt",
+	"disconnectedAt",
+	"health",
+	"agentState",
+	"failureLogTail",
+	"failureLogTailTruncated",
+	"failureLastLogSeq",
+	"resolvedSource",
+	"latestCheckpointId",
+	"outputs",
+]);
 
 export class MemoryStore implements Store {
 	private templates: TemplateRow[] = [];
@@ -60,9 +72,22 @@ export class MemoryStore implements Store {
 	private checkpoints = new Map<string, WorkspaceCheckpointRow>();
 	private operations = new Map<string, WorkspaceOperationRow>();
 	private outputs = new Map<string, WorkspaceOutputRow[]>();
+	private changeWaiters = new Map<string, Set<() => void>>();
 
 	async init(): Promise<void> {}
-	async close(): Promise<void> {}
+	async close(): Promise<void> {
+		for (const waiters of this.changeWaiters.values()) {
+			for (const resolve of waiters) resolve();
+		}
+		this.changeWaiters.clear();
+	}
+
+	private notifyWorkspaceChange(id: string): void {
+		const waiters = this.changeWaiters.get(id);
+		if (!waiters) return;
+		this.changeWaiters.delete(id);
+		for (const resolve of waiters) resolve();
+	}
 
 	// --- Templates ---
 
@@ -212,6 +237,11 @@ export class MemoryStore implements Store {
 			templateSnapshot: snapshot,
 			state: "queued",
 			reasonCode: null,
+			agentState: "unknown",
+			changeSeq: 1,
+			failureLogTail: null,
+			failureLogTailTruncated: false,
+			failureLastLogSeq: null,
 			terminalIntent: null,
 			launchInput: row.launchInput,
 			providerKind: null,
@@ -295,7 +325,45 @@ export class MemoryStore implements Store {
 		const row = this.workspaces.get(id);
 		if (!row) return;
 		Object.assign(row, patch);
+		const changed = Object.keys(patch).some((key) => CHANGE_PATCH_KEYS.has(key));
+		if (changed) row.changeSeq += 1;
 		row.updatedAt = at;
+		if (changed) this.notifyWorkspaceChange(id);
+	}
+
+	async waitForWorkspaceChange(
+		id: string,
+		afterSeq: number,
+		timeoutMs: number,
+		signal?: AbortSignal,
+	): Promise<void> {
+		const current = this.workspaces.get(id);
+		if (!current || current.changeSeq > afterSeq || timeoutMs <= 0) return;
+		await new Promise<void>((resolve, reject) => {
+			const waiters = this.changeWaiters.get(id) ?? new Set<() => void>();
+			let timer: ReturnType<typeof setTimeout>;
+			const cleanup = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", abort);
+				waiters.delete(settle);
+				if (waiters.size === 0) this.changeWaiters.delete(id);
+			};
+			const settle = () => {
+				cleanup();
+				resolve();
+			};
+			const abort = () => {
+				cleanup();
+				reject(signal?.reason ?? new Error("workspace change wait aborted"));
+			};
+			waiters.add(settle);
+			this.changeWaiters.set(id, waiters);
+			timer = setTimeout(settle, timeoutMs);
+			if (signal?.aborted) abort();
+			else signal?.addEventListener("abort", abort, { once: true });
+			const latest = this.workspaces.get(id);
+			if (!latest || latest.changeSeq > afterSeq) settle();
+		});
 	}
 
 	async transition(id: string, req: TransitionRequest): Promise<WorkspaceRow | null> {
@@ -307,6 +375,7 @@ export class MemoryStore implements Store {
 		row.state = req.to;
 		if (req.reason !== undefined) row.reasonCode = req.reason;
 		if (req.patch) Object.assign(row, req.patch);
+		row.changeSeq += 1;
 		row.updatedAt = req.at;
 		if (isTerminal(req.to)) {
 			row.terminalAt = req.at;
@@ -315,6 +384,7 @@ export class MemoryStore implements Store {
 		}
 		this.appendHistory(row, fromState, req.to, row.reasonCode, req.at);
 		this.appendWorkspaceEvent(row, req.at);
+		this.notifyWorkspaceChange(id);
 		return { ...row };
 	}
 
@@ -546,6 +616,22 @@ export class MemoryStore implements Store {
 			.filter((l) => l.seq > afterSeq)
 			.slice(0, limit)
 			.map((l) => ({ ...l }));
+	}
+
+	async readLogTail(
+		workspaceId: string,
+		maxBytes: number,
+	): Promise<{ content: Uint8Array; truncated: boolean; lastSeq: number | null }> {
+		const rows = this.logs.get(workspaceId) ?? [];
+		const lastSeq = rows.at(-1)?.seq ?? null;
+		const totalBytes = rows.reduce((sum, row) => sum + row.content.byteLength, 0);
+		const combined = Buffer.concat(rows.map((row) => Buffer.from(row.content)));
+		const content = combined.byteLength > maxBytes ? combined.subarray(-maxBytes) : combined;
+		return {
+			content: Uint8Array.from(content),
+			truncated: totalBytes > maxBytes,
+			lastSeq,
+		};
 	}
 
 	// --- Outbox ---

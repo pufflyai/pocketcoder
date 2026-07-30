@@ -149,6 +149,9 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 		env: materializeSecretEnv(spec.env),
 		services: spec.services,
 		timeouts: spec.timeouts,
+		security: {
+			writable_memory_paths: spec.security.writableMemoryPaths,
+		},
 		launch_mode: row.launchMode,
 		source:
 			row.sourceDescriptor && sourceRepository && sourceMount
@@ -196,6 +199,7 @@ function materializeSecretEnv(env: Record<string, string>): Record<string, strin
 type RegisteredFrame = Extract<AgentFrame, { type: "registered" }>;
 type ServiceHealthFrame = Extract<AgentFrame, { type: "service_health" }>;
 type ProcessStateFrame = Extract<AgentFrame, { type: "process_state" }>;
+type AgentStateFrame = Extract<AgentFrame, { type: "agent_state" }>;
 type CloseProtocol = (ws: WSContext, message: string) => void;
 
 async function registerConnection(
@@ -300,6 +304,20 @@ async function handleProcessState(deps: WsDeps, frame: ProcessStateFrame): Promi
 	await deps.scheduler.handleProcessExit(row, frame.payload.exit_code ?? null, now);
 }
 
+async function handleAgentState(deps: WsDeps, frame: AgentStateFrame): Promise<void> {
+	const row = await deps.store.getWorkspace(frame.workspace_id);
+	if (!row || isTerminal(row.state) || row.agentState === frame.payload.state) return;
+	const now = new Date();
+	await deps.store.updateWorkspace(
+		row.id,
+		{
+			agentState: frame.payload.state,
+			...(frame.payload.state === "running" ? { lastActivityAt: now } : {}),
+		},
+		now,
+	);
+}
+
 async function handleConnectedFrame(
 	deps: WsDeps,
 	connection: LiveConnection,
@@ -322,6 +340,9 @@ async function handleConnectedFrame(
 			return;
 		case "service_health":
 			await handleServiceHealth(deps, frame);
+			return;
+		case "agent_state":
+			await handleAgentState(deps, frame);
 			return;
 		case "log_chunk":
 			await deps.store.appendLogs(frame.workspace_id, [

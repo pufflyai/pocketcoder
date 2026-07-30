@@ -9,6 +9,7 @@ export const ERROR_CODES = {
 	"validation.invalid": 400,
 	"idempotency.conflict": 409,
 	"capacity.queue_full": 429,
+	"capacity.waiters_full": 429,
 	"template.not_found": 404,
 	"template.version_not_found": 404,
 	"template.not_authorized": 403,

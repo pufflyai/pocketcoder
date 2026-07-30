@@ -88,6 +88,9 @@ export const REASON_CODES = [
 
 export type ReasonCode = (typeof REASON_CODES)[number];
 
+export const AGENT_STATES = ["unknown", "running", "stable"] as const;
+export type AgentState = (typeof AGENT_STATES)[number];
+
 // REST request/response schemas.
 
 export const WorkspaceCreateRequestSchema = z.object({
@@ -115,6 +118,8 @@ export const WorkspaceResourceSchema = z.object({
 	template: TemplateRefSchema,
 	state: z.enum(WORKSPACE_STATES),
 	reason_code: z.enum(REASON_CODES).nullable(),
+	agent_state: z.enum(AGENT_STATES),
+	change_cursor: z.number().int().nonnegative(),
 	provider_kind: z.string().nullable(),
 	health: z.record(z.string(), z.string()),
 	created_at: z.iso.datetime(),
@@ -138,6 +143,14 @@ export const WorkspaceResourceSchema = z.object({
 		latest_checkpoint_id: z.uuid().nullable(),
 	}),
 	outputs: z.record(z.string(), z.unknown()),
+	failure: z
+		.object({
+			reason_code: z.enum(REASON_CODES),
+			log_tail: z.string(),
+			log_tail_truncated: z.boolean(),
+			last_log_seq: z.number().int().nonnegative().nullable(),
+		})
+		.nullable(),
 });
 
 export type WorkspaceResource = z.infer<typeof WorkspaceResourceSchema>;

@@ -4,7 +4,8 @@ A lightweight control plane for coding agents in isolated
 workspaces. **Documentation lives in [docs/](docs/README.md)**: [getting
 started](docs/getting-started.md), [CLI reference](docs/cli.md),
 [templates](docs/templates.md), [HTTP API](docs/api.md),
-[deployment](docs/deployment.md), and [architecture](docs/architecture.md). It replaces a full Coder deployment for the machine-to-machine
+[deployment](docs/deployment.md), [migration guide](docs/migration.md), and
+[architecture](docs/architecture.md). It replaces a full Coder deployment for the machine-to-machine
 coding-agent use case while keeping the two concepts that matter:
 
 - a **template** is a reviewed, versioned definition of a coding-agent
@@ -73,7 +74,7 @@ apps/
   pocketcoder-server/   Hono REST/OpenAPI/WSS control plane, scheduler, relay, outbox
   pocketcoder-agent/    PID 1 workspace supervisor (setup, harness, health, logs, relay)
 packages/
-  cli/                  public bundled pocketcoderctl npm package
+  cli/                  public bundled CLI npm package
   contracts/           zod schemas: templates, workspace states, WSS protocol, events
   auth/                machine keys, one-time secrets, event signing, redaction
   runtime-core/        Store contract, scheduler, template registry, outbox, reconcile
@@ -95,11 +96,13 @@ examples/
 bun install
 bun test                       # full suite (in-memory store; no Docker needed)
 
-# In-memory dev server with the bundled example templates:
-POCKETCODER_STORE=memory \
-POCKETCODER_TEMPLATE_DIR=examples/templates \
-bun run start
+# In-memory control plane with no durable state:
+POCKETCODER_STORE=memory bun run pcd -- server start --foreground
 ```
+
+The manifests in `examples/templates` intentionally contain placeholder image
+and gateway values. Validate them offline, but do not use that directory as a
+runnable server catalog.
 
 With PostgreSQL (dedicated database or an existing one; pocketcoder only
 touches its own schema, default `pocketcoder`):
@@ -110,12 +113,26 @@ export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:543
 export POCKETCODER_DATABASE_SCHEMA=pocketcoder
 export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 
-bun run ctl db migrate
-bun run ctl principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
-bun run ctl keys issue --principal my-backend --expires never   # shown once
+bun run pcd db migrate
+bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
+bun run pcd keys issue --principal my-backend --expires never   # shown once
 
-POCKETCODER_TEMPLATE_DIR=examples/templates bun run start
+POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
+bun run pcd -- server start
 ```
+
+For the included Pi harness, the repository convenience builds and
+materializes that runtime catalog before starting the gateway and server:
+
+```sh
+OPENAI_API_KEY=... OPENAI_MODEL=... \
+bun run local:up -- --template pi-harness --openai
+```
+
+To manage the server independently, run `local:prepare`, keep
+`local:gateway` in a separate terminal, configure
+`POCKETCODER_TEMPLATE_DIR`/`POCKETCODER_SECRET_ROOT`, and use `pcd server
+start|status|stop`; see the [getting-started guide](docs/getting-started.md).
 
 Then add the machine key to `.env` in the repository root:
 
@@ -127,11 +144,11 @@ POCKETCODER_KEY=pkt_…
 The CLI discovers this file automatically:
 
 ```sh
-bun run ctl -- workspaces create --template claude-code-agent
-bun run ctl -- workspaces list --active
-bun run ctl -- workspaces logs --id $WS
-bun run ctl -- workspaces attach --id $WS --message "continue"
-bun run ctl -- workspaces preserve --id $WS
+bun run pcd -- workspaces create --template claude-code-agent --wait
+bun run pcd -- workspaces list --active
+bun run pcd -- workspaces logs --id $WS
+bun run pcd -- workspaces chat --id $WS
+bun run pcd -- workspaces preserve --id $WS
 
 # Converse through the relay once the workspace is ready:
 curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/services/agent/message" \
@@ -154,7 +171,11 @@ bun run build       # bundle packages through Lerna with Nx caching
 bun run db:generate -- --name=<change>  # generate + embed a Drizzle migration
 bun run packages    # list packages managed by Lerna
 bun run start       # pocketcoder-server
-bun run ctl -- …    # pocketcoderctl
+bun run pcd -- server start|status|stop  # manage only the configured server process
+bun run pcd -- …    # pcd
+bun run local:prepare -- --template pi-harness --openai  # build/materialize only
+bun run local:gateway -- --openai  # host gateway only
+bun run local:up -- --template pi-harness --openai  # persistent local Pi deployment convenience
 bun run example:e2e:local  # disposable full-stack E2E with the echo harness
 bun run example:e2e:pi     # remote Pi reads a workspace fixture through AgentAPI
 bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses OpenAI)
@@ -167,7 +188,7 @@ provides the project graph and task cache configured in `nx.json`.
 ## Releasing packages
 
 `@pstdio/pocketcoder-cli` is the only public npm package. It bundles the private
-implementation packages into the `pocketcoderctl` executable. Every other
+implementation packages into the `pcd` executable. Every other
 workspace remains private, is linked by Bun with `workspace:*`, and is imported
 through its `@pstdio/pocketcoder-*` package boundary. The server and agent are
 distributed as binaries or container images.
@@ -184,7 +205,9 @@ bun run changeset
 
 After changes land on `main`, `Release Packages` opens or updates a version pull
 request for non-private packages only. Merging that pull request publishes
-those packages and creates GitHub releases.
+those packages, creates GitHub releases, and pushes the matching `v<version>`
+tag. The tag build publishes multi-architecture server/workspace images and
+records their immutable digests on that release.
 
 For tokenless publishing, configure an npm trusted publisher for
 `@pstdio/pocketcoder-cli`, using organization `pufflyai`, repository

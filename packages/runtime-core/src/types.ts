@@ -1,4 +1,5 @@
 import type {
+	AgentState,
 	CheckpointManifest,
 	CheckpointState,
 	ConversationRestoreCapability,
@@ -66,6 +67,11 @@ export interface WorkspaceRow {
 	templateSnapshot: TemplateSnapshot;
 	state: WorkspaceState;
 	reasonCode: ReasonCode | null;
+	agentState: AgentState;
+	changeSeq: number;
+	failureLogTail: string | null;
+	failureLogTailTruncated: boolean;
+	failureLastLogSeq: number | null;
 	// Desired terminal state while `terminating` (e.g. canceled vs expired).
 	terminalIntent: WorkspaceState | null;
 	launchInput: Record<string, unknown> | null;
@@ -252,6 +258,10 @@ export type WorkspacePatch = Partial<
 		| "lastActivityAt"
 		| "launchAttempts"
 		| "health"
+		| "agentState"
+		| "failureLogTail"
+		| "failureLogTailTruncated"
+		| "failureLastLogSeq"
 		| "resolvedSource"
 		| "latestCheckpointId"
 		| "outputs"
@@ -355,6 +365,12 @@ export interface Store {
 	countActive(): Promise<ActiveCounts>;
 	countQueued(): Promise<number>;
 	updateWorkspace(id: string, patch: WorkspacePatch, at: Date): Promise<void>;
+	waitForWorkspaceChange(
+		id: string,
+		afterSeq: number,
+		timeoutMs: number,
+		signal?: AbortSignal,
+	): Promise<void>;
 	// Atomic guarded transition: succeeds only when the current state is in
 	// `from`, appends state history and the outbox event in the same commit.
 	transition(id: string, req: TransitionRequest): Promise<WorkspaceRow | null>;
@@ -396,6 +412,10 @@ export interface Store {
 		entries: Array<{ stream: LogRow["stream"]; occurredAt: Date; content: Uint8Array }>,
 	): Promise<void>;
 	readLogs(workspaceId: string, afterSeq: number, limit: number): Promise<LogRow[]>;
+	readLogTail(
+		workspaceId: string,
+		maxBytes: number,
+	): Promise<{ content: Uint8Array; truncated: boolean; lastSeq: number | null }>;
 
 	// Outbox.
 	claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]>;

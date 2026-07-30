@@ -48,7 +48,7 @@
       "name": "@pstdio/pocketcoder-cli",
       "version": "0.1.0",
       "bin": {
-        "pocketcoderctl": "dist/index.js",
+        "pcd": "dist/index.js",
       },
       "dependencies": {
         "dotenv": "^17.4.2",

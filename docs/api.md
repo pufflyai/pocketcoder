@@ -37,6 +37,22 @@ Only templates on the principal's allowlist are visible; others 404.
 
 Requires an `Idempotency-Key` header.
 
+```sh
+curl -sS -X POST "$POCKETCODER_URL/v1/workspaces" \
+  -H "Authorization: Bearer $POCKETCODER_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: onefin-task-018f6f0e" \
+  --data-binary @- <<'JSON'
+{
+  "external_id": "your-task-uuid",
+  "template": { "name": "claude-code-agent", "version": "1.0.0" },
+  "launch_input": { "bootstrap_code": "opaque-single-use-value" },
+  "source": { "kind": "git", "repository": "app", "revision": "main" },
+  "metadata": { "source": "backend" }
+}
+JSON
+```
+
 ```json
 {
 	"external_id": "your-task-uuid",
@@ -63,6 +79,7 @@ Requires an `Idempotency-Key` header.
 GET  /v1/workspaces                    scope workspaces:read    filters: external_id, state, template, limit, cursor
 GET  /v1/workspaces/{id}               scope workspaces:read
 POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; returns the current resource
+GET  /v1/workspaces/{id}/changes       scope workspaces:read    query: after (change_cursor), wait (0..30 seconds)
 GET  /v1/workspaces/{id}/logs          scope logs:read          query: after (seq), limit
 ```
 
@@ -72,6 +89,39 @@ States: `queued → provisioning → connected → ready`, followed by
 `reason_code` distinguishes clean exit, setup failure, registration timeout,
 health failure, crash, provider loss, disconnect timeout, cancellation, and
 deadline/idle expiry.
+
+Every workspace resource includes a durable, monotonically increasing
+`change_cursor` and an `agent_state` of `unknown`, `running`, or `stable`.
+Consumers can replace status timers with a long-poll:
+
+```sh
+curl -s "$POCKETCODER_URL/v1/workspaces/$WS/changes?after=$CURSOR&wait=30" \
+  -H "Authorization: Bearer $POCKETCODER_KEY"
+```
+
+The response is `{ "cursor": number, "changed": boolean, "workspace": {...} }`.
+When `changed` is false, retry using the returned cursor. A state transition,
+connection/health change, or agent `running`/`stable` change advances the
+cursor and releases waiters. Cursors survive server restarts because they are
+stored with the workspace. The single-active server uses bounded in-process
+waiters after the initial durable cursor read, so an open long-poll does not
+timer-poll PostgreSQL.
+
+A failed workspace includes a bounded `failure` object directly in the
+resource and lifecycle event:
+
+```json
+{
+	"reason_code": "child_exit_failure",
+	"log_tail": "Traceback ...\nPermissionError: /home/onefin/.pi\n",
+	"log_tail_truncated": true,
+	"last_log_seq": 42
+}
+```
+
+The tail is at most 16 KiB, keeps UTF-8 and newline boundaries where possible,
+and is diagnostic context rather than a substitute for the paginated logs
+route.
 
 ## Service relay
 
@@ -144,7 +194,8 @@ POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
 ```
 
 Workspace events use `{ id, type: "workspace.<state>", occurred_at, workspace:
-{ id, external_id, state, reason_code, template, lineage, outputs } }`.
+{ id, external_id, state, reason_code, agent_state, change_cursor, failure,
+template, lineage, outputs } }`.
 Checkpoint, restore, and output events use the same signed outbox. Verify the signature and
 timestamp, deduplicate on the event id, and poll nonterminal workspaces for
 convergence — delivery is at-least-once, ordering is not guaranteed.

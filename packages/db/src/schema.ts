@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
 	bigint,
+	boolean,
 	bytea,
 	index,
 	integer,
@@ -82,6 +83,11 @@ export const workspaces = pgTable(
 		templateSnapshot: jsonb("template_snapshot").$type<Record<string, unknown>>().notNull(),
 		state: text("state").notNull(),
 		reasonCode: text("reason_code"),
+		agentState: text("agent_state").notNull().default("unknown"),
+		changeSeq: bigint("change_seq", { mode: "number" }).notNull().default(1),
+		failureLogTail: text("failure_log_tail"),
+		failureLogTailTruncated: boolean("failure_log_tail_truncated").notNull().default(false),
+		failureLastLogSeq: bigint("failure_last_log_seq", { mode: "number" }),
 		terminalIntent: text("terminal_intent"),
 		launchInput: jsonb("launch_input").$type<Record<string, unknown>>(),
 		providerKind: text("provider_kind"),

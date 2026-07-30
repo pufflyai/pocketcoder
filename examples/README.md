@@ -22,6 +22,53 @@ real harnesses.
 - [`clients/pi/`](clients/pi/) turns a Pi instance on the developer's machine
   into the UI for an AgentAPI session in a PocketCoder workspace. Local Pi has
   no coding tools; the remote agent owns all workspace operations.
+- [`local/`](local/) materializes a persistent digest-pinned Pi runtime for the
+  optional repository `local:up` workflow. Generated templates and secrets live
+  under ignored `.pocketcoder/local/`, never in this source directory.
+
+## Persistent local Pi workflow
+
+With PostgreSQL, a migrated PocketCoder schema, and an issued machine key
+already configured:
+
+```sh
+OPENAI_API_KEY=... OPENAI_MODEL=... \
+bun run local:up -- --template pi-harness --openai
+```
+
+In another terminal:
+
+```sh
+pcd templates list
+pcd workspaces create --template pi-harness --wait
+pcd workspaces chat --id <workspace-id>
+pcd workspaces cancel --id <workspace-id>
+```
+
+`local:up` is repository/deployment convenience. `pcd server start` is
+separate and starts only an already configured PocketCoder server.
+
+The same setup with an independently managed server is:
+
+```sh
+# Build/inspect the image and render .pocketcoder/local/{templates,secrets}.
+OPENAI_MODEL=<model> \
+bun run local:prepare -- --template pi-harness --openai
+
+# Keep this host gateway running in its own terminal.
+OPENAI_API_KEY=<key> OPENAI_MODEL=<model> \
+bun run local:gateway -- --openai
+
+# Start only PocketCoder, using the prepared operator-owned inputs.
+POCKETCODER_TEMPLATE_DIR="$PWD/.pocketcoder/local/templates" \
+POCKETCODER_SECRET_PROVIDER=file \
+POCKETCODER_SECRET_ROOT="$PWD/.pocketcoder/local/secrets" \
+bun run pcd -- server start
+```
+
+After that, the ordinary `pcd templates` and `pcd workspaces` commands above
+are identical to the convenience workflow. `pcd server stop` stops only the
+server; stop the gateway separately with Ctrl-C.
 
 ## One-command local E2E
 

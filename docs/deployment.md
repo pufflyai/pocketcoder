@@ -5,8 +5,9 @@
 CI publishes two images to the GitHub Container Registry on every push to
 `main` and on version tags (see `.github/workflows/ci.yml`):
 
-- `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pocketcoderctl`
-  (at `/opt/pocketcoder/ctl.js`), Docker CLI, and `kubectl`.
+- `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pcd`
+  (`/usr/local/bin/pcd`, backed by `/opt/pocketcoder/pcd.js`), Docker CLI, and
+  `kubectl`.
   Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
 - `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
   `pocketcoder-agent` supervisor and a loopback echo harness, useful for probe
@@ -17,6 +18,34 @@ Real coding-agent images extend the pattern: install AgentAPI by checksum,
 your agent CLI, and the supervisor; keep everything runnable by the template's
 non-root uid. Always reference images by digest in templates — mutable tags
 are rejected.
+
+Publishing the versioned CLI automatically creates the matching `v<version>`
+tag. That tag publishes semver image tags and creates or updates the matching
+GitHub release with a `pocketcoder-image-digests.txt` asset and the exact
+server and workspace digest references in the release notes. Pin a deployment
+to the recorded value, for example:
+
+```yaml
+services:
+  server:
+    image: ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>
+```
+
+While the repository/package is private, authenticate Docker with a classic
+GitHub personal access token that has `read:packages`; authorize the token for
+organization SSO when required:
+
+```sh
+export CR_PAT='<classic-personal-access-token>'
+printf '%s' "$CR_PAT" | docker login ghcr.io -u '<github-user>' --password-stdin
+docker pull ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>
+```
+
+GitHub Actions in another repository can use `GITHUB_TOKEN` after that
+repository has been granted read access to the package; give the job
+`packages: read` and log in with `github.actor` plus
+`secrets.GITHUB_TOKEN`. Do not put registry tokens into templates, launch
+input, or workspace images.
 
 Build locally:
 
@@ -56,6 +85,15 @@ export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
 export POCKETCODER_HOST_DATA_ROOT=/absolute/host/path/pocketcoder-data
 mkdir -p "$POCKETCODER_HOST_DATA_ROOT"/{input,workspaces,checkpoints}
 docker compose -f deploy/compose/docker-compose.yaml --profile full up -d
+```
+
+Set `POCKETCODER_SERVER_IMAGE` to an exact release digest and use `--no-build`
+to consume the published control plane without a local checkout build:
+
+```sh
+export POCKETCODER_SERVER_IMAGE='ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>'
+docker compose -f deploy/compose/docker-compose.yaml --profile full pull server
+docker compose -f deploy/compose/docker-compose.yaml --profile full up -d --no-build server
 ```
 
 `POCKETCODER_HOST_DATA_ROOT` must be absolute and mounted at the identical
@@ -104,6 +142,21 @@ server replica—the connection hub and scheduler are intentionally
 single-active. Workspace Jobs use the unprivileged `pocketcoder-workspace`
 service account, not the controller account.
 
+Memory-backed writable paths are mounted with the template uid/gid. Kubernetes
+Jobs set pod `fsGroup` to the template gid with
+`fsGroupChangePolicy: OnRootMismatch`; Docker tmpfs mounts set `uid`, `gid`,
+and `mode=0700`. Do not rely on image-directory ownership beneath an
+`emptyDir` or tmpfs mount.
+
+Run the real-cluster ownership probe against the production storage/runtime
+context before rollout:
+
+```sh
+POCKETCODER_KUBERNETES_CONFORMANCE=1 \
+POCKETCODER_KUBERNETES_NAMESPACE=pocketcoder \
+bun test packages/drivers/src/kubernetes.test.ts
+```
+
 With `POCKETCODER_SECRET_PROVIDER=kubernetes`, a template value
 `secretRef:git-credentials/token` projects key `token` from Secret
 `git-credentials` as a read-only file. Secret names/values are not stored in
@@ -123,7 +176,7 @@ Runtime queries are schema-qualified, while generated Drizzle migrations run
 with `search_path` pinned to the configured schema on a reserved connection.
 Pocketcoder never touches `public`, other schemas, extensions, or application
 tables, and creates no cross-schema dependencies. Migrations run under a
-schema-scoped advisory lock via `pocketcoderctl db migrate` (the server also
+schema-scoped advisory lock via `pcd db migrate` (the server also
 migrates on startup). Recommended roles: a migration role owning the schema,
 an application role with connect/usage/DML only.
 
@@ -177,6 +230,6 @@ an application role with connect/usage/DML only.
   disaster recovery unless the checkpoint root and PostgreSQL are backed up
   together.
 - **Retention**: the server sweeps expired ready checkpoints every minute.
-  `pocketcoderctl storage doctor|list-orphans|prune` provides explicit
+  `pcd storage doctor|list-orphans|prune` provides explicit
   inventory and maintenance; unknown physical objects are reported and never
   auto-deleted.

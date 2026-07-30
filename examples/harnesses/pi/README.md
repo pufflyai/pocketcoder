@@ -89,5 +89,5 @@ image digest and gateway model. The local runner replaces both in a generated
 template. For a deployed setup, build from the repository root with
 `docker build -f examples/harnesses/pi/Dockerfile -t pocketcoder-pi:dev .`,
 push the image, replace `spec.image` with the registry digest, set the
-gateway/model fields, validate with `pocketcoderctl templates validate`, and
+gateway/model fields, validate with `pcd templates validate`, and
 mount the resulting template into `POCKETCODER_TEMPLATE_DIR`.

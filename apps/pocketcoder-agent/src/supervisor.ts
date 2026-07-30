@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { open, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 import {
 	type AgentFrame,
 	type ExecSpec,
@@ -25,6 +27,7 @@ export const AGENT_VERSION = "0.1.0";
 export const EXIT_SETUP_FAILED = 30;
 export const EXIT_REGISTRATION_FAILED = 31;
 export const EXIT_PROTOCOL_ERROR = 32;
+export const EXIT_WRITABLE_MEMORY_FAILED = 33;
 
 const LOG_CHUNK_LIMIT = 32 * 1024;
 const HEALTH_INTERVAL_MS = 5000;
@@ -33,6 +36,83 @@ type ChildPhase = "starting" | "setup" | "running" | "exited" | "terminating";
 
 interface AgentApiStatus {
 	state: "unknown" | "stable" | "running";
+}
+
+export async function verifyWritableMemoryPaths(paths: string[]): Promise<void> {
+	for (const path of paths) {
+		const probePath = join(path, `.pocketcoder-write-probe-${randomUUID()}`);
+		const expected = randomUUID();
+		let handle: Awaited<ReturnType<typeof open>> | null = null;
+		try {
+			handle = await open(probePath, "wx", 0o600);
+			await handle.writeFile(expected, "utf8");
+			await handle.sync();
+			await handle.close();
+			handle = null;
+			const actual = await readFile(probePath, "utf8");
+			if (actual !== expected) {
+				throw new Error("read-back content did not match");
+			}
+			await rm(probePath);
+		} catch (error) {
+			throw new Error(
+				`writable memory preflight failed for ${path}: ${
+					error instanceof Error ? error.message : "unknown error"
+				}`,
+				{ cause: error },
+			);
+		} finally {
+			await handle?.close().catch(() => {});
+			await rm(probePath, { force: true }).catch(() => {});
+		}
+	}
+}
+
+export async function pumpLineFramedText(
+	stream: ReadableStream<Uint8Array>,
+	emit: (text: string) => void,
+	capture?: (value: Uint8Array) => void,
+): Promise<void> {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	let pending = "";
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			capture?.(value);
+			pending += decoder.decode(value, { stream: true });
+			let newline = pending.indexOf("\n");
+			while (newline >= 0) {
+				emit(pending.slice(0, newline + 1));
+				pending = pending.slice(newline + 1);
+				newline = pending.indexOf("\n");
+			}
+		}
+	} catch {
+		// Stream ended with the process.
+	} finally {
+		pending += decoder.decode();
+		if (pending !== "") emit(pending);
+	}
+}
+
+export function splitUtf8Chunks(text: string, maxBytes = LOG_CHUNK_LIMIT): string[] {
+	const chunks: string[] = [];
+	let chunk = "";
+	let chunkBytes = 0;
+	for (const character of text) {
+		const bytes = Buffer.byteLength(character);
+		if (chunkBytes + bytes > maxBytes && chunk !== "") {
+			chunks.push(chunk);
+			chunk = "";
+			chunkBytes = 0;
+		}
+		chunk += character;
+		chunkBytes += bytes;
+	}
+	if (chunk !== "") chunks.push(chunk);
+	return chunks;
 }
 
 export async function supervise(inputPath: string): Promise<number> {
@@ -91,6 +171,16 @@ class Supervisor {
 				phase: "validating",
 				capability: exec.persistence.conversation_restore,
 			});
+		}
+		const memoryOk = await this.probeWritableMemory(exec);
+		if (!memoryOk) {
+			this.sendFrame("process_state", {
+				phase: "exited",
+				exit_code: EXIT_WRITABLE_MEMORY_FAILED,
+				setup_step: this.failedSetupStep ?? "writable-memory-preflight",
+			});
+			await this.flushAndClose();
+			return EXIT_WRITABLE_MEMORY_FAILED;
 		}
 		const setupOk = await this.runSetup(exec);
 		if (!setupOk) {
@@ -188,6 +278,9 @@ class Supervisor {
 				if (frame.payload.reconnect_credential) {
 					this.reconnectCredential = frame.payload.reconnect_credential;
 				}
+				if (this.agentapi.state !== "unknown") {
+					this.sendFrame("agent_state", { state: this.agentapi.state });
+				}
 				if (!this.exec) {
 					this.exec = frame.payload.exec;
 					this.execReady();
@@ -222,6 +315,17 @@ class Supervisor {
 
 	private failedSetupStep: string | null = null;
 
+	private async probeWritableMemory(exec: ExecSpec): Promise<boolean> {
+		try {
+			await verifyWritableMemoryPaths(exec.security.writable_memory_paths);
+			return true;
+		} catch (error) {
+			this.failedSetupStep = "writable-memory-preflight";
+			this.log(error instanceof Error ? error.message : "writable memory preflight failed");
+			return false;
+		}
+	}
+
 	private async runSetup(exec: ExecSpec): Promise<boolean> {
 		for (const step of exec.setup) {
 			this.childPhase = "setup";
@@ -241,11 +345,14 @@ class Supervisor {
 				stdout: "pipe",
 				stderr: "pipe",
 			});
-			this.pumpStream(proc.stdout, "stdout");
-			this.pumpStream(proc.stderr, "stderr");
+			const pumps = [
+				this.pumpStream(proc.stdout, "stdout"),
+				this.pumpStream(proc.stderr, "stderr"),
+			];
 			const timeout = setTimeout(() => proc.kill("SIGKILL"), step.timeoutSeconds * 1000);
 			const code = await proc.exited;
 			clearTimeout(timeout);
+			await Promise.all(pumps);
 			if (code !== 0) {
 				this.failedSetupStep = step.name;
 				this.log(`setup step ${step.name} failed with exit code ${code}`);
@@ -305,14 +412,17 @@ class Supervisor {
 				stdout: "pipe",
 				stderr: "pipe",
 			});
-			this.pumpStream(proc.stdout, "stdout");
-			this.pumpStream(proc.stderr, "stderr");
+			const pumps = [
+				this.pumpStream(proc.stdout, "stdout"),
+				this.pumpStream(proc.stderr, "stderr"),
+			];
 			const timeout = setTimeout(
 				() => proc.kill("SIGKILL"),
 				Math.min(deadlineMs, hook.timeout_seconds * 1000),
 			);
 			const code = await proc.exited;
 			clearTimeout(timeout);
+			await Promise.all(pumps);
 			this.sendFrame("checkpoint_status", {
 				operation_id: operationId,
 				phase: code === 0 ? "quiesced" : "failed",
@@ -352,11 +462,14 @@ class Supervisor {
 			stderr: "pipe",
 		});
 		this.child = child;
-		this.pumpStream(child.stdout, "stdout");
-		this.pumpStream(child.stderr, "stderr");
+		const pumps = [
+			this.pumpStream(child.stdout, "stdout"),
+			this.pumpStream(child.stderr, "stderr"),
+		];
 		void child.exited.then(async (code) => {
 			this.childPhase = "exited";
 			this.childExit = code;
+			await Promise.all(pumps);
 			this.sendFrame("process_state", { phase: "exited", exit_code: code });
 			await this.flushAndClose();
 			this.exitWith(code);
@@ -409,6 +522,9 @@ class Supervisor {
 			});
 			return;
 		}
+		const beginsAgentTurn =
+			request.service === "agent" && request.method === "POST" && request.path === "/message";
+		if (beginsAgentTurn) this.setAgentState("running");
 		const url = new URL(request.path, service.baseUrl);
 		for (const [key, value] of Object.entries(request.query)) {
 			url.searchParams.set(key, value);
@@ -437,6 +553,7 @@ class Supervisor {
 					: {},
 				...(body.byteLength > 0 ? { body_b64: body.toString("base64") } : {}),
 			});
+			if (beginsAgentTurn && exec) void this.probeService(exec, "agent", true);
 		} catch (err) {
 			this.sendFrame("proxy_response", {
 				request_id: request.request_id,
@@ -448,6 +565,12 @@ class Supervisor {
 	}
 
 	// --- Health and heartbeat ---
+
+	private setAgentState(state: "running" | "stable"): void {
+		if (this.agentapi.state === state) return;
+		this.agentapi = { state };
+		this.sendFrame("agent_state", { state });
+	}
 
 	private startHealthLoop(exec: ExecSpec): void {
 		const timer = setInterval(() => {
@@ -478,7 +601,7 @@ class Supervisor {
 			if (res.ok && name === "agent") {
 				const body = (await res.json().catch(() => null)) as { status?: string } | null;
 				if (body?.status === "running" || body?.status === "stable") {
-					this.agentapi = { state: body.status };
+					this.setAgentState(body.status);
 				}
 			}
 		} catch {
@@ -502,28 +625,26 @@ class Supervisor {
 
 	// --- Logs ---
 
-	private pumpStream(stream: ReadableStream<Uint8Array> | null, name: "stdout" | "stderr"): void {
+	private async pumpStream(
+		stream: ReadableStream<Uint8Array> | null,
+		name: "stdout" | "stderr",
+	): Promise<void> {
 		if (!stream) return;
-		void (async () => {
-			const reader = stream.getReader();
-			try {
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					if (name === "stdout") this.captureOutputs(value);
-					for (let offset = 0; offset < value.length; offset += LOG_CHUNK_LIMIT) {
-						const chunk = value.subarray(offset, offset + LOG_CHUNK_LIMIT);
-						this.sendFrame("log_chunk", {
-							stream: name,
-							content_b64: Buffer.from(chunk).toString("base64"),
-							occurred_at: new Date().toISOString(),
-						});
-					}
-				}
-			} catch {
-				// Stream ended with the process.
-			}
-		})();
+		await pumpLineFramedText(
+			stream,
+			(text) => this.emitLogText(name, text),
+			name === "stdout" ? (value) => this.captureOutputs(value) : undefined,
+		);
+	}
+
+	private emitLogText(stream: "stdout" | "stderr", text: string): void {
+		for (const chunk of splitUtf8Chunks(text)) {
+			this.sendFrame("log_chunk", {
+				stream,
+				content_b64: Buffer.from(chunk).toString("base64"),
+				occurred_at: new Date().toISOString(),
+			});
+		}
 	}
 
 	private outputBuffer = "";

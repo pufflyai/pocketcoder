@@ -19,6 +19,13 @@ interface AgentApiMessages {
 	messages?: unknown;
 }
 
+interface WorkspaceChange {
+	cursor?: unknown;
+	workspace?: {
+		agent_state?: unknown;
+	};
+}
+
 type FetchLike = typeof fetch;
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -62,6 +69,16 @@ function isAgentMessage(message: AgentApiMessage): boolean {
 	return message.role === "agent" || message.role === "assistant";
 }
 
+function changesUrlFor(serviceUrl: string): string | undefined {
+	const url = new URL(serviceUrl);
+	const match = url.pathname.match(/^(.*\/v1\/workspaces\/[^/]+)\/services\/agent$/);
+	if (!match) return undefined;
+	url.pathname = `${match[1]}/changes`;
+	url.search = "";
+	url.hash = "";
+	return url.toString();
+}
+
 async function responseError(response: Response): Promise<string> {
 	const body = (await response.text()).trim();
 	return body ? `${response.status} ${body.slice(0, 1000)}` : String(response.status);
@@ -73,6 +90,7 @@ export class RemoteAgentClient {
 	readonly pollIntervalMs: number;
 	readonly timeoutMs: number;
 	readonly fetchImpl: FetchLike;
+	private changesUrl: string | undefined;
 
 	constructor(config: RemoteAgentClientConfig, fetchImpl: FetchLike = fetch) {
 		this.serviceUrl = config.serviceUrl.replace(/\/$/, "");
@@ -80,6 +98,7 @@ export class RemoteAgentClient {
 		this.pollIntervalMs = config.pollIntervalMs ?? 250;
 		this.timeoutMs = config.timeoutMs ?? 600_000;
 		this.fetchImpl = fetchImpl;
+		this.changesUrl = changesUrlFor(this.serviceUrl);
 	}
 
 	private async request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -113,9 +132,44 @@ export class RemoteAgentClient {
 		return body.status;
 	}
 
+	private async workspaceChange(
+		after: number,
+		waitSeconds: number,
+		signal?: AbortSignal,
+	): Promise<{ cursor: number; agentState: string } | undefined> {
+		if (!this.changesUrl) return undefined;
+		const url = new URL(this.changesUrl);
+		url.searchParams.set("after", String(after));
+		url.searchParams.set("wait", String(waitSeconds));
+		const response = await this.fetchImpl(url, {
+			headers: { authorization: `Bearer ${this.key}` },
+			signal,
+		});
+		if (response.status === 404) {
+			this.changesUrl = undefined;
+			return undefined;
+		}
+		if (!response.ok) {
+			throw new Error(`PocketCoder changes request failed: ${await responseError(response)}`);
+		}
+		const body = (await response.json()) as WorkspaceChange;
+		if (
+			typeof body.cursor !== "number" ||
+			!isRecord(body.workspace) ||
+			(body.workspace.agent_state !== "unknown" &&
+				body.workspace.agent_state !== "running" &&
+				body.workspace.agent_state !== "stable")
+		) {
+			throw new Error("PocketCoder changes response was malformed");
+		}
+		return { cursor: body.cursor, agentState: body.workspace.agent_state };
+	}
+
 	async send(prompt: string, signal?: AbortSignal): Promise<string> {
 		const before = await this.messages(signal);
 		const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
+		const baselineChange = await this.workspaceChange(0, 0, signal);
+		let changeCursor = baselineChange?.cursor ?? 0;
 		const response = await this.request("/message", {
 			method: "POST",
 			body: JSON.stringify({ content: prompt, type: "user" }),
@@ -127,12 +181,21 @@ export class RemoteAgentClient {
 
 		const deadline = Date.now() + this.timeoutMs;
 		while (Date.now() < deadline) {
-			const [status, messages] = await Promise.all([this.status(signal), this.messages(signal)]);
+			const remainingMs = deadline - Date.now();
+			const change = await this.workspaceChange(
+				changeCursor,
+				Math.max(1, Math.min(30, Math.ceil(remainingMs / 1000))),
+				signal,
+			);
+			if (change) changeCursor = change.cursor;
+			const [status, messages] = change
+				? [change.agentState, await this.messages(signal)]
+				: await Promise.all([this.status(signal), this.messages(signal)]);
 			const reply = messages
 				.filter((message) => message.id > baselineId && isAgentMessage(message))
 				.at(-1);
 			if (status === "stable" && reply?.content.trim()) return reply.content;
-			await delay(this.pollIntervalMs, signal);
+			if (!change) await delay(this.pollIntervalMs, signal);
 		}
 		throw new Error(`remote agent did not finish within ${this.timeoutMs}ms`);
 	}

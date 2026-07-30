@@ -1,11 +1,11 @@
-# pocketcoderctl reference
+# pcd reference
 
-`pocketcoderctl` is the operator and diagnostics CLI. Install it with
+`pcd` is the operator and diagnostics CLI. Install it with
 `bun add --global @pstdio/pocketcoder-cli`, run it via
-`bun run ctl -- <args>` from the
+`bun run pcd -- <args>` from the
 repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
-(`bun run --filter '@pstdio/pocketcoder-cli' compile`), or run it inside the server
-container (`bun /opt/pocketcoder/ctl.js`).
+(`bun run --filter '@pstdio/pocketcoder-cli' compile`), or invoke `pcd` inside
+the server container.
 
 Commands use one of two access paths:
 
@@ -17,7 +17,7 @@ Commands use one of two access paths:
 
 ## Environment files
 
-`pocketcoderctl` uses project-scoped environment discovery. It finds the
+`pcd` uses project-scoped environment discovery. It finds the
 nearest `.env` file, starting in the current directory and walking up through
 its parents. Variables already exported by the shell take precedence over
 values in the file.
@@ -28,30 +28,48 @@ changes the working directory for relative command arguments. Use
 already exported; relative paths are resolved from the work directory.
 
 ```sh
-pocketcoderctl --workdir ../my-project workspaces list --active
-pocketcoderctl --env-file .env.staging workspaces list --active
+pcd --workdir ../my-project workspaces list --active
+pcd --env-file .env.staging workspaces list --active
 ```
 
 Keep real keys out of version control. The repository's `.env.example` can be
 copied to `.env`, which is already ignored by Git.
 
+## Server process
+
+```sh
+pcd server start [--foreground] [--timeout-seconds 30]
+pcd server status [--json]
+pcd server stop [--timeout-seconds 15]
+```
+
+These commands manage only the PocketCoder server process. `start` reads the
+normal server environment and starts the same implementation as `bun run
+start`; it does not build images, generate templates, start a model gateway,
+migrate a database, create credentials, or launch a workspace.
+
+Background starts record an identity-protected PID and log path under
+`POCKETCODER_STATE_DIR`. `stop` refuses to signal a process whose identity does
+not match that record. Use `--foreground` to keep the server attached and stop
+it with Ctrl-C.
+
 ## Database and migrations
 
 ```sh
-pocketcoderctl db migrate     # apply pending migrations (schema-scoped advisory lock)
-pocketcoderctl db status      # per-migration applied/pending/DRIFTED
+pcd db migrate     # apply pending migrations (schema-scoped advisory lock)
+pcd db status      # per-migration applied/pending/DRIFTED
 ```
 
 ## Principals and machine keys
 
 ```sh
-pocketcoderctl principals create --name example-backend \
+pcd principals create --name example-backend \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read \
   --templates echo-harness,pi-harness    # or '*' for all templates
-pocketcoderctl principals list
+pcd principals list
 
-pocketcoderctl keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
-pocketcoderctl keys revoke --id <key-id>
+pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
+pcd keys revoke --id <key-id>
 ```
 
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
@@ -65,8 +83,8 @@ request.
 ## Templates
 
 ```sh
-pocketcoderctl templates validate examples/templates/*.json # validate checked-in examples offline
-pocketcoderctl templates list                               # versions + status from the database
+pcd templates validate examples/templates/*.json # validate checked-in examples offline
+pcd templates list                               # versions + status from the database
 ```
 
 There is deliberately no `templates create/push`: templates are reviewed
@@ -77,44 +95,51 @@ leaked machine key can never change what code runs. See
 ## Workspaces
 
 ```sh
-pocketcoderctl workspaces list [--active] [--state <state>] [--template <name>] \
+pcd workspaces list [--active] [--state <state>] [--template <name>] \
   [--external-id <id>] [--limit <n>] [--json]
-pocketcoderctl workspaces create --template <name> [--version <v>] \
-  [--external-id <id>] [--input '<json>'] [--source <alias>] [--revision <rev>]
-pocketcoderctl workspaces get --id <uuid>
-pocketcoderctl workspaces logs --id <uuid> [--after <seq>] [--limit <n>]
-pocketcoderctl workspaces cancel --id <uuid>
-pocketcoderctl workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
-pocketcoderctl workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
-pocketcoderctl workspaces restore --checkpoint <uuid> --external-id <new-id>
-pocketcoderctl workspaces recreate --id <source-uuid> --external-id <new-id>
-pocketcoderctl workspaces outputs --id <uuid>
+pcd workspaces create --template <name> [--version <v>] \
+  [--external-id <id>] [--input '<json>'] [--source <alias>] [--revision <rev>] \
+  [--wait] [--wait-timeout-seconds 300] [--cancel-on-exit] [--json]
+pcd workspaces get --id <uuid>
+pcd workspaces logs --id <uuid> [--after <seq>] [--limit <n>]
+pcd workspaces cancel --id <uuid>
+pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
+pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \
+  [--poll-interval-ms 500] [--response-timeout-seconds 600] [--cancel-on-exit]
+pcd workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
+pcd workspaces restore --checkpoint <uuid> --external-id <new-id>
+pcd workspaces recreate --id <source-uuid> --external-id <new-id>
+pcd workspaces outputs --id <uuid>
 ```
 
 - `--active` filters to nonterminal states (`queued`, `provisioning`,
   `connected`, `ready`, `terminating`).
 - `create` uses `--external-id` as both the caller task identity and the
-  idempotency key (a `ctl-<uuid>` is generated when omitted); repeating the
+  idempotency key (a `pcd-<uuid>` is generated when omitted); repeating the
   same external id with the same body returns the existing workspace.
+- `create --wait` follows the durable workspace change cursor until `ready`;
+  terminal launch failures include their bounded redacted failure log.
 - `--input` is the opaque `launch_input` JSON delivered to the harness in
   memory as `POCKETCODER_LAUNCH_INPUT`.
 - `cancel` is idempotent and never creates a replacement workspace.
 - `attach` stores only a message cursor in the local state directory (mode
   `0600`); it never stores a supervisor/reconnect credential.
+- `chat` uses the same allowlisted AgentAPI message routes for repeated turns.
+  Ctrl-C/EOF detaches without canceling unless `--cancel-on-exit` is supplied.
 - `preserve` ends the source execution. `restore` and `recreate` always create
   a new execution and accept a caller-chosen external ID.
 
 ## Checkpoints and storage
 
 ```sh
-pocketcoderctl checkpoints list --workspace <uuid> [--state ready] [--json]
-pocketcoderctl checkpoints get --id <uuid>
-pocketcoderctl checkpoints verify --id <uuid>
-pocketcoderctl checkpoints delete --id <uuid>
+pcd checkpoints list --workspace <uuid> [--state ready] [--json]
+pcd checkpoints get --id <uuid>
+pcd checkpoints verify --id <uuid>
+pcd checkpoints delete --id <uuid>
 
-pocketcoderctl storage doctor
-pocketcoderctl storage list-orphans
-pocketcoderctl storage prune
+pcd storage doctor
+pcd storage list-orphans
+pcd storage prune
 ```
 
 Storage commands require an `admin` key. `list-orphans` reports opaque
@@ -124,10 +149,13 @@ physical IDs that have no metadata but never deletes them automatically;
 ## Doctor
 
 ```sh
-pocketcoderctl doctor --template <name>
+pcd doctor --template <name> [--turn-timeout-seconds 60]
 ```
 
-Creates a probe workspace, waits up to five minutes for `ready`, performs a
-`GET /status` through the service relay, prints the result, and cancels the
-probe (also on failure or timeout). Exit code 0 means the entire path — API,
-store, driver, container, supervisor, harness, relay — works.
+Creates a probe workspace, waits up to five minutes for `ready`, validates
+`GET /status`, and requires a nonce-bearing message to produce its correlated
+agent response before the turn timeout. The supervisor first proves every
+declared writable memory path can create, sync, read, and remove a sentinel.
+The probe is canceled on success, failure, or timeout; failures print the
+workspace log tail. Exit code 0 means the entire path — API, store, driver,
+container, writable mounts, supervisor, harness, and relay — works.

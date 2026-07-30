@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
+import { buildLocalImage } from "../local/runtime";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
 
 const ROOT = resolve(import.meta.dir, "../..");
@@ -184,26 +185,14 @@ try {
 			"--outdir",
 			"deploy/image/dist",
 		]);
-		await command(["docker", "build", "--tag", localImage, "deploy/image"]);
-	} else {
-		await command([
-			"docker",
-			"build",
-			"--file",
-			"examples/harnesses/pi/Dockerfile",
-			"--tag",
-			localImage,
-			".",
-		]);
 	}
-	const imageId = (
-		await command(["docker", "image", "inspect", localImage, "--format", "{{.Id}}"], {
-			quiet: true,
-		})
-	).stdout;
-	if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) {
-		throw new Error(`docker returned an invalid local image ID: ${imageId}`);
-	}
+	const { imageId } = await buildLocalImage({
+		root: ROOT,
+		imageTag: localImage,
+		context: harness === "echo" ? "deploy/image" : ".",
+		...(harness === "pi" ? { dockerfile: "examples/harnesses/pi/Dockerfile" } : {}),
+		command,
+	});
 
 	const templatePath =
 		harness === "pi"
@@ -288,7 +277,7 @@ try {
 		.split("\n")
 		.map((line) => line.trim())
 		.find((line) => line.startsWith("pkt_"));
-	if (!key) throw new Error("pocketcoderctl did not return a machine key");
+	if (!key) throw new Error("pcd did not return a machine key");
 
 	const serverPort = freePort();
 	serverProcess = Bun.spawn(["bun", "apps/pocketcoder-server/src/index.ts"], {

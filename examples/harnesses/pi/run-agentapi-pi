@@ -7,7 +7,12 @@ set -eu
 PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/home/agent/.pi/agent}"
 PI_PROVIDER="${PI_GATEWAY_PROVIDER:-pocketcoder-gateway}"
 PI_API="${PI_GATEWAY_API:-openai-completions}"
-PI_GATEWAY_BEARER="${PI_GATEWAY_BEARER:-pocketcoder-local-gateway}"
+PI_GATEWAY_BEARER_FILE="${PI_GATEWAY_BEARER_FILE:-/run/pocketcoder/secrets/pi-gateway%2Fbearer}"
+if [ -f "$PI_GATEWAY_BEARER_FILE" ]; then
+	PI_GATEWAY_BEARER="$(cat "$PI_GATEWAY_BEARER_FILE")"
+else
+	PI_GATEWAY_BEARER="${PI_GATEWAY_BEARER:-pocketcoder-local-gateway}"
+fi
 PI_CONTEXT_WINDOW="${PI_GATEWAY_CONTEXT_WINDOW:-128000}"
 PI_MAX_TOKENS="${PI_GATEWAY_MAX_TOKENS:-16384}"
 AGENTAPI_PORT="${HARNESS_PORT:-3284}"
