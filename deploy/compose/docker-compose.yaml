@@ -26,6 +26,7 @@ services:
 
   server:
     profiles: ["full"]
+    image: ${POCKETCODER_SERVER_IMAGE:-pocketcoder-server:dev}
     build:
       context: ../..
       dockerfile: deploy/image/server.Dockerfile

@@ -91,9 +91,14 @@ function asJson<T>(value: unknown): T {
 	return value as T;
 }
 
+function asBoolean(value: unknown): boolean {
+	return value === true || value === 1 || value === "true";
+}
+
 export class PostgresStore implements Store {
 	private readonly sql: SQL;
 	private readonly schema: string;
+	private changeWaiters = new Map<string, Set<() => void>>();
 
 	constructor(databaseUrl: string, schema = "pocketcoder") {
 		this.schema = assertValidSchema(schema);
@@ -109,7 +114,18 @@ export class PostgresStore implements Store {
 	}
 
 	async close(): Promise<void> {
+		for (const waiters of this.changeWaiters.values()) {
+			for (const resolve of waiters) resolve();
+		}
+		this.changeWaiters.clear();
 		await this.sql.end();
+	}
+
+	private notifyWorkspaceChange(id: string): void {
+		const waiters = this.changeWaiters.get(id);
+		if (!waiters) return;
+		this.changeWaiters.delete(id);
+		for (const resolve of waiters) resolve();
 	}
 
 	// --- Templates ---
@@ -339,6 +355,11 @@ export class PostgresStore implements Store {
 			},
 			state: r.state as WorkspaceState,
 			reasonCode: (r.reason_code as ReasonCode | null) ?? null,
+			agentState: (r.agent_state as WorkspaceRow["agentState"] | null) ?? "unknown",
+			changeSeq: Number(r.change_seq ?? 1),
+			failureLogTail: (r.failure_log_tail as string | null) ?? null,
+			failureLogTailTruncated: asBoolean(r.failure_log_tail_truncated),
+			failureLastLogSeq: r.failure_last_log_seq == null ? null : Number(r.failure_last_log_seq),
 			terminalIntent: (r.terminal_intent as WorkspaceState | null) ?? null,
 			launchInput: r.launch_input == null ? null : asJson(r.launch_input),
 			providerKind: (r.provider_kind as string | null) ?? null,
@@ -538,6 +559,10 @@ export class PostgresStore implements Store {
 		lastActivityAt: "last_activity_at",
 		launchAttempts: "launch_attempts",
 		health: "health",
+		agentState: "agent_state",
+		failureLogTail: "failure_log_tail",
+		failureLogTailTruncated: "failure_log_tail_truncated",
+		failureLastLogSeq: "failure_last_log_seq",
 		resolvedSource: "resolved_source",
 		latestCheckpointId: "latest_checkpoint_id",
 		outputs: "outputs",
@@ -548,6 +573,19 @@ export class PostgresStore implements Store {
 		"providerRef",
 		"health",
 		"resolvedSource",
+		"outputs",
+	]);
+
+	private static readonly CHANGE_PATCH_KEYS = new Set([
+		"connectedAt",
+		"disconnectedAt",
+		"health",
+		"agentState",
+		"failureLogTail",
+		"failureLogTailTruncated",
+		"failureLastLogSeq",
+		"resolvedSource",
+		"latestCheckpointId",
 		"outputs",
 	]);
 
@@ -570,15 +608,60 @@ export class PostgresStore implements Store {
 	async updateWorkspace(id: string, patch: WorkspacePatch, at: Date): Promise<void> {
 		const params: unknown[] = [id, at];
 		const sets = this.patchSql(patch, params);
+		const bumpsChange = Object.keys(patch).some((key) => PostgresStore.CHANGE_PATCH_KEYS.has(key));
 		await this.sql.unsafe(
-			`UPDATE ${this.t("workspaces")} SET updated_at = $2${sets.length ? `, ${sets.join(", ")}` : ""}
+			`UPDATE ${this.t("workspaces")} SET updated_at = $2${
+				bumpsChange ? ", change_seq = change_seq + 1" : ""
+			}${sets.length ? `, ${sets.join(", ")}` : ""}
 			 WHERE id = $1`,
 			params,
 		);
+		if (bumpsChange) this.notifyWorkspaceChange(id);
+	}
+
+	async waitForWorkspaceChange(
+		id: string,
+		afterSeq: number,
+		timeoutMs: number,
+		signal?: AbortSignal,
+	): Promise<void> {
+		if (timeoutMs <= 0) return;
+		await new Promise<void>((resolve, reject) => {
+			const waiters = this.changeWaiters.get(id) ?? new Set<() => void>();
+			let timer: ReturnType<typeof setTimeout>;
+			const cleanup = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener("abort", abort);
+				waiters.delete(settle);
+				if (waiters.size === 0) this.changeWaiters.delete(id);
+			};
+			const settle = () => {
+				cleanup();
+				resolve();
+			};
+			const abort = () => {
+				cleanup();
+				reject(signal?.reason ?? new Error("workspace change wait aborted"));
+			};
+			const fail = (error: unknown) => {
+				cleanup();
+				reject(error);
+			};
+			waiters.add(settle);
+			this.changeWaiters.set(id, waiters);
+			timer = setTimeout(settle, timeoutMs);
+			if (signal?.aborted) abort();
+			else signal?.addEventListener("abort", abort, { once: true });
+			void this.getWorkspace(id)
+				.then((workspace) => {
+					if (!workspace || workspace.changeSeq > afterSeq) settle();
+				})
+				.catch(fail);
+		});
 	}
 
 	async transition(id: string, req: TransitionRequest): Promise<WorkspaceRow | null> {
-		return await this.sql.begin(async (tx) => {
+		const workspace = await this.sql.begin(async (tx) => {
 			const rows = (await tx.unsafe(
 				`SELECT * FROM ${this.t("workspaces")} WHERE id = $1 FOR UPDATE`,
 				[id],
@@ -589,7 +672,7 @@ export class PostgresStore implements Store {
 			if (!canTransition(current.state, req.to)) return null;
 
 			const params: unknown[] = [id, req.to, req.at];
-			const sets = [`state = $2`, `updated_at = $3`];
+			const sets = [`state = $2`, `updated_at = $3`, "change_seq = change_seq + 1"];
 			if (req.reason !== undefined) {
 				params.push(req.reason);
 				sets.push(`reason_code = $${params.length}`);
@@ -622,6 +705,8 @@ export class PostgresStore implements Store {
 			await this.appendEventTx(tx, workspace, req.at);
 			return workspace;
 		});
+		if (workspace) this.notifyWorkspaceChange(id);
+		return workspace;
 	}
 
 	async listStateHistory(workspaceId: string): Promise<StateHistoryRow[]> {
@@ -1147,6 +1232,44 @@ export class PostgresStore implements Store {
 			occurredAt: asDate(r.occurred_at),
 			content: asBytes(r.content) ?? new Uint8Array(),
 		}));
+	}
+
+	async readLogTail(
+		workspaceId: string,
+		maxBytes: number,
+	): Promise<{ content: Uint8Array; truncated: boolean; lastSeq: number | null }> {
+		const stats = (await this.sql.unsafe(
+			`SELECT COALESCE(SUM(length(content)), 0)::bigint AS bytes,
+					MAX(seq)::bigint AS last_seq
+			 FROM ${this.t("workspace_logs")} WHERE workspace_id = $1`,
+			[workspaceId],
+		)) as Array<{ bytes: string | number; last_seq: string | number | null }>;
+		const totalBytes = Number(stats[0]?.bytes ?? 0);
+		const lastSeq = stats[0]?.last_seq == null ? null : Number(stats[0].last_seq);
+		if (totalBytes === 0) {
+			return { content: new Uint8Array(), truncated: false, lastSeq };
+		}
+		const rows = (await this.sql.unsafe(
+			`SELECT seq, content
+			 FROM (
+				SELECT seq, content,
+					SUM(length(content)) OVER (ORDER BY seq DESC) AS cumulative_bytes
+				FROM ${this.t("workspace_logs")}
+				WHERE workspace_id = $1
+			 ) tail
+			 WHERE cumulative_bytes - length(content) < $2
+			 ORDER BY seq ASC`,
+			[workspaceId, maxBytes],
+		)) as Row[];
+		const combined = Buffer.concat(
+			rows.map((row) => Buffer.from(asBytes(row.content) ?? new Uint8Array())),
+		);
+		const content = combined.byteLength > maxBytes ? combined.subarray(-maxBytes) : combined;
+		return {
+			content: Uint8Array.from(content),
+			truncated: totalBytes > maxBytes,
+			lastSeq,
+		};
 	}
 
 	// --- Outbox ---

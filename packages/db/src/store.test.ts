@@ -147,6 +147,15 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 				patch: { launchAttempts: 1 },
 			});
 			expect(provisioning?.state).toBe("provisioning");
+			const changeCursor = provisioning?.changeSeq ?? 0;
+			const changeWait = store.waitForWorkspaceChange(insert.workspace.id, changeCursor, 1000);
+			await store.updateWorkspace(
+				insert.workspace.id,
+				{ health: { agent: "healthy" } },
+				new Date(),
+			);
+			await changeWait;
+			expect((await store.getWorkspace(insert.workspace.id))?.changeSeq).toBe(changeCursor + 1);
 			// Illegal transition is refused.
 			expect(
 				await store.transition(insert.workspace.id, {
@@ -182,10 +191,19 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 					occurredAt: new Date(),
 					content: new TextEncoder().encode("hello"),
 				},
+				{
+					stream: "stderr",
+					occurredAt: new Date(),
+					content: new TextEncoder().encode("\nPermissionError: /home/onefin/.pi\n"),
+				},
 			]);
 			const logs = await store.readLogs(insert.workspace.id, 0, 10);
-			expect(logs.length).toBe(1);
+			expect(logs.length).toBe(2);
 			expect(new TextDecoder().decode(logs[0]?.content)).toBe("hello");
+			const tail = await store.readLogTail(insert.workspace.id, 24);
+			expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/onefin/.pi\n");
+			expect(tail.truncated).toBe(true);
+			expect(tail.lastSeq).toBe(2);
 
 			const storageId = randomUUID();
 			const now = new Date();

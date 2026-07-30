@@ -4,6 +4,8 @@ export interface OpenAIGatewayConfig {
 	organization?: string;
 	project?: string;
 	upstreamUrl?: string;
+	hostname?: string;
+	port?: number;
 }
 
 type FetchLike = typeof fetch;
@@ -55,8 +57,8 @@ export function createOpenAIGatewayHandler(
 
 export function startOpenAIGateway(config: OpenAIGatewayConfig): ReturnType<typeof Bun.serve> {
 	return Bun.serve({
-		hostname: "0.0.0.0",
-		port: 0,
+		hostname: config.hostname ?? "0.0.0.0",
+		port: config.port ?? 0,
 		fetch: createOpenAIGatewayHandler(config),
 	});
 }

@@ -63,6 +63,10 @@ export const ServiceHealthPayload = z.object({
 	detail: z.string().max(512).optional(),
 });
 
+export const AgentStatePayload = z.object({
+	state: z.enum(["running", "stable"]),
+});
+
 export const LogChunkPayload = z.object({
 	stream: z.enum(["stdout", "stderr", "runtime"]),
 	content_b64: z.string().max(87_400), // ~64 KiB decoded
@@ -109,6 +113,7 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
 	EnvelopeBase.extend({ type: z.literal("process_state"), payload: ProcessStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("service_health"), payload: ServiceHealthPayload }),
+	EnvelopeBase.extend({ type: z.literal("agent_state"), payload: AgentStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("log_chunk"), payload: LogChunkPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_response"), payload: ProxyResponsePayload }),
 	EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
@@ -131,6 +136,11 @@ export const ExecSpecSchema = z.object({
 	env: z.record(z.string(), z.string()),
 	services: z.record(z.string(), ServiceSchema),
 	timeouts: TimeoutsSchema,
+	security: z
+		.object({
+			writable_memory_paths: z.array(z.string()),
+		})
+		.default({ writable_memory_paths: [] }),
 	launch_mode: z.enum(LAUNCH_MODES).default("create"),
 	source: SourceDescriptorSchema.extend({
 		url: z.url(),

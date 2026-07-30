@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { redact } from "@pstdio/pocketcoder-auth";
 import {
 	type ProviderInput,
 	parseDurationMs,
@@ -12,7 +13,32 @@ import type {
 	WorkspaceSecretResolver,
 	WorkspaceStorageDriver,
 } from "./driver";
-import type { ActiveCounts, Store, WorkspaceRow } from "./types";
+import type { ActiveCounts, Store, WorkspacePatch, WorkspaceRow } from "./types";
+
+const FAILURE_LOG_TAIL_BYTES = 16 * 1024;
+
+export function decodeFailureLogTail(content: Uint8Array, truncated: boolean): string {
+	let start = 0;
+	if (truncated) {
+		while (start < content.byteLength && ((content[start] as number) & 0xc0) === 0x80) {
+			start += 1;
+		}
+	}
+	let text = new TextDecoder().decode(content.subarray(start));
+	if (truncated) {
+		const firstNewline = text.indexOf("\n");
+		if (firstNewline >= 0) text = text.slice(firstNewline + 1);
+	}
+	return redact(text);
+}
+
+function failureLogContent(error: unknown): Uint8Array {
+	const message = redact(error instanceof Error ? error.message : String(error));
+	const encoded = new TextEncoder().encode(`workspace launch failed: ${message}\n`);
+	if (encoded.byteLength <= FAILURE_LOG_TAIL_BYTES) return encoded;
+	const bounded = encoded.subarray(0, FAILURE_LOG_TAIL_BYTES - 1);
+	return new TextEncoder().encode(`${new TextDecoder().decode(bounded).replace(/\uFFFD$/, "")}\n`);
+}
 
 // Admission, expiry, and termination. One logical execution path: queued
 // workspaces launch through the configured driver in fair FIFO order within
@@ -83,6 +109,32 @@ export class Scheduler {
 
 	private report(context: string, err: unknown): void {
 		this.deps.onError?.(context, err);
+	}
+
+	private async captureLaunchFailure(
+		workspaceId: string,
+		error: unknown,
+		at: Date,
+	): Promise<WorkspacePatch> {
+		const { store } = this.deps;
+		try {
+			await store.appendLogs(workspaceId, [
+				{
+					stream: "runtime",
+					occurredAt: at,
+					content: failureLogContent(error),
+				},
+			]);
+			const tail = await store.readLogTail(workspaceId, FAILURE_LOG_TAIL_BYTES);
+			return {
+				failureLogTail: decodeFailureLogTail(tail.content, tail.truncated),
+				failureLogTailTruncated: tail.truncated,
+				failureLastLogSeq: tail.lastSeq,
+			};
+		} catch (captureError) {
+			this.report(`launch.log.${workspaceId}`, captureError);
+			return {};
+		}
 	}
 
 	async tick(): Promise<void> {
@@ -284,13 +336,30 @@ export class Scheduler {
 		} else {
 			await this.cleanupWorkspaceStorage(row);
 		}
+		let failurePatch: WorkspacePatch = {};
+		if (terminalState === "failed") {
+			try {
+				const tail = await store.readLogTail(row.id, FAILURE_LOG_TAIL_BYTES);
+				failurePatch = {
+					failureLogTail: decodeFailureLogTail(tail.content, tail.truncated),
+					failureLogTailTruncated: tail.truncated,
+					failureLastLogSeq: tail.lastSeq,
+				};
+			} catch (error) {
+				this.report(`finalize.log-tail.${row.id}`, error);
+			}
+		}
 		connections.close(row.id);
 		await store.transition(row.id, {
 			from: ["queued", "provisioning", "connected", "ready", "terminating"],
 			to: terminalState,
 			reason,
 			at,
-			patch: { launchInput: null, registrationDigest: null },
+			patch: {
+				launchInput: null,
+				registrationDigest: null,
+				...failurePatch,
+			},
 		});
 	}
 
@@ -488,12 +557,17 @@ export class Scheduler {
 					patch: { registrationDigest: null, registrationExpiresAt: null },
 				});
 			} else {
+				const failurePatch = await this.captureLaunchFailure(row.id, err, at);
 				await store.transition(row.id, {
 					from: ["provisioning"],
 					to: "failed",
 					reason: "launch_failed",
 					at,
-					patch: { launchInput: null, registrationDigest: null },
+					patch: {
+						launchInput: null,
+						registrationDigest: null,
+						...failurePatch,
+					},
 				});
 				await this.cleanupWorkspaceStorage(claimed);
 				await this.finishRestoreOperation(row, "failed", "restore_failed");

@@ -15,6 +15,17 @@ export function buildEventEnvelope(row: WorkspaceRow, occurredAt: Date): EventEn
 			external_id: row.externalId,
 			state: row.state,
 			reason_code: row.reasonCode,
+			agent_state: row.agentState,
+			change_cursor: row.changeSeq,
+			failure:
+				row.state === "failed" && row.reasonCode
+					? {
+							reason_code: row.reasonCode,
+							log_tail: row.failureLogTail ?? "",
+							log_tail_truncated: row.failureLogTailTruncated,
+							last_log_seq: row.failureLastLogSeq,
+						}
+					: null,
 			template: {
 				name: row.templateName,
 				version: row.templateVersion,

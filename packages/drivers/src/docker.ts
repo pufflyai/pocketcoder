@@ -136,7 +136,10 @@ export class DockerDriver implements WorkspaceDriver {
 			args.push("--read-only");
 		}
 		for (const path of spec.security.writableMemoryPaths) {
-			args.push("--tmpfs", `${path}:rw,noexec,nosuid,size=256m`);
+			args.push(
+				"--tmpfs",
+				`${path}:rw,noexec,nosuid,size=256m,uid=${spec.security.uid},gid=${spec.security.gid},mode=0700`,
+			);
 		}
 		if (this.opts.network) {
 			args.push("--network", this.opts.network);

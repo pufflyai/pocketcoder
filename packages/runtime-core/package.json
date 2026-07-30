@@ -25,6 +25,7 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
+		"@pstdio/pocketcoder-auth": "workspace:*",
 		"@pstdio/pocketcoder-contracts": "workspace:*"
 	},
 	"devDependencies": {

@@ -21,7 +21,7 @@ neither callers nor templates can select them.
 |-----------|---------|----------------|
 | pocketcoder-server | `apps/pocketcoder-server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
 | pocketcoder-agent | `apps/pocketcoder-agent` | PID 1 in every workspace: registration, setup commands, harness supervision, health probes, log forwarding, relay execution, TERM/KILL |
-| pocketcoderctl | `packages/cli` | Public bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, doctor |
+| pcd | `packages/cli` | Public bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, doctor |
 | contracts | `packages/contracts` | zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
 | db | `packages/db` | PostgreSQL store, Drizzle schema and generated migrations under an advisory lock |

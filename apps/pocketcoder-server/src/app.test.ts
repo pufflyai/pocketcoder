@@ -164,6 +164,9 @@ describe("workspace creation", () => {
 		};
 		expect(created.state).toBe("queued");
 		expect(created.template.digest.startsWith("sha256:")).toBe(true);
+		expect((created as { change_cursor?: number }).change_cursor).toBe(1);
+		expect((created as { agent_state?: string }).agent_state).toBe("unknown");
+		expect((created as { failure?: unknown }).failure).toBeNull();
 
 		const repeat = await app.request(
 			"/v1/workspaces",
@@ -204,6 +207,109 @@ describe("workspace creation", () => {
 			authed(token, { method: "POST", body: createBody() }),
 		);
 		expect(res.status).toBe(400);
+		expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
+			"Idempotency-Key header is required.",
+		);
+	});
+
+	test("long-polls a durable workspace change cursor", async () => {
+		const { app, store, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+		const createdRes = await app.request(
+			"/v1/workspaces",
+			authed(token, {
+				method: "POST",
+				headers: { "idempotency-key": "changes-1" },
+				body: createBody("changes-1"),
+			}),
+		);
+		const created = (await createdRes.json()) as { id: string; change_cursor: number };
+		const noChange = await app.request(
+			`/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=0`,
+			authed(token),
+		);
+		expect(noChange.status).toBe(200);
+		expect((await noChange.json()) as unknown).toMatchObject({
+			cursor: created.change_cursor,
+			changed: false,
+		});
+
+		const waitUrl = `/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=1`;
+		const waiting = [
+			app.request(waitUrl, authed(token)),
+			app.request(waitUrl, authed(token)),
+		] as const;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		await store.transition(created.id, {
+			from: ["queued"],
+			to: "canceled",
+			reason: "canceled_by_caller",
+			at: new Date(),
+		});
+		const [changed, secondChanged] = await Promise.all(waiting);
+		expect(changed.status).toBe(200);
+		expect(secondChanged.status).toBe(200);
+		const body = (await changed.json()) as {
+			cursor: number;
+			changed: boolean;
+			workspace: { state: string; change_cursor: number };
+		};
+		expect(body.changed).toBe(true);
+		expect(body.cursor).toBeGreaterThan(created.change_cursor);
+		expect(body.workspace.state).toBe("canceled");
+		expect(body.workspace.change_cursor).toBe(body.cursor);
+		expect((await secondChanged.json()) as unknown).toMatchObject({
+			cursor: body.cursor,
+			changed: true,
+			workspace: { state: "canceled" },
+		});
+	});
+
+	test("returns a bounded log tail with a failed workspace", async () => {
+		const server = await createTestServer();
+		const createdRes = await server.app.request(
+			"/v1/workspaces",
+			authed(server.token, {
+				method: "POST",
+				headers: { "idempotency-key": "failure-tail-1" },
+				body: createBody("failure-tail-1"),
+			}),
+		);
+		const created = (await createdRes.json()) as { id: string };
+		await server.scheduler.tick();
+		const row = await server.store.getWorkspace(created.id);
+		expect(row).not.toBeNull();
+		await server.store.appendLogs(created.id, [
+			{
+				stream: "stderr",
+				occurredAt: new Date(),
+				content: new TextEncoder().encode(`${"x".repeat(17_000)}\n`),
+			},
+			{
+				stream: "stderr",
+				occurredAt: new Date(),
+				content: new TextEncoder().encode(
+					"Authorization: Bearer should-not-leak\nTraceback (most recent call last):\nPermissionError: /home/onefin/.pi\n",
+				),
+			},
+		]);
+		await server.scheduler.fail(row as NonNullable<typeof row>, "child_exit_failure", new Date());
+
+		const response = await server.app.request(`/v1/workspaces/${created.id}`, authed(server.token));
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as {
+			failure: {
+				reason_code: string;
+				log_tail: string;
+				log_tail_truncated: boolean;
+				last_log_seq: number;
+			};
+		};
+		expect(body.failure.reason_code).toBe("child_exit_failure");
+		expect(body.failure.log_tail).toContain("PermissionError: /home/onefin/.pi");
+		expect(body.failure.log_tail).not.toContain("should-not-leak");
+		expect(body.failure.log_tail).toContain("[redacted]");
+		expect(body.failure.log_tail_truncated).toBe(true);
+		expect(body.failure.last_log_seq).toBe(2);
 	});
 
 	test("unauthorized template returns 403, unknown 404, full queue 429", async () => {
@@ -463,8 +569,20 @@ describe("openapi", () => {
 		const { app } = await createTestServer();
 		const res = await app.request("/v1/openapi.json");
 		expect(res.status).toBe(200);
-		const doc = (await res.json()) as { paths: Record<string, unknown> };
+		const doc = (await res.json()) as {
+			paths: Record<
+				string,
+				{ post?: { parameters?: Array<{ name: string; in: string; required?: boolean }> } }
+			>;
+		};
 		expect(Object.keys(doc.paths)).toContain("/v1/workspaces");
 		expect(Object.keys(doc.paths)).toContain("/v1/templates");
+		expect(doc.paths["/v1/workspaces"]?.post?.parameters).toContainEqual(
+			expect.objectContaining({
+				name: "Idempotency-Key",
+				in: "header",
+				required: true,
+			}),
+		);
 	});
 });

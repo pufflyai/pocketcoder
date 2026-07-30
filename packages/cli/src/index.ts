@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { isScope } from "@pstdio/pocketcoder-contracts";
@@ -11,8 +10,16 @@ import { loadTemplateFile, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
 import { parse as parseDotenv } from "dotenv";
 import yargs, { type Argv } from "yargs";
+import {
+	printManagedServerStatus,
+	runManagedServer,
+	startManagedServer,
+	stopManagedServer,
+} from "./server-process";
+import { attachWorkspace, chatWorkspace } from "./workspace-chat";
+import { createWorkspace } from "./workspace-create";
 
-// pocketcoderctl: operator CLI. Key mutation and migrations use direct
+// pcd: operator CLI. Key mutation and migrations use direct
 // administrative database access; workspace inspection uses the REST API with
 // a scoped machine key.
 
@@ -38,7 +45,7 @@ function need(flags: Flags, key: string): string {
 }
 
 function fail(message: string): never {
-	console.error(`pocketcoderctl: ${message}`);
+	console.error(`pcd: ${message}`);
 	process.exit(1);
 }
 
@@ -131,25 +138,6 @@ async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
 	}
 }
 
-function cliCursorFile(): string {
-	const root =
-		process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder");
-	return join(root, "message-cursors.json");
-}
-
-function readCursors(path: string): Record<string, string | number> {
-	try {
-		return JSON.parse(readFileSync(path, "utf8")) as Record<string, string | number>;
-	} catch {
-		return {};
-	}
-}
-
-function writeCursors(path: string, cursors: Record<string, string | number>): void {
-	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-	writeFileSync(path, `${JSON.stringify(cursors, null, 2)}\n`, { mode: 0o600 });
-}
-
 function commandGroup(
 	parser: Argv,
 	name: string,
@@ -164,7 +152,7 @@ function commandGroup(
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: The yargs command tree is declarative and easier to audit in one place.
 export function createCli(argv: string[]): Argv {
 	let parser: Argv = yargs(argv)
-		.scriptName("pocketcoderctl")
+		.scriptName("pcd")
 		.usage("$0 <command>")
 		.parserConfiguration({ "camel-case-expansion": false })
 		.option("workdir", {
@@ -186,9 +174,43 @@ export function createCli(argv: string[]): Argv {
 				"  POCKETCODER_DATABASE_URL, POCKETCODER_DATABASE_SCHEMA (db/key/template commands)",
 				"  POCKETCODER_URL, POCKETCODER_KEY (workspace and doctor commands)",
 				"  POCKETCODER_AUTH_PEPPER (key issuance)",
+				"  POCKETCODER_STATE_DIR (managed server state and message cursors)",
 				"  Reads the nearest .env; exported values take precedence",
 			].join("\n"),
 		);
+
+	parser = commandGroup(parser, "server", "Manage only the PocketCoder server process", (group) =>
+		group
+			.command("start", "Start the configured PocketCoder server", (command) =>
+				command
+					.option("foreground", {
+						type: "boolean",
+						description: "Run attached until SIGINT or SIGTERM",
+					})
+					.option("timeout-seconds", {
+						type: "number",
+						default: 30,
+						description: "Maximum time to wait for server health",
+					}),
+			)
+			.command("status", "Show managed server process and health", (command) =>
+				command.option("json", { type: "boolean", description: "Print JSON" }),
+			)
+			.command("stop", "Gracefully stop the managed PocketCoder server", (command) =>
+				command.option("timeout-seconds", {
+					type: "number",
+					default: 15,
+					description: "Maximum time to wait for graceful shutdown",
+				}),
+			)
+			.command("run", false, (command) =>
+				command.option("instance-token", {
+					type: "string",
+					demandOption: true,
+					hidden: true,
+				}),
+			),
+	);
 
 	parser = commandGroup(parser, "db", "Manage database migrations", (group) =>
 		group
@@ -316,6 +338,23 @@ export function createCli(argv: string[]): Argv {
 					.option("revision", {
 						type: "string",
 						description: "Allowed Git branch, tag, or commit",
+					})
+					.option("wait", {
+						type: "boolean",
+						description: "Wait until the workspace is ready or terminal",
+					})
+					.option("wait-timeout-seconds", {
+						type: "number",
+						default: 300,
+						description: "Maximum time to wait for readiness",
+					})
+					.option("cancel-on-exit", {
+						type: "boolean",
+						description: "Cancel the workspace if waiting is interrupted",
+					})
+					.option("json", {
+						type: "boolean",
+						description: "Print only the final workspace resource as JSON",
 					}),
 			)
 			.command("get", "Get a workspace", (command) =>
@@ -373,6 +412,34 @@ export function createCli(argv: string[]): Argv {
 					.option("after", { type: "string" })
 					.option("message", { type: "string" })
 					.option("json", { type: "boolean" }),
+			)
+			.command("chat", "Hold an interactive AgentAPI conversation", (command) =>
+				command
+					.option("id", { type: "string", demandOption: true })
+					.option("after", { type: "string" })
+					.option("message", { type: "string" })
+					.option("follow", {
+						type: "boolean",
+						description: "Continue following messages until interrupted",
+					})
+					.option("json", {
+						type: "boolean",
+						description: "Print messages as newline-delimited JSON",
+					})
+					.option("poll-interval-ms", {
+						type: "number",
+						default: 500,
+						description: "Agent message polling interval",
+					})
+					.option("response-timeout-seconds", {
+						type: "number",
+						default: 600,
+						description: "Maximum time to wait for each agent response",
+					})
+					.option("cancel-on-exit", {
+						type: "boolean",
+						description: "Cancel the workspace when chat exits",
+					}),
 			),
 	);
 
@@ -404,11 +471,17 @@ export function createCli(argv: string[]): Argv {
 
 	return parser
 		.command("doctor", "Create, probe, and cancel a diagnostic workspace", (command) =>
-			command.option("template", {
-				type: "string",
-				demandOption: true,
-				description: "Template name",
-			}),
+			command
+				.option("template", {
+					type: "string",
+					demandOption: true,
+					description: "Template name",
+				})
+				.option("turn-timeout-seconds", {
+					type: "number",
+					default: 60,
+					description: "Maximum time to wait for the correlated diagnostic response",
+				}),
 		)
 		.demandCommand(1, "A command is required.")
 		.strict();
@@ -425,6 +498,31 @@ async function main(): Promise<void> {
 	const context = { group, action, positional, flags };
 	if (await dispatchCommand(context)) return;
 	fail(`unsupported command: ${[group, action].filter(Boolean).join(" ")}`);
+}
+
+async function handleServer({ group, action, flags }: CommandContext): Promise<boolean> {
+	if (group !== "server") return false;
+	const timeout =
+		typeof flags["timeout-seconds"] === "number" ? flags["timeout-seconds"] : undefined;
+	switch (action) {
+		case "start":
+			await startManagedServer({
+				foreground: flags.foreground === true,
+				...(timeout === undefined ? {} : { timeoutSeconds: timeout }),
+			});
+			return true;
+		case "status":
+			await printManagedServerStatus(flags.json === true);
+			return true;
+		case "stop":
+			await stopManagedServer(timeout === undefined ? {} : { timeoutSeconds: timeout });
+			return true;
+		case "run":
+			await runManagedServer(need(flags, "instance-token"));
+			return true;
+		default:
+			return false;
+	}
 }
 
 async function handleDatabase({ group, action }: CommandContext): Promise<boolean> {
@@ -636,45 +734,6 @@ async function listWorkspaces(flags: Flags): Promise<void> {
 	if (items.length === 0) console.log("(no workspaces)");
 }
 
-function parseLaunchInput(flags: Flags): Record<string, unknown> | undefined {
-	if (typeof flags.input !== "string") return undefined;
-	try {
-		return JSON.parse(flags.input) as Record<string, unknown>;
-	} catch {
-		fail("--input must be a JSON object");
-	}
-}
-
-async function createWorkspace(flags: Flags): Promise<void> {
-	const template = need(flags, "template");
-	const externalId =
-		typeof flags["external-id"] === "string" ? flags["external-id"] : `ctl-${randomUUID()}`;
-	const launchInput = parseLaunchInput(flags);
-	const response = await api("/v1/workspaces", {
-		method: "POST",
-		headers: { "idempotency-key": externalId },
-		body: JSON.stringify({
-			external_id: externalId,
-			template: {
-				name: template,
-				...(typeof flags.version === "string" ? { version: flags.version } : {}),
-			},
-			...(launchInput ? { launch_input: launchInput } : {}),
-			...(typeof flags.source === "string"
-				? {
-						source: {
-							kind: "git",
-							repository: flags.source,
-							revision: typeof flags.revision === "string" ? flags.revision : "main",
-						},
-					}
-				: {}),
-		}),
-	});
-	console.log(JSON.stringify(await response.json(), null, 2));
-	if (!response.ok) process.exit(1);
-}
-
 async function getWorkspace(flags: Flags): Promise<void> {
 	const response = await api(`/v1/workspaces/${need(flags, "id")}`);
 	console.log(JSON.stringify(await response.json(), null, 2));
@@ -707,7 +766,7 @@ async function handleWorkspaceCore(context: CommandContext): Promise<boolean> {
 	if (context.group !== "workspaces") return false;
 	const commands: Record<string, () => Promise<void>> = {
 		list: () => listWorkspaces(context.flags),
-		create: () => createWorkspace(context.flags),
+		create: () => createWorkspace(context.flags, { api, fail }),
 		get: () => getWorkspace(context.flags),
 		logs: () => readWorkspaceLogs(context.flags),
 		cancel: () => cancelWorkspace(context.flags),
@@ -773,60 +832,15 @@ async function handleWorkspacePersistence({
 	return false;
 }
 
-async function assertWorkspaceAttachable(id: string): Promise<void> {
-	const response = await api(`/v1/workspaces/${id}`);
-	const workspace = (await response.json()) as {
-		state?: string;
-		persistence?: { latest_checkpoint_id?: string | null };
-	};
-	if (!response.ok) fail(`workspace lookup failed (${response.status})`);
-	if (workspace.state === "ready") return;
-	const restore = workspace.persistence?.latest_checkpoint_id
-		? ` Restore with: pocketcoderctl workspaces restore --checkpoint ${workspace.persistence.latest_checkpoint_id} --external-id <new-id>`
-		: "";
-	fail(`workspace is ${workspace.state ?? "unavailable"}; it is not live.${restore}`);
-}
-
-async function sendWorkspaceMessage(id: string, message: unknown): Promise<void> {
-	if (typeof message !== "string") return;
-	const response = await api(`/v1/workspaces/${id}/services/agent/message`, {
-		method: "POST",
-		body: JSON.stringify({ content: message, type: "user" }),
-	});
-	if (!response.ok) fail(`message failed (${response.status}): ${await response.text()}`);
-}
-
-function printWorkspaceMessages(messages: unknown[], json: unknown): void {
-	if (json) {
-		console.log(JSON.stringify(messages, null, 2));
-		return;
-	}
-	for (const message of messages) console.log(JSON.stringify(message));
-	if (messages.length === 0) console.log("(no new messages)");
-}
-
-function messageCursor(messages: unknown[], after: string): string | number {
-	const last = messages.at(-1) as { id?: unknown } | undefined;
-	if (last && (typeof last.id === "number" || typeof last.id === "string")) return last.id;
-	return Number(after) + messages.length;
-}
-
 async function handleWorkspaceAttach({ group, action, flags }: CommandContext): Promise<boolean> {
 	if (group !== "workspaces" || action !== "attach") return false;
-	const id = need(flags, "id");
-	await assertWorkspaceAttachable(id);
-	await sendWorkspaceMessage(id, flags.message);
-	const cursorFile = cliCursorFile();
-	const cursors = readCursors(cursorFile);
-	const after = typeof flags.after === "string" ? flags.after : String(cursors[id] ?? 0);
-	const messagesRes = await api(
-		`/v1/workspaces/${id}/services/agent/messages?after=${encodeURIComponent(after)}`,
-	);
-	const messagesBody = (await messagesRes.json()) as { messages?: unknown[] };
-	if (!messagesRes.ok) fail(`message polling failed (${messagesRes.status})`);
-	const messages = messagesBody.messages ?? [];
-	printWorkspaceMessages(messages, flags.json);
-	writeCursors(cursorFile, { ...cursors, [id]: messageCursor(messages, after) });
+	await attachWorkspace(flags, { api, fail });
+	return true;
+}
+
+async function handleWorkspaceChat({ group, action, flags }: CommandContext): Promise<boolean> {
+	if (group !== "workspaces" || action !== "chat") return false;
+	await chatWorkspace(flags, { api, fail });
 	return true;
 }
 
@@ -923,10 +937,118 @@ async function handleStorage(context: CommandContext): Promise<boolean> {
 	return true;
 }
 
+interface DoctorWorkspaceResource {
+	state: string;
+	reason_code?: string | null;
+	failure?: { log_tail?: string } | null;
+}
+
+function doctorTurnTimeout(flags: Flags): number {
+	const timeout =
+		typeof flags["turn-timeout-seconds"] === "number"
+			? flags["turn-timeout-seconds"]
+			: Number(flags["turn-timeout-seconds"] ?? 60);
+	if (!Number.isInteger(timeout) || timeout < 1 || timeout > 300) {
+		fail("--turn-timeout-seconds must be an integer from 1 to 300");
+	}
+	return timeout;
+}
+
+async function waitForDoctorReady(workspaceId: string): Promise<void> {
+	const deadline = Date.now() + 5 * 60_000;
+	while (Date.now() < deadline) {
+		const response = await api(`/v1/workspaces/${workspaceId}`);
+		if (!response.ok) {
+			throw new Error(`workspace lookup failed (${response.status}): ${await response.text()}`);
+		}
+		const workspace = (await response.json()) as DoctorWorkspaceResource;
+		if (workspace.state === "ready") return;
+		if (["failed", "canceled", "expired", "preserved", "succeeded"].includes(workspace.state)) {
+			throw new Error(
+				`workspace reached ${workspace.state} (${workspace.reason_code ?? "no reason"})`,
+			);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+	}
+	throw new Error("workspace did not become ready within 5 minutes");
+}
+
+async function verifyDoctorStatus(workspaceId: string): Promise<void> {
+	const response = await api(`/v1/workspaces/${workspaceId}/services/agent/status`);
+	const text = await response.text();
+	console.log(`doctor: relay status ${response.status}: ${text}`);
+	if (!response.ok) throw new Error(`agent status probe failed (${response.status})`);
+	let body: { status?: unknown };
+	try {
+		body = JSON.parse(text) as { status?: unknown };
+	} catch {
+		throw new Error("agent status probe returned invalid JSON");
+	}
+	if (body.status !== "running" && body.status !== "stable") {
+		throw new Error(`agent status probe returned unknown status: ${JSON.stringify(body.status)}`);
+	}
+}
+
+function containsDoctorNonce(message: Record<string, unknown>, nonce: string): boolean {
+	const role = String(message.role ?? message.type ?? "").toLowerCase();
+	return !["user", "human"].includes(role) && JSON.stringify(message).includes(nonce);
+}
+
+async function runDoctorTurn(workspaceId: string, timeoutSeconds: number): Promise<void> {
+	const nonce = `pocketcoder-doctor-${randomUUID()}`;
+	console.log("doctor: sending a correlated request/response probe");
+	const messageResponse = await api(`/v1/workspaces/${workspaceId}/services/agent/message`, {
+		method: "POST",
+		body: JSON.stringify({
+			type: "user",
+			content: `Reply with exactly this diagnostic token: ${nonce}`,
+		}),
+	});
+	if (!messageResponse.ok) {
+		throw new Error(
+			`agent message probe failed (${messageResponse.status}): ${await messageResponse.text()}`,
+		);
+	}
+
+	const deadline = Date.now() + timeoutSeconds * 1000;
+	let after = "0";
+	while (Date.now() < deadline) {
+		const response = await api(
+			`/v1/workspaces/${workspaceId}/services/agent/messages?after=${encodeURIComponent(after)}`,
+		);
+		if (!response.ok) {
+			throw new Error(`agent messages probe failed (${response.status}): ${await response.text()}`);
+		}
+		const body = (await response.json()) as { messages?: Array<Record<string, unknown>> };
+		const messages = body.messages ?? [];
+		if (messages.some((message) => containsDoctorNonce(message, nonce))) return;
+		const last = messages.at(-1);
+		if (last && (typeof last.id === "string" || typeof last.id === "number")) {
+			after = String(last.id);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 500));
+	}
+	throw new Error(
+		`agent did not return the correlated diagnostic token within ${timeoutSeconds} seconds`,
+	);
+}
+
+async function printDoctorFailureTail(workspaceId: string): Promise<void> {
+	try {
+		const response = await api(`/v1/workspaces/${workspaceId}`);
+		if (!response.ok) return;
+		const body = (await response.json()) as DoctorWorkspaceResource;
+		if (body.failure?.log_tail) process.stderr.write(`${body.failure.log_tail}\n`);
+	} catch {
+		// The original diagnostic failure remains authoritative.
+	}
+}
+
 async function handleDoctor({ group, flags }: CommandContext): Promise<boolean> {
 	if (group !== "doctor") return false;
 	const template = need(flags, "template");
 	const externalId = `doctor-${randomUUID()}`;
+	const turnTimeoutSeconds = doctorTurnTimeout(flags);
 	console.log(`doctor: creating probe workspace from template ${template}`);
 	const createRes = await api("/v1/workspaces", {
 		method: "POST",
@@ -940,49 +1062,30 @@ async function handleDoctor({ group, flags }: CommandContext): Promise<boolean> 
 		fail(`create failed (${createRes.status}): ${await createRes.text()}`);
 	}
 	const workspace = (await createRes.json()) as { id: string };
-	console.log(`doctor: workspace ${workspace.id} queued; waiting for ready`);
-	const deadline = Date.now() + 5 * 60_000;
-	let ready = false;
-	let terminalState: string | null = null;
-	let terminalReason: string | null = null;
-	while (Date.now() < deadline) {
-		const res = await api(`/v1/workspaces/${workspace.id}`);
-		const body = (await res.json()) as {
-			state: string;
-			reason_code?: string;
-		};
-		if (body.state === "ready") {
-			ready = true;
-			break;
-		}
-		if (["failed", "canceled", "expired", "preserved"].includes(body.state)) {
-			terminalState = body.state;
-			terminalReason = body.reason_code ?? "no reason";
-			break;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 2000));
+	let failure: Error | null = null;
+	try {
+		console.log(`doctor: workspace ${workspace.id} queued; waiting for ready`);
+		await waitForDoctorReady(workspace.id);
+
+		console.log("doctor: workspace ready; probing agent status through the relay");
+		await verifyDoctorStatus(workspace.id);
+		await runDoctorTurn(workspace.id, turnTimeoutSeconds);
+		console.log("doctor: correlated agent response received");
+	} catch (error) {
+		failure = error instanceof Error ? error : new Error(String(error));
+		await printDoctorFailureTail(workspace.id);
+	} finally {
+		console.log("doctor: canceling probe workspace");
+		await api(`/v1/workspaces/${workspace.id}/cancel`, { method: "POST" }).catch(() => {});
 	}
-	if (!ready) {
-		// Never leak the probe workspace; cancel before reporting.
-		await api(`/v1/workspaces/${workspace.id}/cancel`, {
-			method: "POST",
-		}).catch(() => {});
-		if (terminalState) {
-			fail(`workspace reached ${terminalState} (${terminalReason})`);
-		}
-		fail("workspace did not become ready within 5 minutes (probe canceled)");
-	}
-	console.log("doctor: workspace ready; probing agent status through the relay");
-	const statusRes = await api(`/v1/workspaces/${workspace.id}/services/agent/status`);
-	console.log(`doctor: relay status ${statusRes.status}: ${await statusRes.text()}`);
-	console.log("doctor: canceling probe workspace");
-	await api(`/v1/workspaces/${workspace.id}/cancel`, { method: "POST" });
+	if (failure) fail(failure.message);
 	console.log("doctor: ok");
 	return true;
 }
 
 async function dispatchCommand(context: CommandContext): Promise<boolean> {
 	const handlers: CommandHandler[] = [
+		handleServer,
 		handleDatabase,
 		handlePrincipals,
 		handleKeys,
@@ -990,6 +1093,7 @@ async function dispatchCommand(context: CommandContext): Promise<boolean> {
 		handleWorkspaceCore,
 		handleWorkspacePersistence,
 		handleWorkspaceAttach,
+		handleWorkspaceChat,
 		handleCheckpoints,
 		handleStorage,
 		handleDoctor,
@@ -1002,7 +1106,7 @@ async function dispatchCommand(context: CommandContext): Promise<boolean> {
 
 if (import.meta.main) {
 	main().catch((err) => {
-		console.error(`pocketcoderctl: ${err instanceof Error ? err.message : err}`);
+		console.error(`pcd: ${err instanceof Error ? err.message : err}`);
 		process.exit(1);
 	});
 }

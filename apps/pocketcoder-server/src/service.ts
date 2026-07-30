@@ -3,6 +3,7 @@ import {
 	ApiError,
 	canonicalJson,
 	digestOf,
+	isTerminal,
 	parseDurationMs,
 	type TemplateSnapshot,
 	type WorkspaceCreateRequest,
@@ -41,6 +42,8 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 		},
 		state: row.state,
 		reason_code: row.reasonCode,
+		agent_state: row.agentState,
+		change_cursor: row.changeSeq,
 		provider_kind: row.providerKind,
 		health: row.health,
 		created_at: row.createdAt.toISOString(),
@@ -66,10 +69,22 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 			latest_checkpoint_id: row.latestCheckpointId,
 		},
 		outputs: row.outputs,
+		failure:
+			row.state === "failed" && row.reasonCode
+				? {
+						reason_code: row.reasonCode,
+						log_tail: row.failureLogTail ?? "",
+						log_tail_truncated: row.failureLogTailTruncated,
+						last_log_seq: row.failureLastLogSeq,
+					}
+				: null,
 	};
 }
 
 export class WorkspaceService {
+	private activeWaiters = 0;
+	private readonly waitersByWorkspace = new Map<string, number>();
+
 	constructor(private readonly deps: WorkspaceServiceDeps) {}
 
 	private now(): Date {
@@ -168,6 +183,45 @@ export class WorkspaceService {
 			throw new ApiError("workspace.not_found", "Unknown workspace.");
 		}
 		return row;
+	}
+
+	async waitForChange(
+		principal: PrincipalRow,
+		id: string,
+		after: number,
+		waitSeconds: number,
+		signal?: AbortSignal,
+	): Promise<{ workspace: WorkspaceRow; changed: boolean }> {
+		const deadline = Date.now() + waitSeconds * 1000;
+		while (true) {
+			const workspace = await this.getOwned(principal, id);
+			const changed = workspace.changeSeq > after;
+			if (changed || isTerminal(workspace.state) || waitSeconds === 0 || Date.now() >= deadline) {
+				return { workspace, changed };
+			}
+			const workspaceWaiters = this.waitersByWorkspace.get(id) ?? 0;
+			if (this.activeWaiters >= 1000 || workspaceWaiters >= 100) {
+				throw new ApiError(
+					"capacity.waiters_full",
+					"The workspace change-wait capacity is full; retry later.",
+				);
+			}
+			this.activeWaiters += 1;
+			this.waitersByWorkspace.set(id, workspaceWaiters + 1);
+			try {
+				await this.deps.store.waitForWorkspaceChange(
+					id,
+					after,
+					Math.max(1, deadline - Date.now()),
+					signal,
+				);
+			} finally {
+				this.activeWaiters -= 1;
+				const remaining = (this.waitersByWorkspace.get(id) ?? 1) - 1;
+				if (remaining === 0) this.waitersByWorkspace.delete(id);
+				else this.waitersByWorkspace.set(id, remaining);
+			}
+		}
 	}
 
 	async cancel(principal: PrincipalRow, id: string): Promise<WorkspaceRow> {

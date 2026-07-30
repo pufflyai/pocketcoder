@@ -44,6 +44,7 @@ export interface BuildDeps {
 	pepper: string;
 	limits: AdmissionLimits;
 	workspaceServerUrl: string;
+	instanceId?: string;
 	log?: (msg: string) => void;
 }
 
@@ -65,6 +66,14 @@ function safeTemplateItem(row: TemplateRow) {
 		status: row.status,
 	};
 }
+
+const WorkspaceCreateHeadersSchema = z.object({
+	"Idempotency-Key": z.string().min(1).max(256).openapi({
+		description:
+			"Opaque caller key. Reusing it with the same request returns the original workspace; a different request returns idempotency.conflict.",
+		example: "onefin-task-018f6f0e",
+	}),
+});
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: OpenAPI route declarations stay together so middleware, schemas, and handlers remain auditable.
 export function buildServer(deps: BuildDeps): BuiltServer {
@@ -106,6 +115,9 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		defaultHook: (result) => {
 			if (!result.success) {
 				const issue = result.error.issues[0];
+				if (issue?.path.some((segment) => String(segment).toLowerCase() === "idempotency-key")) {
+					throw new ApiError("validation.invalid", "Idempotency-Key header is required.");
+				}
 				throw new ApiError(
 					"validation.invalid",
 					issue ? `${issue.path.join(".") || "request"}: ${issue.message}` : "Invalid request.",
@@ -116,7 +128,12 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 	app.onError(handleError);
 	app.use("*", requestId);
 
-	app.get("/healthz", (c) => c.json({ ok: true }));
+	app.get("/healthz", (c) =>
+		c.json({
+			ok: true,
+			...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
+		}),
+	);
 
 	// Agent supervisor connection; authenticated by registration/reconnect
 	// credentials, not machine keys, so it is registered before machineAuth.
@@ -581,7 +598,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 			path: "/v1/workspaces",
 			middleware: [requireScope("workspaces:create")] as const,
 			request: {
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
+				headers: WorkspaceCreateHeadersSchema,
 				body: {
 					content: { "application/json": { schema: WorkspaceCreateRequestSchema } },
 				},
@@ -600,7 +617,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		async (c) => {
 			const principal = c.get("principal");
 			const body = c.req.valid("json");
-			const idempotencyKey = c.req.valid("header")["idempotency-key"];
+			const idempotencyKey = c.req.valid("header")["Idempotency-Key"];
 			const { workspace, created } = await service.create(principal, body, idempotencyKey);
 			return c.json(toResource(workspace), created ? 201 : 200);
 		},
@@ -665,6 +682,50 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 			const { id } = c.req.valid("param");
 			const row = await service.getOwned(principal, id);
 			return c.json(toResource(row), 200);
+		},
+	);
+
+	app.openapi(
+		createRoute({
+			method: "get",
+			path: "/v1/workspaces/{id}/changes",
+			middleware: [requireScope("workspaces:read")] as const,
+			request: {
+				params: z.object({ id: z.uuid() }),
+				query: z.object({
+					after: z.coerce.number().int().nonnegative().default(0),
+					wait: z.coerce.number().int().min(0).max(30).default(0),
+				}),
+			},
+			responses: {
+				200: {
+					description:
+						"Current workspace resource, returned after a newer durable change or the bounded wait",
+					content: {
+						"application/json": {
+							schema: z.object({
+								cursor: z.number().int().nonnegative(),
+								changed: z.boolean(),
+								workspace: WorkspaceResourceSchema,
+							}),
+						},
+					},
+				},
+			},
+		}),
+		async (c) => {
+			const principal = c.get("principal");
+			const { id } = c.req.valid("param");
+			const { after, wait } = c.req.valid("query");
+			const result = await service.waitForChange(principal, id, after, wait, c.req.raw.signal);
+			return c.json(
+				{
+					cursor: result.workspace.changeSeq,
+					changed: result.changed,
+					workspace: toResource(result.workspace),
+				},
+				200,
+			);
 		},
 	);
 

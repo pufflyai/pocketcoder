@@ -3,9 +3,12 @@
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
-			"entry": ["deploy/image/echo-harness.ts"],
+			"entry": ["deploy/image/echo-harness.ts", "examples/**/*.test.ts"],
 			// Lerna invokes Nx internally for task hashing and caching.
 			"ignoreDependencies": ["nx"]
+		},
+		".pstdio/extensions/*": {
+			"entry": ["src/view.ts", "**/*.test.ts"]
 		},
 		"apps/pocketcoder-server": {
 			"entry": ["src/**/*.test.ts"]

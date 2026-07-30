@@ -91,7 +91,7 @@ command, mount, network, privilege, or driver.
   `secretRef:` reference resolved by the deployment);
 - privileged security settings.
 
-Check any file offline with `pocketcoderctl templates validate <file>`.
+Check any file offline with `pcd templates validate <file>`.
 
 ## Persistence, source, and secrets
 

@@ -7,6 +7,7 @@
 		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
 		"compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-agent",
 		"start": "bun ./src/index.ts",
+		"test": "bun test",
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
