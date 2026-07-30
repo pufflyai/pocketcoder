@@ -42,6 +42,23 @@ async function run(bin: string, args: string[]): Promise<string> {
 	return stdout.trim();
 }
 
+// Local builds have an immutable image ID but no registry manifest digest.
+// When the digest portion is an exact local image ID, run that ID directly;
+// otherwise preserve the repository@digest reference for Docker to resolve.
+export async function resolveDockerImage(dockerBin: string, image: string): Promise<string> {
+	const separator = image.lastIndexOf("@");
+	if (separator === -1) return image;
+	const digest = image.slice(separator + 1);
+	try {
+		const localId = await run(dockerBin, ["image", "inspect", digest, "--format", "{{.Id}}"]);
+		if (localId === digest) return digest;
+	} catch {
+		// Registry digest references are not necessarily addressable as local
+		// image IDs, so Docker should receive the original reference.
+	}
+	return image;
+}
+
 export class DockerDriver implements WorkspaceDriver {
 	readonly kind = "docker";
 	private readonly opts: Required<DockerDriverOptions>;
@@ -107,7 +124,7 @@ export class DockerDriver implements WorkspaceDriver {
 		for (const [key, value] of Object.entries(spec.env)) {
 			args.push("-e", `${key}=${value}`);
 		}
-		args.push(spec.image, ...spec.command);
+		args.push(await resolveDockerImage(this.opts.dockerBin, spec.image), ...spec.command);
 
 		try {
 			const containerId = await run(this.opts.dockerBin, args);
