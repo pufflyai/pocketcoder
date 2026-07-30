@@ -7,7 +7,7 @@
 		"defaultBranch": "main"
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!!coverage", "!!node_modules"]
+		"includes": ["**", "!!**/dist", "!!coverage", "!!node_modules", "!!packages/db/drizzle"]
 	},
 	"formatter": {
 		"enabled": true,

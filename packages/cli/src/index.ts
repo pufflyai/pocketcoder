@@ -1,39 +1,22 @@
 #!/usr/bin/env bun
 
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { issueMachineKey } from "@pocketcoder/auth";
 import { isScope } from "@pocketcoder/contracts";
 import { migrate, migrationStatus, PostgresStore } from "@pocketcoder/db";
 import { loadTemplateFile, type Store } from "@pocketcoder/runtime-core";
 import { SQL } from "bun";
+import { parse as parseDotenv } from "dotenv";
+import yargs, { type Argv } from "yargs";
 
 // pocketcoderctl: operator CLI. Key mutation and migrations use direct
 // administrative database access; workspace inspection uses the REST API with
 // a scoped machine key.
 
 interface Flags {
-	[key: string]: string | boolean;
-}
-
-function parseArgs(argv: string[]): { positional: string[]; flags: Flags } {
-	const positional: string[] = [];
-	const flags: Flags = {};
-	for (let i = 0; i < argv.length; i += 1) {
-		const arg = argv[i] as string;
-		if (arg.startsWith("--")) {
-			const key = arg.slice(2);
-			const next = argv[i + 1];
-			if (next !== undefined && !next.startsWith("--")) {
-				flags[key] = next;
-				i += 1;
-			} else {
-				flags[key] = true;
-			}
-		} else {
-			positional.push(arg);
-		}
-	}
-	return { positional, flags };
+	[key: string]: unknown;
 }
 
 function need(flags: Flags, key: string): string {
@@ -47,6 +30,57 @@ function need(flags: Flags, key: string): string {
 function fail(message: string): never {
 	console.error(`pocketcoderctl: ${message}`);
 	process.exit(1);
+}
+
+function findEnvironmentFile(startDirectory: string): string | undefined {
+	let directory = resolve(startDirectory);
+	while (true) {
+		const candidate = join(directory, ".env");
+		if (existsSync(candidate)) return candidate;
+		const parent = dirname(directory);
+		if (parent === directory) return undefined;
+		directory = parent;
+	}
+}
+
+function loadProjectEnvironment(flags: Flags): void {
+	const workdirValue = flags.workdir;
+	const workdir =
+		typeof workdirValue === "string" && workdirValue !== ""
+			? resolve(process.cwd(), workdirValue)
+			: process.cwd();
+	try {
+		if (!statSync(workdir).isDirectory()) {
+			fail(`work directory is not a directory: ${workdir}`);
+		}
+	} catch {
+		fail(`work directory does not exist: ${workdir}`);
+	}
+
+	if (typeof workdirValue === "string") process.chdir(workdir);
+
+	const envFileValue = flags["env-file"];
+	const explicitEnvFile =
+		typeof envFileValue === "string" && envFileValue !== ""
+			? resolve(workdir, envFileValue)
+			: undefined;
+	const envFile = explicitEnvFile ?? findEnvironmentFile(workdir);
+	if (!envFile) return;
+	if (explicitEnvFile && !existsSync(explicitEnvFile)) {
+		fail(`environment file does not exist: ${explicitEnvFile}`);
+	}
+
+	let parsed: Record<string, string>;
+	try {
+		parsed = parseDotenv(readFileSync(envFile));
+	} catch (error) {
+		fail(
+			`could not read environment file ${envFile}: ${error instanceof Error ? error.message : error}`,
+		);
+	}
+	for (const [key, value] of Object.entries(parsed)) {
+		if (process.env[key] === undefined) process.env[key] = value;
+	}
 }
 
 function dbConfig(): { url: string; schema: string } {
@@ -87,36 +121,214 @@ async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
 	}
 }
 
-const USAGE = `usage: pocketcoderctl <command>
+function commandGroup(
+	parser: Argv,
+	name: string,
+	description: string,
+	configure: (group: Argv) => Argv,
+): Argv {
+	return parser.command(`${name} <command>`, description, (group) =>
+		configure(group).demandCommand(1, `A ${name} command is required.`).strict(),
+	);
+}
 
-  db migrate                     apply pending migrations to the configured schema
-  db status                      show migration status
-  principals create --name <n> --scopes <a,b> [--templates <t1,t2|*>]
-  principals list
-  keys issue --principal <name> [--scopes <a,b>] [--expires <ISO8601|never>]
-  keys revoke --id <key-id>
-  templates validate <file...>   validate template manifests offline
-  templates list                 list template versions (database)
-  workspaces list [--active] [--state <s>] [--template <t>] [--external-id <x>] [--limit <n>] [--json]
-  workspaces create --template <name> [--version <v>] [--external-id <x>] [--input '<json>']
-  workspaces get --id <id>
-  workspaces logs --id <id> [--after <seq>] [--limit <n>]
-  workspaces cancel --id <id>
-  doctor --template <name>       create, converse with, and delete a probe workspace
+export function createCli(argv: string[]): Argv {
+	let parser: Argv = yargs(argv)
+		.scriptName("pocketcoderctl")
+		.usage("$0 <command>")
+		.parserConfiguration({ "camel-case-expansion": false })
+		.option("workdir", {
+			type: "string",
+			description: "Pocketcoder project directory used for .env discovery",
+		})
+		.option("env-file", {
+			type: "string",
+			description: "Explicit environment file, relative to --workdir",
+		})
+		.help()
+		.alias("help", "h")
+		.version(false)
+		.recommendCommands()
+		.showHelpOnFail(true)
+		.epilogue(
+			[
+				"Environment:",
+				"  POCKETCODER_DATABASE_URL, POCKETCODER_DATABASE_SCHEMA (db/key/template commands)",
+				"  POCKETCODER_URL, POCKETCODER_KEY (workspace and doctor commands)",
+				"  POCKETCODER_AUTH_PEPPER (key issuance)",
+				"  Reads the nearest .env; exported values take precedence",
+			].join("\n"),
+		);
 
-environment:
-  POCKETCODER_DATABASE_URL, POCKETCODER_DATABASE_SCHEMA (db/key/template commands)
-  POCKETCODER_URL, POCKETCODER_KEY (workspace and doctor commands)
-  POCKETCODER_AUTH_PEPPER (key issuance)`;
+	parser = commandGroup(parser, "db", "Manage database migrations", (group) =>
+		group
+			.command("migrate", "Apply pending migrations to the configured schema")
+			.command("status", "Show migration status"),
+	);
+
+	parser = commandGroup(parser, "principals", "Manage principals", (group) =>
+		group
+			.command("create", "Create a principal", (command) =>
+				command
+					.option("name", {
+						type: "string",
+						demandOption: true,
+						description: "Principal name",
+					})
+					.option("scopes", {
+						type: "string",
+						demandOption: true,
+						description: "Comma-separated scopes",
+					})
+					.option("templates", {
+						type: "string",
+						description: "Comma-separated template names, or * for all templates",
+					}),
+			)
+			.command("list", "List principals"),
+	);
+
+	parser = commandGroup(parser, "keys", "Manage machine keys", (group) =>
+		group
+			.command("issue", "Issue a machine key", (command) =>
+				command
+					.option("principal", {
+						type: "string",
+						demandOption: true,
+						description: "Principal name",
+					})
+					.option("scopes", {
+						type: "string",
+						description: "Comma-separated scopes; defaults to the principal scopes",
+					})
+					.option("expires", {
+						type: "string",
+						description: "Expiration as ISO 8601, or never",
+						default: "never",
+					}),
+			)
+			.command("revoke", "Revoke a machine key", (command) =>
+				command.option("id", {
+					type: "string",
+					demandOption: true,
+					description: "Machine key ID",
+				}),
+			),
+	);
+
+	parser = commandGroup(parser, "templates", "Validate and inspect templates", (group) =>
+		group
+			.command("validate <files..>", "Validate template manifests offline", (command) =>
+				command.positional("files", {
+					type: "string",
+					array: true,
+					description: "Template manifest files",
+				}),
+			)
+			.command("list", "List template versions from the database"),
+	);
+
+	parser = commandGroup(parser, "workspaces", "Manage workspaces", (group) =>
+		group
+			.command("list", "List workspaces", (command) =>
+				command
+					.option("active", {
+						type: "boolean",
+						description: "Only show nonterminal workspaces",
+					})
+					.option("state", {
+						type: "string",
+						description: "Filter by state",
+					})
+					.option("template", {
+						type: "string",
+						description: "Filter by template name",
+					})
+					.option("external-id", {
+						type: "string",
+						description: "Filter by external ID",
+					})
+					.option("limit", {
+						type: "string",
+						description: "Maximum number of workspaces",
+					})
+					.option("json", {
+						type: "boolean",
+						description: "Print JSON",
+					}),
+			)
+			.command("create", "Create a workspace", (command) =>
+				command
+					.option("template", {
+						type: "string",
+						demandOption: true,
+						description: "Template name",
+					})
+					.option("version", {
+						type: "string",
+						description: "Template version",
+					})
+					.option("external-id", {
+						type: "string",
+						description: "Caller identity and idempotency key",
+					})
+					.option("input", {
+						type: "string",
+						description: "Launch input as a JSON object",
+					}),
+			)
+			.command("get", "Get a workspace", (command) =>
+				command.option("id", {
+					type: "string",
+					demandOption: true,
+					description: "Workspace ID",
+				}),
+			)
+			.command("logs", "Read workspace logs", (command) =>
+				command
+					.option("id", {
+						type: "string",
+						demandOption: true,
+						description: "Workspace ID",
+					})
+					.option("after", {
+						type: "string",
+						description: "Only show log lines after this sequence",
+					})
+					.option("limit", {
+						type: "string",
+						description: "Maximum number of log lines",
+					}),
+			)
+			.command("cancel", "Cancel a workspace", (command) =>
+				command.option("id", {
+					type: "string",
+					demandOption: true,
+					description: "Workspace ID",
+				}),
+			),
+	);
+
+	return parser
+		.command("doctor", "Create, probe, and cancel a diagnostic workspace", (command) =>
+			command.option("template", {
+				type: "string",
+				demandOption: true,
+				description: "Template name",
+			}),
+		)
+		.demandCommand(1, "A command is required.")
+		.strict();
+}
 
 async function main(): Promise<void> {
-	const [group, action, ...restArgs] = process.argv.slice(2);
-	const { positional, flags } = parseArgs(restArgs);
-
-	if (!group || group === "help" || group === "--help" || group === "-h") {
-		console.log(USAGE);
-		return;
-	}
+	const parsed = await createCli(process.argv.slice(2)).parseAsync();
+	const [groupValue, actionValue] = parsed._;
+	const group = groupValue === undefined ? undefined : String(groupValue);
+	const action = actionValue === undefined ? undefined : String(actionValue);
+	const positional = Array.isArray(parsed.files) ? parsed.files.map(String) : [];
+	const flags = parsed as unknown as Flags;
+	loadProjectEnvironment(flags);
 
 	if (group === "db" && action === "migrate") {
 		const { url, schema } = dbConfig();
@@ -340,9 +552,7 @@ async function main(): Promise<void> {
 	}
 
 	if (group === "doctor") {
-		// doctor has no action word, so its flags start right after the group.
-		const { flags: doctorFlags } = parseArgs(process.argv.slice(3));
-		const template = need(doctorFlags, "template");
+		const template = need(flags, "template");
 		const externalId = `doctor-${randomUUID()}`;
 		console.log(`doctor: creating probe workspace from template ${template}`);
 		const createRes = await api("/v1/workspaces", {
@@ -398,8 +608,7 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	console.log(USAGE);
-	process.exit(1);
+	fail(`unsupported command: ${[group, action].filter(Boolean).join(" ")}`);
 }
 
 if (import.meta.main) {

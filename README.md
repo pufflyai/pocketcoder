@@ -76,7 +76,7 @@ packages/
   contracts/           zod schemas: templates, workspace states, WSS protocol, events
   auth/                machine keys, one-time secrets, event signing, redaction
   runtime-core/        Store contract, scheduler, template registry, outbox, reconcile
-  db/                  PostgreSQL store, schema-qualified migrations, advisory lock
+  db/                  PostgreSQL store, Drizzle schema/migrations, advisory lock
   drivers/             workspace-driver contract + Docker provider
   testkit/             in-memory store, fake driver, fake AgentAPI, fixtures
 deploy/
@@ -116,11 +116,16 @@ bun run ctl keys issue --principal my-backend --expires never   # shown once
 POCKETCODER_TEMPLATE_DIR=deploy/templates bun run start
 ```
 
-Then, with the machine key:
+Then add the machine key to `.env` in the repository root:
+
+```dotenv
+POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_KEY=pkt_…
+```
+
+The CLI discovers this file automatically:
 
 ```sh
-export POCKETCODER_URL=http://127.0.0.1:7080 POCKETCODER_KEY=pkt_…
-
 bun run ctl -- workspaces create --template claude-code-agent
 bun run ctl -- workspaces list --active
 bun run ctl -- workspaces logs --id $WS
@@ -143,6 +148,7 @@ bun run format      # format supported files with Biome
 bun run test        # all package test suites through Lerna
 bun run typecheck   # strict TypeScript across the Lerna workspace
 bun run build       # bundle packages through Lerna with Nx caching
+bun run db:generate -- --name=<change>  # generate + embed a Drizzle migration
 bun run packages    # list packages managed by Lerna
 bun run start       # pocketcoder-server
 bun run ctl -- …    # pocketcoderctl

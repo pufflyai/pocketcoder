@@ -29,12 +29,18 @@
 		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
 		"compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoderctl",
 		"start": "bun ./src/index.ts",
+		"test": "bun test",
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"dotenv": "^17.4.2",
+		"yargs": "^17.7.2"
 	},
 	"devDependencies": {
 		"@pocketcoder/auth": "workspace:*",
 		"@pocketcoder/contracts": "workspace:*",
 		"@pocketcoder/db": "workspace:*",
-		"@pocketcoder/runtime-core": "workspace:*"
+		"@pocketcoder/runtime-core": "workspace:*",
+		"@types/yargs": "^17.0.35"
 	}
 }

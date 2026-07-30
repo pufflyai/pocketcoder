@@ -55,10 +55,16 @@ next request).
 
 ## 3. Launch a workspace
 
-```sh
-export POCKETCODER_URL=http://127.0.0.1:7080
-export POCKETCODER_KEY=pkt_…
+Add the issued key to `.env` in the project root:
 
+```dotenv
+POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_KEY=pkt_…
+```
+
+The CLI loads it automatically, so no shell export is required:
+
+```sh
 pocketcoderctl templates list                       # what you may launch
 pocketcoderctl workspaces create --template <name>  # returns the workspace JSON
 pocketcoderctl workspaces list --active             # queued/provisioning/connected/ready/terminating

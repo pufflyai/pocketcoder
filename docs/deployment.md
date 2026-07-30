@@ -58,12 +58,13 @@ POCKETCODER_DATABASE_SCHEMA   table namespace, default pocketcoder
 ```
 
 The URL may target a dedicated database or an existing application database.
-Every identifier is schema-qualified; the runtime never touches `public`,
-other schemas, extensions, or application tables, and creates no cross-schema
-dependencies. Migrations run under a schema-scoped advisory lock via
-`pocketcoderctl db migrate` (the server also migrates on startup). Recommended
-roles: a migration role owning the schema, an application role with
-connect/usage/DML only.
+Runtime queries are schema-qualified, while generated Drizzle migrations run
+with `search_path` pinned to the configured schema on a reserved connection.
+Pocketcoder never touches `public`, other schemas, extensions, or application
+tables, and creates no cross-schema dependencies. Migrations run under a
+schema-scoped advisory lock via `pocketcoderctl db migrate` (the server also
+migrates on startup). Recommended roles: a migration role owning the schema,
+an application role with connect/usage/DML only.
 
 ## Configuration reference
 

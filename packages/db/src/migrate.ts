@@ -1,11 +1,14 @@
-import { createHash } from "node:crypto";
 import type { SQL } from "bun";
+import { drizzle } from "drizzle-orm/bun-sql";
+import { migrate as runDrizzleMigrations } from "drizzle-orm/pg-core";
 import { MIGRATIONS } from "./migrations";
 import { advisoryLockKey, assertValidSchema } from "./schema";
 
-// Runs every pending migration inside one session holding the schema-scoped
-// advisory lock. The same command works against a dedicated database or an
-// existing one; only the configured schema is touched.
+// Drizzle migrations run on one reserved connection under a schema-scoped
+// advisory lock. search_path lets the generated, unqualified DDL target the
+// configurable Pocketcoder schema; all application queries remain qualified.
+
+const MIGRATIONS_TABLE = "__drizzle_migrations";
 
 export interface MigrationStatus {
 	version: string;
@@ -14,65 +17,98 @@ export interface MigrationStatus {
 	drifted: boolean;
 }
 
-function checksumOf(up: string): string {
-	return createHash("sha256").update(up).digest("hex");
+interface AppliedMigration {
+	hash: string;
+	name: string | null;
+	applied_at: Date | string | null;
+}
+
+type MigrationConnection = Awaited<ReturnType<SQL["reserve"]>>;
+
+function table(schema: string, name: string): string {
+	return `"${schema}"."${name}"`;
+}
+
+async function migrationTableExists(
+	connection: MigrationConnection | SQL,
+	schema: string,
+	name: string,
+): Promise<boolean> {
+	const rows = (await connection.unsafe("SELECT to_regclass($1) AS relation", [
+		`${schema}.${name}`,
+	])) as Array<{ relation: string | null }>;
+	return rows[0]?.relation != null;
+}
+
+async function appliedMigrations(
+	connection: MigrationConnection | SQL,
+	schema: string,
+): Promise<AppliedMigration[]> {
+	if (!(await migrationTableExists(connection, schema, MIGRATIONS_TABLE))) return [];
+	return (await connection.unsafe(
+		`SELECT hash, name, applied_at FROM ${table(schema, MIGRATIONS_TABLE)}`,
+	)) as AppliedMigration[];
+}
+
+function assertNoDrift(applied: AppliedMigration[]): void {
+	const byName = new Map(applied.map((migration) => [migration.name, migration]));
+	for (const migration of MIGRATIONS) {
+		const existing = byName.get(migration.name);
+		if (existing && existing.hash !== migration.hash) {
+			throw new Error(`migration ${migration.name} changed after being applied (checksum drift)`);
+		}
+	}
 }
 
 export async function migrate(sql: SQL, schema: string): Promise<string[]> {
 	assertValidSchema(schema);
-	const applied: string[] = [];
-	await sql.begin(async (tx) => {
-		await tx.unsafe("SELECT pg_advisory_xact_lock($1)", [advisoryLockKey(schema)]);
-		await tx.unsafe(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
-		await tx.unsafe(`CREATE TABLE IF NOT EXISTS "${schema}".schema_migrations (
-			version text PRIMARY KEY,
-			checksum text NOT NULL,
-			applied_at timestamptz NOT NULL DEFAULT now()
-		)`);
-		const rows = (await tx.unsafe(
-			`SELECT version, checksum FROM "${schema}".schema_migrations`,
-		)) as Array<{ version: string; checksum: string }>;
-		const appliedByVersion = new Map(rows.map((r) => [r.version, r.checksum]));
-		for (const migration of MIGRATIONS) {
-			const checksum = checksumOf(migration.up);
-			const existing = appliedByVersion.get(migration.version);
-			if (existing !== undefined) {
-				if (existing !== checksum) {
-					throw new Error(
-						`migration ${migration.version} changed after being applied (checksum drift)`,
-					);
-				}
-				continue;
+	const connection = await sql.reserve();
+	const lockKey = advisoryLockKey(schema);
+	let locked = false;
+	try {
+		await connection.unsafe("SELECT pg_advisory_lock($1)", [lockKey]);
+		locked = true;
+		await connection.unsafe(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+		await connection.unsafe(`SET search_path TO "${schema}"`);
+
+		const before = await appliedMigrations(connection, schema);
+		assertNoDrift(before);
+
+		const db = drizzle({ client: connection });
+		await runDrizzleMigrations(MIGRATIONS, db, {
+			migrationsFolder: "embedded",
+			migrationsSchema: schema,
+			migrationsTable: MIGRATIONS_TABLE,
+		});
+
+		const previouslyApplied = new Set(before.map((migration) => migration.name));
+		return MIGRATIONS.filter((migration) => !previouslyApplied.has(migration.name)).map(
+			(migration) => migration.name,
+		);
+	} finally {
+		try {
+			await connection.unsafe("RESET search_path");
+		} finally {
+			try {
+				if (locked) await connection.unsafe("SELECT pg_advisory_unlock($1)", [lockKey]);
+			} finally {
+				connection.release();
 			}
-			await tx.unsafe(migration.up.replaceAll("{{schema}}", `"${schema}"`));
-			await tx.unsafe(
-				`INSERT INTO "${schema}".schema_migrations (version, checksum) VALUES ($1, $2)`,
-				[migration.version, checksum],
-			);
-			applied.push(migration.version);
 		}
-	});
-	return applied;
+	}
 }
 
 export async function migrationStatus(sql: SQL, schema: string): Promise<MigrationStatus[]> {
 	assertValidSchema(schema);
-	let rows: Array<{ version: string; checksum: string; applied_at: Date }> = [];
-	try {
-		rows = (await sql.unsafe(
-			`SELECT version, checksum, applied_at FROM "${schema}".schema_migrations`,
-		)) as typeof rows;
-	} catch {
-		// Schema or table does not exist yet; everything is pending.
-	}
-	const appliedByVersion = new Map(rows.map((r) => [r.version, r]));
-	return MIGRATIONS.map((m) => {
-		const applied = appliedByVersion.get(m.version);
+	const rows = await appliedMigrations(sql, schema);
+	const byName = new Map(rows.map((migration) => [migration.name, migration]));
+	return MIGRATIONS.map((migration) => {
+		const applied = byName.get(migration.name);
 		return {
-			version: m.version,
-			checksum: checksumOf(m.up),
-			appliedAt: applied?.applied_at ?? null,
-			drifted: applied !== undefined && applied.checksum !== checksumOf(m.up),
+			version: migration.name,
+			checksum: migration.hash,
+			appliedAt: applied?.applied_at == null ? null : new Date(applied.applied_at),
+			drifted: applied !== undefined && applied.hash !== migration.hash,
 		};
 	});
 }

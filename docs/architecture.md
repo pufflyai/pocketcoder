@@ -23,7 +23,7 @@ neither callers nor templates can select them.
 | pocketcoderctl | `packages/cli` | Public bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, doctor |
 | contracts | `packages/contracts` | zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
-| db | `packages/db` | PostgreSQL store, schema-qualified migrations under an advisory lock |
+| db | `packages/db` | PostgreSQL store, Drizzle schema and generated migrations under an advisory lock |
 | drivers | `packages/drivers` | `WorkspaceDriver` contract + Docker provider |
 | testkit | `packages/testkit` | In-memory store, fake driver, fake AgentAPI, template fixtures |
 

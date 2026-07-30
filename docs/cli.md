@@ -14,6 +14,26 @@ Commands use one of two access paths:
 - **REST commands** (workspaces, doctor) need `POCKETCODER_URL` (default
   `http://127.0.0.1:7080`) and `POCKETCODER_KEY` (a machine key).
 
+## Environment files
+
+`pocketcoderctl` uses project-scoped environment discovery. It finds the
+nearest `.env` file, starting in the current directory and walking up through
+its parents. Variables already exported by the shell take precedence over
+values in the file.
+
+Use `--workdir <directory>` to select a different project directory. This also
+changes the working directory for relative command arguments. Use
+`--env-file <path>` to select a specific file for variables that are not
+already exported; relative paths are resolved from the work directory.
+
+```sh
+pocketcoderctl --workdir ../my-project workspaces list --active
+pocketcoderctl --env-file .env.staging workspaces list --active
+```
+
+Keep real keys out of version control. The repository's `.env.example` can be
+copied to `.env`, which is already ignored by Git.
+
 ## Database and migrations
 
 ```sh
