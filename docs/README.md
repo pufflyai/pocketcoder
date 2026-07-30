@@ -19,7 +19,7 @@ API drives the whole lifecycle.
 
 ```sh
 # 1. Run the control plane (in-memory store for a quick look)
-POCKETCODER_STORE=memory POCKETCODER_TEMPLATE_DIR=deploy/templates bun run start
+POCKETCODER_STORE=memory POCKETCODER_TEMPLATE_DIR=examples/templates bun run start
 
 # 2. Operators manage principals/keys/templates with pocketcoderctl
 pocketcoderctl principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
@@ -34,6 +34,6 @@ pocketcoderctl workspaces cancel --id <uuid>
 ```
 
 Every workspace follows one execution path: server → durable queue → driver
-(Docker locally, Kubernetes planned for production) → one isolated container →
+(Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
 `pocketcoder-agent` (PID 1) → your template's harness (typically AgentAPI
 wrapping a coding-agent CLI).

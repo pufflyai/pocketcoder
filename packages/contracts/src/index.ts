@@ -2,6 +2,7 @@ export * from "./canonical";
 export * from "./duration";
 export * from "./errors";
 export * from "./events";
+export * from "./persistence";
 export * from "./protocol";
 export * from "./scopes";
 export * from "./template";

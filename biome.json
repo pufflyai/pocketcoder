@@ -7,7 +7,15 @@
 		"defaultBranch": "main"
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!!coverage", "!!node_modules", "!!packages/db/drizzle"]
+		"ignoreUnknown": true,
+		"includes": [
+			"**",
+			"!!**/coverage",
+			"!!**/dist",
+			"!!**/.nx",
+			"!!**/node_modules",
+			"!!packages/db/drizzle"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -17,7 +25,31 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"preset": "recommended"
+			"preset": "recommended",
+			"complexity": {
+				"noExcessiveCognitiveComplexity": {
+					"level": "warn",
+					"options": {
+						"maxAllowedComplexity": 20
+					}
+				},
+				"noExcessiveLinesPerFunction": {
+					"level": "error",
+					"options": {
+						"maxLines": 180,
+						"skipBlankLines": true
+					}
+				}
+			},
+			"style": {
+				"noExcessiveLinesPerFile": {
+					"level": "error",
+					"options": {
+						"maxLines": 1200,
+						"skipBlankLines": true
+					}
+				}
+			}
 		}
 	},
 	"javascript": {

@@ -50,6 +50,22 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 		deadline_at: row.deadlineAt.toISOString(),
 		terminal_at: row.terminalAt?.toISOString() ?? null,
 		metadata: row.metadata,
+		origin_workspace_id: row.originWorkspaceId,
+		restored_from_checkpoint_id: row.restoredFromCheckpointId,
+		source: row.sourceDescriptor
+			? {
+					kind: "git",
+					repository: row.sourceDescriptor.repository,
+					requested_revision: row.sourceDescriptor.revision,
+					resolved_commit: row.resolvedSource?.resolved_commit ?? null,
+				}
+			: null,
+		persistence: {
+			enabled: row.templateSnapshot.spec.persistence.mounts.length > 0,
+			conversation_restore: row.persistenceCapability,
+			latest_checkpoint_id: row.latestCheckpointId,
+		},
+		outputs: row.outputs,
 	};
 }
 
@@ -104,6 +120,15 @@ export class WorkspaceService {
 				);
 			}
 		}
+		if (body.source) {
+			const sourceSpec = template.spec.source;
+			if (!sourceSpec || !(body.source.repository in sourceSpec.repositories)) {
+				throw new ApiError(
+					"source.not_allowed",
+					"The selected repository alias is not declared by this template.",
+				);
+			}
+		}
 		if ((await store.countQueued()) >= limits.maxQueuedWorkspaces) {
 			throw new ApiError("capacity.queue_full", "The workspace queue is full; retry later.");
 		}
@@ -118,6 +143,9 @@ export class WorkspaceService {
 			templateSnapshot: snapshot,
 			launchInput: body.launch_input ?? null,
 			metadata: body.metadata ?? {},
+			sourceDescriptor: body.source ?? null,
+			persistenceCapability: template.spec.persistence.conversationRestore,
+			launchMode: "create",
 			deadlineAt: new Date(now.getTime() + parseDurationMs(template.spec.timeouts.maxAge)),
 			createdAt: now,
 		});

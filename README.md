@@ -18,7 +18,8 @@ There is exactly one execution path:
 caller (machine key)
   → pocketcoder-server (Hono REST/WSS on Bun)
   → durable workspace queue (PostgreSQL)
-  → workspace driver (Docker locally, Kubernetes in production)
+  → workspace driver (Docker locally, Kubernetes Jobs in production)
+  → template-declared persistent storage (host data roots or a PVC)
   → one isolated container/Job
   → pocketcoder-agent (PID 1)
   → harness (e.g. AgentAPI wrapping a coding-agent CLI)
@@ -35,7 +36,7 @@ Templates own the whole execution surface, so different coding agents need no
 code changes, only a new reviewed template:
 
 ```jsonc
-// deploy/templates/claude-code-agent.json (excerpt)
+// examples/templates/claude-code-agent.json (excerpt)
 "spec": {
   "image": "example.registry/coding-agent@sha256:…",   // digest-pinned
   "setup": [                                            // custom setup commands,
@@ -77,12 +78,12 @@ packages/
   auth/                machine keys, one-time secrets, event signing, redaction
   runtime-core/        Store contract, scheduler, template registry, outbox, reconcile
   db/                  PostgreSQL store, Drizzle schema/migrations, advisory lock
-  drivers/             workspace-driver contract + Docker provider
+  drivers/             Docker/Kubernetes runtime + filesystem/PVC storage drivers
   testkit/             in-memory store, fake driver, fake AgentAPI, fixtures
 deploy/
-  templates/           reviewed template manifests (JSON or YAML)
   compose/             local PostgreSQL for development
 examples/
+  templates/           illustrative template manifests with placeholder images
   e2e/                 reusable create → converse → cancel harness contract
   clients/             host-side clients, including local Pi as a remote-agent UI
   harnesses/           runnable echo and Pi harness examples
@@ -94,9 +95,9 @@ examples/
 bun install
 bun test                       # full suite (in-memory store; no Docker needed)
 
-# In-memory dev server with the bundled templates:
+# In-memory dev server with the bundled example templates:
 POCKETCODER_STORE=memory \
-POCKETCODER_TEMPLATE_DIR=deploy/templates \
+POCKETCODER_TEMPLATE_DIR=examples/templates \
 bun run start
 ```
 
@@ -113,7 +114,7 @@ bun run ctl db migrate
 bun run ctl principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
 bun run ctl keys issue --principal my-backend --expires never   # shown once
 
-POCKETCODER_TEMPLATE_DIR=deploy/templates bun run start
+POCKETCODER_TEMPLATE_DIR=examples/templates bun run start
 ```
 
 Then add the machine key to `.env` in the repository root:
@@ -129,6 +130,8 @@ The CLI discovers this file automatically:
 bun run ctl -- workspaces create --template claude-code-agent
 bun run ctl -- workspaces list --active
 bun run ctl -- workspaces logs --id $WS
+bun run ctl -- workspaces attach --id $WS --message "continue"
+bun run ctl -- workspaces preserve --id $WS
 
 # Converse through the relay once the workspace is ready:
 curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/services/agent/message" \

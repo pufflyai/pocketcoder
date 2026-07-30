@@ -5,6 +5,11 @@ real harnesses.
 
 ## What is here
 
+- [`templates/`](templates/) contains illustrative manifests with placeholder
+  image references, including the shared
+  [`pi-harness`](templates/pi-harness.json) manifest consumed by the Pi E2E
+  runner. They are useful for validation and control-plane demos, but are not
+  production deployment defaults.
 - [`e2e/`](e2e/) contains a reusable harness contract test. It creates a
   workspace, waits for readiness, sends a message through the allowlisted
   relay, observes the response, cancels the workspace, and verifies the

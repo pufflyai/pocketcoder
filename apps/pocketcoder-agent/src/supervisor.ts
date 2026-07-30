@@ -86,6 +86,12 @@ class Supervisor {
 		const exec = this.exec;
 		if (!exec) return EXIT_PROTOCOL_ERROR;
 
+		if (exec.launch_mode === "restore") {
+			this.sendFrame("restore_status", {
+				phase: "validating",
+				capability: exec.persistence.conversation_restore,
+			});
+		}
 		const setupOk = await this.runSetup(exec);
 		if (!setupOk) {
 			this.sendFrame("process_state", {
@@ -95,6 +101,13 @@ class Supervisor {
 			});
 			await this.flushAndClose();
 			return EXIT_SETUP_FAILED;
+		}
+		await this.reportResolvedSource(exec);
+		if (exec.launch_mode === "restore") {
+			this.sendFrame("restore_status", {
+				phase: "ready",
+				capability: exec.persistence.conversation_restore,
+			});
 		}
 		this.startHarness(exec);
 		this.startHealthLoop(exec);
@@ -198,6 +211,10 @@ class Supervisor {
 				await this.gracefulShutdown();
 				return;
 			}
+			case "prepare_checkpoint": {
+				await this.prepareCheckpoint(frame.payload.operation_id, frame.payload.deadline_ms);
+				return;
+			}
 		}
 	}
 
@@ -213,7 +230,14 @@ class Supervisor {
 			// default working directory is not accessible to the workspace uid.
 			const proc = Bun.spawn(step.command, {
 				cwd: step.cwd ?? exec.harness.cwd ?? "/",
-				env: { ...process.env, ...exec.env, ...step.env },
+				env: {
+					...process.env,
+					...exec.env,
+					...step.env,
+					POCKETCODER_LAUNCH_MODE: exec.launch_mode,
+					...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
+					...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
+				},
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -231,6 +255,78 @@ class Supervisor {
 		return true;
 	}
 
+	private async reportResolvedSource(exec: ExecSpec): Promise<void> {
+		if (!exec.source) return;
+		try {
+			const proc = Bun.spawn(
+				["git", "-C", exec.source.destination, "rev-parse", "--verify", "HEAD"],
+				{ stdout: "pipe", stderr: "pipe" },
+			);
+			const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+			const commit = stdout.trim().toLowerCase();
+			if (code !== 0 || !/^[0-9a-f]{40,64}$/.test(commit)) {
+				throw new Error("git did not return an immutable commit");
+			}
+			this.sendFrame("source_resolved", {
+				repository: exec.source.repository,
+				requested_revision: exec.source.revision,
+				resolved_commit: commit,
+			});
+		} catch (error) {
+			this.log(
+				`source resolution failed: ${error instanceof Error ? error.message : "unknown error"}`,
+			);
+		}
+	}
+
+	private async prepareCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
+		const hook = this.exec?.checkpoint_hook;
+		this.sendFrame("checkpoint_status", {
+			operation_id: operationId,
+			phase: "quiescing",
+		});
+		if (!hook) {
+			this.sendFrame("checkpoint_status", {
+				operation_id: operationId,
+				phase: "failed",
+				detail: "template has no checkpoint hook",
+			});
+			return;
+		}
+		try {
+			const proc = Bun.spawn(hook.command, {
+				cwd: hook.cwd ?? this.exec?.harness.cwd ?? "/",
+				env: {
+					...process.env,
+					...this.exec?.env,
+					...hook.env,
+					POCKETCODER_CHECKPOINT_OPERATION: operationId,
+				},
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			this.pumpStream(proc.stdout, "stdout");
+			this.pumpStream(proc.stderr, "stderr");
+			const timeout = setTimeout(
+				() => proc.kill("SIGKILL"),
+				Math.min(deadlineMs, hook.timeout_seconds * 1000),
+			);
+			const code = await proc.exited;
+			clearTimeout(timeout);
+			this.sendFrame("checkpoint_status", {
+				operation_id: operationId,
+				phase: code === 0 ? "quiesced" : "failed",
+				...(code === 0 ? {} : { detail: `checkpoint hook exited ${code}` }),
+			});
+		} catch (error) {
+			this.sendFrame("checkpoint_status", {
+				operation_id: operationId,
+				phase: "failed",
+				detail: error instanceof Error ? error.message.slice(0, 512) : "hook failed",
+			});
+		}
+	}
+
 	// --- Harness ---
 
 	private startHarness(exec: ExecSpec): void {
@@ -245,6 +341,9 @@ class Supervisor {
 				...process.env,
 				...exec.env,
 				...exec.harness.env,
+				POCKETCODER_LAUNCH_MODE: exec.launch_mode,
+				...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
+				...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
 				...(this.input.launch_input
 					? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(this.input.launch_input) }
 					: {}),
@@ -411,6 +510,7 @@ class Supervisor {
 				while (true) {
 					const { done, value } = await reader.read();
 					if (done) break;
+					if (name === "stdout") this.captureOutputs(value);
 					for (let offset = 0; offset < value.length; offset += LOG_CHUNK_LIMIT) {
 						const chunk = value.subarray(offset, offset + LOG_CHUNK_LIMIT);
 						this.sendFrame("log_chunk", {
@@ -424,6 +524,31 @@ class Supervisor {
 				// Stream ended with the process.
 			}
 		})();
+	}
+
+	private outputBuffer = "";
+
+	private captureOutputs(value: Uint8Array): void {
+		this.outputBuffer += Buffer.from(value).toString("utf8");
+		const lines = this.outputBuffer.split("\n");
+		this.outputBuffer = lines.pop() ?? "";
+		for (const line of lines) {
+			if (!line.startsWith("POCKETCODER_OUTPUT ")) continue;
+			try {
+				const parsed = JSON.parse(line.slice("POCKETCODER_OUTPUT ".length)) as {
+					name?: unknown;
+					value?: unknown;
+				};
+				if (typeof parsed.name === "string") {
+					this.sendFrame("output_published", {
+						name: parsed.name,
+						value: parsed.value,
+					});
+				}
+			} catch {
+				this.log("ignored malformed POCKETCODER_OUTPUT line");
+			}
+		}
 	}
 
 	private log(message: string): void {

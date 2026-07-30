@@ -6,7 +6,7 @@ CI publishes two images to the GitHub Container Registry on every push to
 `main` and on version tags (see `.github/workflows/ci.yml`):
 
 - `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pocketcoderctl`
-  (at `/opt/pocketcoder/ctl.js`) and the docker CLI for the Docker driver.
+  (at `/opt/pocketcoder/ctl.js`), Docker CLI, and `kubectl`.
   Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
 - `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
   `pocketcoder-agent` supervisor and a loopback echo harness, useful for probe
@@ -48,6 +48,67 @@ content-addressed workspace image) lives in
 `bun run example:e2e:local` for the credential-free echo harness, or use the
 same runner with the Pi example and an OpenAI-compatible model gateway.
 
+The compose file also has a `full` profile for a containerized server with
+persistent workspaces:
+
+```sh
+export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
+export POCKETCODER_HOST_DATA_ROOT=/absolute/host/path/pocketcoder-data
+mkdir -p "$POCKETCODER_HOST_DATA_ROOT"/{input,workspaces,checkpoints}
+docker compose -f deploy/compose/docker-compose.yaml --profile full up -d
+```
+
+`POCKETCODER_HOST_DATA_ROOT` must be absolute and mounted at the identical
+path inside the server. The host Docker daemon, not the server container,
+resolves bind sources for child workspace containers. Running the server
+directly on the host needs no path mirroring:
+
+```sh
+export POCKETCODER_STORAGE_BACKEND=filesystem
+export POCKETCODER_WORKSPACE_DATA_DIR=/var/lib/pocketcoder/workspaces
+export POCKETCODER_CHECKPOINT_DIR=/var/lib/pocketcoder/checkpoints
+```
+
+Use `POCKETCODER_SECRET_PROVIDER=file` plus an absolute
+`POCKETCODER_SECRET_ROOT` for local `secretRef:` values. Only regular files
+beneath that root are projected read-only and they must be outside the
+workspace/checkpoint roots.
+
+## Kubernetes
+
+The Kubernetes runtime driver creates one namespaced Job and short-lived input
+Secret per workspace. The PVC storage adapter gives every execution an opaque
+subdirectory on a server-mounted claim; restore copies an immutable checkpoint
+into a new subdirectory before Job admission.
+
+[`deploy/kubernetes/pocketcoder.yaml`](../deploy/kubernetes/pocketcoder.yaml)
+contains separate controller/workspace service accounts, least-privilege
+Role/RoleBinding, a single-replica server Deployment, Service, and PVC:
+
+```sh
+kubectl create namespace pocketcoder
+kubectl -n pocketcoder create secret generic pocketcoder-server \
+  --from-literal=database-url='postgres://…' \
+  --from-literal=auth-pepper="$(openssl rand -base64 32)"
+kubectl -n pocketcoder create configmap pocketcoder-templates \
+  --from-file=/path/to/reviewed/templates
+kubectl -n pocketcoder apply -f deploy/kubernetes/pocketcoder.yaml
+```
+
+Supply deployment-reviewed template manifests, then replace the image and PVC
+storage class/size first. The manifests under `examples/templates` contain
+placeholder image references and are not production defaults. Multi-node deployments
+need an RWX-capable claim because the server and workspace Jobs mount it;
+single-node development clusters may use an appropriate RWO class. Run one
+server replica—the connection hub and scheduler are intentionally
+single-active. Workspace Jobs use the unprivileged `pocketcoder-workspace`
+service account, not the controller account.
+
+With `POCKETCODER_SECRET_PROVIDER=kubernetes`, a template value
+`secretRef:git-credentials/token` projects key `token` from Secret
+`git-credentials` as a read-only file. Secret names/values are not stored in
+checkpoint manifests.
+
 ## PostgreSQL placement
 
 One migration/query path serves both layouts:
@@ -80,6 +141,21 @@ an application role with connect/usage/DML only.
 | `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `7080` | Listen address |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |
 | `POCKETCODER_INPUT_DIR` | OS tempdir | Provider input files (must be host-shared when the server is containerized) |
+| `POCKETCODER_DRIVER` | `docker` | `docker` or `kubernetes` runtime |
+| `POCKETCODER_STORAGE_BACKEND` | `disabled` | `filesystem`/`docker-local` or `kubernetes-pvc` |
+| `POCKETCODER_WORKSPACE_DATA_DIR` | required with storage | Active allocation root or mounted PVC directory |
+| `POCKETCODER_CHECKPOINT_DIR` | required with storage | Immutable checkpoint root or mounted PVC directory |
+| `POCKETCODER_SECRET_PROVIDER` | `disabled` | `file` or `kubernetes` |
+| `POCKETCODER_SECRET_ROOT` | required for file secrets | Deployment-owned local secret root |
+| `POCKETCODER_KUBERNETES_NAMESPACE` | `default` | Namespace for Jobs and input Secrets |
+| `POCKETCODER_KUBERNETES_SERVICE_ACCOUNT` | none | Service account assigned to workspace Jobs |
+| `POCKETCODER_KUBERNETES_WORKSPACE_CLAIM` | required for PVC | Claim mounted by server and workspace Jobs |
+| `POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH` | `workspaces` | Opaque allocation prefix in the claim |
+| `POCKETCODER_MAX_RETAINED_BYTES` | `500Gi` | Global checkpoint quota |
+| `POCKETCODER_MAX_RETAINED_BYTES_PER_PRINCIPAL` | `100Gi` | Per-principal checkpoint quota |
+| `POCKETCODER_MAX_CHECKPOINTS_PER_PRINCIPAL` | `100` | Per-principal ready checkpoint count |
+| `POCKETCODER_MAX_CHECKPOINT_FILES` | `1000000` | Measured files per checkpoint |
+| `POCKETCODER_MAX_CHECKPOINT_OPERATIONS` | `4` | Concurrent durable checkpoint operations |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |
@@ -97,6 +173,10 @@ an application role with connect/usage/DML only.
   input. An LLM gateway (e.g. agentgateway) should remain the only credential
   boundary; env names that look like secrets are rejected unless they are
   `secretRef:` references.
-- **Kubernetes**: the Job driver for production containment is planned; the
-  driver contract (`create/inspect/terminate/list`) is identical to Docker's,
-  and production deployments should refuse the Docker driver.
+- **Backups**: filesystem/PVC checkpoints survive runtime removal but are not
+  disaster recovery unless the checkpoint root and PostgreSQL are backed up
+  together.
+- **Retention**: the server sweeps expired ready checkpoints every minute.
+  `pocketcoderctl storage doctor|list-orphans|prune` provides explicit
+  inventory and maintenance; unknown physical objects are reported and never
+  auto-deleted.

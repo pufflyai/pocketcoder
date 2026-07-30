@@ -7,7 +7,15 @@ import { WORKSPACE_STATES, type WorkspaceState } from "./workspace";
 
 export const EVENT_TYPES = WORKSPACE_STATES.map((s) => `workspace.${s}` as const);
 
-export type EventType = `workspace.${WorkspaceState}`;
+export type EventType =
+	| `workspace.${WorkspaceState}`
+	| "workspace.output_published"
+	| "workspace.restore_queued"
+	| "checkpoint.creating"
+	| "checkpoint.ready"
+	| "checkpoint.failed"
+	| "checkpoint.deleting"
+	| "checkpoint.deleted";
 
 export const EventEnvelopeSchema = z.object({
 	id: z.uuid(),
@@ -23,6 +31,10 @@ export const EventEnvelopeSchema = z.object({
 			version: z.string(),
 			digest: z.string(),
 		}),
+		origin_workspace_id: z.uuid().nullable(),
+		restored_from_checkpoint_id: z.uuid().nullable(),
+		latest_checkpoint_id: z.uuid().nullable(),
+		outputs: z.record(z.string(), z.unknown()),
 	}),
 });
 

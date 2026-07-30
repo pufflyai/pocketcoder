@@ -26,6 +26,13 @@ describe("workspace state machine", () => {
 		}
 	});
 
+	test("preserve is a terminal execution path", () => {
+		expect(canTransition("ready", "preserving")).toBe(true);
+		expect(canTransition("preserving", "preserved")).toBe(true);
+		expect(isTerminal("preserved")).toBe(true);
+		expect(canTransition("preserved", "queued")).toBe(false);
+	});
+
 	test("skipping connected is not allowed", () => {
 		expect(canTransition("provisioning", "ready")).toBe(false);
 		expect(canTransition("queued", "ready")).toBe(false);

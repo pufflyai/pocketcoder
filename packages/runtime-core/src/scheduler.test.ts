@@ -4,6 +4,7 @@ import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import {
 	FakeDriver,
 	fixtureTemplateEcho,
+	fixtureTemplatePersistent,
 	fixtureTemplateSleep,
 	MemoryStore,
 } from "@pstdio/pocketcoder-testkit";
@@ -159,6 +160,63 @@ describe("scheduler admission", () => {
 });
 
 describe("scheduler sweeps", () => {
+	test("delegates deadline preservation to the durable policy path", async () => {
+		const store = new MemoryStore();
+		const driver = new FakeDriver();
+		const principal = await store.createPrincipal("persistent", ["admin"], ["*"]);
+		const parsed = fixtureTemplatePersistent();
+		parsed.manifest.spec.persistence.checkpoint.onDeadline = "preserve";
+		const template = (
+			await store.upsertTemplate({
+				name: parsed.manifest.metadata.name,
+				version: parsed.manifest.spec.version,
+				digest: parsed.digest,
+				description: null,
+				spec: parsed.manifest.spec,
+			})
+		).row;
+		const workspace = await queueWorkspace(
+			store,
+			principal.id,
+			template.id,
+			parsed,
+			"policy-deadline",
+			new Date(Date.now() - 3 * 60 * 60_000),
+		);
+		const at = new Date();
+		await store.transition(workspace.id, {
+			from: ["queued"],
+			to: "provisioning",
+			at,
+		});
+		await store.transition(workspace.id, {
+			from: ["provisioning"],
+			to: "connected",
+			at,
+		});
+		await store.transition(workspace.id, {
+			from: ["connected"],
+			to: "ready",
+			at,
+		});
+		const calls: string[] = [];
+		const scheduler = new Scheduler({
+			store,
+			driver,
+			connections: noHub,
+			secrets,
+			limits: DEFAULT_LIMITS,
+			workspaceServerUrl: "http://127.0.0.1:0",
+			preserveByPolicy: async (_row, trigger) => {
+				calls.push(trigger);
+				return true;
+			},
+		});
+		await scheduler.sweep();
+		expect(calls).toEqual(["deadline"]);
+		expect((await store.getWorkspace(workspace.id))?.state).toBe("ready");
+	});
+
 	test("queue age expiry", async () => {
 		const store = new MemoryStore();
 		const driver = new FakeDriver();

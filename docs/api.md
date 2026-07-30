@@ -42,6 +42,7 @@ Requires an `Idempotency-Key` header.
 	"external_id": "your-task-uuid",
 	"template": { "name": "claude-code-agent", "version": "1.0.0" },
 	"launch_input": { "bootstrap_code": "opaque-single-use-value" },
+	"source": { "kind": "git", "repository": "app", "revision": "main" },
 	"metadata": { "source": "backend" }
 }
 ```
@@ -65,8 +66,9 @@ POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; retu
 GET  /v1/workspaces/{id}/logs          scope logs:read          query: after (seq), limit
 ```
 
-States: `queued → provisioning → connected → ready → terminating →
-succeeded | failed | canceled | expired`. Terminal states never reopen;
+States: `queued → provisioning → connected → ready`, followed by
+`terminating → succeeded | failed | canceled | expired` or
+`preserving → preserved`. Terminal states never reopen;
 `reason_code` distinguishes clean exit, setup failure, registration timeout,
 health failure, crash, provider loss, disconnect timeout, cancellation, and
 deadline/idle expiry.
@@ -95,6 +97,41 @@ inbound network path to a workspace and no generic forwarding.
 
 Relay activity counts as workspace activity for the idle timeout.
 
+## Attach, checkpoints, and restore
+
+Attach is ordinary use of the existing workspace and allowlisted relay; it
+creates no human session credential. It is valid only while the execution is
+`ready`.
+
+```text
+POST /v1/workspaces/{id}/preserve       scope workspaces:preserve
+GET  /v1/workspaces/{id}/checkpoints    scope checkpoints:read
+GET  /v1/checkpoints/{id}               scope checkpoints:read
+POST /v1/checkpoints/{id}/verify        scope checkpoints:read
+DELETE /v1/checkpoints/{id}             scope checkpoints:delete
+POST /v1/checkpoints/{id}/restore       scope workspaces:restore
+POST /v1/workspaces/{id}/recreate       scope workspaces:restore
+GET  /v1/operations/{id}                scope workspaces:read
+GET  /v1/workspaces/{id}/outputs        scope outputs:read
+```
+
+All mutating checkpoint routes require `Idempotency-Key`. Preserve rejects new
+relay work, optionally asks the harness to flush, stops the runtime, snapshots
+only template-declared mounts, verifies the manifest, and makes the source
+terminal `preserved`. Restore never reopens it: a new queued workspace gets
+the exact template snapshot, fresh provider and credentials, lineage fields,
+and an independent writable storage allocation.
+
+`conversation_restore` is `supported`, `filesystem_only`, or `unknown`; it
+never promises process-memory, socket, or in-flight request restoration.
+Ready checkpoint content is immutable. Expired checkpoints are removed by the
+retention sweep through the same durable delete operation.
+
+Administrative storage inspection is available at `GET
+/v1/storage/inventory`; `POST /v1/storage/prune` runs an immediate retention
+sweep. Both require `admin`. Inventory returns opaque IDs only, never physical
+paths or backend references.
+
 ## Lifecycle events
 
 When `POCKETCODER_EVENT_SINK_URL` is configured, every state transition is
@@ -106,8 +143,9 @@ POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
               X-Pocketcoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
 ```
 
-The body is `{ id, type: "workspace.<state>", occurred_at, workspace: { id,
-external_id, state, reason_code, template } }`. Verify the signature and
+Workspace events use `{ id, type: "workspace.<state>", occurred_at, workspace:
+{ id, external_id, state, reason_code, template, lineage, outputs } }`.
+Checkpoint, restore, and output events use the same signed outbox. Verify the signature and
 timestamp, deduplicate on the event id, and poll nonterminal workspaces for
 convergence — delivery is at-least-once, ordering is not guaranteed.
 

@@ -1,6 +1,7 @@
 export * from "./driver";
 export * from "./events";
 export * from "./outbox";
+export * from "./persistence-reconcile";
 export * from "./reconcile";
 export * from "./registry";
 export * from "./scheduler";

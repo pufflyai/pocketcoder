@@ -1,5 +1,15 @@
 import type {
+	CheckpointManifest,
+	CheckpointState,
+	ConversationRestoreCapability,
+	LaunchMode,
+	OperationKind,
+	OperationState,
+	PersistenceMount,
 	ReasonCode,
+	ResolvedSource,
+	SourceDescriptor,
+	StorageState,
 	TemplateSnapshot,
 	TemplateSpec,
 	WorkspaceState,
@@ -76,6 +86,88 @@ export interface WorkspaceRow {
 	createdAt: Date;
 	updatedAt: Date;
 	terminalAt: Date | null;
+	originWorkspaceId: string | null;
+	restoredFromCheckpointId: string | null;
+	sourceDescriptor: SourceDescriptor | null;
+	resolvedSource: ResolvedSource | null;
+	persistenceCapability: ConversationRestoreCapability;
+	latestCheckpointId: string | null;
+	launchMode: LaunchMode;
+	outputs: Record<string, unknown>;
+}
+
+export interface WorkspaceStorageRow {
+	id: string;
+	workspaceId: string;
+	principalId: string;
+	providerKind: string;
+	providerRef: Record<string, unknown>;
+	state: StorageState;
+	mountManifest: PersistenceMount[];
+	logicalBytes: number | null;
+	fileCount: number | null;
+	retainedUntil: Date | null;
+	createdAt: Date;
+	updatedAt: Date;
+	deletedAt: Date | null;
+	lastErrorCode: string | null;
+}
+
+export interface WorkspaceCheckpointRow {
+	id: string;
+	workspaceId: string;
+	principalId: string;
+	storageId: string;
+	parentCheckpointId: string | null;
+	state: CheckpointState;
+	reasonCode: string | null;
+	providerKind: string;
+	providerRef: Record<string, unknown> | null;
+	templateSnapshot: TemplateSnapshot;
+	templateDigest: string;
+	sourceProvenance: ResolvedSource | null;
+	manifest: CheckpointManifest | null;
+	manifestDigest: string | null;
+	logicalBytes: number | null;
+	storedBytes: number | null;
+	fileCount: number | null;
+	conversationRestore: ConversationRestoreCapability;
+	label: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+	readyAt: Date | null;
+	expiresAt: Date | null;
+	deletedAt: Date | null;
+}
+
+export interface WorkspaceOperationRow {
+	id: string;
+	principalId: string;
+	kind: OperationKind;
+	state: OperationState;
+	idempotencyKey: string;
+	requestDigest: string;
+	workspaceId: string | null;
+	checkpointId: string | null;
+	resultWorkspaceId: string | null;
+	reasonCode: string | null;
+	attemptCount: number;
+	createdAt: Date;
+	updatedAt: Date;
+	completedAt: Date | null;
+}
+
+export interface WorkspaceOutputRow {
+	workspaceId: string;
+	seq: number;
+	name: string;
+	value: unknown;
+	occurredAt: Date;
+}
+
+export interface CheckpointUsage {
+	count: number;
+	logicalBytes: number;
 }
 
 export interface StateHistoryRow {
@@ -133,6 +225,14 @@ export interface WorkspaceInsert {
 	metadata: Record<string, string>;
 	deadlineAt: Date;
 	createdAt: Date;
+	originWorkspaceId?: string | null;
+	restoredFromCheckpointId?: string | null;
+	sourceDescriptor?: SourceDescriptor | null;
+	resolvedSource?: ResolvedSource | null;
+	persistenceCapability?: ConversationRestoreCapability;
+	latestCheckpointId?: string | null;
+	launchMode?: LaunchMode;
+	outputs?: Record<string, unknown>;
 }
 
 export type WorkspacePatch = Partial<
@@ -152,6 +252,49 @@ export type WorkspacePatch = Partial<
 		| "lastActivityAt"
 		| "launchAttempts"
 		| "health"
+		| "resolvedSource"
+		| "latestCheckpointId"
+		| "outputs"
+	>
+>;
+
+export type WorkspaceStoragePatch = Partial<
+	Pick<
+		WorkspaceStorageRow,
+		| "providerKind"
+		| "providerRef"
+		| "state"
+		| "logicalBytes"
+		| "fileCount"
+		| "retainedUntil"
+		| "deletedAt"
+		| "lastErrorCode"
+	>
+>;
+
+export type WorkspaceCheckpointPatch = Partial<
+	Pick<
+		WorkspaceCheckpointRow,
+		| "state"
+		| "reasonCode"
+		| "providerKind"
+		| "providerRef"
+		| "manifest"
+		| "manifestDigest"
+		| "logicalBytes"
+		| "storedBytes"
+		| "fileCount"
+		| "conversationRestore"
+		| "readyAt"
+		| "expiresAt"
+		| "deletedAt"
+	>
+>;
+
+export type WorkspaceOperationPatch = Partial<
+	Pick<
+		WorkspaceOperationRow,
+		"state" | "checkpointId" | "resultWorkspaceId" | "reasonCode" | "attemptCount" | "completedAt"
 	>
 >;
 
@@ -217,6 +360,36 @@ export interface Store {
 	transition(id: string, req: TransitionRequest): Promise<WorkspaceRow | null>;
 	listStateHistory(workspaceId: string): Promise<StateHistoryRow[]>;
 
+	// Persistent storage, immutable checkpoints, and durable operations.
+	insertWorkspaceStorage(row: WorkspaceStorageRow): Promise<WorkspaceStorageRow>;
+	getWorkspaceStorage(workspaceId: string): Promise<WorkspaceStorageRow | null>;
+	getStorage(id: string): Promise<WorkspaceStorageRow | null>;
+	updateWorkspaceStorage(id: string, patch: WorkspaceStoragePatch, at: Date): Promise<void>;
+	insertCheckpoint(row: WorkspaceCheckpointRow): Promise<WorkspaceCheckpointRow>;
+	getCheckpoint(id: string): Promise<WorkspaceCheckpointRow | null>;
+	listCheckpoints(
+		principalId: string,
+		filter?: { workspaceId?: string; state?: CheckpointState },
+	): Promise<WorkspaceCheckpointRow[]>;
+	updateCheckpoint(id: string, patch: WorkspaceCheckpointPatch, at: Date): Promise<void>;
+	insertOperation(
+		row: WorkspaceOperationRow,
+	): Promise<{ operation: WorkspaceOperationRow; created: boolean; conflict: boolean }>;
+	getOperation(id: string): Promise<WorkspaceOperationRow | null>;
+	getOperationByIdempotency(
+		principalId: string,
+		kind: OperationKind,
+		idempotencyKey: string,
+	): Promise<WorkspaceOperationRow | null>;
+	listIncompleteOperations(): Promise<WorkspaceOperationRow[]>;
+	updateOperation(id: string, patch: WorkspaceOperationPatch, at: Date): Promise<void>;
+	checkpointUsage(principalId: string | null): Promise<CheckpointUsage>;
+	countIncompleteOperations(): Promise<number>;
+
+	// Template-declared, append-only, bounded result metadata.
+	appendOutput(row: WorkspaceOutputRow): Promise<WorkspaceOutputRow>;
+	listOutputs(workspaceId: string): Promise<WorkspaceOutputRow[]>;
+
 	// Logs.
 	appendLogs(
 		workspaceId: string,
@@ -228,4 +401,5 @@ export interface Store {
 	claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]>;
 	markEventDelivered(id: string, at: Date): Promise<void>;
 	markEventFailed(id: string, errorCode: string, nextAttemptAt: Date): Promise<void>;
+	appendEvent(workspaceId: string, eventType: string, payload: unknown, at: Date): Promise<void>;
 }

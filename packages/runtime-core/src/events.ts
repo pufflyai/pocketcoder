@@ -20,6 +20,10 @@ export function buildEventEnvelope(row: WorkspaceRow, occurredAt: Date): EventEn
 				version: row.templateVersion,
 				digest: row.templateDigest,
 			},
+			origin_workspace_id: row.originWorkspaceId,
+			restored_from_checkpoint_id: row.restoredFromCheckpointId,
+			latest_checkpoint_id: row.latestCheckpointId,
+			outputs: row.outputs,
 		},
 	};
 }

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+	CONVERSATION_RESTORE_CAPABILITIES,
+	ResolvedSourceSchema,
+	SourceDescriptorSchema,
+} from "./persistence";
 
 // Workspace lifecycle. A workspace is one isolated coding-agent session
 // created from a template snapshot. Terminal states never reopen.
@@ -8,11 +13,13 @@ export const WORKSPACE_STATES = [
 	"provisioning",
 	"connected",
 	"ready",
+	"preserving",
 	"terminating",
 	"succeeded",
 	"failed",
 	"canceled",
 	"expired",
+	"preserved",
 ] as const;
 
 export type WorkspaceState = (typeof WORKSPACE_STATES)[number];
@@ -22,6 +29,7 @@ export const TERMINAL_STATES: readonly WorkspaceState[] = [
 	"failed",
 	"canceled",
 	"expired",
+	"preserved",
 ];
 
 export function isTerminal(state: WorkspaceState): boolean {
@@ -33,13 +41,15 @@ const TRANSITIONS: Record<WorkspaceState, readonly WorkspaceState[]> = {
 	// provisioning -> queued is the bounded infrastructure-launch retry and is
 	// only legal before a provider object exists (enforced by the scheduler).
 	provisioning: ["connected", "queued", "terminating", "failed", "canceled", "expired"],
-	connected: ["ready", "terminating", "failed", "canceled", "expired"],
-	ready: ["terminating", "succeeded", "failed", "canceled", "expired"],
+	connected: ["ready", "preserving", "terminating", "failed", "canceled", "expired"],
+	ready: ["preserving", "terminating", "succeeded", "failed", "canceled", "expired"],
+	preserving: ["preserved", "failed"],
 	terminating: ["succeeded", "failed", "canceled", "expired"],
 	succeeded: [],
 	failed: [],
 	canceled: [],
 	expired: [],
+	preserved: [],
 };
 
 export function canTransition(from: WorkspaceState, to: WorkspaceState): boolean {
@@ -61,6 +71,19 @@ export const REASON_CODES = [
 	"idle_expired",
 	"queue_timeout",
 	"launch_failed",
+	"preserve_requested",
+	"preserved_by_policy",
+	"checkpoint_created",
+	"checkpoint_failed",
+	"checkpoint_corrupt",
+	"checkpoint_quota_exceeded",
+	"checkpoint_storage_lost",
+	"restore_requested",
+	"restore_failed",
+	"image_unavailable",
+	"source_resolution_failed",
+	"secret_resolution_failed",
+	"operation_conflict",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];
@@ -74,6 +97,7 @@ export const WorkspaceCreateRequestSchema = z.object({
 		version: z.string().max(64).optional(),
 	}),
 	launch_input: z.record(z.string(), z.unknown()).optional(),
+	source: SourceDescriptorSchema.optional(),
 	metadata: z.record(z.string().max(64), z.string().max(512)).optional(),
 });
 
@@ -100,6 +124,20 @@ export const WorkspaceResourceSchema = z.object({
 	deadline_at: z.iso.datetime(),
 	terminal_at: z.iso.datetime().nullable(),
 	metadata: z.record(z.string(), z.string()),
+	origin_workspace_id: z.uuid().nullable(),
+	restored_from_checkpoint_id: z.uuid().nullable(),
+	source: SourceDescriptorSchema.extend({
+		requested_revision: z.string(),
+		resolved_commit: ResolvedSourceSchema.shape.resolved_commit.nullable(),
+	})
+		.omit({ revision: true })
+		.nullable(),
+	persistence: z.object({
+		enabled: z.boolean(),
+		conversation_restore: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
+		latest_checkpoint_id: z.uuid().nullable(),
+	}),
+	outputs: z.record(z.string(), z.unknown()),
 });
 
 export type WorkspaceResource = z.infer<typeof WorkspaceResourceSchema>;

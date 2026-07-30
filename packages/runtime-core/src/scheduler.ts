@@ -1,10 +1,17 @@
+import { randomUUID } from "node:crypto";
 import {
 	type ProviderInput,
 	parseDurationMs,
 	type ReasonCode,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceDriver } from "./driver";
+import type {
+	RuntimeMountRef,
+	StorageRef,
+	WorkspaceDriver,
+	WorkspaceSecretResolver,
+	WorkspaceStorageDriver,
+} from "./driver";
 import type { ActiveCounts, Store, WorkspaceRow } from "./types";
 
 // Admission, expiry, and termination. One logical execution path: queued
@@ -47,11 +54,17 @@ export interface SecretFactory {
 export interface SchedulerDeps {
 	store: Store;
 	driver: WorkspaceDriver;
+	storageDriver?: WorkspaceStorageDriver;
+	secretResolver?: WorkspaceSecretResolver;
 	connections: ConnectionHub;
 	secrets: SecretFactory;
 	limits: AdmissionLimits;
 	// URL workspaces use to reach this server (may differ from listen addr).
 	workspaceServerUrl: string;
+	preserveByPolicy?: (
+		row: WorkspaceRow,
+		trigger: "idle" | "deadline" | "clean_exit" | "failure",
+	) => Promise<boolean>;
 	now?: () => Date;
 	onError?: (context: string, err: unknown) => void;
 }
@@ -106,68 +119,89 @@ export class Scheduler {
 		}
 	}
 
-	private async sweepRow(row: WorkspaceRow, now: Date): Promise<void> {
-		const { store } = this.deps;
-		if (row.state === "queued") {
-			if (now.getTime() - row.createdAt.getTime() > this.deps.limits.maxQueueAgeMs) {
-				await store.transition(row.id, {
-					from: ["queued"],
-					to: "expired",
-					reason: "queue_timeout",
-					at: now,
-				});
-				return;
-			}
-			if (now >= row.deadlineAt) {
-				await store.transition(row.id, {
-					from: ["queued"],
-					to: "expired",
-					reason: "deadline_expired",
-					at: now,
-				});
-			}
+	private async sweepQueued(row: WorkspaceRow, now: Date): Promise<void> {
+		const queueAge = now.getTime() - row.createdAt.getTime();
+		if (queueAge > this.deps.limits.maxQueueAgeMs) {
+			await this.deps.store.transition(row.id, {
+				from: ["queued"],
+				to: "expired",
+				reason: "queue_timeout",
+				at: now,
+			});
 			return;
 		}
-		if (row.state === "provisioning") {
-			if (row.registrationExpiresAt && now >= row.registrationExpiresAt) {
-				await this.fail(row, "registration_timeout", now);
-			}
-			return;
+		if (now >= row.deadlineAt) {
+			await this.deps.store.transition(row.id, {
+				from: ["queued"],
+				to: "expired",
+				reason: "deadline_expired",
+				at: now,
+			});
 		}
-		if (row.state === "connected" || row.state === "ready") {
-			if (now >= row.deadlineAt) {
+	}
+
+	private async sweepActive(row: WorkspaceRow, now: Date): Promise<void> {
+		if (now >= row.deadlineAt) {
+			const preserve =
+				row.templateSnapshot.spec.persistence.checkpoint.onDeadline === "preserve" &&
+				(await this.requestPolicyPreserve(row, "deadline"));
+			if (!preserve) {
 				await this.beginTermination(row, "expired", "deadline_expired", now);
-				return;
-			}
-			if (
-				row.state === "ready" &&
-				row.lastActivityAt &&
-				now.getTime() - row.lastActivityAt.getTime() > this.timeoutMs(row, "idle")
-			) {
-				await this.beginTermination(row, "expired", "idle_expired", now);
-				return;
-			}
-			if (
-				row.disconnectedAt &&
-				!this.deps.connections.isConnected(row.id) &&
-				now.getTime() - row.disconnectedAt.getTime() > this.timeoutMs(row, "disconnectGrace")
-			) {
-				await this.fail(row, "disconnect_timeout", now);
 			}
 			return;
 		}
-		if (row.state === "terminating") {
-			// Enforce with the provider if the agent has not exited within a
-			// few grace periods.
-			const stuckMs = 4 * this.timeoutMs(row, "terminateGrace") + 5000;
-			if (now.getTime() - row.updatedAt.getTime() > stuckMs) {
-				await this.finalize(
-					row,
-					(row.terminalIntent ?? "failed") as WorkspaceState,
-					row.reasonCode,
-					now,
-				);
+		const idle =
+			row.state === "ready" &&
+			row.lastActivityAt !== null &&
+			now.getTime() - row.lastActivityAt.getTime() > this.timeoutMs(row, "idle");
+		if (idle) {
+			const preserve =
+				row.templateSnapshot.spec.persistence.checkpoint.onIdle === "preserve" &&
+				(await this.requestPolicyPreserve(row, "idle"));
+			if (!preserve) {
+				await this.beginTermination(row, "expired", "idle_expired", now);
 			}
+			return;
+		}
+		const disconnectedTooLong =
+			row.disconnectedAt !== null &&
+			!this.deps.connections.isConnected(row.id) &&
+			now.getTime() - row.disconnectedAt.getTime() > this.timeoutMs(row, "disconnectGrace");
+		if (disconnectedTooLong) await this.fail(row, "disconnect_timeout", now);
+	}
+
+	private async sweepTerminating(row: WorkspaceRow, now: Date): Promise<void> {
+		// Enforce with the provider if the agent has not exited within a few
+		// grace periods.
+		const stuckMs = 4 * this.timeoutMs(row, "terminateGrace") + 5000;
+		if (now.getTime() - row.updatedAt.getTime() <= stuckMs) return;
+		await this.finalize(
+			row,
+			(row.terminalIntent ?? "failed") as WorkspaceState,
+			row.reasonCode,
+			now,
+		);
+	}
+
+	private async sweepRow(row: WorkspaceRow, now: Date): Promise<void> {
+		switch (row.state) {
+			case "queued":
+				await this.sweepQueued(row, now);
+				return;
+			case "provisioning":
+				if (row.registrationExpiresAt && now >= row.registrationExpiresAt) {
+					await this.fail(row, "registration_timeout", now);
+				}
+				return;
+			case "connected":
+			case "ready":
+				await this.sweepActive(row, now);
+				return;
+			case "terminating":
+				await this.sweepTerminating(row, now);
+				return;
+			case "preserving":
+				return;
 		}
 	}
 
@@ -179,7 +213,7 @@ export class Scheduler {
 		reason: ReasonCode,
 		at: Date,
 	): Promise<WorkspaceRow | null> {
-		const { store, connections, driver } = this.deps;
+		const { store, connections } = this.deps;
 		const updated = await store.transition(row.id, {
 			from: ["provisioning", "connected", "ready"],
 			to: "terminating",
@@ -197,11 +231,10 @@ export class Scheduler {
 		}
 		if (updated.providerRef) {
 			// docker stop / Job deletion performs TERM, grace, KILL.
-			driver
-				.terminate(
-					{ kind: updated.providerKind ?? "", id: "", ...updated.providerRef },
-					this.graceSeconds(updated),
-				)
+			this.stopAndRemove(
+				{ kind: updated.providerKind ?? "", id: "", ...updated.providerRef },
+				this.graceSeconds(updated),
+			)
 				.then(() => this.finalize(updated, terminalState, reason, this.now()))
 				.catch((err) => this.report(`terminate.${row.id}`, err));
 		} else {
@@ -215,17 +248,41 @@ export class Scheduler {
 		terminalState: WorkspaceState,
 		reason: ReasonCode | null,
 		at: Date,
+		retainStorage = false,
 	): Promise<void> {
 		const { store, driver, connections } = this.deps;
 		if (row.providerRef) {
 			try {
-				await driver.terminate(
+				await driver.stop(
 					{ kind: row.providerKind ?? "", id: "", ...row.providerRef },
 					this.graceSeconds(row),
 				);
+				await driver.remove({
+					kind: row.providerKind ?? "",
+					id: "",
+					...row.providerRef,
+				});
 			} catch (err) {
 				this.report(`finalize.terminate.${row.id}`, err);
 			}
+		}
+		if (retainStorage) {
+			const storage = await store.getWorkspaceStorage(row.id);
+			if (storage && !["retained", "deleted"].includes(storage.state)) {
+				await store.updateWorkspaceStorage(
+					storage.id,
+					{
+						state: "retained",
+						retainedUntil: new Date(
+							at.getTime() +
+								parseDurationMs(row.templateSnapshot.spec.persistence.checkpoint.retention),
+						),
+					},
+					at,
+				);
+			}
+		} else {
+			await this.cleanupWorkspaceStorage(row);
 		}
 		connections.close(row.id);
 		await store.transition(row.id, {
@@ -237,8 +294,106 @@ export class Scheduler {
 		});
 	}
 
+	private async stopAndRemove(
+		ref: { kind: string; id: string; [key: string]: unknown },
+		graceSeconds: number,
+	): Promise<void> {
+		await this.deps.driver.stop(ref, graceSeconds);
+		await this.deps.driver.remove(ref);
+	}
+
 	async fail(row: WorkspaceRow, reason: ReasonCode, at: Date): Promise<void> {
-		await this.finalize(row, "failed", reason, at);
+		const action = row.templateSnapshot.spec.persistence.checkpoint.onFailure;
+		if (
+			action === "preserve" &&
+			["connected", "ready"].includes(row.state) &&
+			(await this.requestPolicyPreserve(row, "failure"))
+		) {
+			return;
+		}
+		await this.finalize(row, "failed", reason, at, action === "retain-for-recovery");
+	}
+
+	async handleProcessExit(row: WorkspaceRow, exitCode: number | null, at: Date): Promise<void> {
+		if (
+			exitCode === 0 &&
+			row.templateSnapshot.spec.persistence.checkpoint.onCleanExit === "preserve" &&
+			(await this.requestPolicyPreserve(row, "clean_exit"))
+		) {
+			return;
+		}
+		if (exitCode !== 0) {
+			await this.fail(row, "child_exit_failure", at);
+			return;
+		}
+		await this.finalize(row, "succeeded", "child_exit_success", at);
+	}
+
+	private async requestPolicyPreserve(
+		row: WorkspaceRow,
+		trigger: "idle" | "deadline" | "clean_exit" | "failure",
+	): Promise<boolean> {
+		if (row.templateSnapshot.spec.persistence.mounts.length === 0 || !this.deps.preserveByPolicy) {
+			return false;
+		}
+		try {
+			return await this.deps.preserveByPolicy(row, trigger);
+		} catch (error) {
+			this.report(`preserve-policy.${trigger}.${row.id}`, error);
+			return false;
+		}
+	}
+
+	private groupQueuedByPrincipal(queued: WorkspaceRow[]): Map<string, WorkspaceRow[]> {
+		const byPrincipal = new Map<string, WorkspaceRow[]>();
+		for (const row of queued) {
+			const list = byPrincipal.get(row.principalId) ?? [];
+			list.push(row);
+			byPrincipal.set(row.principalId, list);
+		}
+		return byPrincipal;
+	}
+
+	private principalRotation(byPrincipal: Map<string, WorkspaceRow[]>): string[] {
+		const principals = [...byPrincipal.keys()];
+		const startIndex = this.lastAdmittedPrincipal
+			? (principals.indexOf(this.lastAdmittedPrincipal) + 1) % principals.length
+			: 0;
+		return [...principals.slice(startIndex), ...principals.slice(0, startIndex)];
+	}
+
+	private canAdmit(row: WorkspaceRow, counts: ActiveCounts): boolean {
+		const { limits } = this.deps;
+		const principalActive = counts.byPrincipal[row.principalId] ?? 0;
+		if (principalActive >= limits.perPrincipalActiveWorkspaces) return false;
+		const templateLimit =
+			limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
+		return (counts.byTemplate[row.templateName] ?? 0) < templateLimit;
+	}
+
+	private recordAdmission(row: WorkspaceRow, counts: ActiveCounts): void {
+		counts.global += 1;
+		counts.byPrincipal[row.principalId] = (counts.byPrincipal[row.principalId] ?? 0) + 1;
+		counts.byTemplate[row.templateName] = (counts.byTemplate[row.templateName] ?? 0) + 1;
+		this.lastAdmittedPrincipal = row.principalId;
+	}
+
+	private async admitRound(
+		byPrincipal: Map<string, WorkspaceRow[]>,
+		rotation: string[],
+		counts: ActiveCounts,
+	): Promise<boolean> {
+		let progressed = false;
+		for (const principalId of rotation) {
+			if (counts.global >= this.deps.limits.globalActiveWorkspaces) break;
+			const list = byPrincipal.get(principalId);
+			const row = list?.[0];
+			if (!row || !this.canAdmit(row, counts)) continue;
+			list?.shift();
+			if (await this.launch(row)) this.recordAdmission(row, counts);
+			progressed = true;
+		}
+		return progressed;
 	}
 
 	async admit(): Promise<void> {
@@ -252,53 +407,13 @@ export class Scheduler {
 			this.report("admit.list", err);
 			return;
 		}
-		if (queued.length === 0) {
-			return;
-		}
+		if (queued.length === 0) return;
 		// FIFO within a principal, round-robin across principals.
-		const byPrincipal = new Map<string, WorkspaceRow[]>();
-		for (const row of queued) {
-			const list = byPrincipal.get(row.principalId) ?? [];
-			list.push(row);
-			byPrincipal.set(row.principalId, list);
-		}
-		const principals = [...byPrincipal.keys()];
-		const startIdx = this.lastAdmittedPrincipal
-			? (principals.indexOf(this.lastAdmittedPrincipal) + 1) % principals.length
-			: 0;
-		const rotation = [...principals.slice(startIdx), ...principals.slice(0, startIdx)];
-
+		const byPrincipal = this.groupQueuedByPrincipal(queued);
+		const rotation = this.principalRotation(byPrincipal);
 		let progressed = true;
 		while (progressed && counts.global < limits.globalActiveWorkspaces) {
-			progressed = false;
-			for (const principalId of rotation) {
-				if (counts.global >= limits.globalActiveWorkspaces) {
-					break;
-				}
-				const list = byPrincipal.get(principalId);
-				const row = list?.[0];
-				if (!row) {
-					continue;
-				}
-				const principalActive = counts.byPrincipal[principalId] ?? 0;
-				if (principalActive >= limits.perPrincipalActiveWorkspaces) {
-					continue;
-				}
-				const templateLimit =
-					limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
-				if ((counts.byTemplate[row.templateName] ?? 0) >= templateLimit) {
-					continue;
-				}
-				list?.shift();
-				const launched = await this.launch(row);
-				if (launched) {
-					counts.global += 1;
-					counts.byPrincipal[principalId] = principalActive + 1;
-					counts.byTemplate[row.templateName] = (counts.byTemplate[row.templateName] ?? 0) + 1;
-					this.lastAdmittedPrincipal = principalId;
-				}
-				progressed = true;
-			}
+			progressed = await this.admitRound(byPrincipal, rotation, counts);
 		}
 	}
 
@@ -326,10 +441,35 @@ export class Scheduler {
 			template_digest: row.templateDigest,
 			template_name: row.templateName,
 			template_version: row.templateVersion,
+			launch_mode: row.launchMode,
+			...(row.sourceDescriptor ? { source: row.sourceDescriptor } : {}),
+			...(row.restoredFromCheckpointId && row.originWorkspaceId
+				? {
+						restore: {
+							checkpoint_id: row.restoredFromCheckpointId,
+							origin_workspace_id: row.originWorkspaceId,
+						},
+					}
+				: {}),
 			...(row.launchInput ? { launch_input: row.launchInput } : {}),
 		};
 		try {
-			const ref = await driver.create({ workspace: claimed, input });
+			const mounts = await this.prepareStorage(claimed);
+			if (
+				!this.deps.secretResolver &&
+				JSON.stringify(claimed.templateSnapshot.spec).includes('"secretRef:')
+			) {
+				throw new Error("secret.unavailable: no deployment secret resolver configured");
+			}
+			const runtimeSecrets = this.deps.secretResolver
+				? await this.deps.secretResolver.resolve(claimed)
+				: [];
+			const ref = await driver.create({
+				workspace: claimed,
+				input,
+				mounts,
+				secrets: runtimeSecrets,
+			});
 			await store.updateWorkspace(
 				row.id,
 				{ providerKind: driver.kind, providerRef: ref },
@@ -355,8 +495,118 @@ export class Scheduler {
 					at,
 					patch: { launchInput: null, registrationDigest: null },
 				});
+				await this.cleanupWorkspaceStorage(claimed);
+				await this.finishRestoreOperation(row, "failed", "restore_failed");
 			}
 			return false;
 		}
+	}
+
+	private async cleanupWorkspaceStorage(row: WorkspaceRow): Promise<void> {
+		const storageDriver = this.deps.storageDriver;
+		if (!storageDriver) return;
+		const storage = await this.deps.store.getWorkspaceStorage(row.id);
+		if (!storage || ["retained", "deleted"].includes(storage.state)) return;
+		try {
+			if (Object.keys(storage.providerRef).length > 0) {
+				await storageDriver.deleteStorage(storage.providerRef as StorageRef);
+			}
+			const at = this.now();
+			await this.deps.store.updateWorkspaceStorage(
+				storage.id,
+				{ state: "deleted", deletedAt: at },
+				at,
+			);
+		} catch (error) {
+			await this.deps.store.updateWorkspaceStorage(
+				storage.id,
+				{ lastErrorCode: "storage_cleanup_failed" },
+				this.now(),
+			);
+			this.report(`storage.cleanup.${row.id}`, error);
+		}
+	}
+
+	private async prepareStorage(row: WorkspaceRow): Promise<RuntimeMountRef[]> {
+		const mounts = row.templateSnapshot.spec.persistence.mounts;
+		if (mounts.length === 0) return [];
+		const storageDriver = this.deps.storageDriver;
+		if (!storageDriver) {
+			throw new Error("workspace.persistence_not_enabled: no storage driver configured");
+		}
+		const { store } = this.deps;
+		let stored = await store.getWorkspaceStorage(row.id);
+		if (!stored) {
+			const now = this.now();
+			stored = await store.insertWorkspaceStorage({
+				id: randomUUID(),
+				workspaceId: row.id,
+				principalId: row.principalId,
+				providerKind: storageDriver.kind,
+				providerRef: {},
+				state: "allocating",
+				mountManifest: mounts,
+				logicalBytes: null,
+				fileCount: null,
+				retainedUntil: null,
+				createdAt: now,
+				updatedAt: now,
+				deletedAt: null,
+				lastErrorCode: null,
+			});
+		}
+		let ref: StorageRef;
+		if (Object.keys(stored.providerRef).length === 0) {
+			const allocated = await storageDriver.allocate({
+				storageId: stored.id,
+				workspaceId: row.id,
+				mounts,
+				uid: row.templateSnapshot.spec.security.uid,
+				gid: row.templateSnapshot.spec.security.gid,
+			});
+			ref = allocated.ref;
+			const state = row.restoredFromCheckpointId ? "restoring" : "ready";
+			await store.updateWorkspaceStorage(
+				stored.id,
+				{ providerRef: allocated.ref, providerKind: storageDriver.kind, state },
+				this.now(),
+			);
+			stored = { ...stored, providerRef: allocated.ref, state };
+		} else {
+			ref = stored.providerRef as StorageRef;
+		}
+		if (row.restoredFromCheckpointId && stored.state !== "ready") {
+			const checkpoint = await store.getCheckpoint(row.restoredFromCheckpointId);
+			if (checkpoint?.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) {
+				throw new Error("checkpoint.not_ready");
+			}
+			await storageDriver.cloneCheckpoint(
+				checkpoint.providerRef as StorageRef,
+				ref,
+				checkpoint.manifest,
+			);
+			await store.updateWorkspaceStorage(stored.id, { state: "ready" }, this.now());
+		}
+		if (row.restoredFromCheckpointId) {
+			await this.finishRestoreOperation(row, "succeeded", null);
+		}
+		return await storageDriver.runtimeMounts(ref, mounts);
+	}
+
+	private async finishRestoreOperation(
+		row: WorkspaceRow,
+		state: "succeeded" | "failed",
+		reasonCode: string | null,
+	): Promise<void> {
+		const operation = (await this.deps.store.listIncompleteOperations()).find(
+			(candidate) => candidate.kind === "restore" && candidate.resultWorkspaceId === row.id,
+		);
+		if (!operation) return;
+		const at = this.now();
+		await this.deps.store.updateOperation(
+			operation.id,
+			{ state, reasonCode, completedAt: at, attemptCount: operation.attemptCount + 1 },
+			at,
+		);
 	}
 }

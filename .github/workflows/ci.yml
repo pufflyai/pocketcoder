@@ -36,7 +36,8 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - name: Lint, format-check, and detect unused code
+        run: bun run check
       - run: bun run typecheck
       - name: Test reusable harness E2E contract
         run: bun run example:test

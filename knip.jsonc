@@ -1,0 +1,20 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+	"ignoreExportsUsedInFile": true,
+	"workspaces": {
+		".": {
+			"entry": ["deploy/image/echo-harness.ts"],
+			// Lerna invokes Nx internally for task hashing and caching.
+			"ignoreDependencies": ["nx"]
+		},
+		"apps/pocketcoder-server": {
+			"entry": ["src/**/*.test.ts"]
+		},
+		"examples/clients/*": {
+			"entry": ["remote-agentapi.ts", "*.test.ts"]
+		},
+		"examples/harnesses/*": {
+			"entry": ["agentapi-compat.ts", "*.test.ts"]
+		}
+	}
+}

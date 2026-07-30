@@ -90,6 +90,19 @@ describe("template manifest", () => {
 			API_TOKEN: "secretRef:agentgateway/token",
 		};
 		expect(() => parseTemplateManifest(good)).not.toThrow();
+
+		const malformed = baseManifest();
+		(malformed.spec as { checkpointHook?: unknown }).checkpointHook = {
+			command: ["/bin/true"],
+			env: { API_TOKEN: "secretRef:../escape" },
+		};
+		expect(() => parseTemplateManifest(malformed)).toThrow();
+
+		const output = baseManifest();
+		(output.spec as { outputs?: unknown }).outputs = {
+			"api-token": { type: "string" },
+		};
+		expect(() => parseTemplateManifest(output)).toThrow();
 	});
 
 	test("custom setup commands and harness survive the snapshot", () => {
@@ -100,6 +113,78 @@ describe("template manifest", () => {
 		const snapshot = snapshotOf(parseTemplateManifest(m));
 		expect(snapshot.spec.setup[0]?.command).toEqual(["bun", "install"]);
 		expect(snapshot.spec.harness.command[0]).toBe("agentapi");
+		expect(snapshot.spec.setup[0]?.runOn).toEqual(["create"]);
+	});
+
+	test("validates operator-owned persistence, source, and restore policy", () => {
+		const manifest = baseManifest();
+		const spec = manifest.spec as Record<string, unknown>;
+		spec.security = { writableMemoryPaths: ["/tmp"] };
+		spec.persistence = {
+			mounts: [
+				{
+					name: "worktree",
+					target: "/workspace",
+					maxBytes: 1024,
+					maxFiles: 10,
+				},
+				{
+					name: "agent-state",
+					target: "/state/agentapi",
+					maxBytes: 1024,
+					maxFiles: 10,
+				},
+			],
+			conversationRestore: "supported",
+			sessionCompatibility: "agentapi-0.12",
+		};
+		spec.source = {
+			kind: "git",
+			destinationMount: "worktree",
+			repositories: {
+				pocketcoder: {
+					url: "https://github.com/example/pocketcoder.git",
+					credential: "secretRef:git/pocketcoder",
+				},
+			},
+		};
+		const parsed = parseTemplateManifest(manifest);
+		expect(parsed.manifest.spec.persistence.mounts[0]?.target).toBe("/workspace");
+		expect(parsed.manifest.spec.source?.repositories.pocketcoder?.url).toContain("github.com");
+	});
+
+	test("rejects persistence overlap, protected paths, and unreviewed source destinations", () => {
+		for (const target of ["/", "/run/pocketcoder/secrets/token", "/proc/state"]) {
+			const manifest = baseManifest();
+			const spec = manifest.spec as Record<string, unknown>;
+			spec.persistence = {
+				mounts: [{ name: "worktree", target, maxBytes: 1024, maxFiles: 10 }],
+			};
+			expect(() => parseTemplateManifest(manifest)).toThrow();
+		}
+
+		const overlap = baseManifest();
+		const overlapSpec = overlap.spec as Record<string, unknown>;
+		overlapSpec.security = { writableMemoryPaths: ["/workspace"] };
+		overlapSpec.persistence = {
+			mounts: [
+				{
+					name: "worktree",
+					target: "/workspace/repo",
+					maxBytes: 1024,
+					maxFiles: 10,
+				},
+			],
+		};
+		expect(() => parseTemplateManifest(overlap)).toThrow();
+
+		const source = baseManifest();
+		(source.spec as Record<string, unknown>).source = {
+			kind: "git",
+			destinationMount: "missing",
+			repositories: { repo: { url: "https://example.com/repo.git" } },
+		};
+		expect(() => parseTemplateManifest(source)).toThrow();
 	});
 
 	test("findRoute matches exactly and only declared routes", () => {

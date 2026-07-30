@@ -5,7 +5,7 @@
 #   export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
 #   export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 #   bun run --filter '@pstdio/pocketcoder-cli' start db migrate
-#   POCKETCODER_TEMPLATE_DIR=deploy/templates bun run --filter '@pstdio/pocketcoder-server' start
+#   POCKETCODER_TEMPLATE_DIR=examples/templates bun run --filter '@pstdio/pocketcoder-server' start
 
 services:
   postgres:
@@ -23,6 +23,40 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  server:
+    profiles: ["full"]
+    build:
+      context: ../..
+      dockerfile: deploy/image/server.Dockerfile
+    environment:
+      POCKETCODER_HOST: 0.0.0.0
+      POCKETCODER_PORT: "7080"
+      POCKETCODER_DATABASE_URL: postgres://pocketcoder:pocketcoder@postgres:5432/pocketcoder
+      POCKETCODER_DATABASE_SCHEMA: pocketcoder
+      POCKETCODER_AUTH_PEPPER: ${POCKETCODER_AUTH_PEPPER:-}
+      POCKETCODER_TEMPLATE_DIR: /etc/pocketcoder/templates
+      POCKETCODER_DRIVER: docker
+      POCKETCODER_STORAGE_BACKEND: filesystem
+      POCKETCODER_INPUT_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/input
+      POCKETCODER_WORKSPACE_DATA_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/workspaces
+      POCKETCODER_CHECKPOINT_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/checkpoints
+      POCKETCODER_WORKSPACE_SERVER_URL: http://host.docker.internal:7080
+    ports:
+      - "127.0.0.1:7080:7080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Local demo only; production deployments mount their own reviewed manifests.
+      - ../../examples/templates:/etc/pocketcoder/templates:ro
+      # The host daemon resolves child-container bind paths. Keep this
+      # absolute source and target identical.
+      - ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}:${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pocketcoder-postgres:

@@ -55,7 +55,9 @@ pocketcoderctl keys revoke --id <key-id>
 ```
 
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
-`workspaces:cancel`, `services:relay`, `logs:read`, `admin`. A key's effective
+`workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
+`checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,
+`logs:read`, `admin`. A key's effective
 scopes are the intersection of its own scopes and its principal's. Keys are
 displayed once and stored as keyed digests; revocation applies on the next
 request.
@@ -63,7 +65,7 @@ request.
 ## Templates
 
 ```sh
-pocketcoderctl templates validate deploy/templates/*.json   # offline validation, prints digest
+pocketcoderctl templates validate examples/templates/*.json # validate checked-in examples offline
 pocketcoderctl templates list                               # versions + status from the database
 ```
 
@@ -78,10 +80,15 @@ leaked machine key can never change what code runs. See
 pocketcoderctl workspaces list [--active] [--state <state>] [--template <name>] \
   [--external-id <id>] [--limit <n>] [--json]
 pocketcoderctl workspaces create --template <name> [--version <v>] \
-  [--external-id <id>] [--input '<json>']
+  [--external-id <id>] [--input '<json>'] [--source <alias>] [--revision <rev>]
 pocketcoderctl workspaces get --id <uuid>
 pocketcoderctl workspaces logs --id <uuid> [--after <seq>] [--limit <n>]
 pocketcoderctl workspaces cancel --id <uuid>
+pocketcoderctl workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
+pocketcoderctl workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
+pocketcoderctl workspaces restore --checkpoint <uuid> --external-id <new-id>
+pocketcoderctl workspaces recreate --id <source-uuid> --external-id <new-id>
+pocketcoderctl workspaces outputs --id <uuid>
 ```
 
 - `--active` filters to nonterminal states (`queued`, `provisioning`,
@@ -92,6 +99,27 @@ pocketcoderctl workspaces cancel --id <uuid>
 - `--input` is the opaque `launch_input` JSON delivered to the harness in
   memory as `POCKETCODER_LAUNCH_INPUT`.
 - `cancel` is idempotent and never creates a replacement workspace.
+- `attach` stores only a message cursor in the local state directory (mode
+  `0600`); it never stores a supervisor/reconnect credential.
+- `preserve` ends the source execution. `restore` and `recreate` always create
+  a new execution and accept a caller-chosen external ID.
+
+## Checkpoints and storage
+
+```sh
+pocketcoderctl checkpoints list --workspace <uuid> [--state ready] [--json]
+pocketcoderctl checkpoints get --id <uuid>
+pocketcoderctl checkpoints verify --id <uuid>
+pocketcoderctl checkpoints delete --id <uuid>
+
+pocketcoderctl storage doctor
+pocketcoderctl storage list-orphans
+pocketcoderctl storage prune
+```
+
+Storage commands require an `admin` key. `list-orphans` reports opaque
+physical IDs that have no metadata but never deletes them automatically;
+`prune` deletes only ready checkpoints whose recorded retention has expired.
 
 ## Doctor
 

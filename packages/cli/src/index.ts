@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { isScope } from "@pstdio/pocketcoder-contracts";
@@ -18,6 +19,15 @@ import yargs, { type Argv } from "yargs";
 interface Flags {
 	[key: string]: unknown;
 }
+
+interface CommandContext {
+	group: string | undefined;
+	action: string | undefined;
+	positional: string[];
+	flags: Flags;
+}
+
+type CommandHandler = (context: CommandContext) => Promise<boolean>;
 
 function need(flags: Flags, key: string): string {
 	const value = flags[key];
@@ -121,6 +131,25 @@ async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
 	}
 }
 
+function cliCursorFile(): string {
+	const root =
+		process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder");
+	return join(root, "message-cursors.json");
+}
+
+function readCursors(path: string): Record<string, string | number> {
+	try {
+		return JSON.parse(readFileSync(path, "utf8")) as Record<string, string | number>;
+	} catch {
+		return {};
+	}
+}
+
+function writeCursors(path: string, cursors: Record<string, string | number>): void {
+	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	writeFileSync(path, `${JSON.stringify(cursors, null, 2)}\n`, { mode: 0o600 });
+}
+
 function commandGroup(
 	parser: Argv,
 	name: string,
@@ -132,6 +161,7 @@ function commandGroup(
 	);
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: The yargs command tree is declarative and easier to audit in one place.
 export function createCli(argv: string[]): Argv {
 	let parser: Argv = yargs(argv)
 		.scriptName("pocketcoderctl")
@@ -225,7 +255,10 @@ export function createCli(argv: string[]): Argv {
 					description: "Template manifest files",
 				}),
 			)
-			.command("list", "List template versions from the database"),
+			.command("list", "List authorized template versions through the REST API", (command) =>
+				command.option("json", { type: "boolean", description: "Print JSON" }),
+			)
+			.command("list-database", "List every template version from PostgreSQL"),
 	);
 
 	parser = commandGroup(parser, "workspaces", "Manage workspaces", (group) =>
@@ -275,6 +308,14 @@ export function createCli(argv: string[]): Argv {
 					.option("input", {
 						type: "string",
 						description: "Launch input as a JSON object",
+					})
+					.option("source", {
+						type: "string",
+						description: "Template-declared repository alias",
+					})
+					.option("revision", {
+						type: "string",
+						description: "Allowed Git branch, tag, or commit",
 					}),
 			)
 			.command("get", "Get a workspace", (command) =>
@@ -306,7 +347,59 @@ export function createCli(argv: string[]): Argv {
 					demandOption: true,
 					description: "Workspace ID",
 				}),
+			)
+			.command("preserve", "Stop and checkpoint a persistence-enabled workspace", (command) =>
+				command
+					.option("id", { type: "string", demandOption: true })
+					.option("retention", { type: "string" })
+					.option("label", { type: "string" }),
+			)
+			.command("restore", "Restore a checkpoint into a new workspace execution", (command) =>
+				command
+					.option("checkpoint", { type: "string", demandOption: true })
+					.option("external-id", { type: "string", demandOption: true }),
+			)
+			.command("recreate", "Restore a workspace's latest ready checkpoint", (command) =>
+				command
+					.option("id", { type: "string", demandOption: true })
+					.option("external-id", { type: "string", demandOption: true }),
+			)
+			.command("outputs", "Read audited template-declared outputs", (command) =>
+				command.option("id", { type: "string", demandOption: true }),
+			)
+			.command("attach", "Read or send AgentAPI messages on a live workspace", (command) =>
+				command
+					.option("id", { type: "string", demandOption: true })
+					.option("after", { type: "string" })
+					.option("message", { type: "string" })
+					.option("json", { type: "boolean" }),
 			),
+	);
+
+	parser = commandGroup(parser, "checkpoints", "Inspect retained workspace checkpoints", (group) =>
+		group
+			.command("list", "List checkpoints for a workspace", (command) =>
+				command
+					.option("workspace", { type: "string", demandOption: true })
+					.option("state", { type: "string" })
+					.option("json", { type: "boolean" }),
+			)
+			.command("get", "Get checkpoint metadata", (command) =>
+				command.option("id", { type: "string", demandOption: true }),
+			)
+			.command("verify", "Verify checkpoint manifest and content", (command) =>
+				command.option("id", { type: "string", demandOption: true }),
+			)
+			.command("delete", "Delete checkpoint content and metadata asynchronously", (command) =>
+				command.option("id", { type: "string", demandOption: true }),
+			),
+	);
+
+	parser = commandGroup(parser, "storage", "Inspect and maintain checkpoint storage", (group) =>
+		group
+			.command("doctor", "Check the configured storage backend and inventory")
+			.command("list-orphans", "List physical objects with no durable metadata")
+			.command("prune", "Delete checkpoints whose retention has expired"),
 	);
 
 	return parser
@@ -329,17 +422,23 @@ async function main(): Promise<void> {
 	const positional = Array.isArray(parsed.files) ? parsed.files.map(String) : [];
 	const flags = parsed as unknown as Flags;
 	loadProjectEnvironment(flags);
+	const context = { group, action, positional, flags };
+	if (await dispatchCommand(context)) return;
+	fail(`unsupported command: ${[group, action].filter(Boolean).join(" ")}`);
+}
 
-	if (group === "db" && action === "migrate") {
+async function handleDatabase({ group, action }: CommandContext): Promise<boolean> {
+	if (group !== "db") return false;
+	if (action === "migrate") {
 		const { url, schema } = dbConfig();
 		const sql = new SQL(url);
 		const applied = await migrate(sql, schema);
 		await sql.end();
 		console.log(applied.length > 0 ? `applied: ${applied.join(", ")}` : "database is up to date");
-		return;
+		return true;
 	}
 
-	if (group === "db" && action === "status") {
+	if (action === "status") {
 		const { url, schema } = dbConfig();
 		const sql = new SQL(url);
 		const status = await migrationStatus(sql, schema);
@@ -352,10 +451,14 @@ async function main(): Promise<void> {
 					: "pending";
 			console.log(`${m.version}\t${state}`);
 		}
-		return;
+		return true;
 	}
+	return false;
+}
 
-	if (group === "principals" && action === "create") {
+async function handlePrincipals({ group, action, flags }: CommandContext): Promise<boolean> {
+	if (group !== "principals") return false;
+	if (action === "create") {
 		const name = need(flags, "name");
 		const scopes = need(flags, "scopes")
 			.split(",")
@@ -369,10 +472,10 @@ async function main(): Promise<void> {
 			const row = await store.createPrincipal(name, scopes, templates);
 			console.log(`created principal ${row.name} (${row.id})`);
 		});
-		return;
+		return true;
 	}
 
-	if (group === "principals" && action === "list") {
+	if (action === "list") {
 		await withStore(async (store) => {
 			for (const p of await store.listPrincipals()) {
 				console.log(
@@ -380,10 +483,14 @@ async function main(): Promise<void> {
 				);
 			}
 		});
-		return;
+		return true;
 	}
+	return false;
+}
 
-	if (group === "keys" && action === "issue") {
+async function handleKeys({ group, action, flags }: CommandContext): Promise<boolean> {
+	if (group !== "keys") return false;
+	if (action === "issue") {
 		const pepper = process.env.POCKETCODER_AUTH_PEPPER;
 		if (!pepper) fail("POCKETCODER_AUTH_PEPPER is required to issue keys");
 		const principalName = need(flags, "principal");
@@ -413,202 +520,484 @@ async function main(): Promise<void> {
 			console.log("machine key (shown once, store it now):");
 			console.log(issued.token);
 		});
-		return;
+		return true;
 	}
 
-	if (group === "keys" && action === "revoke") {
+	if (action === "revoke") {
 		const id = need(flags, "id");
 		await withStore(async (store) => {
 			const revoked = await store.revokeMachineKey(id, new Date());
 			console.log(revoked ? `revoked ${id}` : `key ${id} not found or already revoked`);
 		});
-		return;
+		return true;
 	}
+	return false;
+}
 
-	if (group === "templates" && action === "validate") {
-		if (positional.length === 0) fail("provide at least one template file");
-		let ok = true;
-		for (const file of positional) {
-			try {
-				const parsed = await loadTemplateFile(file);
-				console.log(
-					`${file}: ok (${parsed.manifest.metadata.name}@${parsed.manifest.spec.version}, ${parsed.digest.slice(0, 19)}...)`,
-				);
-			} catch (err) {
-				ok = false;
-				console.error(`${file}: INVALID: ${err instanceof Error ? err.message : err}`);
-			}
-		}
-		if (!ok) process.exit(1);
-		return;
-	}
-
-	if (group === "templates" && action === "list") {
-		await withStore(async (store) => {
-			for (const t of await store.listTemplates(null)) {
-				console.log(`${t.name}@${t.version}\t${t.status}\t${t.digest.slice(0, 19)}...`);
-			}
-		});
-		return;
-	}
-
-	if (group === "workspaces" && action === "list") {
-		const params = new URLSearchParams();
-		for (const [flag, param] of [
-			["state", "state"],
-			["template", "template"],
-			["external-id", "external_id"],
-			["limit", "limit"],
-		] as const) {
-			if (typeof flags[flag] === "string") params.set(param, flags[flag] as string);
-		}
-		const res = await api(`/v1/workspaces${params.size ? `?${params}` : ""}`);
-		const body = (await res.json()) as {
-			items?: Array<{
-				id: string;
-				external_id: string;
-				state: string;
-				reason_code: string | null;
-				template: { name: string; version: string };
-			}>;
-		};
-		let items = body.items ?? [];
-		if (flags.active) {
-			// Active means nonterminal: queued, provisioning, connected,
-			// ready, or terminating.
-			items = items.filter(
-				(w) => !["succeeded", "failed", "canceled", "expired"].includes(w.state),
-			);
-		}
-		if (flags.json) {
-			console.log(JSON.stringify(items, null, 2));
-			return;
-		}
-		for (const w of items) {
+async function validateTemplates(files: string[]): Promise<void> {
+	if (files.length === 0) fail("provide at least one template file");
+	let valid = true;
+	for (const file of files) {
+		try {
+			const parsed = await loadTemplateFile(file);
 			console.log(
-				`${w.id}\t${w.state}${w.reason_code ? ` (${w.reason_code})` : ""}\t${w.template.name}@${w.template.version}\t${w.external_id}`,
+				`${file}: ok (${parsed.manifest.metadata.name}@${parsed.manifest.spec.version}, ${parsed.digest.slice(0, 19)}...)`,
 			);
+		} catch (error) {
+			valid = false;
+			console.error(`${file}: INVALID: ${error instanceof Error ? error.message : error}`);
 		}
-		if (items.length === 0) console.log("(no workspaces)");
+	}
+	if (!valid) process.exit(1);
+}
+
+async function listTemplates(flags: Flags): Promise<void> {
+	const response = await api("/v1/templates");
+	const body = (await response.json()) as {
+		items?: Array<{ name: string; version: string; status: string; digest: string }>;
+	};
+	if (!response.ok) {
+		fail(`template discovery failed (${response.status}): ${JSON.stringify(body)}`);
+	}
+	if (flags.json) {
+		console.log(JSON.stringify(body.items ?? [], null, 2));
 		return;
 	}
+	for (const template of body.items ?? []) {
+		console.log(
+			`${template.name}@${template.version}\t${template.status}\t${template.digest.slice(0, 19)}...`,
+		);
+	}
+}
 
-	if (group === "workspaces" && action === "create") {
-		const template = need(flags, "template");
-		const externalId =
-			typeof flags["external-id"] === "string" ? flags["external-id"] : `ctl-${randomUUID()}`;
-		let launchInput: Record<string, unknown> | undefined;
-		if (typeof flags.input === "string") {
-			try {
-				launchInput = JSON.parse(flags.input) as Record<string, unknown>;
-			} catch {
-				fail("--input must be a JSON object");
-			}
+async function listDatabaseTemplates(): Promise<void> {
+	await withStore(async (store) => {
+		for (const template of await store.listTemplates(null)) {
+			console.log(
+				`${template.name}@${template.version}\t${template.status}\t${template.digest.slice(0, 19)}...`,
+			);
 		}
-		const res = await api("/v1/workspaces", {
+	});
+}
+
+async function handleTemplates(context: CommandContext): Promise<boolean> {
+	if (context.group !== "templates") return false;
+	switch (context.action) {
+		case "validate":
+			await validateTemplates(context.positional);
+			return true;
+		case "list":
+			await listTemplates(context.flags);
+			return true;
+		case "list-database":
+			await listDatabaseTemplates();
+			return true;
+		default:
+			return false;
+	}
+}
+
+async function listWorkspaces(flags: Flags): Promise<void> {
+	const params = new URLSearchParams();
+	for (const [flag, param] of [
+		["state", "state"],
+		["template", "template"],
+		["external-id", "external_id"],
+		["limit", "limit"],
+	] as const) {
+		if (typeof flags[flag] === "string") params.set(param, flags[flag] as string);
+	}
+	const response = await api(`/v1/workspaces${params.size ? `?${params}` : ""}`);
+	const body = (await response.json()) as {
+		items?: Array<{
+			id: string;
+			external_id: string;
+			state: string;
+			reason_code: string | null;
+			template: { name: string; version: string };
+		}>;
+	};
+	let items = body.items ?? [];
+	if (flags.active) {
+		items = items.filter(
+			(workspace) =>
+				!["succeeded", "failed", "canceled", "expired", "preserved"].includes(workspace.state),
+		);
+	}
+	if (flags.json) {
+		console.log(JSON.stringify(items, null, 2));
+		return;
+	}
+	for (const workspace of items) {
+		console.log(
+			`${workspace.id}\t${workspace.state}${workspace.reason_code ? ` (${workspace.reason_code})` : ""}\t${workspace.template.name}@${workspace.template.version}\t${workspace.external_id}`,
+		);
+	}
+	if (items.length === 0) console.log("(no workspaces)");
+}
+
+function parseLaunchInput(flags: Flags): Record<string, unknown> | undefined {
+	if (typeof flags.input !== "string") return undefined;
+	try {
+		return JSON.parse(flags.input) as Record<string, unknown>;
+	} catch {
+		fail("--input must be a JSON object");
+	}
+}
+
+async function createWorkspace(flags: Flags): Promise<void> {
+	const template = need(flags, "template");
+	const externalId =
+		typeof flags["external-id"] === "string" ? flags["external-id"] : `ctl-${randomUUID()}`;
+	const launchInput = parseLaunchInput(flags);
+	const response = await api("/v1/workspaces", {
+		method: "POST",
+		headers: { "idempotency-key": externalId },
+		body: JSON.stringify({
+			external_id: externalId,
+			template: {
+				name: template,
+				...(typeof flags.version === "string" ? { version: flags.version } : {}),
+			},
+			...(launchInput ? { launch_input: launchInput } : {}),
+			...(typeof flags.source === "string"
+				? {
+						source: {
+							kind: "git",
+							repository: flags.source,
+							revision: typeof flags.revision === "string" ? flags.revision : "main",
+						},
+					}
+				: {}),
+		}),
+	});
+	console.log(JSON.stringify(await response.json(), null, 2));
+	if (!response.ok) process.exit(1);
+}
+
+async function getWorkspace(flags: Flags): Promise<void> {
+	const response = await api(`/v1/workspaces/${need(flags, "id")}`);
+	console.log(JSON.stringify(await response.json(), null, 2));
+}
+
+async function readWorkspaceLogs(flags: Flags): Promise<void> {
+	const after = typeof flags.after === "string" ? flags.after : "0";
+	const limit = typeof flags.limit === "string" ? flags.limit : "200";
+	const response = await api(
+		`/v1/workspaces/${need(flags, "id")}/logs?after=${after}&limit=${limit}`,
+	);
+	const body = (await response.json()) as {
+		items?: Array<{ seq: number; stream: string; content: string }>;
+	};
+	for (const line of body.items ?? []) {
+		process.stdout.write(`[${line.stream} #${line.seq}] ${line.content}`);
+		if (!line.content.endsWith("\n")) process.stdout.write("\n");
+	}
+	if ((body.items ?? []).length === 0) console.log("(no logs)");
+}
+
+async function cancelWorkspace(flags: Flags): Promise<void> {
+	const response = await api(`/v1/workspaces/${need(flags, "id")}/cancel`, {
+		method: "POST",
+	});
+	console.log(JSON.stringify(await response.json(), null, 2));
+}
+
+async function handleWorkspaceCore(context: CommandContext): Promise<boolean> {
+	if (context.group !== "workspaces") return false;
+	const commands: Record<string, () => Promise<void>> = {
+		list: () => listWorkspaces(context.flags),
+		create: () => createWorkspace(context.flags),
+		get: () => getWorkspace(context.flags),
+		logs: () => readWorkspaceLogs(context.flags),
+		cancel: () => cancelWorkspace(context.flags),
+	};
+	const command = context.action ? commands[context.action] : undefined;
+	if (!command) return false;
+	await command();
+	return true;
+}
+
+async function handleWorkspacePersistence({
+	group,
+	action,
+	flags,
+}: CommandContext): Promise<boolean> {
+	if (group !== "workspaces") return false;
+	if (action === "preserve") {
+		const id = need(flags, "id");
+		const body = {
+			...(typeof flags.retention === "string" ? { retention: flags.retention } : {}),
+			...(typeof flags.label === "string" ? { label: flags.label } : {}),
+		};
+		const res = await api(`/v1/workspaces/${id}/preserve`, {
 			method: "POST",
-			headers: { "idempotency-key": externalId },
-			body: JSON.stringify({
-				external_id: externalId,
-				template: {
-					name: template,
-					...(typeof flags.version === "string" ? { version: flags.version } : {}),
-				},
-				...(launchInput ? { launch_input: launchInput } : {}),
-			}),
+			headers: { "idempotency-key": `preserve-${id}-${randomUUID()}` },
+			body: JSON.stringify(body),
 		});
 		console.log(JSON.stringify(await res.json(), null, 2));
 		if (!res.ok) process.exit(1);
-		return;
+		return true;
 	}
 
-	if (group === "workspaces" && action === "get") {
-		const res = await api(`/v1/workspaces/${need(flags, "id")}`);
-		console.log(JSON.stringify(await res.json(), null, 2));
-		return;
-	}
-
-	if (group === "workspaces" && action === "logs") {
-		const after = typeof flags.after === "string" ? flags.after : "0";
-		const limit = typeof flags.limit === "string" ? flags.limit : "200";
-		const res = await api(`/v1/workspaces/${need(flags, "id")}/logs?after=${after}&limit=${limit}`);
-		const body = (await res.json()) as {
-			items?: Array<{ seq: number; stream: string; content: string }>;
-		};
-		for (const line of body.items ?? []) {
-			process.stdout.write(`[${line.stream} #${line.seq}] ${line.content}`);
-			if (!line.content.endsWith("\n")) process.stdout.write("\n");
-		}
-		if ((body.items ?? []).length === 0) console.log("(no logs)");
-		return;
-	}
-
-	if (group === "workspaces" && action === "cancel") {
-		const res = await api(`/v1/workspaces/${need(flags, "id")}/cancel`, {
-			method: "POST",
-		});
-		console.log(JSON.stringify(await res.json(), null, 2));
-		return;
-	}
-
-	if (group === "doctor") {
-		const template = need(flags, "template");
-		const externalId = `doctor-${randomUUID()}`;
-		console.log(`doctor: creating probe workspace from template ${template}`);
-		const createRes = await api("/v1/workspaces", {
+	if (action === "restore") {
+		const externalId = need(flags, "external-id");
+		const res = await api(`/v1/checkpoints/${need(flags, "checkpoint")}/restore`, {
 			method: "POST",
 			headers: { "idempotency-key": externalId },
-			body: JSON.stringify({
-				external_id: externalId,
-				template: { name: template },
-			}),
+			body: JSON.stringify({ external_id: externalId }),
 		});
-		if (!createRes.ok) {
-			fail(`create failed (${createRes.status}): ${await createRes.text()}`);
-		}
-		const workspace = (await createRes.json()) as { id: string };
-		console.log(`doctor: workspace ${workspace.id} queued; waiting for ready`);
-		const deadline = Date.now() + 5 * 60_000;
-		let ready = false;
-		let terminalState: string | null = null;
-		let terminalReason: string | null = null;
-		while (Date.now() < deadline) {
-			const res = await api(`/v1/workspaces/${workspace.id}`);
-			const body = (await res.json()) as {
-				state: string;
-				reason_code?: string;
-			};
-			if (body.state === "ready") {
-				ready = true;
-				break;
-			}
-			if (["failed", "canceled", "expired"].includes(body.state)) {
-				terminalState = body.state;
-				terminalReason = body.reason_code ?? "no reason";
-				break;
-			}
-			await new Promise((resolve) => setTimeout(resolve, 2000));
-		}
-		if (!ready) {
-			// Never leak the probe workspace; cancel before reporting.
-			await api(`/v1/workspaces/${workspace.id}/cancel`, {
-				method: "POST",
-			}).catch(() => {});
-			if (terminalState) {
-				fail(`workspace reached ${terminalState} (${terminalReason})`);
-			}
-			fail("workspace did not become ready within 5 minutes (probe canceled)");
-		}
-		console.log("doctor: workspace ready; probing agent status through the relay");
-		const statusRes = await api(`/v1/workspaces/${workspace.id}/services/agent/status`);
-		console.log(`doctor: relay status ${statusRes.status}: ${await statusRes.text()}`);
-		console.log("doctor: canceling probe workspace");
-		await api(`/v1/workspaces/${workspace.id}/cancel`, { method: "POST" });
-		console.log("doctor: ok");
-		return;
+		console.log(JSON.stringify(await res.json(), null, 2));
+		if (!res.ok) process.exit(1);
+		return true;
 	}
 
-	fail(`unsupported command: ${[group, action].filter(Boolean).join(" ")}`);
+	if (action === "recreate") {
+		const externalId = need(flags, "external-id");
+		const res = await api(`/v1/workspaces/${need(flags, "id")}/recreate`, {
+			method: "POST",
+			headers: { "idempotency-key": externalId },
+			body: JSON.stringify({ external_id: externalId }),
+		});
+		console.log(JSON.stringify(await res.json(), null, 2));
+		if (!res.ok) process.exit(1);
+		return true;
+	}
+
+	if (action === "outputs") {
+		const res = await api(`/v1/workspaces/${need(flags, "id")}/outputs`);
+		console.log(JSON.stringify(await res.json(), null, 2));
+		if (!res.ok) process.exit(1);
+		return true;
+	}
+	return false;
+}
+
+async function assertWorkspaceAttachable(id: string): Promise<void> {
+	const response = await api(`/v1/workspaces/${id}`);
+	const workspace = (await response.json()) as {
+		state?: string;
+		persistence?: { latest_checkpoint_id?: string | null };
+	};
+	if (!response.ok) fail(`workspace lookup failed (${response.status})`);
+	if (workspace.state === "ready") return;
+	const restore = workspace.persistence?.latest_checkpoint_id
+		? ` Restore with: pocketcoderctl workspaces restore --checkpoint ${workspace.persistence.latest_checkpoint_id} --external-id <new-id>`
+		: "";
+	fail(`workspace is ${workspace.state ?? "unavailable"}; it is not live.${restore}`);
+}
+
+async function sendWorkspaceMessage(id: string, message: unknown): Promise<void> {
+	if (typeof message !== "string") return;
+	const response = await api(`/v1/workspaces/${id}/services/agent/message`, {
+		method: "POST",
+		body: JSON.stringify({ content: message, type: "user" }),
+	});
+	if (!response.ok) fail(`message failed (${response.status}): ${await response.text()}`);
+}
+
+function printWorkspaceMessages(messages: unknown[], json: unknown): void {
+	if (json) {
+		console.log(JSON.stringify(messages, null, 2));
+		return;
+	}
+	for (const message of messages) console.log(JSON.stringify(message));
+	if (messages.length === 0) console.log("(no new messages)");
+}
+
+function messageCursor(messages: unknown[], after: string): string | number {
+	const last = messages.at(-1) as { id?: unknown } | undefined;
+	if (last && (typeof last.id === "number" || typeof last.id === "string")) return last.id;
+	return Number(after) + messages.length;
+}
+
+async function handleWorkspaceAttach({ group, action, flags }: CommandContext): Promise<boolean> {
+	if (group !== "workspaces" || action !== "attach") return false;
+	const id = need(flags, "id");
+	await assertWorkspaceAttachable(id);
+	await sendWorkspaceMessage(id, flags.message);
+	const cursorFile = cliCursorFile();
+	const cursors = readCursors(cursorFile);
+	const after = typeof flags.after === "string" ? flags.after : String(cursors[id] ?? 0);
+	const messagesRes = await api(
+		`/v1/workspaces/${id}/services/agent/messages?after=${encodeURIComponent(after)}`,
+	);
+	const messagesBody = (await messagesRes.json()) as { messages?: unknown[] };
+	if (!messagesRes.ok) fail(`message polling failed (${messagesRes.status})`);
+	const messages = messagesBody.messages ?? [];
+	printWorkspaceMessages(messages, flags.json);
+	writeCursors(cursorFile, { ...cursors, [id]: messageCursor(messages, after) });
+	return true;
+}
+
+async function listCheckpoints(flags: Flags): Promise<void> {
+	const params = new URLSearchParams();
+	if (typeof flags.state === "string") params.set("state", flags.state);
+	const response = await api(
+		`/v1/workspaces/${need(flags, "workspace")}/checkpoints${params.size ? `?${params}` : ""}`,
+	);
+	const body = (await response.json()) as { items?: unknown[] };
+	if (flags.json) console.log(JSON.stringify(body.items ?? [], null, 2));
+	else for (const item of body.items ?? []) console.log(JSON.stringify(item));
+	if (!response.ok) process.exit(1);
+}
+
+async function getCheckpoint(flags: Flags): Promise<void> {
+	const response = await api(`/v1/checkpoints/${need(flags, "id")}`);
+	console.log(JSON.stringify(await response.json(), null, 2));
+	if (!response.ok) process.exit(1);
+}
+
+async function verifyCheckpoint(flags: Flags): Promise<void> {
+	const id = need(flags, "id");
+	const response = await api(`/v1/checkpoints/${id}/verify`, {
+		method: "POST",
+		headers: { "idempotency-key": `verify-${id}-${randomUUID()}` },
+	});
+	console.log(JSON.stringify(await response.json(), null, 2));
+	if (!response.ok) process.exit(1);
+}
+
+async function deleteCheckpoint(flags: Flags): Promise<void> {
+	const id = need(flags, "id");
+	const response = await api(`/v1/checkpoints/${id}`, {
+		method: "DELETE",
+		headers: { "idempotency-key": `delete-${id}` },
+	});
+	console.log(JSON.stringify(await response.json(), null, 2));
+	if (!response.ok) process.exit(1);
+}
+
+async function handleCheckpoints(context: CommandContext): Promise<boolean> {
+	if (context.group !== "checkpoints") return false;
+	const commands: Record<string, () => Promise<void>> = {
+		list: () => listCheckpoints(context.flags),
+		get: () => getCheckpoint(context.flags),
+		verify: () => verifyCheckpoint(context.flags),
+		delete: () => deleteCheckpoint(context.flags),
+	};
+	const command = context.action ? commands[context.action] : undefined;
+	if (!command) return false;
+	await command();
+	return true;
+}
+
+async function inspectStorage(action: "doctor" | "list-orphans"): Promise<void> {
+	const response = await api("/v1/storage/inventory");
+	const body = (await response.json()) as {
+		backend?: string;
+		storage_count?: number;
+		checkpoint_count?: number;
+		unknown_storage?: string[];
+		unknown_checkpoints?: string[];
+	};
+	if (!response.ok) {
+		fail(`storage inventory failed (${response.status}): ${JSON.stringify(body)}`);
+	}
+	if (action === "doctor") {
+		console.log(
+			`storage: ${body.backend ?? "unknown"}; allocations=${body.storage_count ?? 0}; checkpoints=${body.checkpoint_count ?? 0}`,
+		);
+	}
+	for (const id of body.unknown_storage ?? []) console.log(`storage\t${id}`);
+	for (const id of body.unknown_checkpoints ?? []) console.log(`checkpoint\t${id}`);
+	const noOrphans =
+		(body.unknown_storage?.length ?? 0) === 0 && (body.unknown_checkpoints?.length ?? 0) === 0;
+	if (action === "list-orphans" && noOrphans) console.log("(no orphaned physical objects)");
+}
+
+async function pruneStorage(): Promise<void> {
+	const response = await api("/v1/storage/prune", { method: "POST" });
+	console.log(JSON.stringify(await response.json(), null, 2));
+	if (!response.ok) process.exit(1);
+}
+
+async function handleStorage(context: CommandContext): Promise<boolean> {
+	if (context.group !== "storage") return false;
+	if (context.action === "doctor" || context.action === "list-orphans") {
+		await inspectStorage(context.action);
+		return true;
+	}
+	if (context.action !== "prune") return false;
+	await pruneStorage();
+	return true;
+}
+
+async function handleDoctor({ group, flags }: CommandContext): Promise<boolean> {
+	if (group !== "doctor") return false;
+	const template = need(flags, "template");
+	const externalId = `doctor-${randomUUID()}`;
+	console.log(`doctor: creating probe workspace from template ${template}`);
+	const createRes = await api("/v1/workspaces", {
+		method: "POST",
+		headers: { "idempotency-key": externalId },
+		body: JSON.stringify({
+			external_id: externalId,
+			template: { name: template },
+		}),
+	});
+	if (!createRes.ok) {
+		fail(`create failed (${createRes.status}): ${await createRes.text()}`);
+	}
+	const workspace = (await createRes.json()) as { id: string };
+	console.log(`doctor: workspace ${workspace.id} queued; waiting for ready`);
+	const deadline = Date.now() + 5 * 60_000;
+	let ready = false;
+	let terminalState: string | null = null;
+	let terminalReason: string | null = null;
+	while (Date.now() < deadline) {
+		const res = await api(`/v1/workspaces/${workspace.id}`);
+		const body = (await res.json()) as {
+			state: string;
+			reason_code?: string;
+		};
+		if (body.state === "ready") {
+			ready = true;
+			break;
+		}
+		if (["failed", "canceled", "expired", "preserved"].includes(body.state)) {
+			terminalState = body.state;
+			terminalReason = body.reason_code ?? "no reason";
+			break;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 2000));
+	}
+	if (!ready) {
+		// Never leak the probe workspace; cancel before reporting.
+		await api(`/v1/workspaces/${workspace.id}/cancel`, {
+			method: "POST",
+		}).catch(() => {});
+		if (terminalState) {
+			fail(`workspace reached ${terminalState} (${terminalReason})`);
+		}
+		fail("workspace did not become ready within 5 minutes (probe canceled)");
+	}
+	console.log("doctor: workspace ready; probing agent status through the relay");
+	const statusRes = await api(`/v1/workspaces/${workspace.id}/services/agent/status`);
+	console.log(`doctor: relay status ${statusRes.status}: ${await statusRes.text()}`);
+	console.log("doctor: canceling probe workspace");
+	await api(`/v1/workspaces/${workspace.id}/cancel`, { method: "POST" });
+	console.log("doctor: ok");
+	return true;
+}
+
+async function dispatchCommand(context: CommandContext): Promise<boolean> {
+	const handlers: CommandHandler[] = [
+		handleDatabase,
+		handlePrincipals,
+		handleKeys,
+		handleTemplates,
+		handleWorkspaceCore,
+		handleWorkspacePersistence,
+		handleWorkspaceAttach,
+		handleCheckpoints,
+		handleStorage,
+		handleDoctor,
+	];
+	for (const handler of handlers) {
+		if (await handler(context)) return true;
+	}
+	return false;
 }
 
 if (import.meta.main) {

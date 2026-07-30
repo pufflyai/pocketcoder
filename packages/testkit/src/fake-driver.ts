@@ -12,9 +12,11 @@ export class FakeDriver implements WorkspaceDriver {
 	readonly kind = "fake";
 	created: WorkspaceLaunch[] = [];
 	terminated: ProviderRef[] = [];
+	stopped: ProviderRef[] = [];
 	failNextCreate = false;
 	private counter = 0;
 	private readonly live = new Map<string, DiscoveredProvider>();
+	private readonly stoppedIds = new Set<string>();
 
 	async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
 		if (this.failNextCreate) {
@@ -34,11 +36,21 @@ export class FakeDriver implements WorkspaceDriver {
 
 	async inspect(ref: ProviderRef): Promise<ProviderState> {
 		const exists = [...this.live.values()].some((p) => p.ref.id === ref.id);
-		return { exists, running: exists, exitCode: exists ? null : 0 };
+		return {
+			exists,
+			running: exists && !this.stoppedIds.has(ref.id),
+			exitCode: !exists || this.stoppedIds.has(ref.id) ? 0 : null,
+		};
 	}
 
-	async terminate(ref: ProviderRef): Promise<void> {
+	async stop(ref: ProviderRef): Promise<void> {
+		this.stopped.push(ref);
+		this.stoppedIds.add(ref.id);
+	}
+
+	async remove(ref: ProviderRef): Promise<void> {
 		this.terminated.push(ref);
+		this.stoppedIds.delete(ref.id);
 		for (const [wsId, p] of this.live) {
 			if (p.ref.id === ref.id) this.live.delete(wsId);
 		}

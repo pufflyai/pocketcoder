@@ -93,6 +93,75 @@ command, mount, network, privilege, or driver.
 
 Check any file offline with `pocketcoderctl templates validate <file>`.
 
+## Persistence, source, and secrets
+
+`persistence.mounts` opts a template into durable storage. Each mount has a
+logical name, an absolute target, and byte/file ceilings. The server allocates
+its physical backing; neither a caller nor a template supplies a host path,
+PVC name, or backend. Mounts must be normalized, non-overlapping, outside
+`/run/pocketcoder`, `/proc`, `/sys`, and `/dev`, and must not overlap tmpfs
+paths.
+
+```json
+{
+  "persistence": {
+    "mounts": [
+      { "name": "worktree", "target": "/workspace", "maxBytes": 10737418240, "maxFiles": 500000 },
+      { "name": "agent-state", "target": "/state", "maxBytes": 1073741824, "maxFiles": 100000 }
+    ],
+    "conversationRestore": "supported",
+    "sessionCompatibility": "agentapi-v1",
+    "checkpoint": {
+      "onIdle": "preserve",
+      "onDeadline": "preserve",
+      "onCleanExit": "preserve",
+      "onFailure": "retain-for-recovery",
+      "retention": "168h"
+    }
+  },
+  "checkpointHook": {
+    "command": ["/usr/local/bin/agentapi-checkpoint"],
+    "timeoutSeconds": 30
+  }
+}
+```
+
+Setup steps default to `runOn: ["create"]`. Mark validation or repair steps
+with `runOn: ["restore"]` when they are safe against restored content.
+`conversationRestore: supported` requires a separate harness-state mount and
+`sessionCompatibility`; otherwise use the honest `filesystem_only` default.
+The optional checkpoint hook flushes application state before the runtime is
+stopped.
+
+A template may define repository aliases under `source.repositories`. The
+caller selects only an alias and validated revision:
+
+```json
+{
+  "source": {
+    "kind": "git",
+    "destinationMount": "worktree",
+    "repositories": {
+      "app": {
+        "url": "https://github.com/example/app.git",
+        "credential": "secretRef:git-credentials/token"
+      }
+    }
+  }
+}
+```
+
+The non-secret alias, revision, and resolved commit are durable provenance.
+`secretRef:` values resolve to read-only files under
+`/run/pocketcoder/secrets`; local deployments read files beneath
+`POCKETCODER_SECRET_ROOT`, while Kubernetes interprets
+`secretRef:<secret>/<key>`. Secret values and opaque launch input are never
+checkpointed.
+
+Template-declared outputs accept only bounded strings, Git SHAs, or HTTPS
+URLs. A harness publishes one by writing a line such as
+`POCKETCODER_OUTPUT {"name":"commit","value":"<sha>"}` to stdout.
+
 ## Immutability and versioning
 
 `(name, version)` content is immutable: changing a file without bumping

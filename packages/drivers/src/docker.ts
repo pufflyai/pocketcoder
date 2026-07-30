@@ -110,6 +110,25 @@ export class DockerDriver implements WorkspaceDriver {
 			"-v",
 			`${inputFile}:/run/pocketcoder/input:ro`,
 		];
+		for (const mount of launch.mounts) {
+			if (mount.source.kind !== "host-path") {
+				throw new Error(
+					`docker driver cannot consume ${mount.source.kind} storage; configure a host-path storage backend`,
+				);
+			}
+			args.push(
+				"--mount",
+				`type=bind,src=${mount.source.path},dst=${mount.target}${mount.readOnly ? ",readonly" : ""}`,
+			);
+		}
+		for (const secret of launch.secrets) {
+			if (secret.source.kind !== "host-path") {
+				throw new Error(
+					`docker driver cannot consume ${secret.source.kind} secrets; configure a file secret resolver`,
+				);
+			}
+			args.push("--mount", `type=bind,src=${secret.source.path},dst=${secret.target},readonly`);
+		}
 		for (const cap of spec.security.dropCapabilities) {
 			args.push("--cap-drop", cap);
 		}
@@ -126,6 +145,7 @@ export class DockerDriver implements WorkspaceDriver {
 			args.push("--add-host", "host.docker.internal:host-gateway");
 		}
 		for (const [key, value] of Object.entries(spec.env)) {
+			if (value.startsWith("secretRef:")) continue;
 			args.push("-e", `${key}=${value}`);
 		}
 		args.push(await resolveDockerImage(this.opts.dockerBin, spec.image), ...spec.command);
@@ -158,12 +178,15 @@ export class DockerDriver implements WorkspaceDriver {
 		}
 	}
 
-	async terminate(ref: ProviderRef, graceSeconds: number): Promise<void> {
+	async stop(ref: ProviderRef, graceSeconds: number): Promise<void> {
 		try {
 			await run(this.opts.dockerBin, ["stop", "-t", String(graceSeconds), ref.id]);
 		} catch {
 			// Already stopped or gone.
 		}
+	}
+
+	async remove(ref: ProviderRef): Promise<void> {
 		try {
 			await run(this.opts.dockerBin, ["rm", "-f", ref.id]);
 		} catch {

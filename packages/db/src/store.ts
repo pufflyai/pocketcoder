@@ -1,9 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
+	type CheckpointManifest,
+	type CheckpointState,
+	type ConversationRestoreCapability,
 	canTransition,
 	isTerminal,
+	type LaunchMode,
+	type OperationKind,
+	type OperationState,
 	type ReasonCode,
+	type ResolvedSource,
+	type SourceDescriptor,
+	type StorageState,
 	type TemplateSnapshot,
+	TemplateSpecSchema,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import {
@@ -20,10 +30,17 @@ import {
 	type TemplateUpsert,
 	type TransitionRequest,
 	type UpsertResult,
+	type WorkspaceCheckpointPatch,
+	type WorkspaceCheckpointRow,
 	type WorkspaceInsert,
 	type WorkspaceListFilter,
+	type WorkspaceOperationPatch,
+	type WorkspaceOperationRow,
+	type WorkspaceOutputRow,
 	type WorkspacePatch,
 	type WorkspaceRow,
+	type WorkspaceStoragePatch,
+	type WorkspaceStorageRow,
 } from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
 import { migrate } from "./migrate";
@@ -104,7 +121,7 @@ export class PostgresStore implements Store {
 			version: String(r.version),
 			digest: String(r.digest),
 			description: (r.description as string | null) ?? null,
-			spec: asJson(r.spec),
+			spec: TemplateSpecSchema.parse(asJson(r.spec)),
 			status: r.status as TemplateStatus,
 			createdAt: asDate(r.created_at),
 			retiredAt: asDateOrNull(r.retired_at),
@@ -316,7 +333,10 @@ export class PostgresStore implements Store {
 			templateName: String(r.template_name),
 			templateVersion: String(r.template_version),
 			templateDigest: String(r.template_digest),
-			templateSnapshot: asJson<TemplateSnapshot>(r.template_snapshot),
+			templateSnapshot: {
+				...asJson<TemplateSnapshot>(r.template_snapshot),
+				spec: TemplateSpecSchema.parse(asJson<TemplateSnapshot>(r.template_snapshot).spec),
+			},
 			state: r.state as WorkspaceState,
 			reasonCode: (r.reason_code as ReasonCode | null) ?? null,
 			terminalIntent: (r.terminal_intent as WorkspaceState | null) ?? null,
@@ -338,6 +358,16 @@ export class PostgresStore implements Store {
 			createdAt: asDate(r.created_at),
 			updatedAt: asDate(r.updated_at),
 			terminalAt: asDateOrNull(r.terminal_at),
+			originWorkspaceId: (r.origin_workspace_id as string | null) ?? null,
+			restoredFromCheckpointId: (r.restored_from_checkpoint_id as string | null) ?? null,
+			sourceDescriptor:
+				r.source_descriptor == null ? null : asJson<SourceDescriptor>(r.source_descriptor),
+			resolvedSource: r.resolved_source == null ? null : asJson<ResolvedSource>(r.resolved_source),
+			persistenceCapability:
+				(r.persistence_capability as ConversationRestoreCapability | null) ?? "filesystem_only",
+			latestCheckpointId: (r.latest_checkpoint_id as string | null) ?? null,
+			launchMode: (r.launch_mode as LaunchMode | null) ?? "create",
+			outputs: r.outputs == null ? {} : asJson(r.outputs),
 		};
 	}
 
@@ -361,7 +391,7 @@ export class PostgresStore implements Store {
 			const byExternal = (await tx.unsafe(
 				`SELECT * FROM ${this.t("workspaces")}
 				 WHERE principal_id = $1 AND external_id = $2
-				   AND state NOT IN ('succeeded', 'failed', 'canceled', 'expired')`,
+				   AND state NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved')`,
 				[row.principalId, row.externalId],
 			)) as Row[];
 			if (byExternal.length > 0) {
@@ -377,9 +407,12 @@ export class PostgresStore implements Store {
 					(id, principal_id, external_id, idempotency_key, request_digest,
 					 template_id, template_name, template_version, template_digest,
 					 template_snapshot, state, launch_input, metadata,
-					 deadline_at, created_at, updated_at)
+					 deadline_at, created_at, updated_at, origin_workspace_id,
+					 restored_from_checkpoint_id, source_descriptor, resolved_source,
+					 persistence_capability, latest_checkpoint_id, launch_mode, outputs)
 				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'queued',
-						 $11::jsonb, $12::jsonb, $13, $14, $14)
+						 $11::jsonb, $12::jsonb, $13, $14, $14, $15, $16, $17::jsonb,
+						 $18::jsonb, $19, $20, $21, $22::jsonb)
 				 RETURNING *`,
 				[
 					row.id,
@@ -396,6 +429,14 @@ export class PostgresStore implements Store {
 					JSON.stringify(row.metadata),
 					row.deadlineAt,
 					row.createdAt,
+					row.originWorkspaceId ?? null,
+					row.restoredFromCheckpointId ?? null,
+					row.sourceDescriptor == null ? null : JSON.stringify(row.sourceDescriptor),
+					row.resolvedSource == null ? null : JSON.stringify(row.resolvedSource),
+					row.persistenceCapability ?? "filesystem_only",
+					row.latestCheckpointId ?? null,
+					row.launchMode ?? "create",
+					JSON.stringify(row.outputs ?? {}),
 				],
 			)) as Row[];
 			const workspace = this.workspaceFromRow(inserted[0] as Row);
@@ -454,7 +495,7 @@ export class PostgresStore implements Store {
 	async listNonterminal(): Promise<WorkspaceRow[]> {
 		const rows = (await this.sql.unsafe(
 			`SELECT * FROM ${this.t("workspaces")}
-			 WHERE state NOT IN ('succeeded', 'failed', 'canceled', 'expired')`,
+			 WHERE state NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved')`,
 		)) as Row[];
 		return rows.map((r) => this.workspaceFromRow(r));
 	}
@@ -463,7 +504,7 @@ export class PostgresStore implements Store {
 		const rows = (await this.sql.unsafe(
 			`SELECT principal_id, template_name, count(*)::int AS n
 			 FROM ${this.t("workspaces")}
-			 WHERE state IN ('provisioning', 'connected', 'ready', 'terminating')
+			 WHERE state IN ('provisioning', 'connected', 'ready', 'preserving', 'terminating')
 			 GROUP BY principal_id, template_name`,
 		)) as Array<{ principal_id: string; template_name: string; n: number }>;
 		const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
@@ -497,9 +538,18 @@ export class PostgresStore implements Store {
 		lastActivityAt: "last_activity_at",
 		launchAttempts: "launch_attempts",
 		health: "health",
+		resolvedSource: "resolved_source",
+		latestCheckpointId: "latest_checkpoint_id",
+		outputs: "outputs",
 	};
 
-	private static readonly JSONB_PATCH_KEYS = new Set(["launchInput", "providerRef", "health"]);
+	private static readonly JSONB_PATCH_KEYS = new Set([
+		"launchInput",
+		"providerRef",
+		"health",
+		"resolvedSource",
+		"outputs",
+	]);
 
 	private patchSql(patch: WorkspacePatch, params: unknown[]): string[] {
 		const sets: string[] = [];
@@ -587,6 +637,441 @@ export class PostgresStore implements Store {
 			toState: r.to_state as WorkspaceState,
 			reasonCode: (r.reason_code as ReasonCode | null) ?? null,
 			occurredAt: asDate(r.occurred_at),
+		}));
+	}
+
+	// --- Storage, checkpoints, operations, and outputs ---
+
+	private storageFromRow(r: Row): WorkspaceStorageRow {
+		return {
+			id: String(r.id),
+			workspaceId: String(r.workspace_id),
+			principalId: String(r.principal_id),
+			providerKind: String(r.provider_kind),
+			providerRef: asJson(r.provider_ref),
+			state: r.state as StorageState,
+			mountManifest: asJson(r.mount_manifest),
+			logicalBytes: r.logical_bytes == null ? null : Number(r.logical_bytes),
+			fileCount: r.file_count == null ? null : Number(r.file_count),
+			retainedUntil: asDateOrNull(r.retained_until),
+			createdAt: asDate(r.created_at),
+			updatedAt: asDate(r.updated_at),
+			deletedAt: asDateOrNull(r.deleted_at),
+			lastErrorCode: (r.last_error_code as string | null) ?? null,
+		};
+	}
+
+	async insertWorkspaceStorage(row: WorkspaceStorageRow): Promise<WorkspaceStorageRow> {
+		const rows = (await this.sql.unsafe(
+			`INSERT INTO ${this.t("workspace_storage")}
+				(id, workspace_id, principal_id, provider_kind, provider_ref, state,
+				 mount_manifest, logical_bytes, file_count, retained_until, created_at,
+				 updated_at, deleted_at, last_error_code)
+			 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+			 ON CONFLICT DO NOTHING RETURNING *`,
+			[
+				row.id,
+				row.workspaceId,
+				row.principalId,
+				row.providerKind,
+				JSON.stringify(row.providerRef),
+				row.state,
+				JSON.stringify(row.mountManifest),
+				row.logicalBytes,
+				row.fileCount,
+				row.retainedUntil,
+				row.createdAt,
+				row.updatedAt,
+				row.deletedAt,
+				row.lastErrorCode,
+			],
+		)) as Row[];
+		if (rows[0]) return this.storageFromRow(rows[0]);
+		const existing = await this.getWorkspaceStorage(row.workspaceId);
+		if (!existing) throw new Error("workspace storage insert conflicted without a live row");
+		return existing;
+	}
+
+	async getWorkspaceStorage(workspaceId: string): Promise<WorkspaceStorageRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_storage")}
+			 WHERE workspace_id = $1 AND state NOT IN ('deleted', 'lost', 'quarantined')
+			 ORDER BY created_at DESC LIMIT 1`,
+			[workspaceId],
+		)) as Row[];
+		return rows[0] ? this.storageFromRow(rows[0]) : null;
+	}
+
+	async getStorage(id: string): Promise<WorkspaceStorageRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_storage")} WHERE id = $1`,
+			[id],
+		)) as Row[];
+		return rows[0] ? this.storageFromRow(rows[0]) : null;
+	}
+
+	async updateWorkspaceStorage(id: string, patch: WorkspaceStoragePatch, at: Date): Promise<void> {
+		const columns: Record<string, { name: string; json?: boolean }> = {
+			providerKind: { name: "provider_kind" },
+			providerRef: { name: "provider_ref", json: true },
+			state: { name: "state" },
+			logicalBytes: { name: "logical_bytes" },
+			fileCount: { name: "file_count" },
+			retainedUntil: { name: "retained_until" },
+			deletedAt: { name: "deleted_at" },
+			lastErrorCode: { name: "last_error_code" },
+		};
+		const params: unknown[] = [id, at];
+		const sets = ["updated_at = $2"];
+		for (const [key, column] of Object.entries(columns)) {
+			if (!(key in patch)) continue;
+			const value = (patch as Record<string, unknown>)[key];
+			params.push(column.json && value != null ? JSON.stringify(value) : (value ?? null));
+			sets.push(`${column.name} = $${params.length}${column.json ? "::jsonb" : ""}`);
+		}
+		await this.sql.unsafe(
+			`UPDATE ${this.t("workspace_storage")} SET ${sets.join(", ")} WHERE id = $1`,
+			params,
+		);
+	}
+
+	private checkpointFromRow(r: Row): WorkspaceCheckpointRow {
+		return {
+			id: String(r.id),
+			workspaceId: String(r.workspace_id),
+			principalId: String(r.principal_id),
+			storageId: String(r.storage_id),
+			parentCheckpointId: (r.parent_checkpoint_id as string | null) ?? null,
+			state: r.state as CheckpointState,
+			reasonCode: (r.reason_code as string | null) ?? null,
+			providerKind: String(r.provider_kind),
+			providerRef: r.provider_ref == null ? null : asJson(r.provider_ref),
+			templateSnapshot: asJson(r.template_snapshot),
+			templateDigest: String(r.template_digest),
+			sourceProvenance: r.source_provenance == null ? null : asJson(r.source_provenance),
+			manifest: r.manifest == null ? null : asJson<CheckpointManifest>(r.manifest),
+			manifestDigest: (r.manifest_digest as string | null) ?? null,
+			logicalBytes: r.logical_bytes == null ? null : Number(r.logical_bytes),
+			storedBytes: r.stored_bytes == null ? null : Number(r.stored_bytes),
+			fileCount: r.file_count == null ? null : Number(r.file_count),
+			conversationRestore: r.conversation_restore as ConversationRestoreCapability,
+			label: (r.label as string | null) ?? null,
+			createdAt: asDate(r.created_at),
+			updatedAt: asDate(r.updated_at),
+			readyAt: asDateOrNull(r.ready_at),
+			expiresAt: asDateOrNull(r.expires_at),
+			deletedAt: asDateOrNull(r.deleted_at),
+		};
+	}
+
+	async insertCheckpoint(row: WorkspaceCheckpointRow): Promise<WorkspaceCheckpointRow> {
+		const rows = (await this.sql.unsafe(
+			`INSERT INTO ${this.t("workspace_checkpoints")}
+				(id, workspace_id, principal_id, storage_id, parent_checkpoint_id, state,
+				 reason_code, provider_kind, provider_ref, template_snapshot, template_digest,
+				 source_provenance, manifest, manifest_digest, logical_bytes, stored_bytes,
+				 file_count, conversation_restore, label, created_at, updated_at, ready_at,
+				 expires_at, deleted_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11,
+				 $12::jsonb, $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21,
+				 $22, $23, $24)
+			 ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id RETURNING *`,
+			[
+				row.id,
+				row.workspaceId,
+				row.principalId,
+				row.storageId,
+				row.parentCheckpointId,
+				row.state,
+				row.reasonCode,
+				row.providerKind,
+				row.providerRef == null ? null : JSON.stringify(row.providerRef),
+				JSON.stringify(row.templateSnapshot),
+				row.templateDigest,
+				row.sourceProvenance == null ? null : JSON.stringify(row.sourceProvenance),
+				row.manifest == null ? null : JSON.stringify(row.manifest),
+				row.manifestDigest,
+				row.logicalBytes,
+				row.storedBytes,
+				row.fileCount,
+				row.conversationRestore,
+				row.label,
+				row.createdAt,
+				row.updatedAt,
+				row.readyAt,
+				row.expiresAt,
+				row.deletedAt,
+			],
+		)) as Row[];
+		return this.checkpointFromRow(rows[0] as Row);
+	}
+
+	async getCheckpoint(id: string): Promise<WorkspaceCheckpointRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_checkpoints")} WHERE id = $1`,
+			[id],
+		)) as Row[];
+		return rows[0] ? this.checkpointFromRow(rows[0]) : null;
+	}
+
+	async listCheckpoints(
+		principalId: string,
+		filter: { workspaceId?: string; state?: CheckpointState } = {},
+	): Promise<WorkspaceCheckpointRow[]> {
+		const params: unknown[] = [principalId];
+		const clauses = ["principal_id = $1"];
+		if (filter.workspaceId) {
+			params.push(filter.workspaceId);
+			clauses.push(`workspace_id = $${params.length}`);
+		}
+		if (filter.state) {
+			params.push(filter.state);
+			clauses.push(`state = $${params.length}`);
+		}
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_checkpoints")}
+			 WHERE ${clauses.join(" AND ")} ORDER BY created_at DESC`,
+			params,
+		)) as Row[];
+		return rows.map((row) => this.checkpointFromRow(row));
+	}
+
+	async updateCheckpoint(id: string, patch: WorkspaceCheckpointPatch, at: Date): Promise<void> {
+		const columns: Record<string, { name: string; json?: boolean }> = {
+			state: { name: "state" },
+			reasonCode: { name: "reason_code" },
+			providerKind: { name: "provider_kind" },
+			providerRef: { name: "provider_ref", json: true },
+			manifest: { name: "manifest", json: true },
+			manifestDigest: { name: "manifest_digest" },
+			logicalBytes: { name: "logical_bytes" },
+			storedBytes: { name: "stored_bytes" },
+			fileCount: { name: "file_count" },
+			conversationRestore: { name: "conversation_restore" },
+			readyAt: { name: "ready_at" },
+			expiresAt: { name: "expires_at" },
+			deletedAt: { name: "deleted_at" },
+		};
+		const current = await this.getCheckpoint(id);
+		if (!current) return;
+		if (current.state === "ready") {
+			for (const key of Object.keys(patch)) {
+				if (!["state", "reasonCode", "expiresAt", "deletedAt"].includes(key)) {
+					throw new Error("ready checkpoints are immutable");
+				}
+			}
+		}
+		const params: unknown[] = [id, at];
+		const sets = ["updated_at = $2"];
+		for (const [key, column] of Object.entries(columns)) {
+			if (!(key in patch)) continue;
+			const value = (patch as Record<string, unknown>)[key];
+			params.push(column.json && value != null ? JSON.stringify(value) : (value ?? null));
+			sets.push(`${column.name} = $${params.length}${column.json ? "::jsonb" : ""}`);
+		}
+		await this.sql.unsafe(
+			`UPDATE ${this.t("workspace_checkpoints")} SET ${sets.join(", ")} WHERE id = $1`,
+			params,
+		);
+	}
+
+	private operationFromRow(r: Row): WorkspaceOperationRow {
+		return {
+			id: String(r.id),
+			principalId: String(r.principal_id),
+			kind: r.kind as OperationKind,
+			state: r.state as OperationState,
+			idempotencyKey: String(r.idempotency_key),
+			requestDigest: String(r.request_digest),
+			workspaceId: (r.workspace_id as string | null) ?? null,
+			checkpointId: (r.checkpoint_id as string | null) ?? null,
+			resultWorkspaceId: (r.result_workspace_id as string | null) ?? null,
+			reasonCode: (r.reason_code as string | null) ?? null,
+			attemptCount: Number(r.attempt_count),
+			createdAt: asDate(r.created_at),
+			updatedAt: asDate(r.updated_at),
+			completedAt: asDateOrNull(r.completed_at),
+		};
+	}
+
+	async insertOperation(
+		row: WorkspaceOperationRow,
+	): Promise<{ operation: WorkspaceOperationRow; created: boolean; conflict: boolean }> {
+		const existing = await this.getOperationByIdempotency(
+			row.principalId,
+			row.kind,
+			row.idempotencyKey,
+		);
+		if (existing) {
+			return {
+				operation: existing,
+				created: false,
+				conflict: existing.requestDigest !== row.requestDigest,
+			};
+		}
+		const rows = (await this.sql.unsafe(
+			`INSERT INTO ${this.t("workspace_operations")}
+				(id, principal_id, kind, state, idempotency_key, request_digest, workspace_id,
+				 checkpoint_id, result_workspace_id, reason_code, attempt_count, created_at,
+				 updated_at, completed_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			 ON CONFLICT (principal_id, kind, idempotency_key) DO NOTHING RETURNING *`,
+			[
+				row.id,
+				row.principalId,
+				row.kind,
+				row.state,
+				row.idempotencyKey,
+				row.requestDigest,
+				row.workspaceId,
+				row.checkpointId,
+				row.resultWorkspaceId,
+				row.reasonCode,
+				row.attemptCount,
+				row.createdAt,
+				row.updatedAt,
+				row.completedAt,
+			],
+		)) as Row[];
+		if (rows[0]) {
+			return {
+				operation: this.operationFromRow(rows[0]),
+				created: true,
+				conflict: false,
+			};
+		}
+		const concurrent = await this.getOperationByIdempotency(
+			row.principalId,
+			row.kind,
+			row.idempotencyKey,
+		);
+		if (!concurrent) throw new Error("operation insert conflict without an existing row");
+		return {
+			operation: concurrent,
+			created: false,
+			conflict: concurrent.requestDigest !== row.requestDigest,
+		};
+	}
+
+	async getOperation(id: string): Promise<WorkspaceOperationRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_operations")} WHERE id = $1`,
+			[id],
+		)) as Row[];
+		return rows[0] ? this.operationFromRow(rows[0]) : null;
+	}
+
+	async getOperationByIdempotency(
+		principalId: string,
+		kind: OperationKind,
+		idempotencyKey: string,
+	): Promise<WorkspaceOperationRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_operations")}
+			 WHERE principal_id = $1 AND kind = $2 AND idempotency_key = $3`,
+			[principalId, kind, idempotencyKey],
+		)) as Row[];
+		return rows[0] ? this.operationFromRow(rows[0]) : null;
+	}
+
+	async listIncompleteOperations(): Promise<WorkspaceOperationRow[]> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_operations")}
+			 WHERE state IN ('pending', 'running') ORDER BY created_at`,
+		)) as Row[];
+		return rows.map((row) => this.operationFromRow(row));
+	}
+
+	async updateOperation(id: string, patch: WorkspaceOperationPatch, at: Date): Promise<void> {
+		const columns: Record<string, string> = {
+			state: "state",
+			checkpointId: "checkpoint_id",
+			resultWorkspaceId: "result_workspace_id",
+			reasonCode: "reason_code",
+			attemptCount: "attempt_count",
+			completedAt: "completed_at",
+		};
+		const params: unknown[] = [id, at];
+		const sets = ["updated_at = $2"];
+		for (const [key, column] of Object.entries(columns)) {
+			if (!(key in patch)) continue;
+			params.push((patch as Record<string, unknown>)[key] ?? null);
+			sets.push(`${column} = $${params.length}`);
+		}
+		await this.sql.unsafe(
+			`UPDATE ${this.t("workspace_operations")} SET ${sets.join(", ")} WHERE id = $1`,
+			params,
+		);
+	}
+
+	async checkpointUsage(principalId: string | null) {
+		const params: unknown[] = [];
+		const principalClause = principalId
+			? (() => {
+					params.push(principalId);
+					return `AND principal_id = $${params.length}`;
+				})()
+			: "";
+		const rows = (await this.sql.unsafe(
+			`SELECT count(*)::int AS count,
+					COALESCE(sum(logical_bytes), 0)::bigint AS logical_bytes
+			 FROM ${this.t("workspace_checkpoints")}
+			 WHERE state IN ('ready', 'deleting') ${principalClause}`,
+			params,
+		)) as Array<{ count: number; logical_bytes: string | number }>;
+		return {
+			count: Number(rows[0]?.count ?? 0),
+			logicalBytes: Number(rows[0]?.logical_bytes ?? 0),
+		};
+	}
+
+	async countIncompleteOperations(): Promise<number> {
+		const rows = (await this.sql.unsafe(
+			`SELECT count(*)::int AS count FROM ${this.t("workspace_operations")}
+			 WHERE state IN ('pending', 'running')`,
+		)) as Array<{ count: number }>;
+		return Number(rows[0]?.count ?? 0);
+	}
+
+	async appendOutput(input: WorkspaceOutputRow): Promise<WorkspaceOutputRow> {
+		return await this.sql.begin(async (tx) => {
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7081))", [
+				input.workspaceId,
+			]);
+			const seqRows = (await tx.unsafe(
+				`SELECT COALESCE(MAX(seq), 0)::bigint AS seq
+				 FROM ${this.t("workspace_outputs")} WHERE workspace_id = $1`,
+				[input.workspaceId],
+			)) as Array<{ seq: string | number }>;
+			const seq = Number(seqRows[0]?.seq ?? 0) + 1;
+			await tx.unsafe(
+				`INSERT INTO ${this.t("workspace_outputs")}
+					(workspace_id, seq, name, value, occurred_at)
+				 VALUES ($1, $2, $3, $4::jsonb, $5)`,
+				[input.workspaceId, seq, input.name, JSON.stringify(input.value), input.occurredAt],
+			);
+			await tx.unsafe(
+				`UPDATE ${this.t("workspaces")}
+				 SET outputs = outputs || jsonb_build_object($2::text, $3::jsonb), updated_at = $4
+				 WHERE id = $1`,
+				[input.workspaceId, input.name, JSON.stringify(input.value), input.occurredAt],
+			);
+			return { ...input, seq };
+		});
+	}
+
+	async listOutputs(workspaceId: string): Promise<WorkspaceOutputRow[]> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_outputs")}
+			 WHERE workspace_id = $1 ORDER BY seq`,
+			[workspaceId],
+		)) as Row[];
+		return rows.map((row) => ({
+			workspaceId: String(row.workspace_id),
+			seq: Number(row.seq),
+			name: String(row.name),
+			value: asJson(row.value),
+			occurredAt: asDate(row.occurred_at),
 		}));
 	}
 
@@ -714,6 +1199,20 @@ export class PostgresStore implements Store {
 			 SET attempt_count = attempt_count + 1, last_error_code = $2, next_attempt_at = $3
 			 WHERE id = $1`,
 			[id, errorCode, nextAttemptAt],
+		);
+	}
+
+	async appendEvent(
+		workspaceId: string,
+		eventType: string,
+		payload: unknown,
+		at: Date,
+	): Promise<void> {
+		await this.sql.unsafe(
+			`INSERT INTO ${this.t("event_outbox")}
+				(id, workspace_id, event_type, payload, occurred_at, next_attempt_at)
+			 VALUES ($1, $2, $3, $4::jsonb, $5, $5)`,
+			[randomUUID(), workspaceId, eventType, JSON.stringify(payload), at],
 		);
 	}
 }

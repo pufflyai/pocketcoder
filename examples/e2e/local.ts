@@ -205,7 +205,10 @@ try {
 		throw new Error(`docker returned an invalid local image ID: ${imageId}`);
 	}
 
-	const templatePath = resolve(ROOT, `examples/harnesses/${harness}/template.json`);
+	const templatePath =
+		harness === "pi"
+			? resolve(ROOT, "examples/templates/pi-harness.json")
+			: resolve(ROOT, `examples/harnesses/${harness}/template.json`);
 	const template = JSON.parse(await readFile(templatePath, "utf8")) as {
 		spec: {
 			image: string;

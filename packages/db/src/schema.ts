@@ -21,7 +21,7 @@ import {
 // while runtime queries continue to use fully qualified identifiers.
 
 const SCHEMA_RE = /^[a-z_][a-z0-9_]{0,62}$/;
-const terminalStates = sql`('succeeded', 'failed', 'canceled', 'expired')`;
+const terminalStates = sql`('succeeded', 'failed', 'canceled', 'expired', 'preserved')`;
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -101,6 +101,14 @@ export const workspaces = pgTable(
 		createdAt: timestamptz("created_at").notNull(),
 		updatedAt: timestamptz("updated_at").notNull(),
 		terminalAt: timestamptz("terminal_at"),
+		originWorkspaceId: uuid("origin_workspace_id"),
+		restoredFromCheckpointId: uuid("restored_from_checkpoint_id"),
+		sourceDescriptor: jsonb("source_descriptor").$type<Record<string, unknown>>(),
+		resolvedSource: jsonb("resolved_source").$type<Record<string, unknown>>(),
+		persistenceCapability: text("persistence_capability").notNull().default("filesystem_only"),
+		latestCheckpointId: uuid("latest_checkpoint_id"),
+		launchMode: text("launch_mode").notNull().default("create"),
+		outputs: jsonb("outputs").$type<Record<string, unknown>>().notNull().default({}),
 	},
 	(table) => [
 		unique().on(table.principalId, table.idempotencyKey),
@@ -112,6 +120,121 @@ export const workspaces = pgTable(
 			.on(table.deadlineAt)
 			.where(sql`${table.state} NOT IN ${terminalStates}`),
 	],
+);
+
+export const workspaceStorage = pgTable(
+	"workspace_storage",
+	{
+		id: uuid("id").primaryKey(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id),
+		principalId: uuid("principal_id")
+			.notNull()
+			.references(() => principals.id),
+		providerKind: text("provider_kind").notNull(),
+		providerRef: jsonb("provider_ref").$type<Record<string, unknown>>().notNull(),
+		state: text("state").notNull(),
+		mountManifest: jsonb("mount_manifest").$type<Record<string, unknown>[]>().notNull(),
+		logicalBytes: bigint("logical_bytes", { mode: "number" }),
+		fileCount: bigint("file_count", { mode: "number" }),
+		retainedUntil: timestamptz("retained_until"),
+		createdAt: timestamptz("created_at").notNull(),
+		updatedAt: timestamptz("updated_at").notNull(),
+		deletedAt: timestamptz("deleted_at"),
+		lastErrorCode: text("last_error_code"),
+	},
+	(table) => [
+		uniqueIndex("workspace_storage_one_live")
+			.on(table.workspaceId)
+			.where(sql`${table.state} NOT IN ('deleted', 'lost', 'quarantined')`),
+		index("workspace_storage_gc").on(table.state, table.retainedUntil),
+		index("workspace_storage_principal").on(table.principalId),
+	],
+);
+
+export const workspaceCheckpoints = pgTable(
+	"workspace_checkpoints",
+	{
+		id: uuid("id").primaryKey(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id),
+		principalId: uuid("principal_id")
+			.notNull()
+			.references(() => principals.id),
+		storageId: uuid("storage_id")
+			.notNull()
+			.references(() => workspaceStorage.id),
+		parentCheckpointId: uuid("parent_checkpoint_id"),
+		state: text("state").notNull(),
+		reasonCode: text("reason_code"),
+		providerKind: text("provider_kind").notNull(),
+		providerRef: jsonb("provider_ref").$type<Record<string, unknown>>(),
+		templateSnapshot: jsonb("template_snapshot").$type<Record<string, unknown>>().notNull(),
+		templateDigest: text("template_digest").notNull(),
+		sourceProvenance: jsonb("source_provenance").$type<Record<string, unknown>>(),
+		manifest: jsonb("manifest").$type<Record<string, unknown>>(),
+		manifestDigest: text("manifest_digest"),
+		logicalBytes: bigint("logical_bytes", { mode: "number" }),
+		storedBytes: bigint("stored_bytes", { mode: "number" }),
+		fileCount: bigint("file_count", { mode: "number" }),
+		conversationRestore: text("conversation_restore").notNull(),
+		label: text("label"),
+		createdAt: timestamptz("created_at").notNull(),
+		updatedAt: timestamptz("updated_at").notNull(),
+		readyAt: timestamptz("ready_at"),
+		expiresAt: timestamptz("expires_at"),
+		deletedAt: timestamptz("deleted_at"),
+	},
+	(table) => [
+		index("workspace_checkpoints_principal_state").on(
+			table.principalId,
+			table.state,
+			table.createdAt,
+		),
+		index("workspace_checkpoints_gc").on(table.state, table.expiresAt),
+	],
+);
+
+export const workspaceOperations = pgTable(
+	"workspace_operations",
+	{
+		id: uuid("id").primaryKey(),
+		principalId: uuid("principal_id")
+			.notNull()
+			.references(() => principals.id),
+		kind: text("kind").notNull(),
+		state: text("state").notNull(),
+		idempotencyKey: text("idempotency_key").notNull(),
+		requestDigest: text("request_digest").notNull(),
+		workspaceId: uuid("workspace_id").references(() => workspaces.id),
+		checkpointId: uuid("checkpoint_id").references(() => workspaceCheckpoints.id),
+		resultWorkspaceId: uuid("result_workspace_id").references(() => workspaces.id),
+		reasonCode: text("reason_code"),
+		attemptCount: integer("attempt_count").notNull().default(0),
+		createdAt: timestamptz("created_at").notNull(),
+		updatedAt: timestamptz("updated_at").notNull(),
+		completedAt: timestamptz("completed_at"),
+	},
+	(table) => [
+		unique().on(table.principalId, table.kind, table.idempotencyKey),
+		index("workspace_operations_due").on(table.state, table.updatedAt),
+	],
+);
+
+export const workspaceOutputs = pgTable(
+	"workspace_outputs",
+	{
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id),
+		seq: bigint("seq", { mode: "bigint" }).notNull(),
+		name: text("name").notNull(),
+		value: jsonb("value").$type<unknown>().notNull(),
+		occurredAt: timestamptz("occurred_at").notNull(),
+	},
+	(table) => [primaryKey({ columns: [table.workspaceId, table.seq] })],
 );
 
 export const workspaceStateHistory = pgTable(

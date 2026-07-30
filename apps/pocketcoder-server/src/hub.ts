@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	PROTOCOL_VERSION,
+	type ProtocolVersion,
 	type ProxyRequest,
 	type ProxyResponse,
 	type ServerFrame,
@@ -21,10 +22,17 @@ export interface LiveConnection {
 	seqOut: number;
 	inflight: Map<string, PendingRelay>;
 	registered: boolean;
+	protocolVersion: ProtocolVersion;
+	checkpoints: Map<string, PendingCheckpoint>;
 }
 
 interface PendingRelay {
 	resolve: (res: ProxyResponse) => void;
+	timer: ReturnType<typeof setTimeout>;
+}
+
+interface PendingCheckpoint {
+	resolve: (quiesced: boolean) => void;
 	timer: ReturnType<typeof setTimeout>;
 }
 
@@ -33,7 +41,13 @@ export const MAX_INFLIGHT_RELAY = 16;
 export class Hub implements ConnectionHub {
 	private readonly byWorkspace = new Map<string, LiveConnection>();
 
-	attach(workspaceId: string, connectionId: string, epoch: number, ws: WSContext): LiveConnection {
+	attach(
+		workspaceId: string,
+		connectionId: string,
+		epoch: number,
+		ws: WSContext,
+		protocolVersion: ProtocolVersion = PROTOCOL_VERSION,
+	): LiveConnection {
 		// A newer connection replaces an older one; the stale socket closes.
 		const existing = this.byWorkspace.get(workspaceId);
 		if (existing) {
@@ -53,6 +67,8 @@ export class Hub implements ConnectionHub {
 			seqOut: 0,
 			inflight: new Map(),
 			registered: false,
+			protocolVersion,
+			checkpoints: new Map(),
 		};
 		this.byWorkspace.set(workspaceId, conn);
 		return conn;
@@ -78,7 +94,7 @@ export class Hub implements ConnectionHub {
 	send(conn: LiveConnection, type: ServerFrame["type"], payload: unknown): void {
 		conn.seqOut += 1;
 		const frame = {
-			v: PROTOCOL_VERSION,
+			v: conn.protocolVersion,
 			type,
 			workspace_id: conn.workspaceId,
 			connection_id: conn.connectionId,
@@ -113,6 +129,40 @@ export class Hub implements ConnectionHub {
 		} catch {
 			// Already closed.
 		}
+	}
+
+	prepareCheckpoint(
+		workspaceId: string,
+		operationId: string,
+		deadlineMs: number,
+	): Promise<boolean> {
+		const conn = this.byWorkspace.get(workspaceId);
+		if (!conn?.registered || conn.protocolVersion < 2) return Promise.resolve(false);
+		return new Promise<boolean>((resolve) => {
+			const timer = setTimeout(() => {
+				conn.checkpoints.delete(operationId);
+				resolve(false);
+			}, deadlineMs);
+			conn.checkpoints.set(operationId, { resolve, timer });
+			this.send(conn, "prepare_checkpoint", {
+				operation_id: operationId,
+				deadline_ms: deadlineMs,
+			});
+		});
+	}
+
+	resolveCheckpoint(
+		conn: LiveConnection,
+		operationId: string,
+		phase: "quiescing" | "quiesced" | "failed",
+	): void {
+		const current = this.byWorkspace.get(conn.workspaceId);
+		if (current !== conn || phase === "quiescing") return;
+		const pending = conn.checkpoints.get(operationId);
+		if (!pending) return;
+		clearTimeout(pending.timer);
+		conn.checkpoints.delete(operationId);
+		pending.resolve(phase === "quiesced");
 	}
 
 	relay(workspaceId: string, request: Omit<ProxyRequest, "request_id">): Promise<ProxyResponse> {
@@ -152,5 +202,10 @@ export class Hub implements ConnectionHub {
 			pending.resolve({ request_id: id, headers: {}, error_code: errorCode });
 		}
 		conn.inflight.clear();
+		for (const pending of conn.checkpoints.values()) {
+			clearTimeout(pending.timer);
+			pending.resolve(false);
+		}
+		conn.checkpoints.clear();
 	}
 }

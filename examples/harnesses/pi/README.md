@@ -83,9 +83,10 @@ The local Pi process disables its own coding tools and sends turns through
 PocketCoder's relay to AgentAPI. The coding agent and all file operations stay
 inside the disposable workspace. Exit Pi to cancel the workspace.
 
-The checked-in template contains a placeholder image digest and gateway model.
-The local runner replaces both in a generated template. For a deployed setup,
-build from the repository root with
+The shared checked-in
+[`pi-harness` template](../../templates/pi-harness.json) contains a placeholder
+image digest and gateway model. The local runner replaces both in a generated
+template. For a deployed setup, build from the repository root with
 `docker build -f examples/harnesses/pi/Dockerfile -t pocketcoder-pi:dev .`,
 push the image, replace `spec.image` with the registry digest, set the
 gateway/model fields, validate with `pocketcoderctl templates validate`, and

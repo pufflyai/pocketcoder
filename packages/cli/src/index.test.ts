@@ -131,7 +131,7 @@ describe("pocketcoderctl help", () => {
 
 describe("pocketcoderctl commands", () => {
 	test("validates a template through the yargs command tree", async () => {
-		const template = resolve(import.meta.dir, "../../../deploy/templates/fixture-echo.json");
+		const template = resolve(import.meta.dir, "../../../examples/templates/fixture-echo.json");
 		const result = await runCli(["templates", "validate", template]);
 
 		expect(result.exitCode).toBe(0);

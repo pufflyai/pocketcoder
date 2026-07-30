@@ -1,9 +1,28 @@
 // Harmless echo harness serving AgentAPI's three conversation routes on
 // loopback. Used by the fixture-echo template and doctor probes; real
-// templates run AgentAPI wrapping a coding-agent CLI instead.
+// templates run AgentAPI wrapping a coding-agent CLI instead. Setting
+// POCKETCODER_ECHO_STATE makes its conversation state checkpointable.
 
-const messages: Array<{ role: string; content: string }> = [];
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
+const statePath = process.env.POCKETCODER_ECHO_STATE;
+const messages: Array<{ role: string; content: string }> =
+	statePath && existsSync(statePath)
+		? (JSON.parse(readFileSync(statePath, "utf8")) as Array<{
+				role: string;
+				content: string;
+			}>)
+		: [];
 const status: "stable" | "running" = "stable";
+
+function persist(): void {
+	if (!statePath) return;
+	mkdirSync(dirname(statePath), { recursive: true });
+	const temporary = `${statePath}.tmp`;
+	writeFileSync(temporary, `${JSON.stringify(messages)}\n`, { mode: 0o600 });
+	renameSync(temporary, statePath);
+}
 
 Bun.serve({
 	hostname: "127.0.0.1",
@@ -21,6 +40,7 @@ Bun.serve({
 				const content = String((body as { content?: unknown }).content ?? "");
 				messages.push({ role: "user", content });
 				messages.push({ role: "agent", content: `echo: ${content}` });
+				persist();
 				return Response.json({ ok: true });
 			});
 		}

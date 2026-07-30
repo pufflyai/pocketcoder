@@ -18,9 +18,12 @@ Fastest path, no database (state dies with the process):
 
 ```sh
 POCKETCODER_STORE=memory \
-POCKETCODER_TEMPLATE_DIR=deploy/templates \
+POCKETCODER_TEMPLATE_DIR=examples/templates \
 bun run start
 ```
+
+This loads illustrative manifests with placeholder images from `examples/`;
+operators should point deployments at their own reviewed template directory.
 
 With PostgreSQL (durable; the schema defaults to `pocketcoder` and may live in
 a dedicated database or an existing one):
@@ -31,7 +34,7 @@ export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:543
 export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 
 bun run ctl db migrate
-POCKETCODER_TEMPLATE_DIR=deploy/templates bun run start
+POCKETCODER_TEMPLATE_DIR=examples/templates bun run start
 ```
 
 The server logs which templates it loaded and refuses to start if any template
@@ -44,7 +47,7 @@ holding **machine keys** with explicit scopes and a template allowlist:
 
 ```sh
 bun run ctl principals create --name my-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,logs:read \
   --templates '*'
 bun run ctl keys issue --principal my-backend --expires never
 ```
@@ -86,6 +89,20 @@ curl -s "$POCKETCODER_URL/v1/workspaces/<uuid>/services/agent/messages" \
 Finish with `pocketcoderctl workspaces cancel --id <uuid>`; the supervisor
 TERMs the process tree, the container is removed, and the workspace ends in a
 terminal state that never reopens.
+
+For a persistence-enabled template, keep the execution or recreate it later:
+
+```sh
+pocketcoderctl workspaces attach --id <uuid> --message "continue the task"
+pocketcoderctl workspaces preserve --id <uuid> --label laptop-handoff
+pocketcoderctl checkpoints list --workspace <uuid>
+pocketcoderctl workspaces restore --checkpoint <checkpoint-uuid> \
+  --external-id resumed-task
+```
+
+Preserve ends the original execution as `preserved`; restore creates a new
+execution with fresh credentials and an independent writable copy. Configure
+`POCKETCODER_STORAGE_BACKEND` before using a template with persistent mounts.
 
 ## 4. Verify the full path
 

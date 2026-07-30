@@ -4,8 +4,9 @@
 caller (machine key)
   → pocketcoder-server (Hono REST/WSS on Bun)
   → durable workspace queue (PostgreSQL)
-  → workspace driver (Docker; Kubernetes planned)
-  → one isolated container per workspace
+  → workspace driver (Docker container or Kubernetes Job)
+  → one isolated runtime per workspace
+  → storage driver (host data roots or a Kubernetes PVC)
   → pocketcoder-agent (PID 1 supervisor)
   → harness (e.g. AgentAPI wrapping a coding-agent CLI)
 ```
@@ -24,13 +25,18 @@ neither callers nor templates can select them.
 | contracts | `packages/contracts` | zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
 | db | `packages/db` | PostgreSQL store, Drizzle schema and generated migrations under an advisory lock |
-| drivers | `packages/drivers` | `WorkspaceDriver` contract + Docker provider |
+| drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
 | testkit | `packages/testkit` | In-memory store, fake driver, fake AgentAPI, template fixtures |
 
 ## Workspace state machine
 
 ```text
-queued → provisioning → connected → ready → terminating → succeeded|failed|canceled|expired
+queued → provisioning → connected → ready ─┬→ terminating → succeeded|failed|canceled|expired
+                                            └→ preserving → preserved
+                                                                  │
+                                                  restore checkpoint
+                                                                  ↓
+                                                     new queued workspace
 ```
 
 - `queued → provisioning` happens under admission: fair round-robin across
@@ -44,6 +50,10 @@ queued → provisioning → connected → ready → terminating → succeeded|fa
   launch input is erased at this point.
 - Terminal states never reopen. Every transition commits atomically with its
   state-history row and a signed outbox event.
+- Preservation stops the writer, snapshots only template-declared mounts,
+  verifies an immutable manifest, and ends the source execution as
+  `preserved`. Restore always allocates an independent writable copy and a
+  fresh workspace/provider/credential lineage.
 
 ## Agent protocol
 
@@ -55,9 +65,10 @@ per-connection monotonic sequence numbers; the newest accepted connection
 (epoch) exclusively speaks for the workspace.
 
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
-`log_chunk`, `proxy_response`, `termination_ack`.
+`log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
+`checkpoint_status`, `restore_status`, `output_published`.
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
-`shutdown`.
+`shutdown`, `prepare_checkpoint`.
 
 There is no lease, arbitrary command execution, shell stream, tunnel, or file
 API in the protocol. The relay forwards only template-declared loopback
@@ -75,6 +86,13 @@ labeled provider objects and supervisors simply reconnect.
   files — the API cannot introduce new images or commands.
 - Workspaces: digest-pinned image, non-root uid, read-only root, tmpfs
   writes, dropped capabilities, no privilege escalation, no inbound network.
+- Persistent paths are reviewed logical template declarations. Physical host
+  paths, PVC subpaths, checkpoint locations, and mount flags never enter the
+  public API. Checkpoints reject traversal, unsafe links, devices, sockets,
+  FIFOs, setuid/setgid modes, integrity mismatch, and quota expansion.
+- Git/model credentials are deployment-resolved read-only files under
+  `/run/pocketcoder/secrets`; provider input and secrets are outside
+  checkpointed paths.
 - Launch input reaches the harness in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.

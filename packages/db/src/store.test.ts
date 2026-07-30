@@ -26,33 +26,52 @@ describe("schema helpers", () => {
 	});
 });
 
+function fixture() {
+	return parseTemplateManifest({
+		apiVersion: "pocketcoder.dev/v1alpha1",
+		kind: "Template",
+		metadata: { name: "pg-fixture", description: "pg" },
+		spec: {
+			version: "1.0.0",
+			image: `example.test/pg@sha256:${"d".repeat(64)}`,
+			harness: { command: ["sleep", "1"] },
+			resources: { cpu: "1", memory: "256Mi" },
+			services: {},
+			persistence: {
+				mounts: [
+					{
+						name: "worktree",
+						target: "/workspace",
+						maxBytes: 1024,
+						maxFiles: 10,
+					},
+				],
+			},
+			outputs: { commit: { type: "gitSha" } },
+		},
+	});
+}
+
+async function migrateTestSchema(url: string, schema: string): Promise<SQL> {
+	const sql = new SQL(url);
+	await migrate(sql, schema);
+	// Re-running is a no-op with matching checksums.
+	expect(await migrate(sql, schema)).toEqual([]);
+	const status = await migrationStatus(sql, schema);
+	expect(status.every((migration) => migration.appliedAt !== null && !migration.drifted)).toBe(
+		true,
+	);
+	return sql;
+}
+
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: One isolated-schema scenario intentionally verifies the full migration and store lifecycle.
 describe.skipIf(!TEST_URL)("postgres store", () => {
 	const schema = `pkt_test_${randomUUID().slice(0, 8)}`;
 
-	function fixture() {
-		return parseTemplateManifest({
-			apiVersion: "pocketcoder.dev/v1alpha1",
-			kind: "Template",
-			metadata: { name: "pg-fixture", description: "pg" },
-			spec: {
-				version: "1.0.0",
-				image: `example.test/pg@sha256:${"d".repeat(64)}`,
-				harness: { command: ["sleep", "1"] },
-				resources: { cpu: "1", memory: "256Mi" },
-				services: {},
-			},
-		});
-	}
-
+	// biome-ignore lint/complexity/noExcessiveLinesPerFunction: The assertions share one disposable schema and must remain in a single cleanup scope.
 	test("migrates into an isolated schema and round-trips core entities", async () => {
 		const url = TEST_URL as string;
-		const sql = new SQL(url);
-		await migrate(sql, schema);
-		// Re-running is a no-op with matching checksums.
-		expect(await migrate(sql, schema)).toEqual([]);
-		const status = await migrationStatus(sql, schema);
-		expect(status.every((m) => m.appliedAt !== null && !m.drifted)).toBe(true);
-
+		const sql = await migrateTestSchema(url, schema);
 		const store = new PostgresStore(url, schema);
 		try {
 			const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
@@ -167,6 +186,92 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			const logs = await store.readLogs(insert.workspace.id, 0, 10);
 			expect(logs.length).toBe(1);
 			expect(new TextDecoder().decode(logs[0]?.content)).toBe("hello");
+
+			const storageId = randomUUID();
+			const now = new Date();
+			await store.insertWorkspaceStorage({
+				id: storageId,
+				workspaceId: insert.workspace.id,
+				principalId: principal.id,
+				providerKind: "filesystem",
+				providerRef: { kind: "filesystem", id: storageId, root: "/opaque" },
+				state: "retained",
+				mountManifest: parsed.manifest.spec.persistence.mounts,
+				logicalBytes: 12,
+				fileCount: 1,
+				retainedUntil: new Date(now.getTime() + 60_000),
+				createdAt: now,
+				updatedAt: now,
+				deletedAt: null,
+				lastErrorCode: null,
+			});
+			const checkpointId = randomUUID();
+			const manifest = {
+				format: "pocketcoder-checkpoint/v1" as const,
+				checkpoint_id: checkpointId,
+				template_digest: parsed.digest,
+				mounts: [{ name: "worktree", entries: [] }],
+				logical_bytes: 0,
+				file_count: 0,
+			};
+			await store.insertCheckpoint({
+				id: checkpointId,
+				workspaceId: insert.workspace.id,
+				principalId: principal.id,
+				storageId,
+				parentCheckpointId: null,
+				state: "ready",
+				reasonCode: null,
+				providerKind: "filesystem",
+				providerRef: {
+					kind: "filesystem",
+					id: checkpointId,
+					root: "/opaque-checkpoint",
+				},
+				templateSnapshot: snapshotOf(parsed),
+				templateDigest: parsed.digest,
+				sourceProvenance: null,
+				manifest,
+				manifestDigest: digestOf(manifest),
+				logicalBytes: 0,
+				storedBytes: 0,
+				fileCount: 0,
+				conversationRestore: "filesystem_only",
+				label: "postgres-roundtrip",
+				createdAt: now,
+				updatedAt: now,
+				readyAt: now,
+				expiresAt: new Date(now.getTime() + 60_000),
+				deletedAt: null,
+			});
+			const operationId = randomUUID();
+			const operation = await store.insertOperation({
+				id: operationId,
+				principalId: principal.id,
+				kind: "verify",
+				state: "succeeded",
+				idempotencyKey: "verify-pg",
+				requestDigest: digestOf({ checkpointId }),
+				workspaceId: insert.workspace.id,
+				checkpointId,
+				resultWorkspaceId: null,
+				reasonCode: null,
+				attemptCount: 1,
+				createdAt: now,
+				updatedAt: now,
+				completedAt: now,
+			});
+			expect(operation.created).toBe(true);
+			expect((await store.getCheckpoint(checkpointId))?.label).toBe("postgres-roundtrip");
+			expect((await store.checkpointUsage(principal.id)).count).toBe(1);
+			await store.appendOutput({
+				workspaceId: insert.workspace.id,
+				seq: 0,
+				name: "commit",
+				value: "a".repeat(40),
+				occurredAt: now,
+			});
+			expect((await store.listOutputs(insert.workspace.id))[0]?.name).toBe("commit");
 
 			// The runtime never created anything outside its schema.
 			const foreign = (await sql.unsafe(

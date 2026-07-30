@@ -1,11 +1,19 @@
 import { z } from "zod";
+import {
+	CONVERSATION_RESTORE_CAPABILITIES,
+	LAUNCH_MODES,
+	SourceDescriptorSchema,
+} from "./persistence";
 import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "./template";
 
 // The pocketcoder-agent supervisor protocol: JSON text frames over one
 // outbound WSS connection per workspace. There is no worker lease, arbitrary
 // command execution, shell stream, tunnel, or file API in this protocol.
 
-export const PROTOCOL_VERSION = 1;
+export const LEGACY_PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION] as const;
+export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
 
@@ -16,7 +24,7 @@ export const HEADER_REGISTRATION = "x-pocketcoder-registration";
 export const HEADER_RECONNECT = "x-pocketcoder-reconnect";
 
 const EnvelopeBase = z.object({
-	v: z.literal(PROTOCOL_VERSION),
+	v: z.union([z.literal(LEGACY_PROTOCOL_VERSION), z.literal(PROTOCOL_VERSION)]),
 	workspace_id: z.uuid(),
 	connection_id: z.uuid(),
 	seq: z.number().int().nonnegative(),
@@ -73,6 +81,29 @@ export const TerminationAckPayload = z.object({
 	phase: z.enum(["term_sent", "killed", "exited"]),
 });
 
+export const SourceResolvedPayload = z.object({
+	repository: z.string().min(1).max(64),
+	requested_revision: z.string().min(1).max(256),
+	resolved_commit: z.string().regex(/^[0-9a-f]{40,64}$/),
+});
+
+export const CheckpointStatusPayload = z.object({
+	operation_id: z.uuid(),
+	phase: z.enum(["quiescing", "quiesced", "failed"]),
+	detail: z.string().max(512).optional(),
+});
+
+export const OutputPublishedPayload = z.object({
+	name: z.string().min(1).max(64),
+	value: z.unknown(),
+});
+
+export const RestoreStatusPayload = z.object({
+	phase: z.enum(["validating", "ready", "failed"]),
+	capability: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
+	detail: z.string().max(512).optional(),
+});
+
 export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
 	EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
@@ -81,6 +112,10 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("log_chunk"), payload: LogChunkPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_response"), payload: ProxyResponsePayload }),
 	EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
+	EnvelopeBase.extend({ type: z.literal("source_resolved"), payload: SourceResolvedPayload }),
+	EnvelopeBase.extend({ type: z.literal("checkpoint_status"), payload: CheckpointStatusPayload }),
+	EnvelopeBase.extend({ type: z.literal("output_published"), payload: OutputPublishedPayload }),
+	EnvelopeBase.extend({ type: z.literal("restore_status"), payload: RestoreStatusPayload }),
 ]);
 
 export type AgentFrame = z.infer<typeof AgentFrameSchema>;
@@ -96,6 +131,34 @@ export const ExecSpecSchema = z.object({
 	env: z.record(z.string(), z.string()),
 	services: z.record(z.string(), ServiceSchema),
 	timeouts: TimeoutsSchema,
+	launch_mode: z.enum(LAUNCH_MODES).default("create"),
+	source: SourceDescriptorSchema.extend({
+		url: z.url(),
+		destination: z.string(),
+		credential_path: z.string().nullable().default(null),
+	})
+		.nullable()
+		.default(null),
+	restore: z
+		.object({
+			checkpoint_id: z.uuid(),
+			origin_workspace_id: z.uuid(),
+		})
+		.nullable()
+		.default(null),
+	persistence: z.object({
+		mounts: z.array(z.object({ name: z.string(), target: z.string() })),
+		conversation_restore: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
+	}),
+	checkpoint_hook: z
+		.object({
+			command: z.array(z.string().min(1)).min(1),
+			timeout_seconds: z.number().int().positive(),
+			env: z.record(z.string(), z.string()),
+			cwd: z.string().optional(),
+		})
+		.nullable(),
+	outputs: z.record(z.string(), z.unknown()),
 });
 
 export type ExecSpec = z.infer<typeof ExecSpecSchema>;
@@ -135,12 +198,21 @@ export const ShutdownPayload = z.object({
 	reason: z.string().max(512),
 });
 
+export const PrepareCheckpointPayload = z.object({
+	operation_id: z.uuid(),
+	deadline_ms: z.number().int().positive(),
+});
+
 export const ServerFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),
 	EnvelopeBase.extend({ type: z.literal("signal"), payload: SignalPayload }),
 	EnvelopeBase.extend({ type: z.literal("health_probe"), payload: HealthProbePayload }),
 	EnvelopeBase.extend({ type: z.literal("shutdown"), payload: ShutdownPayload }),
+	EnvelopeBase.extend({
+		type: z.literal("prepare_checkpoint"),
+		payload: PrepareCheckpointPayload,
+	}),
 ]);
 
 export type ServerFrame = z.infer<typeof ServerFrameSchema>;
@@ -157,6 +229,14 @@ export const ProviderInputSchema = z.object({
 	template_digest: z.string(),
 	template_name: z.string().default("unknown"),
 	template_version: z.string().default("unknown"),
+	launch_mode: z.enum(LAUNCH_MODES).default("create"),
+	source: SourceDescriptorSchema.optional(),
+	restore: z
+		.object({
+			checkpoint_id: z.uuid(),
+			origin_workspace_id: z.uuid(),
+		})
+		.optional(),
 	launch_input: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { canTransition, isTerminal, type WorkspaceState } from "@pstdio/pocketcoder-contracts";
+import {
+	type CheckpointState,
+	canTransition,
+	isTerminal,
+	type OperationKind,
+	type WorkspaceState,
+} from "@pstdio/pocketcoder-contracts";
 import {
 	type ActiveCounts,
 	buildEventEnvelope,
@@ -14,10 +20,17 @@ import {
 	type TemplateUpsert,
 	type TransitionRequest,
 	type UpsertResult,
+	type WorkspaceCheckpointPatch,
+	type WorkspaceCheckpointRow,
 	type WorkspaceInsert,
 	type WorkspaceListFilter,
+	type WorkspaceOperationPatch,
+	type WorkspaceOperationRow,
+	type WorkspaceOutputRow,
 	type WorkspacePatch,
 	type WorkspaceRow,
+	type WorkspaceStoragePatch,
+	type WorkspaceStorageRow,
 } from "@pstdio/pocketcoder-runtime-core";
 
 // In-memory Store used by tests and single-process development. PostgreSQL
@@ -28,6 +41,7 @@ const ACTIVE_STATES: readonly WorkspaceState[] = [
 	"provisioning",
 	"connected",
 	"ready",
+	"preserving",
 	"terminating",
 ];
 const MAX_LOG_BYTES = 10 * 1024 * 1024;
@@ -42,6 +56,10 @@ export class MemoryStore implements Store {
 	private logs = new Map<string, LogRow[]>();
 	private logBytes = new Map<string, number>();
 	private claimedEvents = new Set<string>();
+	private storage = new Map<string, WorkspaceStorageRow>();
+	private checkpoints = new Map<string, WorkspaceCheckpointRow>();
+	private operations = new Map<string, WorkspaceOperationRow>();
+	private outputs = new Map<string, WorkspaceOutputRow[]>();
 
 	async init(): Promise<void> {}
 	async close(): Promise<void> {}
@@ -213,10 +231,18 @@ export class MemoryStore implements Store {
 			createdAt: row.createdAt,
 			updatedAt: row.createdAt,
 			terminalAt: null,
+			originWorkspaceId: row.originWorkspaceId ?? null,
+			restoredFromCheckpointId: row.restoredFromCheckpointId ?? null,
+			sourceDescriptor: row.sourceDescriptor ?? null,
+			resolvedSource: row.resolvedSource ?? null,
+			persistenceCapability: row.persistenceCapability ?? "filesystem_only",
+			latestCheckpointId: row.latestCheckpointId ?? null,
+			launchMode: row.launchMode ?? "create",
+			outputs: row.outputs ?? {},
 		};
 		this.workspaces.set(workspace.id, workspace);
 		this.appendHistory(workspace, null, "queued", null, row.createdAt);
-		this.appendEvent(workspace, row.createdAt);
+		this.appendWorkspaceEvent(workspace, row.createdAt);
 		return { workspace: { ...workspace }, created: true, conflict: false };
 	}
 
@@ -288,12 +314,172 @@ export class MemoryStore implements Store {
 			row.registrationDigest = null;
 		}
 		this.appendHistory(row, fromState, req.to, row.reasonCode, req.at);
-		this.appendEvent(row, req.at);
+		this.appendWorkspaceEvent(row, req.at);
 		return { ...row };
 	}
 
 	async listStateHistory(workspaceId: string): Promise<StateHistoryRow[]> {
 		return this.history.filter((h) => h.workspaceId === workspaceId).map((h) => ({ ...h }));
+	}
+
+	// --- Storage, checkpoints, operations, and outputs ---
+
+	async insertWorkspaceStorage(row: WorkspaceStorageRow): Promise<WorkspaceStorageRow> {
+		const existing = [...this.storage.values()].find(
+			(candidate) =>
+				candidate.workspaceId === row.workspaceId &&
+				!["deleted", "lost", "quarantined"].includes(candidate.state),
+		);
+		if (existing) return { ...existing };
+		this.storage.set(row.id, { ...row });
+		return { ...row };
+	}
+
+	async getWorkspaceStorage(workspaceId: string): Promise<WorkspaceStorageRow | null> {
+		const row = [...this.storage.values()].find(
+			(candidate) =>
+				candidate.workspaceId === workspaceId &&
+				!["deleted", "lost", "quarantined"].includes(candidate.state),
+		);
+		return row ? { ...row } : null;
+	}
+
+	async getStorage(id: string): Promise<WorkspaceStorageRow | null> {
+		const row = this.storage.get(id);
+		return row ? { ...row } : null;
+	}
+
+	async updateWorkspaceStorage(id: string, patch: WorkspaceStoragePatch, at: Date): Promise<void> {
+		const row = this.storage.get(id);
+		if (!row) return;
+		Object.assign(row, patch);
+		row.updatedAt = at;
+	}
+
+	async insertCheckpoint(row: WorkspaceCheckpointRow): Promise<WorkspaceCheckpointRow> {
+		const existing = this.checkpoints.get(row.id);
+		if (existing) return { ...existing };
+		this.checkpoints.set(row.id, { ...row });
+		return { ...row };
+	}
+
+	async getCheckpoint(id: string): Promise<WorkspaceCheckpointRow | null> {
+		const row = this.checkpoints.get(id);
+		return row ? { ...row } : null;
+	}
+
+	async listCheckpoints(
+		principalId: string,
+		filter: { workspaceId?: string; state?: CheckpointState } = {},
+	): Promise<WorkspaceCheckpointRow[]> {
+		return [...this.checkpoints.values()]
+			.filter(
+				(row) =>
+					row.principalId === principalId &&
+					(!filter.workspaceId || row.workspaceId === filter.workspaceId) &&
+					(!filter.state || row.state === filter.state),
+			)
+			.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+			.map((row) => ({ ...row }));
+	}
+
+	async updateCheckpoint(id: string, patch: WorkspaceCheckpointPatch, at: Date): Promise<void> {
+		const row = this.checkpoints.get(id);
+		if (!row) return;
+		if (row.state === "ready") {
+			const mutable = new Set(["state", "reasonCode", "expiresAt", "deletedAt"]);
+			for (const key of Object.keys(patch)) {
+				if (!mutable.has(key)) throw new Error("ready checkpoints are immutable");
+			}
+		}
+		Object.assign(row, patch);
+		row.updatedAt = at;
+	}
+
+	async insertOperation(
+		row: WorkspaceOperationRow,
+	): Promise<{ operation: WorkspaceOperationRow; created: boolean; conflict: boolean }> {
+		const existing = [...this.operations.values()].find(
+			(candidate) =>
+				candidate.principalId === row.principalId &&
+				candidate.kind === row.kind &&
+				candidate.idempotencyKey === row.idempotencyKey,
+		);
+		if (existing) {
+			return {
+				operation: { ...existing },
+				created: false,
+				conflict: existing.requestDigest !== row.requestDigest,
+			};
+		}
+		this.operations.set(row.id, { ...row });
+		return { operation: { ...row }, created: true, conflict: false };
+	}
+
+	async getOperation(id: string): Promise<WorkspaceOperationRow | null> {
+		const row = this.operations.get(id);
+		return row ? { ...row } : null;
+	}
+
+	async getOperationByIdempotency(
+		principalId: string,
+		kind: OperationKind,
+		idempotencyKey: string,
+	): Promise<WorkspaceOperationRow | null> {
+		const row = [...this.operations.values()].find(
+			(candidate) =>
+				candidate.principalId === principalId &&
+				candidate.kind === kind &&
+				candidate.idempotencyKey === idempotencyKey,
+		);
+		return row ? { ...row } : null;
+	}
+
+	async listIncompleteOperations(): Promise<WorkspaceOperationRow[]> {
+		return [...this.operations.values()]
+			.filter((row) => row.state === "pending" || row.state === "running")
+			.map((row) => ({ ...row }));
+	}
+
+	async updateOperation(id: string, patch: WorkspaceOperationPatch, at: Date): Promise<void> {
+		const row = this.operations.get(id);
+		if (!row) return;
+		Object.assign(row, patch);
+		row.updatedAt = at;
+	}
+
+	async checkpointUsage(principalId: string | null) {
+		const rows = [...this.checkpoints.values()].filter(
+			(row) =>
+				(!principalId || row.principalId === principalId) &&
+				(row.state === "ready" || row.state === "deleting"),
+		);
+		return {
+			count: rows.length,
+			logicalBytes: rows.reduce((sum, row) => sum + (row.logicalBytes ?? 0), 0),
+		};
+	}
+
+	async countIncompleteOperations(): Promise<number> {
+		return [...this.operations.values()].filter(
+			(row) => row.state === "pending" || row.state === "running",
+		).length;
+	}
+
+	async appendOutput(input: WorkspaceOutputRow): Promise<WorkspaceOutputRow> {
+		const workspace = this.workspaces.get(input.workspaceId);
+		if (!workspace) throw new Error("workspace not found");
+		const list = this.outputs.get(input.workspaceId) ?? [];
+		const row = { ...input, seq: list.length + 1 };
+		list.push(row);
+		this.outputs.set(input.workspaceId, list);
+		workspace.outputs = { ...workspace.outputs, [row.name]: row.value };
+		workspace.updatedAt = row.occurredAt;
+		return { ...row };
+	}
+
+	async listOutputs(workspaceId: string): Promise<WorkspaceOutputRow[]> {
+		return (this.outputs.get(workspaceId) ?? []).map((row) => ({ ...row }));
 	}
 
 	private appendHistory(
@@ -313,7 +499,7 @@ export class MemoryStore implements Store {
 		});
 	}
 
-	private appendEvent(row: WorkspaceRow, at: Date): void {
+	private appendWorkspaceEvent(row: WorkspaceRow, at: Date): void {
 		const payload = buildEventEnvelope(row, at);
 		this.outbox.push({
 			id: payload.id,
@@ -390,5 +576,24 @@ export class MemoryStore implements Store {
 			e.nextAttemptAt = nextAttemptAt;
 		}
 		this.claimedEvents.delete(id);
+	}
+
+	async appendEvent(
+		workspaceId: string,
+		eventType: string,
+		payload: unknown,
+		at: Date,
+	): Promise<void> {
+		this.outbox.push({
+			id: randomUUID(),
+			workspaceId,
+			eventType,
+			payload,
+			occurredAt: at,
+			nextAttemptAt: at,
+			attemptCount: 0,
+			deliveredAt: null,
+			lastErrorCode: null,
+		});
 	}
 }
