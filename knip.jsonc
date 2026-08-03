@@ -13,9 +13,8 @@
 		"apps/pocketcoder-server": {
 			"entry": ["src/**/*.test.ts"]
 		},
-		"examples/clients/*": {
-			"entry": ["remote-agentapi.ts", "*.test.ts"],
-			"ignoreBinaries": ["pi"]
+		"packages/remote": {
+			"entry": ["src/extension.ts", "src/**/*.test.ts"]
 		},
 		"examples/harnesses/*": {
 			"entry": ["agentapi-compat.ts", "*.test.ts"]

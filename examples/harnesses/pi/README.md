@@ -78,7 +78,8 @@ From the repository root:
 OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:pi:ui
 ```
 
-This opens a Pi TUI on the host using [`examples/clients/pi`](../../clients/pi/).
+This opens a Pi TUI on the host using
+[`@pstdio/pocketcoder-remote`](../../../packages/remote/).
 The local Pi process disables its own coding tools and sends turns through
 PocketCoder's relay to AgentAPI. The coding agent and all file operations stay
 inside the disposable workspace. Exit Pi to cancel the workspace.

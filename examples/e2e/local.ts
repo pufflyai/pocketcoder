@@ -322,45 +322,22 @@ try {
 			template: "pi-harness",
 			readyTimeoutMs: 300_000,
 		});
-		const clientDir = resolve(ROOT, "examples/clients/pi");
-		await command(["bun", "install", "--frozen-lockfile"], { cwd: clientDir, quiet: true });
 		console.log(
 			`Opening local Pi for workspace ${uiWorkspace.workspaceId}. Exit Pi to cancel and remove the workspace.`,
 		);
-		localPiProcess = Bun.spawn(
-			[
-				resolve(clientDir, "node_modules/.bin/pi"),
-				"--provider",
-				"pocketcoder-agentapi",
-				"--model",
-				"remote-agent",
-				"--api-key",
-				"local-ui",
-				"--extension",
-				resolve(clientDir, "remote-agentapi.ts"),
-				"--no-tools",
-				"--no-extensions",
-				"--no-skills",
-				"--no-context-files",
-				"--no-prompt-templates",
-				"--no-session",
-				"--offline",
-				prompt,
-			],
-			{
-				cwd: ROOT,
-				env: {
-					...process.env,
-					OPENAI_API_KEY: undefined,
-					POCKETCODER_URL: baseUrl,
-					POCKETCODER_KEY: key,
-					POCKETCODER_WORKSPACE_ID: uiWorkspace.workspaceId,
-				},
-				stdin: "inherit",
-				stdout: "inherit",
-				stderr: "inherit",
+		localPiProcess = Bun.spawn(["bun", resolve(ROOT, "packages/remote/src/bin.ts"), prompt], {
+			cwd: ROOT,
+			env: {
+				...process.env,
+				OPENAI_API_KEY: undefined,
+				POCKETCODER_URL: baseUrl,
+				POCKETCODER_KEY: key,
+				POCKETCODER_WORKSPACE_ID: uiWorkspace.workspaceId,
 			},
-		);
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		});
 		const exitCode = await localPiProcess.exited;
 		localPiProcess = null;
 		if (exitCode !== 0) throw new Error(`local Pi exited with code ${exitCode}`);

@@ -15,6 +15,7 @@ API drives the whole lifecycle.
 | [Deployment](deployment.md) | Container images, docker compose, PostgreSQL placement, configuration reference |
 | [Migration guide](migration.md) | Frozen legacy rename map and a one-pass consumer migration checklist |
 | [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |
+| [Pi terminal UI](../packages/remote/README.md) | `@pstdio/pocketcoder-remote`: local Pi as a thin client for workspaces, with history replay and workspace commands |
 | [Architecture](architecture.md) | Components, workspace state machine, agent protocol |
 
 ## The short version
