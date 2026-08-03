@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	type PoolProviderInput,
 	type ProviderInput,
 	parseTemplateManifest,
 	snapshotOf,
@@ -93,6 +94,7 @@ function fixtureWorkspace(): WorkspaceRow {
 		launchInput: null,
 		providerKind: null,
 		providerRef: null,
+		provisioningMode: null,
 		registrationDigest: null,
 		registrationExpiresAt: null,
 		reconnectDigest: null,
@@ -120,6 +122,42 @@ function fixtureWorkspace(): WorkspaceRow {
 }
 
 describe("Kubernetes workspace driver", () => {
+	test("creates an equivalent task-agnostic warm Job and Secret", async () => {
+		const fake = await fakeKubectl();
+		const workspace = fixtureWorkspace();
+		const runtimeId = randomUUID();
+		const input: PoolProviderInput = {
+			pool_runtime_id: runtimeId,
+			server_url: "http://pocketcoder-server.agents.svc:7080",
+			enrollment_secret: "pool-only",
+			template_digest: workspace.templateDigest,
+			template_name: workspace.templateName,
+			template_version: workspace.templateVersion,
+		};
+		const driver = new KubernetesDriver({ namespace: "agents", kubectlBin: fake.bin });
+		await driver.createWarm({ runtimeId, template: workspace.templateSnapshot, input });
+		const calls = (await readFile(fake.log, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { args: string[]; input: string });
+		const manifests = calls
+			.filter((call) => call.args.includes("apply"))
+			.map(
+				(call) =>
+					JSON.parse(call.input) as {
+						kind: string;
+						stringData?: Record<string, string>;
+						metadata: { labels: Record<string, string> };
+					},
+			);
+		expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Job"]);
+		const secretInput = manifests[0]?.stringData?.["input.json"] ?? "";
+		expect(JSON.parse(secretInput)).toEqual(input);
+		expect(secretInput).not.toContain("workspace_id");
+		const jobLabels = manifests[1]?.metadata.labels ?? {};
+		expect(jobLabels["pocketcoder.pool-runtime"]).toBe(runtimeId);
+		expect(jobLabels["pocketcoder.workspace"]).toBeUndefined();
+	});
 	test("projects the portable launch contract into a namespaced Job", async () => {
 		const fake = await fakeKubectl();
 		const workspace = fixtureWorkspace();

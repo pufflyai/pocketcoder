@@ -1,15 +1,18 @@
 import type {
 	DiscoveredProvider,
+	DiscoveredWarmProvider,
 	ProviderRef,
 	ProviderState,
 	RuntimeMountRef,
 	RuntimeSecretRef,
+	WarmRuntimeLaunch,
 	WorkspaceDriver,
 	WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
 
 export const KUBERNETES_WORKSPACE_LABEL = "pocketcoder.workspace";
 export const KUBERNETES_DIGEST_ANNOTATION = "pocketcoder.dev/template-digest";
+export const KUBERNETES_POOL_LABEL = "pocketcoder.pool-runtime";
 
 export interface KubernetesDriverOptions {
 	namespace?: string;
@@ -271,6 +274,113 @@ export class KubernetesDriver implements WorkspaceDriver {
 		}
 	}
 
+	async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
+		const spec = launch.template.spec;
+		const name = `pocketcoder-pool-${launch.runtimeId}`;
+		const inputSecret = `${name}-input`;
+		await kubectl(
+			this.kubectlBin,
+			this.namespace,
+			["apply", "-f", "-"],
+			JSON.stringify({
+				apiVersion: "v1",
+				kind: "Secret",
+				metadata: { name: inputSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
+				type: "Opaque",
+				stringData: { "input.json": JSON.stringify(launch.input) },
+			}),
+		);
+		const memory = spec.security.writableMemoryPaths.map((path, index) => ({
+			volume: { name: `memory-${index}`, emptyDir: { medium: "Memory", sizeLimit: "256Mi" } },
+			mount: { name: `memory-${index}`, mountPath: path },
+		}));
+		const labels = { [KUBERNETES_POOL_LABEL]: launch.runtimeId };
+		const annotations = { [KUBERNETES_DIGEST_ANNOTATION]: launch.template.digest };
+		const manifest = {
+			apiVersion: "batch/v1",
+			kind: "Job",
+			metadata: { name, labels, annotations },
+			spec: {
+				backoffLimit: 0,
+				ttlSecondsAfterFinished: 3600,
+				template: {
+					metadata: { labels, annotations },
+					spec: {
+						restartPolicy: "Never",
+						automountServiceAccountToken: false,
+						...(this.serviceAccountName ? { serviceAccountName: this.serviceAccountName } : {}),
+						securityContext: {
+							runAsUser: spec.security.uid,
+							runAsGroup: spec.security.gid,
+							runAsNonRoot: true,
+							fsGroup: spec.security.gid,
+							fsGroupChangePolicy: "OnRootMismatch",
+							seccompProfile: { type: spec.security.seccomp },
+						},
+						containers: [
+							{
+								name: "workspace",
+								image: spec.image,
+								imagePullPolicy: this.imagePullPolicy,
+								command: spec.command,
+								env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
+								resources: { requests: spec.resources, limits: spec.resources },
+								securityContext: {
+									readOnlyRootFilesystem: spec.security.readOnlyRoot,
+									allowPrivilegeEscalation: spec.security.allowPrivilegeEscalation,
+									capabilities: { drop: spec.security.dropCapabilities },
+								},
+								volumeMounts: [
+									{
+										name: "provider-input",
+										mountPath: "/run/pocketcoder/input",
+										subPath: "input.json",
+										readOnly: true,
+									},
+									...memory.map((item) => item.mount),
+								],
+							},
+						],
+						volumes: [
+							{
+								name: "provider-input",
+								secret: {
+									secretName: inputSecret,
+									items: [{ key: "input.json", path: "input.json" }],
+								},
+							},
+							...memory.map((item) => item.volume),
+						],
+					},
+				},
+			},
+		};
+		try {
+			await kubectl(
+				this.kubectlBin,
+				this.namespace,
+				["apply", "-f", "-"],
+				JSON.stringify(manifest),
+			);
+			return {
+				kind: this.kind,
+				id: name,
+				name,
+				inputSecret,
+				namespace: this.namespace,
+				poolRuntimeId: launch.runtimeId,
+			};
+		} catch (error) {
+			await kubectl(this.kubectlBin, this.namespace, [
+				"delete",
+				"secret",
+				inputSecret,
+				"--ignore-not-found",
+			]).catch(() => {});
+			throw error;
+		}
+	}
+
 	async inspect(ref: ProviderRef): Promise<ProviderState> {
 		try {
 			const output = await kubectl(this.kubectlBin, this.namespace, [
@@ -312,7 +422,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 			"delete",
 			"pod",
 			"-l",
-			`${KUBERNETES_WORKSPACE_LABEL}=${String(ref.name ?? ref.id).replace(/^pocketcoder-ws-/, "")}`,
+			`job-name=${ref.id}`,
 			`--grace-period=${graceSeconds}`,
 			"--wait=true",
 			"--ignore-not-found",
@@ -341,6 +451,15 @@ export class KubernetesDriver implements WorkspaceDriver {
 			"delete",
 			"secret",
 			`${resourceName(workspaceId)}-input`,
+			"--ignore-not-found",
+		]).catch(() => {});
+	}
+
+	async cleanupWarmInput(runtimeId: string): Promise<void> {
+		await kubectl(this.kubectlBin, this.namespace, [
+			"delete",
+			"secret",
+			`pocketcoder-pool-${runtimeId}-input`,
 			"--ignore-not-found",
 		]).catch(() => {});
 	}
@@ -378,6 +497,46 @@ export class KubernetesDriver implements WorkspaceDriver {
 						name,
 						inputSecret: `${name}-input`,
 						namespace: this.namespace,
+					},
+				},
+			];
+		});
+	}
+
+	async listWarm(): Promise<DiscoveredWarmProvider[]> {
+		const output = await kubectl(this.kubectlBin, this.namespace, [
+			"get",
+			"jobs",
+			"-l",
+			KUBERNETES_POOL_LABEL,
+			"-o",
+			"json",
+		]);
+		const list = JSON.parse(output) as {
+			items?: Array<{
+				metadata?: {
+					name?: string;
+					labels?: Record<string, string>;
+					annotations?: Record<string, string>;
+				};
+			}>;
+		};
+		return (list.items ?? []).flatMap((job) => {
+			const runtimeId = job.metadata?.labels?.[KUBERNETES_POOL_LABEL];
+			const name = job.metadata?.name;
+			const templateDigest = job.metadata?.annotations?.[KUBERNETES_DIGEST_ANNOTATION];
+			if (!runtimeId || !name || !templateDigest) return [];
+			return [
+				{
+					runtimeId,
+					templateDigest,
+					ref: {
+						kind: this.kind,
+						id: name,
+						name,
+						inputSecret: `${name}-input`,
+						namespace: this.namespace,
+						poolRuntimeId: runtimeId,
 					},
 				},
 			];

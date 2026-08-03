@@ -92,6 +92,7 @@ export const workspaces = pgTable(
 		launchInput: jsonb("launch_input").$type<Record<string, unknown>>(),
 		providerKind: text("provider_kind"),
 		providerRef: jsonb("provider_ref").$type<Record<string, unknown>>(),
+		provisioningMode: text("provisioning_mode"),
 		registrationDigest: bytea("registration_digest"),
 		registrationExpiresAt: timestamptz("registration_expires_at"),
 		reconnectDigest: bytea("reconnect_digest"),
@@ -125,6 +126,41 @@ export const workspaces = pgTable(
 		index("workspaces_deadline")
 			.on(table.deadlineAt)
 			.where(sql`${table.state} NOT IN ${terminalStates}`),
+	],
+);
+
+export const warmPoolRuntimes = pgTable(
+	"warm_pool_runtimes",
+	{
+		id: uuid("id").primaryKey(),
+		templateId: uuid("template_id")
+			.notNull()
+			.references(() => templates.id),
+		templateName: text("template_name").notNull(),
+		templateVersion: text("template_version").notNull(),
+		templateDigest: text("template_digest").notNull(),
+		driverKind: text("driver_kind").notNull(),
+		eligibilityFingerprint: text("eligibility_fingerprint").notNull(),
+		state: text("state").notNull(),
+		providerRef: jsonb("provider_ref").$type<Record<string, unknown>>(),
+		enrollmentDigest: bytea("enrollment_digest"),
+		enrollmentExpiresAt: timestamptz("enrollment_expires_at"),
+		workspaceId: uuid("workspace_id").references(() => workspaces.id),
+		createdAt: timestamptz("created_at").notNull(),
+		updatedAt: timestamptz("updated_at").notNull(),
+		readyAt: timestamptz("ready_at"),
+		leasedAt: timestamptz("leased_at"),
+		failureCode: text("failure_code"),
+	},
+	(table) => [
+		index("warm_pool_eligible").on(
+			table.templateDigest,
+			table.driverKind,
+			table.eligibilityFingerprint,
+			table.state,
+			table.readyAt,
+		),
+		uniqueIndex("warm_pool_workspace_once").on(table.workspaceId),
 	],
 );
 

@@ -27,6 +27,7 @@ export const EventEnvelopeSchema = z.object({
 		state: z.enum(WORKSPACE_STATES),
 		reason_code: z.string().nullable(),
 		agent_state: z.enum(AGENT_STATES),
+		provisioning_mode: z.enum(["cold", "warm"]).nullable().default(null),
 		change_cursor: z.number().int().nonnegative(),
 		failure: z
 			.object({

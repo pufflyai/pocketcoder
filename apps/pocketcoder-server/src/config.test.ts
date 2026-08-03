@@ -2,6 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { loadConfig } from "./config";
 
 describe("portable persistence configuration", () => {
+	test("parses operator warm pool configuration with safe defaults", () => {
+		const config = loadConfig({
+			POCKETCODER_STORE: "memory",
+			POCKETCODER_WARM_POOLS: JSON.stringify([{ template: "fixture-echo" }]),
+		});
+		expect(config.warmPools).toEqual([
+			{
+				template: "fixture-echo",
+				minReady: 1,
+				maxWarmAgeMs: 15 * 60_000,
+				missPolicy: "cold",
+				waitTimeoutMs: 5000,
+			},
+		]);
+	});
 	test("configures host-local filesystem storage explicitly", () => {
 		const config = loadConfig({
 			POCKETCODER_STORE: "memory",

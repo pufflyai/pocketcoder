@@ -1,5 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { type AdmissionLimits, DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
+import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import {
+	type AdmissionLimits,
+	DEFAULT_LIMITS,
+	type WarmPoolConfigEntry,
+} from "@pstdio/pocketcoder-runtime-core";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "./persistence";
 
 type Environment = Record<string, string | undefined>;
@@ -36,6 +41,50 @@ export interface ServerConfig {
 	schedulerIntervalMs: number;
 	outboxIntervalMs: number;
 	persistenceLimits: PersistenceLimits;
+	warmPools: WarmPoolConfigEntry[];
+}
+
+function resolveWarmPools(env: Environment): WarmPoolConfigEntry[] {
+	const raw = env.POCKETCODER_WARM_POOLS;
+	if (!raw) return [];
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch {
+		throw new Error("POCKETCODER_WARM_POOLS must be valid JSON");
+	}
+	if (!Array.isArray(value)) throw new Error("POCKETCODER_WARM_POOLS must be a JSON array");
+	return value.map((item, index) => {
+		if (!item || typeof item !== "object")
+			throw new Error(`POCKETCODER_WARM_POOLS[${index}] must be an object`);
+		const entry = item as Record<string, unknown>;
+		if (typeof entry.template !== "string" || !entry.template)
+			throw new Error(`POCKETCODER_WARM_POOLS[${index}].template is required`);
+		const minReady = entry.min_ready === undefined ? 1 : Number(entry.min_ready);
+		if (!Number.isInteger(minReady) || minReady <= 0)
+			throw new Error(`POCKETCODER_WARM_POOLS[${index}].min_ready must be a positive integer`);
+		const missPolicy = entry.miss_policy ?? "cold";
+		if (missPolicy !== "cold" && missPolicy !== "wait")
+			throw new Error(`POCKETCODER_WARM_POOLS[${index}].miss_policy must be cold or wait`);
+		const duration = (key: string, fallback: string) => {
+			const candidate = entry[key] ?? fallback;
+			if (typeof candidate !== "string")
+				throw new Error(`POCKETCODER_WARM_POOLS[${index}].${key} must be a duration`);
+			try {
+				return parseDurationMs(candidate);
+			} catch {
+				throw new Error(`POCKETCODER_WARM_POOLS[${index}].${key} must be a duration`);
+			}
+		};
+		return {
+			template: entry.template,
+			...(typeof entry.version === "string" ? { version: entry.version } : {}),
+			minReady,
+			maxWarmAgeMs: duration("max_warm_age", "15m"),
+			missPolicy,
+			waitTimeoutMs: duration("wait_timeout", "5s"),
+		};
+	});
 }
 
 function intEnv(env: Environment, key: string, fallback: number): number {
@@ -229,5 +278,6 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
 		schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
 		outboxIntervalMs: intEnv(env, "POCKETCODER_OUTBOX_INTERVAL_MS", 1000),
 		persistenceLimits: resolvePersistenceLimits(env),
+		warmPools: resolveWarmPools(env),
 	};
 }

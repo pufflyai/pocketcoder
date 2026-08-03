@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	type PoolProviderInput,
 	type ProviderInput,
 	parseTemplateManifest,
 	snapshotOf,
@@ -35,6 +36,47 @@ async function dockerMock(source: string): Promise<string> {
 }
 
 describe("Docker image resolution", () => {
+	test("creates task-agnostic warm containers with pool-only input", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pocketcoder-docker-warm-"));
+		temporaryDirectories.push(directory);
+		const log = join(directory, "args.json");
+		const docker = await dockerMock(`
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "image") console.log(args[2]);
+else if (args[0] === "run") { writeFileSync(${JSON.stringify(log)}, JSON.stringify(args)); console.log("warm-id"); }
+`);
+		const parsed = parseTemplateManifest({
+			apiVersion: "pocketcoder.dev/v1alpha1",
+			kind: "Template",
+			metadata: { name: "warm-docker" },
+			spec: {
+				version: "1.0.0",
+				image: `registry.example/warm@sha256:${"c".repeat(64)}`,
+				harness: { command: ["/bin/true"] },
+				resources: { cpu: "1", memory: "256Mi" },
+			},
+		});
+		const runtimeId = randomUUID();
+		const input: PoolProviderInput = {
+			pool_runtime_id: runtimeId,
+			server_url: "http://host.docker.internal:7080",
+			enrollment_secret: "pool-only",
+			template_digest: parsed.digest,
+			template_name: "warm-docker",
+			template_version: "1.0.0",
+		};
+		const inputDir = join(directory, "input");
+		const driver = new DockerDriver({ dockerBin: docker, inputDir });
+		await driver.createWarm({ runtimeId, template: snapshotOf(parsed), input });
+		const persisted = JSON.parse(await readFile(join(inputDir, `pool-${runtimeId}.json`), "utf8"));
+		expect(persisted).toEqual(input);
+		expect(persisted.workspace_id).toBeUndefined();
+		expect(persisted.launch_input).toBeUndefined();
+		const args = JSON.parse(await readFile(log, "utf8")) as string[];
+		expect(args).toContain(`pocketcoder.pool-runtime=${runtimeId}`);
+		expect(args.join(" ")).not.toContain("pocketcoder.workspace=");
+	});
 	test("uses an exact local image ID for a locally built digest reference", async () => {
 		const digest = `sha256:${"a".repeat(64)}`;
 		const docker = await dockerMock(`

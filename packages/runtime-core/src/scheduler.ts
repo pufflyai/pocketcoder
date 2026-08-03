@@ -14,6 +14,7 @@ import type {
 	WorkspaceStorageDriver,
 } from "./driver";
 import type { ActiveCounts, Store, WorkspacePatch, WorkspaceRow } from "./types";
+import type { WarmPoolManager } from "./warm-pool";
 
 const FAILURE_LOG_TAIL_BYTES = 16 * 1024;
 
@@ -87,6 +88,7 @@ export interface SchedulerDeps {
 	limits: AdmissionLimits;
 	// URL workspaces use to reach this server (may differ from listen addr).
 	workspaceServerUrl: string;
+	warmPool?: WarmPoolManager;
 	preserveByPolicy?: (
 		row: WorkspaceRow,
 		trigger: "idle" | "deadline" | "clean_exit" | "failure",
@@ -242,7 +244,29 @@ export class Scheduler {
 				return;
 			case "provisioning":
 				if (row.registrationExpiresAt && now >= row.registrationExpiresAt) {
-					await this.fail(row, "registration_timeout", now);
+					if (
+						row.provisioningMode === "warm" &&
+						row.launchAttempts < this.deps.limits.maxLaunchAttempts
+					) {
+						if (row.providerRef) {
+							await this.deps.driver.stop(row.providerRef as never, 1).catch(() => {});
+							await this.deps.driver.remove(row.providerRef as never).catch(() => {});
+						}
+						await this.deps.store.transition(row.id, {
+							from: ["provisioning"],
+							to: "queued",
+							at: now,
+							patch: {
+								providerKind: null,
+								providerRef: null,
+								provisioningMode: null,
+								registrationDigest: null,
+								registrationExpiresAt: null,
+							},
+						});
+					} else {
+						await this.fail(row, "registration_timeout", now);
+					}
 				}
 				return;
 			case "connected":
@@ -490,19 +514,8 @@ export class Scheduler {
 		const { store, driver, secrets } = this.deps;
 		const now = this.now();
 		const secret = secrets.generate();
-		const claimed = await store.transition(row.id, {
-			from: ["queued"],
-			to: "provisioning",
-			at: now,
-			patch: {
-				registrationDigest: secrets.digest(secret),
-				registrationExpiresAt: new Date(now.getTime() + this.timeoutMs(row, "start")),
-				launchAttempts: row.launchAttempts + 1,
-			},
-		});
-		if (!claimed) {
-			return false;
-		}
+		const registrationDigest = secrets.digest(secret);
+		const registrationExpiresAt = new Date(now.getTime() + this.timeoutMs(row, "start"));
 		const input: ProviderInput = {
 			workspace_id: row.id,
 			server_url: this.deps.workspaceServerUrl,
@@ -522,6 +535,28 @@ export class Scheduler {
 				: {}),
 			...(row.launchInput ? { launch_input: row.launchInput } : {}),
 		};
+		if (this.deps.warmPool) {
+			const hit = await this.deps.warmPool.tryLease(
+				row,
+				input,
+				registrationDigest,
+				registrationExpiresAt,
+			);
+			if (hit) return true;
+			if (this.deps.warmPool.missDecision(row) === "wait") return false;
+		}
+		const claimed = await store.transition(row.id, {
+			from: ["queued"],
+			to: "provisioning",
+			at: now,
+			patch: {
+				provisioningMode: "cold",
+				registrationDigest,
+				registrationExpiresAt,
+				launchAttempts: row.launchAttempts + 1,
+			},
+		});
+		if (!claimed) return false;
 		try {
 			const mounts = await this.prepareStorage(claimed);
 			if (
