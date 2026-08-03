@@ -1,5 +1,13 @@
 # @pstdio/pocketcoder-cli
 
+## 0.3.0
+
+### Minor Changes
+
+- [#5](https://github.com/pufflyai/pocketcoder/pull/5) [`90ab090`](https://github.com/pufflyai/pocketcoder/commit/90ab0907456dafc216f975c9ae84836332caaff3) Thanks [@au-re](https://github.com/au-re)! - Add durable agent session history: workspace conversation transcripts are persisted and paginated, with authenticated history and deletion APIs, conversation-aware resume from checkpoints that declare support, and new `conversations:read` / `conversations:delete` scopes.
+
+- [#5](https://github.com/pufflyai/pocketcoder/pull/5) [`90ab090`](https://github.com/pufflyai/pocketcoder/commit/90ab0907456dafc216f975c9ae84836332caaff3) Thanks [@au-re](https://github.com/au-re)! - Add configurable warm workspace pools that keep pre-provisioned workspaces ready per template version, and a `pcd pools list` command to inspect warm pool inventory and metrics.
+
 ## 0.2.0
 
 ### Minor Changes
