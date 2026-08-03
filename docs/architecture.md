@@ -40,8 +40,8 @@ erDiagram
     PRINCIPALS ||--o{ MACHINE_KEYS : authenticates
     PRINCIPALS ||--o{ WORKSPACES : owns
     TEMPLATES ||--o{ WORKSPACES : snapshots
-    TEMPLATES ||--o{ WARM_POOL_RUNTIMES : provisions
-    WORKSPACES o|--o| WARM_POOL_RUNTIMES : claims
+	TEMPLATES ||--o{ WARM_POOL_RUNTIMES : provisions
+	WORKSPACES o|--o| WARM_POOL_RUNTIMES : claims
     PRINCIPALS ||--o{ WORKSPACE_STORAGE : owns
     WORKSPACES ||--o{ WORKSPACE_STORAGE : allocates
     PRINCIPALS ||--o{ WORKSPACE_CHECKPOINTS : owns
@@ -52,6 +52,8 @@ erDiagram
     WORKSPACE_CHECKPOINTS o|--o{ WORKSPACE_OPERATIONS : restores
     WORKSPACES o|--o{ WORKSPACE_OPERATIONS : produces
     WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
+	WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
+	WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
     WORKSPACES ||--o{ WORKSPACE_STATE_HISTORY : transitions
     WORKSPACES ||--o{ WORKSPACE_LOGS : emits
     WORKSPACES ||--o{ EVENT_OUTBOX : records
@@ -91,13 +93,13 @@ erDiagram
         text template_digest
         jsonb template_snapshot
         text state
-        text provisioning_mode
+		text provisioning_mode
         jsonb provider_ref
         timestamptz deadline_at
         timestamptz terminal_at
     }
 
-    WARM_POOL_RUNTIMES {
+	WARM_POOL_RUNTIMES {
         uuid id PK
         uuid template_id FK
         uuid workspace_id FK,UK
@@ -149,6 +151,24 @@ erDiagram
         bigint seq PK
         text name
         jsonb value
+        timestamptz occurred_at
+    }
+
+	WORKSPACE_CONVERSATIONS {
+        uuid workspace_id PK,FK
+        text status
+        timestamptz expires_at
+        timestamptz deleted_at
+        timestamptz updated_at
+    }
+
+    WORKSPACE_CONVERSATION_MESSAGES {
+        uuid workspace_id PK,FK
+        bigint seq PK
+        text message_id UK
+        text role
+        text content
+        jsonb metadata
         timestamptz occurred_at
     }
 
@@ -220,7 +240,8 @@ per-connection monotonic sequence numbers; the newest accepted connection
 
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 `log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
-`checkpoint_status`, `restore_status`, `output_published`.
+`checkpoint_status`, `restore_status`, `output_published`,
+`conversation_message`.
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
 `shutdown`, `prepare_checkpoint`.
 
@@ -254,3 +275,6 @@ labeled provider objects and supervisors simply reconnect.
 - Launch input reaches the harness in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.
+- Conversation events are contract-bounded and principal-scoped, expire by
+  template policy, and support explicit content deletion. Harness adapters own
+  semantic redaction before emitting canonical messages.

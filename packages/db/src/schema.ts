@@ -279,6 +279,36 @@ export const workspaceOutputs = pgTable(
 	(table) => [primaryKey({ columns: [table.workspaceId, table.seq] })],
 );
 
+export const workspaceConversations = pgTable("workspace_conversations", {
+	workspaceId: uuid("workspace_id")
+		.primaryKey()
+		.references(() => workspaces.id),
+	status: text("status").notNull(),
+	expiresAt: timestamptz("expires_at"),
+	deletedAt: timestamptz("deleted_at"),
+	updatedAt: timestamptz("updated_at").notNull(),
+});
+
+export const workspaceConversationMessages = pgTable(
+	"workspace_conversation_messages",
+	{
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id),
+		seq: bigint("seq", { mode: "bigint" }).notNull(),
+		messageId: text("message_id").notNull(),
+		role: text("role").notNull(),
+		content: text("content").notNull(),
+		occurredAt: timestamptz("occurred_at").notNull(),
+		metadata: jsonb("metadata").$type<Record<string, string>>().notNull().default({}),
+		createdAt: timestamptz("created_at").notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.workspaceId, table.seq] }),
+		unique().on(table.workspaceId, table.messageId),
+	],
+);
+
 export const workspaceStateHistory = pgTable(
 	"workspace_state_history",
 	{

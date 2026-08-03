@@ -254,7 +254,7 @@ try {
 			"--name",
 			`example-${runId}`,
 			"--scopes",
-			"templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read",
+			"templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read,conversations:read",
 			"--templates",
 			"*",
 		],
@@ -382,6 +382,13 @@ try {
 					: usesFakeGateway
 						? PI_FIXTURE_CONTENT
 						: undefined),
+			expectedConversation:
+				harness === "echo"
+					? [
+							{ role: "user", content: prompt },
+							{ role: "assistant", content: `echo: ${prompt}` },
+						]
+					: undefined,
 			readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
 			messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
 		});

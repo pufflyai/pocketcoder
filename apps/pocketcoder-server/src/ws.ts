@@ -379,6 +379,24 @@ async function handleConnectedFrame(
 			return;
 		case "restore_status":
 			return;
+		case "conversation_message": {
+			const workspace = await deps.store.getWorkspace(frame.workspace_id);
+			if (!workspace || isTerminal(workspace.state)) return;
+			try {
+				await deps.store.appendConversationMessage({
+					workspaceId: frame.workspace_id,
+					messageId: frame.payload.message_id,
+					role: frame.payload.role,
+					content: frame.payload.content,
+					occurredAt: new Date(frame.payload.occurred_at),
+					metadata: frame.payload.metadata,
+					createdAt: new Date(),
+				});
+			} catch (error) {
+				deps.log?.(`conversation ${frame.workspace_id}: ${String(error)}`);
+			}
+			return;
+		}
 	}
 }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +46,8 @@ async function server() {
 		"checkpoints:read",
 		"checkpoints:delete",
 		"outputs:read",
+		"conversations:read",
+		"conversations:delete",
 		"services:relay",
 		"logs:read",
 	];
@@ -148,6 +151,62 @@ describe("persistent workspace REST workflow", () => {
 		if (!checkpoint) throw new Error("expected preserve to create a checkpoint");
 		expect(checkpoint?.state).toBe("ready");
 		expect(checkpoint?.conversationRestore).toBe("filesystem_only");
+		const historicalSource = await testServer.request(`/v1/workspaces/${created.id}`);
+		expect((await historicalSource.json()) as unknown).toMatchObject({
+			persistence: {
+				conversation_restore: "filesystem_only",
+				conversation_resume: { status: "unsupported", reason: "filesystem_only" },
+			},
+		});
+		const unsupportedResume = await testServer.request(`/v1/workspaces/${created.id}/resume`, {
+			method: "POST",
+			headers: { "idempotency-key": "resume-unsupported" },
+			body: JSON.stringify({ external_id: "must-not-be-created" }),
+		});
+		expect(unsupportedResume.status).toBe(409);
+		expect((await unsupportedResume.json()) as unknown).toMatchObject({
+			error: {
+				code: "resume.unsupported",
+				details: { reason: "filesystem_only", checkpoint_id: checkpoint.id },
+			},
+		});
+		expect(
+			(
+				await testServer.store.listWorkspaces(
+					(await testServer.store.listPrincipals())[0]?.id ?? "",
+					{ externalId: "must-not-be-created", limit: 10 },
+				)
+			).length,
+		).toBe(0);
+		const supportedCheckpoint = await testServer.store.insertCheckpoint({
+			...checkpoint,
+			id: randomUUID(),
+			parentCheckpointId: checkpoint.id,
+			conversationRestore: "supported",
+			label: "supported-resume-fixture",
+			createdAt: new Date(checkpoint.createdAt.getTime() + 1),
+			updatedAt: new Date(checkpoint.updatedAt.getTime() + 1),
+			readyAt: new Date((checkpoint.readyAt ?? checkpoint.updatedAt).getTime() + 1),
+		});
+		const supportedResume = await testServer.request(`/v1/workspaces/${created.id}/resume`, {
+			method: "POST",
+			headers: { "idempotency-key": "resume-supported" },
+			body: JSON.stringify({ external_id: "resumed-conversation" }),
+		});
+		expect(supportedResume.status).toBe(202);
+		expect((await supportedResume.json()) as unknown).toMatchObject({
+			workspace: {
+				external_id: "resumed-conversation",
+				origin_workspace_id: created.id,
+				restored_from_checkpoint_id: supportedCheckpoint.id,
+			},
+			resume: {
+				status: "supported",
+				reason: null,
+				source_workspace_id: created.id,
+				checkpoint_id: supportedCheckpoint.id,
+			},
+		});
 		expect(testServer.driver.stopped.length).toBeGreaterThan(0);
 		expect(testServer.driver.terminated.length).toBeGreaterThan(0);
 

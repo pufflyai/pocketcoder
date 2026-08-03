@@ -78,6 +78,7 @@ export const CheckpointPolicySchema = z.object({
 export const PersistenceSpecSchema = z.object({
 	mounts: z.array(PersistenceMountSchema).max(16).default([]),
 	conversationRestore: z.enum(CONVERSATION_RESTORE_CAPABILITIES).default("filesystem_only"),
+	conversationRetention: DurationValueSchema.default("168h"),
 	sessionCompatibility: z.string().min(1).max(128).optional(),
 	checkpoint: CheckpointPolicySchema.prefault({}),
 });

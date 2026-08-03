@@ -5,7 +5,8 @@ workspaces. **Documentation lives in [docs/](docs/README.md)**: [getting
 started](docs/getting-started.md), [CLI reference](docs/cli.md),
 [templates](docs/templates.md), [HTTP API](docs/api.md),
 [deployment](docs/deployment.md), [migration guide](docs/migration.md), and
-[architecture](docs/architecture.md). It replaces a full Coder deployment for the machine-to-machine
+[architecture](docs/architecture.md). The durable history change has a
+[validation playbook](docs/durable-conversation-validation.md). It replaces a full Coder deployment for the machine-to-machine
 coding-agent use case while keeping the two concepts that matter:
 
 - a **template** is a reviewed, versioned definition of a coding-agent
@@ -28,8 +29,8 @@ caller (machine key)
 
 No browser login, no session tokens, no Terraform, no IDE/SSH surface. Callers
 authenticate with named, scoped, revocable machine keys; workspaces talk back
-over one outbound WSS connection carrying lifecycle, health, logs, signals,
-and an exact allowlisted HTTP relay.
+over one outbound WSS connection carrying lifecycle, health, logs, durable
+conversation events, signals, and an exact allowlisted HTTP relay.
 
 ## Custom setup commands and harnesses
 
@@ -114,7 +115,7 @@ export POCKETCODER_DATABASE_SCHEMA=pocketcoder
 export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 
 bun run pcd db migrate
-bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
+bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,workspaces:restore,conversations:read,conversations:delete,services:relay,templates:read,logs:read --templates '*'
 bun run pcd keys issue --principal my-backend --expires never   # shown once
 
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
@@ -154,6 +155,10 @@ bun run pcd -- workspaces preserve --id $WS
 curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/services/agent/message" \
   -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
   -d '{"content":"fix the failing test"}'
+
+# Durable history remains available after the relay closes:
+curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?after=0&limit=100" \
+  -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 
 The OpenAPI document is served at `/v1/openapi.json`. CI publishes

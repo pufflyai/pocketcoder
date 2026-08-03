@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { POOL_PROTOCOL_VERSION, type ProviderInput } from "@pstdio/pocketcoder-contracts";
 import {
+	isConversationControlLine,
 	pumpLineFramedText,
 	splitUtf8Chunks,
 	verifyWritableMemoryPaths,
@@ -92,6 +93,33 @@ describe("workspace preflight", () => {
 });
 
 describe("log framing", () => {
+	test("recognizes conversation control lines so transcript content stays out of logs", () => {
+		expect(
+			isConversationControlLine(
+				'POCKETCODER_CONVERSATION {"message_id":"m-1","content":"secret"}\n',
+			),
+		).toBe(true);
+		expect(isConversationControlLine("ordinary harness output\n")).toBe(false);
+	});
+
+	test("filters canonical conversation lines from operational log emission", async () => {
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(
+					new TextEncoder().encode(
+						'POCKETCODER_CONVERSATION {"message_id":"m-1","content":"private"}\nordinary\n',
+					),
+				);
+				controller.close();
+			},
+		});
+		const logs: string[] = [];
+		await pumpLineFramedText(stream, (line) => {
+			if (!isConversationControlLine(line)) logs.push(line);
+		});
+		expect(logs).toEqual(["ordinary\n"]);
+	});
+
 	test("reassembles split UTF-8 input and emits complete lines", async () => {
 		const source = new TextEncoder().encode(
 			"Traceback (most recent call last):\nPermissionError: café/.pi\npartial",

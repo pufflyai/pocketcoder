@@ -1,11 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
 import {
 	ApiError,
 	CHECKPOINT_STATES,
 	CheckpointResourceSchema,
+	ConversationListQuerySchema,
+	ConversationMessageResourceSchema,
+	ConversationResumeOutcomeSchema,
 	OperationResourceSchema,
 	PreserveRequestSchema,
+	parseDurationMs,
 	RestoreRequestSchema,
 	TemplateListItemSchema,
 	WorkspaceCreateRequestSchema,
@@ -20,6 +25,7 @@ import {
 	type TemplateRow,
 	WarmPoolManager,
 	type WorkspaceDriver,
+	type WorkspaceListFilter,
 	type WorkspaceSecretResolver,
 	type WorkspaceStorageDriver,
 } from "@pstdio/pocketcoder-runtime-core";
@@ -69,6 +75,45 @@ function safeTemplateItem(row: TemplateRow) {
 		digest: row.digest,
 		...(row.description ? { description: row.description } : {}),
 		status: row.status,
+	};
+}
+
+const WorkspaceMetadataFilterSchema = z
+	.record(z.string().min(1).max(64), z.string().max(512))
+	.refine((value) => Object.keys(value).length <= 16, "metadata filter has at most 16 keys");
+
+function parseMetadataFilter(value: string | undefined): Record<string, string> | undefined {
+	if (!value) return undefined;
+	try {
+		const parsed = WorkspaceMetadataFilterSchema.safeParse(JSON.parse(value));
+		if (parsed.success) return parsed.data;
+	} catch {
+		// Stable validation envelope below.
+	}
+	throw new ApiError(
+		"validation.invalid",
+		"metadata must be a JSON object containing bounded string keys and values.",
+	);
+}
+
+function workspaceListFilterOf(
+	query: z.infer<typeof WorkspaceListQuerySchema>,
+): WorkspaceListFilter {
+	const metadata = parseMetadataFilter(query.metadata);
+	const createdAfter = query.created_after ? new Date(query.created_after) : undefined;
+	const createdBefore = query.created_before ? new Date(query.created_before) : undefined;
+	if (createdAfter && createdBefore && createdAfter >= createdBefore) {
+		throw new ApiError("validation.invalid", "created_after must be before created_before.");
+	}
+	return {
+		...(query.external_id ? { externalId: query.external_id } : {}),
+		...(query.state ? { state: query.state } : {}),
+		...(query.template ? { template: query.template } : {}),
+		...(metadata ? { metadata } : {}),
+		...(createdAfter ? { createdAfter } : {}),
+		...(createdBefore ? { createdBefore } : {}),
+		limit: query.limit,
+		...(query.cursor ? { cursor: query.cursor } : {}),
 	};
 }
 
@@ -283,13 +328,24 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 							schema: z.object({
 								deleted: z.number(),
 								skipped: z.number(),
+								transcripts_deleted: z.number(),
 							}),
 						},
 					},
 				},
 			},
 		}),
-		async (c) => c.json(await persistence.pruneExpired(), 200),
+		async (c) => {
+			const result = await persistence.pruneExpired();
+			return c.json(
+				{
+					deleted: result.deleted,
+					skipped: result.skipped,
+					transcripts_deleted: result.transcriptsDeleted,
+				},
+				200,
+			);
+		},
 	);
 
 	app.openapi(
@@ -565,6 +621,173 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
 	app.openapi(
 		createRoute({
+			method: "post",
+			path: "/v1/workspaces/{id}/resume",
+			middleware: [requireScope("workspaces:restore")] as const,
+			request: {
+				params: z.object({ id: z.uuid() }),
+				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
+				body: { content: { "application/json": { schema: RestoreRequestSchema } } },
+			},
+			responses: {
+				202: {
+					description: "New workspace queued with supported conversation context",
+					content: {
+						"application/json": {
+							schema: z.object({
+								workspace: WorkspaceResourceSchema,
+								operation: OperationResourceSchema,
+								resume: ConversationResumeOutcomeSchema,
+							}),
+						},
+					},
+				},
+			},
+		}),
+		async (c) => {
+			const principal = c.get("principal");
+			const source = await service.getOwned(principal, c.req.valid("param").id);
+			const checkpoints = await store.listCheckpoints(principal.id, {
+				workspaceId: source.id,
+				state: "ready",
+			});
+			const checkpoint = checkpoints[0];
+			if (!checkpoint) {
+				throw new ApiError("checkpoint.none_ready", "Workspace has no ready checkpoint.");
+			}
+			if (checkpoint.conversationRestore !== "supported") {
+				const reason =
+					checkpoint.conversationRestore === "filesystem_only"
+						? "filesystem_only"
+						: "capability_unknown";
+				throw new ApiError(
+					"resume.unsupported",
+					"This checkpoint cannot restore conversation context.",
+					{ reason, checkpoint_id: checkpoint.id },
+				);
+			}
+			const result = await persistence.restore(
+				principal,
+				checkpoint.id,
+				c.req.valid("json"),
+				c.req.valid("header")["idempotency-key"],
+			);
+			const workspace = await service.getOwned(principal, result.workspaceId);
+			return c.json(
+				{
+					workspace: toResource(workspace),
+					operation: toOperationResource(result.operation),
+					resume: {
+						status: "supported" as const,
+						reason: null,
+						source_workspace_id: source.id,
+						checkpoint_id: checkpoint.id,
+					},
+				},
+				202,
+			);
+		},
+	);
+
+	app.openapi(
+		createRoute({
+			method: "get",
+			path: "/v1/workspaces/{id}/conversation",
+			middleware: [requireScope("conversations:read")] as const,
+			request: {
+				params: z.object({ id: z.uuid() }),
+				query: ConversationListQuerySchema,
+			},
+			responses: {
+				200: {
+					description: "Durable conversation transcript for an active or terminal workspace",
+					content: {
+						"application/json": {
+							schema: z.object({
+								items: z.array(ConversationMessageResourceSchema),
+								next_cursor: z.number().int().positive().nullable(),
+								retention: z.object({
+									status: z.literal("retained"),
+									expires_at: z.iso.datetime().nullable(),
+								}),
+							}),
+						},
+					},
+				},
+			},
+		}),
+		async (c) => {
+			const principal = c.get("principal");
+			const workspace = await service.getOwned(principal, c.req.valid("param").id);
+			const state = await store.getConversationState(workspace.id);
+			if (state?.status === "deleted") {
+				throw new ApiError("conversation.deleted", "Conversation history was deleted.");
+			}
+			const expiresAt =
+				state?.expiresAt ??
+				(workspace.terminalAt
+					? new Date(
+							workspace.terminalAt.getTime() +
+								parseDurationMs(workspace.templateSnapshot.spec.persistence.conversationRetention),
+						)
+					: null);
+			if (expiresAt && expiresAt <= new Date()) {
+				throw new ApiError("conversation.expired", "Conversation history has expired.");
+			}
+			const { after, limit } = c.req.valid("query");
+			const rows = await store.readConversation(workspace.id, after, limit);
+			const last = rows.at(-1);
+			return c.json(
+				{
+					items: rows.map((row) => ({
+						message_id: row.messageId,
+						seq: row.seq,
+						role: row.role,
+						content: row.content,
+						occurred_at: row.occurredAt.toISOString(),
+						metadata: row.metadata,
+					})),
+					next_cursor: rows.length === limit && last ? last.seq : null,
+					retention: { status: "retained" as const, expires_at: expiresAt?.toISOString() ?? null },
+				},
+				200,
+			);
+		},
+	);
+
+	app.openapi(
+		createRoute({
+			method: "delete",
+			path: "/v1/workspaces/{id}/conversation",
+			middleware: [requireScope("conversations:delete")] as const,
+			request: { params: z.object({ id: z.uuid() }) },
+			responses: { 204: { description: "Conversation content deleted idempotently" } },
+		}),
+		async (c) => {
+			const principal = c.get("principal");
+			const workspace = await service.getOwned(principal, c.req.valid("param").id);
+			const at = new Date();
+			const previous = await store.getConversationState(workspace.id);
+			await store.deleteConversation(workspace.id, at);
+			if (previous?.status !== "deleted") {
+				await store.appendEvent(
+					workspace.id,
+					"workspace.conversation_deleted",
+					{
+						id: randomUUID(),
+						type: "workspace.conversation_deleted",
+						occurred_at: at.toISOString(),
+						workspace_id: workspace.id,
+					},
+					at,
+				);
+			}
+			return c.body(null, 204);
+		},
+	);
+
+	app.openapi(
+		createRoute({
 			method: "get",
 			path: "/v1/workspaces/{id}/outputs",
 			middleware: [requireScope("outputs:read")] as const,
@@ -698,13 +921,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		async (c) => {
 			const principal = c.get("principal");
 			const query = c.req.valid("query");
-			const rows = await store.listWorkspaces(principal.id, {
-				...(query.external_id ? { externalId: query.external_id } : {}),
-				...(query.state ? { state: query.state } : {}),
-				...(query.template ? { template: query.template } : {}),
-				limit: query.limit,
-				...(query.cursor ? { cursor: query.cursor } : {}),
-			});
+			const rows = await store.listWorkspaces(principal.id, workspaceListFilterOf(query));
 			const last = rows[rows.length - 1];
 			return c.json(
 				{

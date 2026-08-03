@@ -11,6 +11,7 @@ API drives the whole lifecycle.
 | [CLI reference](cli.md) | Every `pcd` command with examples |
 | [Templates](templates.md) | The template contract: images, setup commands, harnesses, relay routes, security |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the service relay, signed events |
+| [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
 | [Deployment](deployment.md) | Container images, docker compose, PostgreSQL placement, configuration reference |
 | [Migration guide](migration.md) | Frozen legacy rename map and a one-pass consumer migration checklist |
 | [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |

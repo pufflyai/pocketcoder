@@ -110,6 +110,7 @@ paths.
       { "name": "agent-state", "target": "/state", "maxBytes": 1073741824, "maxFiles": 100000 }
     ],
     "conversationRestore": "supported",
+    "conversationRetention": "168h",
     "sessionCompatibility": "agentapi-v1",
     "checkpoint": {
       "onIdle": "preserve",
@@ -132,6 +133,14 @@ with `runOn: ["restore"]` when they are safe against restored content.
 `sessionCompatibility`; otherwise use the honest `filesystem_only` default.
 The optional checkpoint hook flushes application state before the runtime is
 stopped.
+
+`conversationRetention` controls how long the canonical display transcript is
+readable after terminal state (default `168h`). It is separate from checkpoint
+retention because callers may delete transcript content without deleting a
+filesystem checkpoint. A harness adapter contributes transcript items by
+writing bounded `POCKETCODER_CONVERSATION <json>` lines to stdout; use stable
+provider message ids and redact sensitive tool/attachment metadata before
+emission. Operational log text is never inferred into conversation history.
 
 A template may define repository aliases under `source.repositories`. The
 caller selects only an alias and validated revision:

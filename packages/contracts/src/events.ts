@@ -10,6 +10,7 @@ export const EVENT_TYPES = WORKSPACE_STATES.map((s) => `workspace.${s}` as const
 export type EventType =
 	| `workspace.${WorkspaceState}`
 	| "workspace.output_published"
+	| "workspace.conversation_deleted"
 	| "workspace.restore_queued"
 	| "checkpoint.creating"
 	| "checkpoint.ready"
