@@ -11,6 +11,8 @@ export const SCOPES = [
 	"checkpoints:read",
 	"checkpoints:delete",
 	"outputs:read",
+	"conversations:read",
+	"conversations:delete",
 	"services:relay",
 	"logs:read",
 	"admin",

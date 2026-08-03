@@ -28,6 +28,164 @@ neither callers nor templates can select them.
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
 | testkit | `packages/testkit` | In-memory store, fake driver, fake AgentAPI, template fixtures |
 
+## Durable database schema
+
+The diagram shows the PostgreSQL tables and their enforced foreign-key
+relationships. Template identity and provider metadata are also denormalized
+onto runtime records so reconciliation can validate immutable digests without
+depending on mutable operator configuration.
+
+```mermaid
+erDiagram
+    PRINCIPALS ||--o{ MACHINE_KEYS : authenticates
+    PRINCIPALS ||--o{ WORKSPACES : owns
+    TEMPLATES ||--o{ WORKSPACES : snapshots
+    PRINCIPALS ||--o{ WORKSPACE_STORAGE : owns
+    WORKSPACES ||--o{ WORKSPACE_STORAGE : allocates
+    PRINCIPALS ||--o{ WORKSPACE_CHECKPOINTS : owns
+    WORKSPACES ||--o{ WORKSPACE_CHECKPOINTS : preserves
+    WORKSPACE_STORAGE ||--o{ WORKSPACE_CHECKPOINTS : contains
+    PRINCIPALS ||--o{ WORKSPACE_OPERATIONS : requests
+    WORKSPACES o|--o{ WORKSPACE_OPERATIONS : targets
+    WORKSPACE_CHECKPOINTS o|--o{ WORKSPACE_OPERATIONS : restores
+    WORKSPACES o|--o{ WORKSPACE_OPERATIONS : produces
+    WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
+    WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
+    WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
+    WORKSPACES ||--o{ WORKSPACE_STATE_HISTORY : transitions
+    WORKSPACES ||--o{ WORKSPACE_LOGS : emits
+    WORKSPACES ||--o{ EVENT_OUTBOX : records
+
+    TEMPLATES {
+        uuid id PK
+        text name
+        text version
+        text digest UK
+        jsonb spec
+        text status
+    }
+
+    PRINCIPALS {
+        uuid id PK
+        text name UK
+        text_array scopes
+        text_array template_names
+        timestamptz disabled_at
+    }
+
+    MACHINE_KEYS {
+        uuid id PK
+        uuid principal_id FK
+        bytea secret_digest
+        text_array scopes
+        timestamptz expires_at
+        timestamptz revoked_at
+    }
+
+    WORKSPACES {
+        uuid id PK
+        uuid principal_id FK
+        uuid template_id FK
+        text external_id
+        text idempotency_key
+        text template_digest
+        jsonb template_snapshot
+        text state
+        jsonb provider_ref
+        timestamptz deadline_at
+        timestamptz terminal_at
+    }
+
+    WORKSPACE_STORAGE {
+        uuid id PK
+        uuid workspace_id FK
+        uuid principal_id FK
+        text provider_kind
+        jsonb provider_ref
+        text state
+        jsonb mount_manifest
+        timestamptz retained_until
+    }
+
+    WORKSPACE_CHECKPOINTS {
+        uuid id PK
+        uuid workspace_id FK
+        uuid principal_id FK
+        uuid storage_id FK
+        uuid parent_checkpoint_id
+        text state
+        text template_digest
+        jsonb manifest
+        timestamptz expires_at
+    }
+
+    WORKSPACE_OPERATIONS {
+        uuid id PK
+        uuid principal_id FK
+        uuid workspace_id FK
+        uuid checkpoint_id FK
+        uuid result_workspace_id FK
+        text kind
+        text state
+        text idempotency_key
+    }
+
+    WORKSPACE_OUTPUTS {
+        uuid workspace_id PK,FK
+        bigint seq PK
+        text name
+        jsonb value
+        timestamptz occurred_at
+    }
+
+    WORKSPACE_CONVERSATIONS {
+        uuid workspace_id PK,FK
+        text status
+        timestamptz expires_at
+        timestamptz deleted_at
+        timestamptz updated_at
+    }
+
+    WORKSPACE_CONVERSATION_MESSAGES {
+        uuid workspace_id PK,FK
+        bigint seq PK
+        text message_id UK
+        text role
+        text content
+        jsonb metadata
+        timestamptz occurred_at
+    }
+
+    WORKSPACE_STATE_HISTORY {
+        uuid id PK
+        uuid workspace_id FK
+        text from_state
+        text to_state
+        text reason_code
+        timestamptz occurred_at
+    }
+
+    WORKSPACE_LOGS {
+        uuid workspace_id PK,FK
+        bigint seq PK
+        text stream
+        bytea content
+        timestamptz occurred_at
+    }
+
+    EVENT_OUTBOX {
+        uuid id PK
+        uuid workspace_id FK
+        text event_type
+        jsonb payload
+        timestamptz next_attempt_at
+        timestamptz delivered_at
+    }
+```
+
+The Drizzle definition in `packages/db/src/schema.ts` is the source of truth;
+the diagram intentionally omits non-relational detail fields and indexes.
+
 ## Workspace state machine
 
 ```text
@@ -66,7 +224,8 @@ per-connection monotonic sequence numbers; the newest accepted connection
 
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 `log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
-`checkpoint_status`, `restore_status`, `output_published`.
+`checkpoint_status`, `restore_status`, `output_published`,
+`conversation_message`.
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
 `shutdown`, `prepare_checkpoint`.
 
@@ -96,3 +255,6 @@ labeled provider objects and supervisors simply reconnect.
 - Launch input reaches the harness in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.
+- Conversation events are contract-bounded and principal-scoped, expire by
+  template policy, and support explicit content deletion. Harness adapters own
+  semantic redaction before emitting canonical messages.

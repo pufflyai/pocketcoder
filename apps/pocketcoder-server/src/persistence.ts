@@ -312,8 +312,9 @@ export class PersistenceService {
 		};
 	}
 
-	async pruneExpired(): Promise<{ deleted: number; skipped: number }> {
+	async pruneExpired(): Promise<{ deleted: number; skipped: number; transcriptsDeleted: number }> {
 		const now = this.now();
+		const transcriptsDeleted = await this.deps.store.pruneExpiredConversations(now);
 		let deleted = 0;
 		let skipped = 0;
 		for (const principal of await this.deps.store.listPrincipals()) {
@@ -338,7 +339,7 @@ export class PersistenceService {
 				}
 			}
 		}
-		return { deleted, skipped };
+		return { deleted, skipped, transcriptsDeleted };
 	}
 
 	private async stopForSnapshot(workspace: WorkspaceRow, operationId: string): Promise<boolean> {
@@ -393,6 +394,7 @@ export class PersistenceService {
 	): Promise<void> {
 		const { store, driver, hub } = this.deps;
 		const readyAt = this.now();
+		const conversationRestore = quiesced ? workspace.persistenceCapability : "filesystem_only";
 		await store.updateCheckpoint(
 			checkpoint.id,
 			{
@@ -404,7 +406,7 @@ export class PersistenceService {
 				logicalBytes: result.manifest.logical_bytes,
 				storedBytes: result.storedBytes,
 				fileCount: result.manifest.file_count,
-				conversationRestore: quiesced ? workspace.persistenceCapability : "filesystem_only",
+				conversationRestore,
 				readyAt,
 			},
 			readyAt,
@@ -421,7 +423,11 @@ export class PersistenceService {
 			},
 			readyAt,
 		);
-		await store.updateWorkspace(workspace.id, { latestCheckpointId: checkpoint.id }, readyAt);
+		await store.updateWorkspace(
+			workspace.id,
+			{ latestCheckpointId: checkpoint.id, persistenceCapability: conversationRestore },
+			readyAt,
+		);
 		if (workspace.providerRef) {
 			await driver.remove({
 				kind: workspace.providerKind ?? "",

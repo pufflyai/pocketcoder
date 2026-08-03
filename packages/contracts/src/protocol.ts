@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationMessageInputSchema } from "./conversation";
 import {
 	CONVERSATION_RESTORE_CAPABILITIES,
 	LAUNCH_MODES,
@@ -108,6 +109,8 @@ export const RestoreStatusPayload = z.object({
 	detail: z.string().max(512).optional(),
 });
 
+export const ConversationMessagePayload = ConversationMessageInputSchema;
+
 export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
 	EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
@@ -121,6 +124,10 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("checkpoint_status"), payload: CheckpointStatusPayload }),
 	EnvelopeBase.extend({ type: z.literal("output_published"), payload: OutputPublishedPayload }),
 	EnvelopeBase.extend({ type: z.literal("restore_status"), payload: RestoreStatusPayload }),
+	EnvelopeBase.extend({
+		type: z.literal("conversation_message"),
+		payload: ConversationMessagePayload,
+	}),
 ]);
 
 export type AgentFrame = z.infer<typeof AgentFrameSchema>;

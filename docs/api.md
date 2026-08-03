@@ -17,7 +17,7 @@ Keys belong to principals, carry scopes, and can be revoked instantly.
 Failures return the stable error envelope used everywhere:
 
 ```json
-{ "error": { "code": "auth.invalid_key", "message": "…", "request_id": "uuid" } }
+{ "error": { "code": "auth.invalid_key", "message": "…", "request_id": "uuid", "details": {} } }
 ```
 
 Secret values, SQL/provider errors, and stack traces never appear in errors.
@@ -76,7 +76,7 @@ JSON
 ### Read and cancel
 
 ```text
-GET  /v1/workspaces                    scope workspaces:read    filters: external_id, state, template, limit, cursor
+GET  /v1/workspaces                    scope workspaces:read    filters: external_id, state, template, metadata, created_after, created_before, limit, cursor
 GET  /v1/workspaces/{id}               scope workspaces:read
 POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; returns the current resource
 GET  /v1/workspaces/{id}/changes       scope workspaces:read    query: after (change_cursor), wait (0..30 seconds)
@@ -123,6 +123,39 @@ The tail is at most 16 KiB, keeps UTF-8 and newline boundaries where possible,
 and is diagnostic context rather than a substitute for the paginated logs
 route.
 
+`metadata` is a URL-encoded JSON object of exact string matches (up to 16
+keys), for example `{"product":"onefin","tenant":"t-7","user":"u-42"}`.
+It is evaluated inside the authenticated principal boundary; it is a query
+constraint, never an authorization substitute. `created_after` is inclusive
+and `created_before` is exclusive.
+
+## Durable conversation history
+
+```text
+GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: after (seq), limit (max 200)
+DELETE /v1/workspaces/{id}/conversation   scope conversations:delete  idempotent
+```
+
+The transcript is append-only durable data and remains available after the
+workspace becomes terminal. It does not use the live relay. Each item has a
+PocketCoder sequence, harness-stable `message_id`, `role` (`user`,
+`assistant`, `system`, or `tool`), bounded text `content`, `occurred_at`, and
+bounded redacted string metadata. Responses include `next_cursor` and the
+retention deadline. Each workspace is capped at 100,000 messages and 50 MiB
+of canonical content/metadata; each message is capped at 256 KiB.
+
+Participating harness adapters write one canonical line per complete message:
+
+```text
+POCKETCODER_CONVERSATION {"message_id":"provider-7","role":"assistant","content":"Done","occurred_at":"2026-08-03T08:00:00.000Z","metadata":{"provider":"agentapi"}}
+```
+
+The supervisor validates and forwards the event over its ordered protocol;
+replaying a message id is idempotent. Adapters must redact secrets and
+provider-private tool/attachment data before emission. Expired transcripts
+return `410 conversation.expired`; explicitly deleted transcripts return
+`410 conversation.deleted` and cannot be appended again.
+
 ## Service relay
 
 ```text
@@ -161,6 +194,7 @@ POST /v1/checkpoints/{id}/verify        scope checkpoints:read
 DELETE /v1/checkpoints/{id}             scope checkpoints:delete
 POST /v1/checkpoints/{id}/restore       scope workspaces:restore
 POST /v1/workspaces/{id}/recreate       scope workspaces:restore
+POST /v1/workspaces/{id}/resume         scope workspaces:restore
 GET  /v1/operations/{id}                scope workspaces:read
 GET  /v1/workspaces/{id}/outputs        scope outputs:read
 ```
@@ -172,15 +206,24 @@ terminal `preserved`. Restore never reopens it: a new queued workspace gets
 the exact template snapshot, fresh provider and credentials, lineage fields,
 and an independent writable storage allocation.
 
-`conversation_restore` is `supported`, `filesystem_only`, or `unknown`; it
-never promises process-memory, socket, or in-flight request restoration.
+`conversation_restore` is `supported`, `filesystem_only`, or `unknown`; the
+workspace also exposes `conversation_resume: {status, reason}`. `recreate`
+and checkpoint `restore` are generic filesystem recovery. `resume` is the
+stricter conversation operation: it selects the latest ready checkpoint,
+creates a new workspace with source/checkpoint lineage only when capability is
+`supported`, and otherwise returns `409 resume.unsupported` with stable
+`details.reason` (`filesystem_only` or `capability_unknown`). No operation
+promises process-memory, socket, in-flight request, or external side-effect
+restoration.
 Ready checkpoint content is immutable. Expired checkpoints are removed by the
 retention sweep through the same durable delete operation.
 
 Administrative storage inspection is available at `GET
 /v1/storage/inventory`; `POST /v1/storage/prune` runs an immediate retention
-sweep. Both require `admin`. Inventory returns opaque IDs only, never physical
-paths or backend references.
+sweep. The sweep also physically removes expired transcript rows while keeping
+their expiry tombstones, and reports `transcripts_deleted`. Both routes require
+`admin`. Inventory returns opaque IDs only, never physical paths or backend
+references.
 
 ## Lifecycle events
 
@@ -196,9 +239,10 @@ POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
 Workspace events use `{ id, type: "workspace.<state>", occurred_at, workspace:
 { id, external_id, state, reason_code, agent_state, change_cursor, failure,
 template, lineage, outputs } }`.
-Checkpoint, restore, and output events use the same signed outbox. Verify the signature and
-timestamp, deduplicate on the event id, and poll nonterminal workspaces for
-convergence — delivery is at-least-once, ordering is not guaranteed.
+Checkpoint, restore, output, and `workspace.conversation_deleted` audit events
+use the same signed outbox. Verify the signature and timestamp, deduplicate on
+the event id, and poll nonterminal workspaces for convergence — delivery is
+at-least-once, ordering is not guaranteed.
 
 ## Agent connect (internal)
 

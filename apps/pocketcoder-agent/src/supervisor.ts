@@ -3,6 +3,7 @@ import { open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type AgentFrame,
+	ConversationMessageInputSchema,
 	type ExecSpec,
 	HEADER_PROTOCOL,
 	HEADER_RECONNECT,
@@ -113,6 +114,10 @@ export function splitUtf8Chunks(text: string, maxBytes = LOG_CHUNK_LIMIT): strin
 	}
 	if (chunk !== "") chunks.push(chunk);
 	return chunks;
+}
+
+export function isConversationControlLine(text: string): boolean {
+	return text.startsWith("POCKETCODER_CONVERSATION ");
 }
 
 export async function supervise(inputPath: string): Promise<number> {
@@ -632,7 +637,12 @@ class Supervisor {
 		if (!stream) return;
 		await pumpLineFramedText(
 			stream,
-			(text) => this.emitLogText(name, text),
+			(text) => {
+				// Transcript content has its own retention and deletion contract; do
+				// not duplicate canonical control lines into operational logs.
+				if (name === "stdout" && isConversationControlLine(text)) return;
+				this.emitLogText(name, text);
+			},
 			name === "stdout" ? (value) => this.captureOutputs(value) : undefined,
 		);
 	}
@@ -654,20 +664,33 @@ class Supervisor {
 		const lines = this.outputBuffer.split("\n");
 		this.outputBuffer = lines.pop() ?? "";
 		for (const line of lines) {
-			if (!line.startsWith("POCKETCODER_OUTPUT ")) continue;
-			try {
-				const parsed = JSON.parse(line.slice("POCKETCODER_OUTPUT ".length)) as {
-					name?: unknown;
-					value?: unknown;
-				};
-				if (typeof parsed.name === "string") {
-					this.sendFrame("output_published", {
-						name: parsed.name,
-						value: parsed.value,
-					});
+			if (line.startsWith("POCKETCODER_OUTPUT ")) {
+				try {
+					const parsed = JSON.parse(line.slice("POCKETCODER_OUTPUT ".length)) as {
+						name?: unknown;
+						value?: unknown;
+					};
+					if (typeof parsed.name === "string") {
+						this.sendFrame("output_published", {
+							name: parsed.name,
+							value: parsed.value,
+						});
+					}
+				} catch {
+					this.log("ignored malformed POCKETCODER_OUTPUT line");
 				}
-			} catch {
-				this.log("ignored malformed POCKETCODER_OUTPUT line");
+				continue;
+			}
+			if (line.startsWith("POCKETCODER_CONVERSATION ")) {
+				try {
+					const parsed = ConversationMessageInputSchema.safeParse(
+						JSON.parse(line.slice("POCKETCODER_CONVERSATION ".length)),
+					);
+					if (parsed.success) this.sendFrame("conversation_message", parsed.data);
+					else this.log("ignored invalid POCKETCODER_CONVERSATION line");
+				} catch {
+					this.log("ignored malformed POCKETCODER_CONVERSATION line");
+				}
 			}
 		}
 	}

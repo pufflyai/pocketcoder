@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noExcessiveLinesPerFile: PostgreSQL persistence methods stay co-located around shared transaction helpers.
 import { randomUUID } from "node:crypto";
 import {
 	type CheckpointManifest,
@@ -8,6 +9,7 @@ import {
 	type LaunchMode,
 	type OperationKind,
 	type OperationState,
+	parseDurationMs,
 	type ReasonCode,
 	type ResolvedSource,
 	type SourceDescriptor,
@@ -19,6 +21,8 @@ import {
 import {
 	type ActiveCounts,
 	buildEventEnvelope,
+	type ConversationMessageRow,
+	type ConversationStateRow,
 	type LogRow,
 	type MachineKeyRow,
 	type OutboxRow,
@@ -51,6 +55,8 @@ import { assertValidSchema } from "./schema";
 // another schema.
 
 const MAX_LOG_BYTES = 10 * 1024 * 1024;
+const MAX_CONVERSATION_BYTES = 50 * 1024 * 1024;
+const MAX_CONVERSATION_MESSAGES = 100_000;
 const CLAIM_LEASE_MS = 60_000;
 
 type Row = Record<string, unknown>;
@@ -489,16 +495,29 @@ export class PostgresStore implements Store {
 			params.push(filter.template);
 			clauses.push(`template_name = $${params.length}`);
 		}
+		if (filter.metadata) {
+			params.push(JSON.stringify(filter.metadata));
+			clauses.push(`metadata @> $${params.length}::jsonb`);
+		}
+		if (filter.createdAfter) {
+			params.push(filter.createdAfter);
+			clauses.push(`created_at >= $${params.length}`);
+		}
+		if (filter.createdBefore) {
+			params.push(filter.createdBefore);
+			clauses.push(`created_at < $${params.length}`);
+		}
 		if (filter.cursor) {
 			params.push(filter.cursor);
 			clauses.push(
-				`created_at < (SELECT created_at FROM ${this.t("workspaces")} WHERE id = $${params.length})`,
+				`(created_at, id) < (SELECT created_at, id FROM ${this.t("workspaces")}
+				 WHERE id = $${params.length} AND principal_id = $1)`,
 			);
 		}
 		params.push(filter.limit);
 		const rows = (await this.sql.unsafe(
 			`SELECT * FROM ${this.t("workspaces")} WHERE ${clauses.join(" AND ")}
-			 ORDER BY created_at DESC LIMIT $${params.length}`,
+				 ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
 			params,
 		)) as Row[];
 		return rows.map((r) => this.workspaceFromRow(r));
@@ -564,6 +583,7 @@ export class PostgresStore implements Store {
 		failureLogTailTruncated: "failure_log_tail_truncated",
 		failureLastLogSeq: "failure_last_log_seq",
 		resolvedSource: "resolved_source",
+		persistenceCapability: "persistence_capability",
 		latestCheckpointId: "latest_checkpoint_id",
 		outputs: "outputs",
 	};
@@ -585,6 +605,7 @@ export class PostgresStore implements Store {
 		"failureLogTailTruncated",
 		"failureLastLogSeq",
 		"resolvedSource",
+		"persistenceCapability",
 		"latestCheckpointId",
 		"outputs",
 	]);
@@ -703,6 +724,21 @@ export class PostgresStore implements Store {
 				req.at,
 			);
 			await this.appendEventTx(tx, workspace, req.at);
+			if (isTerminal(req.to)) {
+				const expiresAt = new Date(
+					req.at.getTime() +
+						parseDurationMs(workspace.templateSnapshot.spec.persistence.conversationRetention),
+				);
+				await tx.unsafe(
+					`INSERT INTO ${this.t("workspace_conversations")}
+					 (workspace_id, status, expires_at, deleted_at, updated_at)
+					 VALUES ($1, 'retained', $2, NULL, $3)
+					 ON CONFLICT (workspace_id) DO UPDATE
+					 SET expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at
+					 WHERE ${this.t("workspace_conversations")}.status <> 'deleted'`,
+					[workspace.id, expiresAt, req.at],
+				);
+			}
 			return workspace;
 		});
 		if (workspace) this.notifyWorkspaceChange(id);
@@ -1270,6 +1306,161 @@ export class PostgresStore implements Store {
 			truncated: totalBytes > maxBytes,
 			lastSeq,
 		};
+	}
+
+	// --- Durable conversation history ---
+
+	private conversationMessageFromRow(row: Row): ConversationMessageRow {
+		return {
+			workspaceId: String(row.workspace_id),
+			seq: Number(row.seq),
+			messageId: String(row.message_id),
+			role: row.role as ConversationMessageRow["role"],
+			content: String(row.content),
+			occurredAt: asDate(row.occurred_at),
+			metadata: asJson<Record<string, string>>(row.metadata),
+			createdAt: asDate(row.created_at),
+		};
+	}
+
+	async appendConversationMessage(
+		input: Omit<ConversationMessageRow, "seq">,
+	): Promise<{ message: ConversationMessageRow; created: boolean }> {
+		return await this.sql.begin(async (tx) => {
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7081))", [
+				input.workspaceId,
+			]);
+			const states = (await tx.unsafe(
+				`SELECT status FROM ${this.t("workspace_conversations")} WHERE workspace_id = $1 FOR UPDATE`,
+				[input.workspaceId],
+			)) as Row[];
+			if (states[0]?.status === "deleted") throw new Error("conversation.deleted");
+			const existing = (await tx.unsafe(
+				`SELECT * FROM ${this.t("workspace_conversation_messages")}
+				 WHERE workspace_id = $1 AND message_id = $2`,
+				[input.workspaceId, input.messageId],
+			)) as Row[];
+			if (existing[0]) {
+				return { message: this.conversationMessageFromRow(existing[0]), created: false };
+			}
+			await tx.unsafe(
+				`INSERT INTO ${this.t("workspace_conversations")}
+				 (workspace_id, status, expires_at, deleted_at, updated_at)
+				 VALUES ($1, 'retained', NULL, NULL, $2)
+				 ON CONFLICT (workspace_id) DO NOTHING`,
+				[input.workspaceId, input.createdAt],
+			);
+			const stats = (await tx.unsafe(
+				`SELECT COALESCE(MAX(seq), 0)::bigint AS max_seq,
+				        COUNT(*)::bigint AS message_count,
+				        COALESCE(SUM(octet_length(content) + octet_length(metadata::text)), 0)::bigint AS bytes
+				 FROM ${this.t("workspace_conversation_messages")} WHERE workspace_id = $1`,
+				[input.workspaceId],
+			)) as Array<{
+				max_seq: string | number;
+				message_count: string | number;
+				bytes: string | number;
+			}>;
+			const inputBytes =
+				Buffer.byteLength(input.content) + Buffer.byteLength(JSON.stringify(input.metadata));
+			if (
+				Number(stats[0]?.message_count ?? 0) >= MAX_CONVERSATION_MESSAGES ||
+				Number(stats[0]?.bytes ?? 0) + inputBytes > MAX_CONVERSATION_BYTES
+			) {
+				throw new Error("conversation.quota_exceeded");
+			}
+			const seq = Number(stats[0]?.max_seq ?? 0) + 1;
+			const inserted = (await tx.unsafe(
+				`INSERT INTO ${this.t("workspace_conversation_messages")}
+				 (workspace_id, seq, message_id, role, content, occurred_at, metadata, created_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8) RETURNING *`,
+				[
+					input.workspaceId,
+					seq,
+					input.messageId,
+					input.role,
+					input.content,
+					input.occurredAt,
+					JSON.stringify(input.metadata),
+					input.createdAt,
+				],
+			)) as Row[];
+			return { message: this.conversationMessageFromRow(inserted[0] as Row), created: true };
+		});
+	}
+
+	async readConversation(
+		workspaceId: string,
+		afterSeq: number,
+		limit: number,
+	): Promise<ConversationMessageRow[]> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_conversation_messages")}
+			 WHERE workspace_id = $1 AND seq > $2 ORDER BY seq ASC LIMIT $3`,
+			[workspaceId, afterSeq, limit],
+		)) as Row[];
+		return rows.map((row) => this.conversationMessageFromRow(row));
+	}
+
+	async getConversationState(workspaceId: string): Promise<ConversationStateRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_conversations")} WHERE workspace_id = $1`,
+			[workspaceId],
+		)) as Row[];
+		const row = rows[0];
+		return row
+			? {
+					workspaceId: String(row.workspace_id),
+					status: row.status as ConversationStateRow["status"],
+					expiresAt: asDateOrNull(row.expires_at),
+					deletedAt: asDateOrNull(row.deleted_at),
+					updatedAt: asDate(row.updated_at),
+				}
+			: null;
+	}
+
+	async setConversationExpiry(workspaceId: string, expiresAt: Date, at: Date): Promise<void> {
+		await this.sql.unsafe(
+			`INSERT INTO ${this.t("workspace_conversations")}
+			 (workspace_id, status, expires_at, deleted_at, updated_at)
+			 VALUES ($1, 'retained', $2, NULL, $3)
+			 ON CONFLICT (workspace_id) DO UPDATE
+			 SET expires_at = EXCLUDED.expires_at, updated_at = EXCLUDED.updated_at
+			 WHERE ${this.t("workspace_conversations")}.status <> 'deleted'`,
+			[workspaceId, expiresAt, at],
+		);
+	}
+
+	async deleteConversation(workspaceId: string, at: Date): Promise<void> {
+		await this.sql.begin(async (tx) => {
+			await tx.unsafe(
+				`DELETE FROM ${this.t("workspace_conversation_messages")} WHERE workspace_id = $1`,
+				[workspaceId],
+			);
+			await tx.unsafe(
+				`INSERT INTO ${this.t("workspace_conversations")}
+				 (workspace_id, status, expires_at, deleted_at, updated_at)
+				 VALUES ($1, 'deleted', NULL, $2, $2)
+				 ON CONFLICT (workspace_id) DO UPDATE
+				 SET status = 'deleted', expires_at = NULL, deleted_at = EXCLUDED.deleted_at,
+				     updated_at = EXCLUDED.updated_at`,
+				[workspaceId, at],
+			);
+		});
+	}
+
+	async pruneExpiredConversations(at: Date): Promise<number> {
+		const rows = (await this.sql.unsafe(
+			`DELETE FROM ${this.t("workspace_conversation_messages")} AS messages
+			 USING ${this.t("workspace_conversations")} AS conversations
+			 WHERE messages.workspace_id = conversations.workspace_id
+			   AND conversations.status = 'retained'
+			   AND conversations.expires_at IS NOT NULL
+			   AND conversations.expires_at <= $1
+			 RETURNING messages.workspace_id`,
+			[at],
+		)) as Row[];
+		return new Set(rows.map((row) => String(row.workspace_id))).size;
 	}
 
 	// --- Outbox ---

@@ -28,6 +28,9 @@ export const ERROR_CODES = {
 	"restore.template_not_authorized": 403,
 	"restore.image_unavailable": 409,
 	"restore.incompatible": 409,
+	"resume.unsupported": 409,
+	"conversation.expired": 410,
+	"conversation.deleted": 410,
 	"operation.conflict": 409,
 	"source.not_allowed": 422,
 	"source.invalid_revision": 422,
@@ -47,20 +50,28 @@ export interface ErrorEnvelope {
 		code: ErrorCode;
 		message: string;
 		request_id: string;
+		details?: Record<string, unknown>;
 	};
 }
 
 export class ApiError extends Error {
 	readonly code: ErrorCode;
 	readonly status: number;
+	readonly details: Record<string, unknown> | undefined;
 
-	constructor(code: ErrorCode, message: string) {
+	constructor(code: ErrorCode, message: string, details?: Record<string, unknown>) {
 		super(message);
 		this.code = code;
 		this.status = ERROR_CODES[code];
+		this.details = details;
 	}
 }
 
-export function errorEnvelope(code: ErrorCode, message: string, requestId: string): ErrorEnvelope {
-	return { error: { code, message, request_id: requestId } };
+export function errorEnvelope(
+	code: ErrorCode,
+	message: string,
+	requestId: string,
+	details?: Record<string, unknown>,
+): ErrorEnvelope {
+	return { error: { code, message, request_id: requestId, ...(details ? { details } : {}) } };
 }

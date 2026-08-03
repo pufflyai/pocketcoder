@@ -140,6 +140,10 @@ export const WorkspaceResourceSchema = z.object({
 	persistence: z.object({
 		enabled: z.boolean(),
 		conversation_restore: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
+		conversation_resume: z.object({
+			status: z.enum(["supported", "unsupported", "unknown"]),
+			reason: z.enum(["filesystem_only", "capability_unknown"]).nullable(),
+		}),
 		latest_checkpoint_id: z.uuid().nullable(),
 	}),
 	outputs: z.record(z.string(), z.unknown()),
@@ -163,6 +167,9 @@ export const WorkspaceListQuerySchema = z.object({
 	external_id: z.string().optional(),
 	state: z.enum(WORKSPACE_STATES).optional(),
 	template: z.string().optional(),
+	metadata: z.string().max(4096).optional(),
+	created_after: z.iso.datetime().optional(),
+	created_before: z.iso.datetime().optional(),
 	limit: z.coerce.number().int().positive().max(200).default(50),
 	cursor: z.string().optional(),
 });

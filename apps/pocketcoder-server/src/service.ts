@@ -66,6 +66,12 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 		persistence: {
 			enabled: row.templateSnapshot.spec.persistence.mounts.length > 0,
 			conversation_restore: row.persistenceCapability,
+			conversation_resume:
+				row.persistenceCapability === "supported"
+					? { status: "supported", reason: null }
+					: row.persistenceCapability === "filesystem_only"
+						? { status: "unsupported", reason: "filesystem_only" }
+						: { status: "unknown", reason: "capability_unknown" },
 			latest_checkpoint_id: row.latestCheckpointId,
 		},
 		outputs: row.outputs,

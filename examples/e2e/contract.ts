@@ -9,6 +9,7 @@ export interface HarnessE2EConfig {
 	templateVersion?: string;
 	prompt: string;
 	expectedResponse?: string;
+	expectedConversation?: Array<{ role: string; content: string }>;
 	readyTimeoutMs?: number;
 	messageTimeoutMs?: number;
 	pollIntervalMs?: number;
@@ -38,6 +39,7 @@ export interface HarnessE2EReport {
 	responseInMs: number;
 	terminalState: string;
 	responseText: string;
+	durableConversationMessages: number | null;
 }
 
 interface WorkspaceResource {
@@ -293,6 +295,30 @@ export async function runHarnessE2E(
 		);
 		const responseInMs = Date.now() - messageStartedAt;
 
+		let durableConversationMessages: number | null = null;
+		if (config.expectedConversation) {
+			const durable = await waitFor(
+				async () => {
+					const response = await request(`/v1/workspaces/${workspaceId}/conversation`);
+					if (!response.ok) return null;
+					const body = (await readBody(response)) as {
+						items?: Array<{ role?: unknown; content?: unknown }>;
+					};
+					const items = body.items ?? [];
+					const expected = config.expectedConversation ?? [];
+					const matches = expected.every(
+						(message, index) =>
+							items[index]?.role === message.role && items[index]?.content === message.content,
+					);
+					return matches && items.length >= expected.length ? items : null;
+				},
+				messageTimeoutMs,
+				pollIntervalMs,
+				"durable conversation history",
+			);
+			durableConversationMessages = durable.length;
+		}
+
 		const terminalState = await workspace.cancel();
 		if (terminalState !== "canceled") {
 			throw new Error(`expected canceled workspace, got ${terminalState}`);
@@ -305,6 +331,7 @@ export async function runHarnessE2E(
 			responseInMs,
 			terminalState,
 			responseText: observedText,
+			durableConversationMessages,
 		};
 	} finally {
 		if (workspace && !completed) {

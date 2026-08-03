@@ -139,6 +139,29 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			});
 			expect(repeat.created).toBe(false);
 			expect(repeat.workspace.id).toBe(insert.workspace.id);
+			const filtered = await store.listWorkspaces(principal.id, {
+				metadata: { source: "test" },
+				limit: 10,
+			});
+			expect(filtered.map((workspace) => workspace.id)).toContain(insert.workspace.id);
+			const conversationInput = {
+				workspaceId: insert.workspace.id,
+				messageId: "pg-message-1",
+				role: "assistant" as const,
+				content: "durable response",
+				occurredAt: new Date(),
+				metadata: { provider: "agentapi" },
+				createdAt: new Date(),
+			};
+			expect((await store.appendConversationMessage(conversationInput)).created).toBe(true);
+			expect((await store.appendConversationMessage(conversationInput)).created).toBe(false);
+			expect(await store.readConversation(insert.workspace.id, 0, 10)).toEqual([
+				expect.objectContaining({
+					seq: 1,
+					messageId: "pg-message-1",
+					content: "durable response",
+				}),
+			]);
 
 			const provisioning = await store.transition(insert.workspace.id, {
 				from: ["queued"],

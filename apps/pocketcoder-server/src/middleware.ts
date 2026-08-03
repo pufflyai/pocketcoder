@@ -58,7 +58,7 @@ export function requireScope(scope: Scope): MiddlewareHandler<AppEnv> {
 export function handleError(err: unknown, c: Context<AppEnv>): Response {
 	const id = c.get("requestId") ?? randomUUID();
 	if (err instanceof ApiError) {
-		return c.json(errorEnvelope(err.code, err.message, id), err.status as 400);
+		return c.json(errorEnvelope(err.code, err.message, id, err.details), err.status as 400);
 	}
 	console.error(`[pocketcoder] request ${id} failed:`, err instanceof Error ? err.message : err);
 	return c.json(errorEnvelope("internal.error", "Internal error.", id), 500);

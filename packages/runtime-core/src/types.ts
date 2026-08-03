@@ -3,6 +3,7 @@ import type {
 	CheckpointManifest,
 	CheckpointState,
 	ConversationRestoreCapability,
+	ConversationRole,
 	LaunchMode,
 	OperationKind,
 	OperationState,
@@ -205,10 +206,32 @@ export interface LogRow {
 	content: Uint8Array;
 }
 
+export interface ConversationMessageRow {
+	workspaceId: string;
+	seq: number;
+	messageId: string;
+	role: ConversationRole;
+	content: string;
+	occurredAt: Date;
+	metadata: Record<string, string>;
+	createdAt: Date;
+}
+
+export interface ConversationStateRow {
+	workspaceId: string;
+	status: "retained" | "deleted";
+	expiresAt: Date | null;
+	deletedAt: Date | null;
+	updatedAt: Date;
+}
+
 export interface WorkspaceListFilter {
 	externalId?: string;
 	state?: WorkspaceState;
 	template?: string;
+	metadata?: Record<string, string>;
+	createdAfter?: Date;
+	createdBefore?: Date;
 	limit: number;
 	cursor?: string;
 }
@@ -263,6 +286,7 @@ export type WorkspacePatch = Partial<
 		| "failureLogTailTruncated"
 		| "failureLastLogSeq"
 		| "resolvedSource"
+		| "persistenceCapability"
 		| "latestCheckpointId"
 		| "outputs"
 	>
@@ -416,6 +440,20 @@ export interface Store {
 		workspaceId: string,
 		maxBytes: number,
 	): Promise<{ content: Uint8Array; truncated: boolean; lastSeq: number | null }>;
+
+	// Canonical durable conversation history, independent of the live relay.
+	appendConversationMessage(
+		row: Omit<ConversationMessageRow, "seq">,
+	): Promise<{ message: ConversationMessageRow; created: boolean }>;
+	readConversation(
+		workspaceId: string,
+		afterSeq: number,
+		limit: number,
+	): Promise<ConversationMessageRow[]>;
+	getConversationState(workspaceId: string): Promise<ConversationStateRow | null>;
+	setConversationExpiry(workspaceId: string, expiresAt: Date, at: Date): Promise<void>;
+	deleteConversation(workspaceId: string, at: Date): Promise<void>;
+	pruneExpiredConversations(at: Date): Promise<number>;
 
 	// Outbox.
 	claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]>;

@@ -28,8 +28,18 @@ function freePort(): number {
 const HARNESS_PORT = freePort();
 
 const HARNESS_SCRIPT = `
+import { randomUUID } from "node:crypto";
 const messages = [];
 let status = "stable";
+function emitConversation(role, content) {
+  console.log("POCKETCODER_CONVERSATION " + JSON.stringify({
+    message_id: randomUUID(),
+    role,
+    content,
+    occurred_at: new Date().toISOString(),
+    metadata: { source: "e2e-harness" },
+  }));
+}
 Bun.serve({
   hostname: "127.0.0.1",
   port: ${HARNESS_PORT},
@@ -45,6 +55,8 @@ Bun.serve({
       return req.json().then((body) => {
         messages.push({ role: "user", content: body.content });
         messages.push({ role: "agent", content: "echo: " + body.content });
+        emitConversation("user", body.content);
+        emitConversation("assistant", "echo: " + body.content);
         return Response.json({ ok: true });
       });
     }
@@ -209,6 +221,28 @@ describe("end-to-end workspace lifecycle", () => {
 			);
 			expect(messages[1]?.content).toBe("echo: hello agent");
 
+			// The harness emits canonical transcript records on stdout. The real
+			// supervisor forwards them over WSS and the server persists them.
+			const conversation = await waitFor(
+				async () => {
+					const res = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/conversation`, {
+						headers: authHeaders,
+					});
+					if (!res.ok) return null;
+					const body = (await res.json()) as {
+						items: Array<{ role: string; content: string; seq: number }>;
+					};
+					return body.items.length >= 2 ? body.items : null;
+				},
+				10_000,
+				"durable conversation",
+			);
+			expect(conversation.map(({ role, content }) => ({ role, content }))).toEqual([
+				{ role: "user", content: "hello agent" },
+				{ role: "assistant", content: "echo: hello agent" },
+			]);
+			expect(conversation.map(({ seq }) => seq)).toEqual([1, 2]);
+
 			// 6. Undeclared routes stay rejected even on a live workspace.
 			const forbidden = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/admin`, {
 				headers: authHeaders,
@@ -229,6 +263,15 @@ describe("end-to-end workspace lifecycle", () => {
 			);
 			const exitCode = await supervisorDone;
 			expect(typeof exitCode).toBe("number");
+
+			// Terminal workspaces retain transcript history for the configured
+			// retention window.
+			const retainedRes = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/conversation`, {
+				headers: authHeaders,
+			});
+			expect(retainedRes.status).toBe(200);
+			const retained = (await retainedRes.json()) as { items: unknown[] };
+			expect(retained.items).toHaveLength(2);
 
 			// 8. Outbox recorded the full lifecycle.
 			const events = await store.claimDueEvents(new Date(), 100);

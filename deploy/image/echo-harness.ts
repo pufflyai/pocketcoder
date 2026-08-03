@@ -3,6 +3,7 @@
 // templates run AgentAPI wrapping a coding-agent CLI instead. Setting
 // POCKETCODER_ECHO_STATE makes its conversation state checkpointable.
 
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -24,6 +25,18 @@ function persist(): void {
 	renameSync(temporary, statePath);
 }
 
+function emitConversation(role: "user" | "assistant", content: string): void {
+	console.log(
+		`POCKETCODER_CONVERSATION ${JSON.stringify({
+			message_id: randomUUID(),
+			role,
+			content,
+			occurred_at: new Date().toISOString(),
+			metadata: { source: "echo-harness" },
+		})}`,
+	);
+}
+
 Bun.serve({
 	hostname: "127.0.0.1",
 	port: Number(process.env.HARNESS_PORT ?? 3284),
@@ -40,6 +53,8 @@ Bun.serve({
 				const content = String((body as { content?: unknown }).content ?? "");
 				messages.push({ role: "user", content });
 				messages.push({ role: "agent", content: `echo: ${content}` });
+				emitConversation("user", content);
+				emitConversation("assistant", `echo: ${content}`);
 				persist();
 				return Response.json({ ok: true });
 			});
