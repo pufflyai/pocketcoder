@@ -19,9 +19,10 @@ real harnesses.
 - [`harnesses/pi/`](harnesses/pi/) runs the Pi CLI behind AgentAPI, which owns
   PocketCoder's three-route conversation contract. It uses the same E2E runner
   with an OpenAI-compatible model gateway.
-- [`clients/pi/`](clients/pi/) turns a Pi instance on the developer's machine
-  into the UI for an AgentAPI session in a PocketCoder workspace. Local Pi has
-  no coding tools; the remote agent owns all workspace operations.
+- [`clients/pi/`](clients/pi/) documents the relay conversation contract for
+  building your own workspace UI. The maintained local Pi client lives in the
+  published package [`@pstdio/pocketcoder-remote`](../packages/remote/); local Pi has
+  no coding tools, and the remote agent owns all workspace operations.
 - [`local/`](local/) materializes a persistent digest-pinned Pi runtime for the
   optional repository `local:up` workflow. Generated templates and secrets live
   under ignored `.pocketcoder/local/`, never in this source directory.

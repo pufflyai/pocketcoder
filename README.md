@@ -14,24 +14,6 @@ coding-agent use case while keeping the two concepts that matter:
 - a **workspace** is one isolated instance of a template and the lifecycle
   record for a single coding-agent session.
 
-There is exactly one execution path:
-
-```text
-caller (machine key)
-  → pocketcoder-server (Hono REST/WSS on Bun)
-  → durable workspace queue (PostgreSQL)
-  → workspace driver (Docker locally, Kubernetes Jobs in production)
-  → template-declared persistent storage (host data roots or a PVC)
-  → one isolated container/Job
-  → pocketcoder-agent (PID 1)
-  → harness (e.g. AgentAPI wrapping a coding-agent CLI)
-```
-
-No browser login, no session tokens, no Terraform, no IDE/SSH surface. Callers
-authenticate with named, scoped, revocable machine keys; workspaces talk back
-over one outbound WSS connection carrying lifecycle, health, logs, durable
-conversation events, signals, and an exact allowlisted HTTP relay.
-
 ## Custom setup commands and harnesses
 
 Templates own the whole execution surface, so different coding agents need no
@@ -67,29 +49,6 @@ long-running conversation service (AgentAPI plus any coding-agent CLI, or
 anything else that serves the declared loopback routes). The supervisor
 receives both from the server at registration time, so changing them is a
 template version bump, not an image rebuild.
-
-## Repository layout
-
-```text
-apps/
-  pocketcoder-server/   Hono REST/OpenAPI/WSS control plane, scheduler, relay, outbox
-  pocketcoder-agent/    PID 1 workspace supervisor (setup, harness, health, logs, relay)
-packages/
-  cli/                  public bundled CLI npm package
-  contracts/           zod schemas: templates, workspace states, WSS protocol, events
-  auth/                machine keys, one-time secrets, event signing, redaction
-  runtime-core/        Store contract, scheduler, template registry, outbox, reconcile
-  db/                  PostgreSQL store, Drizzle schema/migrations, advisory lock
-  drivers/             Docker/Kubernetes runtime + filesystem/PVC storage drivers
-  testkit/             in-memory store, fake driver, fake AgentAPI, fixtures
-deploy/
-  compose/             local PostgreSQL for development
-examples/
-  templates/           illustrative template manifests with placeholder images
-  e2e/                 reusable create → converse → cancel harness contract
-  clients/             host-side clients, including local Pi as a remote-agent UI
-  harnesses/           runnable echo and Pi harness examples
-```
 
 ## Quick start (development)
 
