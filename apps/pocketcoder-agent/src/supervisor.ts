@@ -5,13 +5,18 @@ import {
 	type AgentFrame,
 	ConversationMessageInputSchema,
 	type ExecSpec,
+	HEADER_POOL_ENROLLMENT,
+	HEADER_POOL_RUNTIME,
 	HEADER_PROTOCOL,
 	HEADER_RECONNECT,
 	HEADER_REGISTRATION,
 	HEADER_WORKSPACE,
+	LeaseAssignmentFrameSchema,
+	POOL_PROTOCOL_VERSION,
+	type PoolProviderInput,
 	PROTOCOL_VERSION,
+	ProviderBootstrapInputSchema,
 	type ProviderInput,
-	ProviderInputSchema,
 	type ProxyRequest,
 	parseDurationMs,
 	ServerFrameSchema,
@@ -122,9 +127,51 @@ export function isConversationControlLine(text: string): boolean {
 
 export async function supervise(inputPath: string): Promise<number> {
 	const raw = await Bun.file(inputPath).text();
-	const input: ProviderInput = ProviderInputSchema.parse(JSON.parse(raw));
+	const bootstrap = ProviderBootstrapInputSchema.parse(JSON.parse(raw));
+	const input: ProviderInput =
+		"pool_runtime_id" in bootstrap ? await waitForPoolLease(bootstrap) : bootstrap;
 	const supervisor = new Supervisor(input);
 	return await supervisor.run();
+}
+
+export function waitForPoolLease(input: PoolProviderInput): Promise<ProviderInput> {
+	return new Promise((resolve, reject) => {
+		const base = input.server_url.replace(/^http/, "ws").replace(/\/$/, "");
+		const ws = new WebSocket(`${base}/v1/agent/pool-connect`, {
+			headers: {
+				[HEADER_PROTOCOL]: String(POOL_PROTOCOL_VERSION),
+				[HEADER_POOL_RUNTIME]: input.pool_runtime_id,
+				[HEADER_POOL_ENROLLMENT]: input.enrollment_secret,
+			},
+		} as unknown as string[]);
+		let assigned = false;
+		ws.onopen = () => {
+			ws.send(
+				JSON.stringify({
+					v: POOL_PROTOCOL_VERSION,
+					type: "pool_registered",
+					pool_runtime_id: input.pool_runtime_id,
+					template: {
+						name: input.template_name,
+						version: input.template_version,
+						digest: input.template_digest,
+					},
+					agent_version: AGENT_VERSION,
+				}),
+			);
+		};
+		ws.onmessage = (event) => {
+			const parsed = LeaseAssignmentFrameSchema.safeParse(JSON.parse(String(event.data)));
+			if (!parsed.success || assigned) return;
+			assigned = true;
+			ws.close(1000, "lease received");
+			resolve(parsed.data.input);
+		};
+		ws.onerror = () => {};
+		ws.onclose = () => {
+			if (!assigned) reject(new Error("warm pool enrollment closed before assignment"));
+		};
+	});
 }
 
 class Supervisor {

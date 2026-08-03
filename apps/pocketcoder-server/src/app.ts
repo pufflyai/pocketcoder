@@ -19,9 +19,11 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import {
 	type AdmissionLimits,
+	type ResolvedWarmPool,
 	Scheduler,
 	type Store,
 	type TemplateRow,
+	WarmPoolManager,
 	type WorkspaceDriver,
 	type WorkspaceListFilter,
 	type WorkspaceSecretResolver,
@@ -37,6 +39,7 @@ import {
 	toCheckpointResource,
 	toOperationResource,
 } from "./persistence";
+import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
 import { relayHandler } from "./relay";
 import { templateAuthorized, toResource, WorkspaceService } from "./service";
 import { agentConnectValidator, agentWsEvents } from "./ws";
@@ -52,6 +55,7 @@ export interface BuildDeps {
 	workspaceServerUrl: string;
 	instanceId?: string;
 	log?: (msg: string) => void;
+	warmPools?: ResolvedWarmPool[];
 }
 
 export interface BuiltServer {
@@ -61,6 +65,7 @@ export interface BuiltServer {
 	scheduler: Scheduler;
 	service: WorkspaceService;
 	persistence: PersistenceService;
+	warmPool?: WarmPoolManager;
 }
 
 function safeTemplateItem(row: TemplateRow) {
@@ -124,6 +129,22 @@ const WorkspaceCreateHeadersSchema = z.object({
 export function buildServer(deps: BuildDeps): BuiltServer {
 	const { store, driver, pepper, limits, log } = deps;
 	const hub = new Hub();
+	const poolHub = new PoolConnectionHub();
+	const secretFactory = {
+		generate: generateOpaqueSecret,
+		digest: (secret: string) => digestOpaque(pepper, secret),
+	};
+	const warmPool = deps.warmPools
+		? new WarmPoolManager({
+				store,
+				driver,
+				connections: poolHub,
+				secrets: secretFactory,
+				workspaceServerUrl: deps.workspaceServerUrl,
+				pools: deps.warmPools,
+				onError: (context, error) => log?.(`${context}: ${String(error)}`),
+			})
+		: undefined;
 	const persistenceHolder: { service?: PersistenceService } = {};
 	const scheduler = new Scheduler({
 		store,
@@ -131,12 +152,10 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
 		...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
 		connections: hub,
-		secrets: {
-			generate: generateOpaqueSecret,
-			digest: (secret) => digestOpaque(pepper, secret),
-		},
+		secrets: secretFactory,
 		limits,
 		workspaceServerUrl: deps.workspaceServerUrl,
+		...(warmPool ? { warmPool } : {}),
 		preserveByPolicy: async (row, trigger) =>
 			persistenceHolder.service?.preserveByPolicy(row, trigger) ?? false,
 		onError: (context, err) => log?.(`scheduler ${context}: ${String(err)}`),
@@ -198,6 +217,15 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		agentConnectValidator(wsDeps),
 		upgradeWebSocket(agentWsEvents(wsDeps)),
 	);
+	if (warmPool) {
+		app.get(
+			"/v1/agent/pool-connect",
+			poolConnectValidator({ store, pepper }),
+			upgradeWebSocket(
+				poolWsEvents({ store, hub: poolHub, manager: warmPool, ...(log ? { log } : {}) }),
+			),
+		);
+	}
 
 	// The generated OpenAPI document is served without machine auth so
 	// tooling can consume the contract; it contains no secrets.
@@ -237,6 +265,30 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 			return c.json({ items: rows.map(safeTemplateItem) }, 200);
 		},
 	);
+
+	if (warmPool) {
+		app.openapi(
+			createRoute({
+				method: "get",
+				path: "/v1/warm-pools",
+				middleware: [requireScope("admin")] as const,
+				responses: {
+					200: {
+						description: "Warm runtime inventory and cumulative metrics",
+						content: {
+							"application/json": {
+								schema: z.object({
+									items: z.array(z.record(z.string(), z.unknown())),
+									metrics: z.record(z.string(), z.number()),
+								}),
+							},
+						},
+					},
+				},
+			}),
+			async (c) => c.json(await warmPool.inventory(), 200),
+		);
+	}
 
 	app.openapi(
 		createRoute({
@@ -1032,5 +1084,13 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		relayHandler({ store, hub, service }),
 	);
 
-	return { app, websocket, hub, scheduler, service, persistence };
+	return {
+		app,
+		websocket,
+		hub,
+		scheduler,
+		service,
+		persistence,
+		...(warmPool ? { warmPool } : {}),
+	};
 }

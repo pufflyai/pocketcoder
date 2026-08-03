@@ -9,7 +9,10 @@ import migration1Sql from "../drizzle/20260730113243_regular_pretty_boy/migratio
 import migration2Sql from "../drizzle/20260730132750_workspace-change-diagnostics/migration.sql" with {
 	type: "text",
 };
-import migration3Sql from "../drizzle/20260803091200_durable-conversations/migration.sql" with {
+import migration3Sql from "../drizzle/20260803081501_warm-workspace-pool/migration.sql" with {
+	type: "text",
+};
+import migration4Sql from "../drizzle/20260803092834_durable-conversations/migration.sql" with {
 	type: "text",
 };
 
@@ -34,5 +37,6 @@ export const MIGRATIONS: MigrationMeta[] = [
 		Date.UTC(2026, 6, 30, 13, 27, 50),
 		migration2Sql,
 	),
-	migration("20260803091200_durable-conversations", Date.UTC(2026, 7, 3, 9, 12, 0), migration3Sql),
+	migration("20260803081501_warm-workspace-pool", Date.UTC(2026, 7, 3, 8, 15, 1), migration3Sql),
+	migration("20260803092834_durable-conversations", Date.UTC(2026, 7, 3, 9, 28, 34), migration4Sql),
 ];

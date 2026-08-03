@@ -13,6 +13,7 @@ import {
 	OutboxDispatcher,
 	reconcilePersistence,
 	reconcileProviders,
+	resolveWarmPools,
 	type Store,
 } from "@pstdio/pocketcoder-runtime-core";
 import { MemoryStore } from "@pstdio/pocketcoder-testkit";
@@ -143,9 +144,18 @@ export async function startPocketcoderServer(
 	try {
 		await loadConfiguredTemplates(store, config.templateDir, log);
 		const driver = createWorkspaceDriver(config);
+		const warmPools = await resolveWarmPools(
+			store,
+			config.warmPools,
+			driver.kind,
+			config.limits.globalActiveWorkspaces,
+		);
+		const warmPoolContinuously =
+			warmPools.length > 0 ||
+			(await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
 		const storageDriver = createStorageDriver(config);
 		const secretResolver = createSecretResolver(config);
-		const { app, websocket, scheduler, persistence } = buildServer({
+		const { app, websocket, scheduler, persistence, warmPool } = buildServer({
 			store,
 			driver,
 			...(storageDriver ? { storageDriver } : {}),
@@ -156,6 +166,7 @@ export async function startPocketcoderServer(
 			persistenceLimits: config.persistenceLimits,
 			...(options.instanceId ? { instanceId: options.instanceId } : {}),
 			log,
+			warmPools,
 		});
 
 		await reconcileStartup(store, driver, storageDriver, log);
@@ -179,6 +190,15 @@ export async function startPocketcoderServer(
 			"outbox tick failed",
 			log,
 		);
+		const warmPoolTimer =
+			warmPool && warmPoolContinuously
+				? startExclusiveTimer(
+						config.schedulerIntervalMs,
+						() => warmPool.reconcile(),
+						"warm pool reconciliation failed",
+						log,
+					)
+				: null;
 		const retentionTimer = startExclusiveTimer(
 			60_000,
 			async () => {
@@ -203,6 +223,7 @@ export async function startPocketcoderServer(
 			clearInterval(schedulerTimer);
 			clearInterval(outboxTimer);
 			clearInterval(retentionTimer);
+			if (warmPoolTimer) clearInterval(warmPoolTimer);
 			throw error;
 		}
 
@@ -213,6 +234,10 @@ export async function startPocketcoderServer(
 		const url = `http://${healthHost}:${server.port}`;
 		log(`listening on http://${config.listenHost}:${server.port}`);
 		log(`workspaces reach this server at ${config.workspaceServerUrl}`);
+		if (warmPool)
+			void warmPool
+				.reconcile()
+				.catch((error) => log(`warm pool initial reconcile failed: ${String(error)}`));
 
 		let stopPromise: Promise<void> | null = null;
 		return {
@@ -225,6 +250,7 @@ export async function startPocketcoderServer(
 					clearInterval(schedulerTimer);
 					clearInterval(outboxTimer);
 					clearInterval(retentionTimer);
+					if (warmPoolTimer) clearInterval(warmPoolTimer);
 					await server.stop(true);
 					await store.close();
 				})();

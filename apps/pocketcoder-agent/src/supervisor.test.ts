@@ -1,13 +1,74 @@
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { POOL_PROTOCOL_VERSION, type ProviderInput } from "@pstdio/pocketcoder-contracts";
 import {
 	isConversationControlLine,
 	pumpLineFramedText,
 	splitUtf8Chunks,
 	verifyWritableMemoryPaths,
+	waitForPoolLease,
 } from "./supervisor";
+
+describe("warm pool bootstrap", () => {
+	test("waits unbound and returns only the post-commit in-memory assignment", async () => {
+		const runtimeId = randomUUID();
+		const workspaceId = randomUUID();
+		const assignment: ProviderInput = {
+			workspace_id: workspaceId,
+			server_url: "http://workspace-server:7080",
+			registration_secret: "workspace-one-time",
+			template_digest: "sha256:template",
+			template_name: "fixture",
+			template_version: "1.0.0",
+			launch_mode: "create",
+			launch_input: { task: "delivered-after-lease" },
+		};
+		let enrollmentHeader = "";
+		const server = Bun.serve({
+			port: 0,
+			fetch(request, server) {
+				enrollmentHeader = request.headers.get("x-pocketcoder-pool-enrollment") ?? "";
+				if (server.upgrade(request)) return;
+				return new Response("upgrade required", { status: 426 });
+			},
+			websocket: {
+				message(ws, message) {
+					const registered = JSON.parse(String(message)) as {
+						type: string;
+						pool_runtime_id: string;
+					};
+					expect(registered).toEqual(
+						expect.objectContaining({ type: "pool_registered", pool_runtime_id: runtimeId }),
+					);
+					ws.send(
+						JSON.stringify({
+							v: POOL_PROTOCOL_VERSION,
+							type: "lease_assignment",
+							input: assignment,
+						}),
+					);
+				},
+			},
+		});
+		try {
+			const received = await waitForPoolLease({
+				pool_runtime_id: runtimeId,
+				server_url: `http://127.0.0.1:${server.port}`,
+				enrollment_secret: "pool-one-time",
+				template_digest: "sha256:template",
+				template_name: "fixture",
+				template_version: "1.0.0",
+			});
+			expect(enrollmentHeader).toBe("pool-one-time");
+			expect(received).toEqual(assignment);
+		} finally {
+			await server.stop(true);
+		}
+	});
+});
 
 describe("workspace preflight", () => {
 	test("writes, syncs, reads, and removes a sentinel in every path", async () => {

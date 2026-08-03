@@ -78,7 +78,7 @@ docker rm --force pocketcoder-pc12-postgres
 ```
 
 Expected result: the PostgreSQL suite runs rather than skips, applies the
-four-migration chain without drift, appends one message, treats a replayed
+five-migration chain without drift, appends one message, treats a replayed
 `message_id` as idempotent, and reads sequence `1` back.
 
 ## 5. Inspect a running workspace manually

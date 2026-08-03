@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "9783349a-15f3-47e2-a445-c98feb5aa26b",
+  "id": "9cd5bb95-3f9e-43af-a8f4-de9f0d671d89",
   "prevIds": [
-    "f1f0842e-0f1f-4950-b50b-2e89ea0d0d61"
+    "6b674baa-e4b8-4f1f-bb2c-b5c86f68de8f"
   ],
   "ddl": [
     {
@@ -27,6 +27,12 @@
     {
       "isRlsEnabled": false,
       "name": "templates",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "warm_pool_runtimes",
       "entityType": "tables",
       "schema": "public"
     },
@@ -499,6 +505,227 @@
       "entityType": "columns",
       "schema": "public",
       "table": "templates"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "template_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "template_name",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "template_version",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "template_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "driver_kind",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "eligibility_fingerprint",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "state",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "provider_ref",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "bytea",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "enrollment_digest",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "enrollment_expires_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "uuid",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "ready_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "leased_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
     },
     {
       "type": "uuid",
@@ -1827,6 +2054,19 @@
       "table": "workspaces"
     },
     {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "provisioning_mode",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "workspaces"
+    },
+    {
       "type": "bytea",
       "typeSchema": null,
       "notNull": false,
@@ -2150,6 +2390,76 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "template_digest",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "driver_kind",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "eligibility_fingerprint",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "state",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "ready_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "warm_pool_eligible",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "warm_pool_workspace_once",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "principal_id",
           "isExpression": false,
           "asc": true,
@@ -2445,6 +2755,40 @@
       "entityType": "fks",
       "schema": "public",
       "table": "machine_keys"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "template_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "templates",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "warm_pool_runtimes_template_id_templates_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
+    },
+    {
+      "nameExplicit": false,
+      "columns": [
+        "workspace_id"
+      ],
+      "schemaTo": "public",
+      "tableTo": "workspaces",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "name": "warm_pool_runtimes_workspace_id_workspaces_id_fkey",
+      "entityType": "fks",
+      "schema": "public",
+      "table": "warm_pool_runtimes"
     },
     {
       "nameExplicit": false,
@@ -2789,6 +3133,16 @@
       "name": "templates_pkey",
       "schema": "public",
       "table": "templates",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "warm_pool_runtimes_pkey",
+      "schema": "public",
+      "table": "warm_pool_runtimes",
       "entityType": "pks"
     },
     {

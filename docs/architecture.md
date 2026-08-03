@@ -40,6 +40,8 @@ erDiagram
     PRINCIPALS ||--o{ MACHINE_KEYS : authenticates
     PRINCIPALS ||--o{ WORKSPACES : owns
     TEMPLATES ||--o{ WORKSPACES : snapshots
+	TEMPLATES ||--o{ WARM_POOL_RUNTIMES : provisions
+	WORKSPACES o|--o| WARM_POOL_RUNTIMES : claims
     PRINCIPALS ||--o{ WORKSPACE_STORAGE : owns
     WORKSPACES ||--o{ WORKSPACE_STORAGE : allocates
     PRINCIPALS ||--o{ WORKSPACE_CHECKPOINTS : owns
@@ -50,8 +52,8 @@ erDiagram
     WORKSPACE_CHECKPOINTS o|--o{ WORKSPACE_OPERATIONS : restores
     WORKSPACES o|--o{ WORKSPACE_OPERATIONS : produces
     WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
-    WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
-    WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
+	WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
+	WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
     WORKSPACES ||--o{ WORKSPACE_STATE_HISTORY : transitions
     WORKSPACES ||--o{ WORKSPACE_LOGS : emits
     WORKSPACES ||--o{ EVENT_OUTBOX : records
@@ -91,9 +93,23 @@ erDiagram
         text template_digest
         jsonb template_snapshot
         text state
+		text provisioning_mode
         jsonb provider_ref
         timestamptz deadline_at
         timestamptz terminal_at
+    }
+
+	WARM_POOL_RUNTIMES {
+        uuid id PK
+        uuid template_id FK
+        uuid workspace_id FK,UK
+        text template_digest
+        text driver_kind
+        text eligibility_fingerprint
+        text state
+        jsonb provider_ref
+        timestamptz ready_at
+        timestamptz leased_at
     }
 
     WORKSPACE_STORAGE {
@@ -138,7 +154,7 @@ erDiagram
         timestamptz occurred_at
     }
 
-    WORKSPACE_CONVERSATIONS {
+	WORKSPACE_CONVERSATIONS {
         uuid workspace_id PK,FK
         text status
         timestamptz expires_at
@@ -229,9 +245,13 @@ Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
 `shutdown`, `prepare_checkpoint`.
 
-There is no lease, arbitrary command execution, shell stream, tunnel, or file
-API in the protocol. The relay forwards only template-declared loopback
-routes with exact method/path/query/size/deadline checks.
+Protocol v3 adds a separate, narrowly scoped pool-enrollment socket for optional
+task-agnostic warm runtimes. Its only server message is a one-shot workspace
+assignment after an atomic durable claim; the runtime then uses the existing
+workspace registration protocol. There is no reusable worker lease, arbitrary
+command execution, shell stream, tunnel, or file API. The relay forwards only
+template-declared loopback routes with exact method/path/query/size/deadline
+checks.
 
 Disconnects keep the workspace alive for the template's `disconnectGrace`;
 after a server restart, nonterminal workspaces are reconciled against

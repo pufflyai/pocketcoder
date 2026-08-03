@@ -1,7 +1,9 @@
 import type {
 	CheckpointManifest,
 	PersistenceMount,
+	PoolProviderInput,
 	ProviderInput,
+	TemplateSnapshot,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "./types";
 
@@ -35,9 +37,22 @@ export interface DiscoveredProvider {
 	ref: ProviderRef;
 }
 
+export interface WarmRuntimeLaunch {
+	runtimeId: string;
+	template: TemplateSnapshot;
+	input: PoolProviderInput;
+}
+
+export interface DiscoveredWarmProvider {
+	runtimeId: string;
+	templateDigest: string;
+	ref: ProviderRef;
+}
+
 export interface WorkspaceDriver {
 	readonly kind: string;
 	create(launch: WorkspaceLaunch): Promise<ProviderRef>;
+	createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
 	inspect(ref: ProviderRef): Promise<ProviderState>;
 	// Runtime stop and object deletion are separate so persistence workflows
 	// can snapshot a quiesced workload before deleting the provider object.
@@ -46,6 +61,8 @@ export interface WorkspaceDriver {
 	// Every provider object labeled as a pocketcoder workspace, for
 	// restart reconciliation and quarantine of unknown objects.
 	list(): Promise<DiscoveredProvider[]>;
+	listWarm(): Promise<DiscoveredWarmProvider[]>;
+	cleanupWarmInput?(runtimeId: string): Promise<void>;
 }
 
 // Runtime mount refs are internal driver-neutral capabilities. Docker consumes

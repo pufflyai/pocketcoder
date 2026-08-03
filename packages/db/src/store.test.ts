@@ -163,6 +163,59 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 				}),
 			]);
 
+			const warmWorkspace = (
+				await store.insertWorkspace({
+					id: randomUUID(),
+					principalId: principal.id,
+					externalId: "pg-warm-task",
+					idempotencyKey: "pg-warm-task",
+					requestDigest: digestOf({ warm: true }),
+					templateId: template.id,
+					templateSnapshot: snapshotOf(parsed),
+					launchInput: { code: "in-memory-after-claim" },
+					metadata: {},
+					deadlineAt: new Date(Date.now() + 60_000),
+					createdAt: new Date(),
+				})
+			).workspace;
+			const runtimeId = randomUUID();
+			const runtimeNow = new Date();
+			await store.insertWarmPoolRuntime({
+				id: runtimeId,
+				templateId: template.id,
+				templateName: template.name,
+				templateVersion: template.version,
+				templateDigest: template.digest,
+				driverKind: "docker",
+				eligibilityFingerprint: "sha256:eligible",
+				state: "ready",
+				providerRef: { kind: "docker", id: "warm-provider" },
+				enrollmentDigest: null,
+				enrollmentExpiresAt: null,
+				workspaceId: null,
+				createdAt: runtimeNow,
+				updatedAt: runtimeNow,
+				readyAt: runtimeNow,
+				leasedAt: null,
+				failureCode: null,
+			});
+			const claim = {
+				workspaceId: warmWorkspace.id,
+				templateDigest: template.digest,
+				driverKind: "docker",
+				eligibilityFingerprint: "sha256:eligible",
+				registrationDigest: new TextEncoder().encode("one-time"),
+				registrationExpiresAt: new Date(Date.now() + 60_000),
+				at: new Date(),
+			};
+			const claims = await Promise.all([
+				store.claimWarmPoolRuntime(claim),
+				store.claimWarmPoolRuntime(claim),
+			]);
+			expect(claims.filter(Boolean)).toHaveLength(1);
+			expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
+			expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);
+
 			const provisioning = await store.transition(insert.workspace.id, {
 				from: ["queued"],
 				to: "provisioning",
@@ -202,11 +255,9 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			expect(failed?.terminalAt).not.toBeNull();
 
 			const events = await store.claimDueEvents(new Date(), 10);
-			expect(events.map((e) => e.eventType)).toEqual([
-				"workspace.queued",
-				"workspace.provisioning",
-				"workspace.failed",
-			]);
+			expect(
+				events.filter((event) => event.workspaceId === insert.workspace.id).map((e) => e.eventType),
+			).toEqual(["workspace.queued", "workspace.provisioning", "workspace.failed"]);
 
 			await store.appendLogs(insert.workspace.id, [
 				{

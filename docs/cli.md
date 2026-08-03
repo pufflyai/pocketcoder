@@ -12,7 +12,7 @@ Commands use one of two access paths:
 - **Database commands** (migrations, principals, keys, template listing) need
   `POCKETCODER_DATABASE_URL`, `POCKETCODER_DATABASE_SCHEMA` (default
   `pocketcoder`), and for key issuance `POCKETCODER_AUTH_PEPPER`.
-- **REST commands** (workspaces, doctor) need `POCKETCODER_URL` (default
+- **REST commands** (workspaces, pools, doctor) need `POCKETCODER_URL` (default
   `http://127.0.0.1:7080`) and `POCKETCODER_KEY` (a machine key).
 
 ## Environment files
@@ -121,6 +121,7 @@ pcd workspaces outputs --id <uuid>
   terminal launch failures include their bounded redacted failure log.
 - `--input` is the opaque `launch_input` JSON delivered to the harness in
   memory as `POCKETCODER_LAUNCH_INPUT`.
+
 - `cancel` is idempotent and never creates a replacement workspace.
 - `attach` stores only a message cursor in the local state directory (mode
   `0600`); it never stores a supervisor/reconnect credential.
@@ -128,6 +129,10 @@ pcd workspaces outputs --id <uuid>
   Ctrl-C/EOF detaches without canceling unless `--cancel-on-exit` is supplied.
 - `preserve` ends the source execution. `restore` and `recreate` always create
   a new execution and accept a caller-chosen external ID.
+
+## Warm pool inventory
+
+`pcd pools list [--json]` reports configured desired capacity, runtime state counts, oldest ready age, warm hits/misses, lease latency, and reconciliation failures. It requires an admin-scoped machine key. Pools are operator configuration; workspace callers cannot create or tune them.
 
 ## Checkpoints and storage
 

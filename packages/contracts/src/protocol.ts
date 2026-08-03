@@ -13,6 +13,7 @@ import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from ".
 
 export const LEGACY_PROTOCOL_VERSION = 1;
 export const PROTOCOL_VERSION = 2;
+export const POOL_PROTOCOL_VERSION = 3;
 export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
@@ -23,6 +24,8 @@ export const HEADER_PROTOCOL = "x-pocketcoder-protocol";
 export const HEADER_WORKSPACE = "x-pocketcoder-workspace";
 export const HEADER_REGISTRATION = "x-pocketcoder-registration";
 export const HEADER_RECONNECT = "x-pocketcoder-reconnect";
+export const HEADER_POOL_RUNTIME = "x-pocketcoder-pool-runtime";
+export const HEADER_POOL_ENROLLMENT = "x-pocketcoder-pool-enrollment";
 
 const EnvelopeBase = z.object({
 	v: z.union([z.literal(LEGACY_PROTOCOL_VERSION), z.literal(PROTOCOL_VERSION)]),
@@ -258,3 +261,34 @@ export const ProviderInputSchema = z.object({
 });
 
 export type ProviderInput = z.infer<typeof ProviderInputSchema>;
+
+// Bootstrap input for an unbound warm runtime. It deliberately excludes every
+// workspace/caller field; the one-shot workspace input arrives in memory only
+// after the control plane has durably committed a lease.
+export const PoolProviderInputSchema = z.object({
+	pool_runtime_id: z.uuid(),
+	server_url: z.string(),
+	enrollment_secret: z.string().min(1),
+	template_digest: z.string(),
+	template_name: z.string(),
+	template_version: z.string(),
+});
+
+export type PoolProviderInput = z.infer<typeof PoolProviderInputSchema>;
+
+export const ProviderBootstrapInputSchema = z.union([ProviderInputSchema, PoolProviderInputSchema]);
+export type ProviderBootstrapInput = z.infer<typeof ProviderBootstrapInputSchema>;
+
+export const PoolRegisteredFrameSchema = z.object({
+	v: z.literal(POOL_PROTOCOL_VERSION),
+	type: z.literal("pool_registered"),
+	pool_runtime_id: z.uuid(),
+	template: z.object({ name: z.string(), version: z.string(), digest: z.string() }),
+	agent_version: z.string(),
+});
+
+export const LeaseAssignmentFrameSchema = z.object({
+	v: z.literal(POOL_PROTOCOL_VERSION),
+	type: z.literal("lease_assignment"),
+	input: ProviderInputSchema,
+});

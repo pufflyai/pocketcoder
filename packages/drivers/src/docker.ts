@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
 	DiscoveredProvider,
+	DiscoveredWarmProvider,
 	ProviderRef,
 	ProviderState,
+	WarmRuntimeLaunch,
 	WorkspaceDriver,
 	WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
@@ -16,6 +18,7 @@ import type {
 
 export const WORKSPACE_LABEL = "pocketcoder.workspace";
 export const DIGEST_LABEL = "pocketcoder.template-digest";
+export const POOL_RUNTIME_LABEL = "pocketcoder.pool-runtime";
 
 export interface DockerDriverOptions {
 	// Private directory for temporary provider input files, removed on
@@ -162,6 +165,57 @@ export class DockerDriver implements WorkspaceDriver {
 		}
 	}
 
+	async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
+		const spec = launch.template.spec;
+		await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
+		await chmod(this.opts.inputDir, 0o700);
+		const inputFile = this.inputPath(`pool-${launch.runtimeId}`);
+		await writeFile(inputFile, JSON.stringify(launch.input), { mode: 0o644 });
+		const name = `pocketcoder-pool-${launch.runtimeId}`;
+		const args = [
+			"run",
+			"--detach",
+			"--name",
+			name,
+			"--label",
+			`${POOL_RUNTIME_LABEL}=${launch.runtimeId}`,
+			"--label",
+			`${DIGEST_LABEL}=${launch.template.digest}`,
+			"--restart=no",
+			"--user",
+			`${spec.security.uid}:${spec.security.gid}`,
+			"--security-opt",
+			"no-new-privileges",
+			"--cpus",
+			spec.resources.cpu.endsWith("m")
+				? String(Number(spec.resources.cpu.slice(0, -1)) / 1000)
+				: spec.resources.cpu,
+			"--memory",
+			spec.resources.memory.replace("Mi", "m").replace("Gi", "g"),
+			"-v",
+			`${inputFile}:/run/pocketcoder/input:ro`,
+		];
+		for (const cap of spec.security.dropCapabilities) args.push("--cap-drop", cap);
+		if (spec.security.readOnlyRoot) args.push("--read-only");
+		for (const path of spec.security.writableMemoryPaths) {
+			args.push(
+				"--tmpfs",
+				`${path}:rw,noexec,nosuid,size=256m,uid=${spec.security.uid},gid=${spec.security.gid},mode=0700`,
+			);
+		}
+		if (this.opts.network) args.push("--network", this.opts.network);
+		if (this.opts.addHostGateway) args.push("--add-host", "host.docker.internal:host-gateway");
+		for (const [key, value] of Object.entries(spec.env)) args.push("-e", `${key}=${value}`);
+		args.push(await resolveDockerImage(this.opts.dockerBin, spec.image), ...spec.command);
+		try {
+			const id = await run(this.opts.dockerBin, args);
+			return { kind: this.kind, id, name, poolRuntimeId: launch.runtimeId };
+		} catch (error) {
+			await rm(inputFile, { force: true });
+			throw error;
+		}
+	}
+
 	async inspect(ref: ProviderRef): Promise<ProviderState> {
 		try {
 			const out = await run(this.opts.dockerBin, [
@@ -196,6 +250,11 @@ export class DockerDriver implements WorkspaceDriver {
 			// Already removed.
 		}
 		const name = typeof ref.name === "string" ? ref.name : "";
+		const poolRuntimeId = typeof ref.poolRuntimeId === "string" ? ref.poolRuntimeId : "";
+		if (poolRuntimeId) {
+			await rm(this.inputPath(`pool-${poolRuntimeId}`), { force: true });
+			return;
+		}
 		const workspaceId = name.replace(/^pocketcoder-ws-/, "");
 		if (workspaceId) {
 			await rm(this.inputPath(workspaceId), { force: true });
@@ -206,6 +265,10 @@ export class DockerDriver implements WorkspaceDriver {
 	// one-time secret inside it is spent at that point anyway.
 	async cleanupInput(workspaceId: string): Promise<void> {
 		await rm(this.inputPath(workspaceId), { force: true });
+	}
+
+	async cleanupWarmInput(runtimeId: string): Promise<void> {
+		await rm(this.inputPath(`pool-${runtimeId}`), { force: true });
 	}
 
 	async list(): Promise<DiscoveredProvider[]> {
@@ -224,6 +287,31 @@ export class DockerDriver implements WorkspaceDriver {
 				workspaceId,
 				templateDigest,
 				ref: { kind: this.kind, id, name: `pocketcoder-ws-${workspaceId}` },
+			};
+		});
+	}
+
+	async listWarm(): Promise<DiscoveredWarmProvider[]> {
+		const out = await run(this.opts.dockerBin, [
+			"ps",
+			"--all",
+			"--filter",
+			`label=${POOL_RUNTIME_LABEL}`,
+			"--format",
+			`{{.ID}}\t{{.Label "${POOL_RUNTIME_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}`,
+		]);
+		if (!out) return [];
+		return out.split("\n").map((line) => {
+			const [id = "", runtimeId = "", templateDigest = ""] = line.split("\t");
+			return {
+				runtimeId,
+				templateDigest,
+				ref: {
+					kind: this.kind,
+					id,
+					name: `pocketcoder-pool-${runtimeId}`,
+					poolRuntimeId: runtimeId,
+				},
 			};
 		});
 	}

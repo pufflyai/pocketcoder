@@ -283,6 +283,12 @@ export function createCli(argv: string[]): Argv {
 			.command("list-database", "List every template version from PostgreSQL"),
 	);
 
+	parser = commandGroup(parser, "pools", "Inspect operator-managed warm capacity", (group) =>
+		group.command("list", "List warm pool inventory and metrics", (command) =>
+			command.option("json", { type: "boolean", description: "Print JSON" }),
+		),
+	);
+
 	parser = commandGroup(parser, "workspaces", "Manage workspaces", (group) =>
 		group
 			.command("list", "List workspaces", (command) =>
@@ -695,6 +701,42 @@ async function handleTemplates(context: CommandContext): Promise<boolean> {
 	}
 }
 
+async function handlePools(context: CommandContext): Promise<boolean> {
+	if (context.group !== "pools" || context.action !== "list") return false;
+	const response = await api("/v1/warm-pools");
+	const body = (await response.json()) as {
+		items?: Array<{
+			template: string;
+			version: string;
+			desired: number;
+			counts: Record<string, number>;
+			oldest_ready_age_ms: number | null;
+		}>;
+		metrics?: Record<string, number>;
+	};
+	if (!response.ok)
+		fail(`warm pool inventory failed (${response.status}): ${JSON.stringify(body)}`);
+	if (context.flags.json) {
+		console.log(JSON.stringify(body, null, 2));
+		return true;
+	}
+	for (const item of body.items ?? []) {
+		const counts = Object.entries(item.counts)
+			.map(([state, count]) => `${state}=${count}`)
+			.join(" ");
+		console.log(
+			`${item.template}@${item.version}\tdesired=${item.desired}\t${counts || "empty"}\toldest_ready_ms=${item.oldest_ready_age_ms ?? "-"}`,
+		);
+	}
+	if (body.metrics)
+		console.log(
+			`metrics\t${Object.entries(body.metrics)
+				.map(([name, value]) => `${name}=${value}`)
+				.join(" ")}`,
+		);
+	return true;
+}
+
 async function listWorkspaces(flags: Flags): Promise<void> {
 	const params = new URLSearchParams();
 	for (const [flag, param] of [
@@ -1090,6 +1132,7 @@ async function dispatchCommand(context: CommandContext): Promise<boolean> {
 		handlePrincipals,
 		handleKeys,
 		handleTemplates,
+		handlePools,
 		handleWorkspaceCore,
 		handleWorkspacePersistence,
 		handleWorkspaceAttach,
