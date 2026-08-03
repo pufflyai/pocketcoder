@@ -77,6 +77,7 @@ export interface WorkspaceRow {
 	launchInput: Record<string, unknown> | null;
 	providerKind: string | null;
 	providerRef: Record<string, unknown> | null;
+	provisioningMode: "cold" | "warm" | null;
 	registrationDigest: Uint8Array | null;
 	registrationExpiresAt: Date | null;
 	reconnectDigest: Uint8Array | null;
@@ -171,6 +172,60 @@ export interface WorkspaceOutputRow {
 	occurredAt: Date;
 }
 
+export const WARM_POOL_RUNTIME_STATES = [
+	"provisioning",
+	"ready",
+	"leasing",
+	"leased",
+	"draining",
+	"failed",
+] as const;
+export type WarmPoolRuntimeState = (typeof WARM_POOL_RUNTIME_STATES)[number];
+
+export interface WarmPoolRuntimeRow {
+	id: string;
+	templateId: string;
+	templateName: string;
+	templateVersion: string;
+	templateDigest: string;
+	driverKind: string;
+	eligibilityFingerprint: string;
+	state: WarmPoolRuntimeState;
+	providerRef: Record<string, unknown> | null;
+	enrollmentDigest: Uint8Array | null;
+	enrollmentExpiresAt: Date | null;
+	workspaceId: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+	readyAt: Date | null;
+	leasedAt: Date | null;
+	failureCode: string | null;
+}
+
+export type WarmPoolRuntimePatch = Partial<
+	Pick<
+		WarmPoolRuntimeRow,
+		| "state"
+		| "providerRef"
+		| "enrollmentDigest"
+		| "enrollmentExpiresAt"
+		| "workspaceId"
+		| "readyAt"
+		| "leasedAt"
+		| "failureCode"
+	>
+>;
+
+export interface WarmPoolClaim {
+	workspaceId: string;
+	templateDigest: string;
+	driverKind: string;
+	eligibilityFingerprint: string;
+	registrationDigest: Uint8Array;
+	registrationExpiresAt: Date;
+	at: Date;
+}
+
 export interface CheckpointUsage {
 	count: number;
 	logicalBytes: number;
@@ -248,6 +303,7 @@ export type WorkspacePatch = Partial<
 		| "launchInput"
 		| "providerKind"
 		| "providerRef"
+		| "provisioningMode"
 		| "registrationDigest"
 		| "registrationExpiresAt"
 		| "reconnectDigest"
@@ -341,6 +397,16 @@ export interface Store {
 	listTemplates(names: string[] | null): Promise<TemplateRow[]>;
 	getTemplate(name: string, version?: string): Promise<TemplateRow | null>;
 	setTemplateStatus(name: string, version: string, status: TemplateStatus): Promise<void>;
+
+	// Durable warm capacity. Claiming changes both inventory and workspace
+	// admission state atomically in the production store.
+	insertWarmPoolRuntime(row: WarmPoolRuntimeRow): Promise<WarmPoolRuntimeRow>;
+	getWarmPoolRuntime(id: string): Promise<WarmPoolRuntimeRow | null>;
+	listWarmPoolRuntimes(): Promise<WarmPoolRuntimeRow[]>;
+	updateWarmPoolRuntime(id: string, patch: WarmPoolRuntimePatch, at: Date): Promise<void>;
+	claimWarmPoolRuntime(
+		claim: WarmPoolClaim,
+	): Promise<{ runtime: WarmPoolRuntimeRow; workspace: WorkspaceRow } | null>;
 
 	// Principals and machine keys.
 	createPrincipal(name: string, scopes: string[], templateNames: string[]): Promise<PrincipalRow>;

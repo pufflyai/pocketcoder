@@ -45,6 +45,7 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 		agent_state: row.agentState,
 		change_cursor: row.changeSeq,
 		provider_kind: row.providerKind,
+		provisioning_mode: row.provisioningMode,
 		health: row.health,
 		created_at: row.createdAt.toISOString(),
 		updated_at: row.updatedAt.toISOString(),

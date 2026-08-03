@@ -121,6 +121,7 @@ export const WorkspaceResourceSchema = z.object({
 	agent_state: z.enum(AGENT_STATES),
 	change_cursor: z.number().int().nonnegative(),
 	provider_kind: z.string().nullable(),
+	provisioning_mode: z.enum(["cold", "warm"]).nullable(),
 	health: z.record(z.string(), z.string()),
 	created_at: z.iso.datetime(),
 	updated_at: z.iso.datetime(),

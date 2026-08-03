@@ -27,6 +27,7 @@ Secret values, SQL/provider errors, and stack traces never appear in errors.
 ```text
 GET /v1/templates             scope templates:read   → { items: [{name, version, digest, description?, status}] }
 GET /v1/templates/{name}      scope templates:read   → { name, versions: [...] }
+GET /v1/warm-pools            scope admin            → { items: [...], metrics: {...} }
 ```
 
 Only templates on the principal's allowlist are visible; others 404.
@@ -89,6 +90,8 @@ States: `queued → provisioning → connected → ready`, followed by
 `reason_code` distinguishes clean exit, setup failure, registration timeout,
 health failure, crash, provider loss, disconnect timeout, cancellation, and
 deadline/idle expiry.
+
+Workspace resources include `provisioning_mode`: `warm`, `cold`, or `null` before admission. This is informational; `POST /v1/workspaces` remains unchanged and callers cannot select pool behavior.
 
 Every workspace resource includes a durable, monotonically increasing
 `change_cursor` and an `agent_state` of `unknown`, `running`, or `stable`.

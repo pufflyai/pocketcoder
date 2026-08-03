@@ -1,7 +1,9 @@
 import type {
 	DiscoveredProvider,
+	DiscoveredWarmProvider,
 	ProviderRef,
 	ProviderState,
+	WarmRuntimeLaunch,
 	WorkspaceDriver,
 	WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
@@ -11,14 +13,19 @@ import type {
 export class FakeDriver implements WorkspaceDriver {
 	readonly kind = "fake";
 	created: WorkspaceLaunch[] = [];
+	warmCreated: WarmRuntimeLaunch[] = [];
 	terminated: ProviderRef[] = [];
 	stopped: ProviderRef[] = [];
 	failNextCreate = false;
+	createDelayMs = 0;
 	private counter = 0;
 	private readonly live = new Map<string, DiscoveredProvider>();
 	private readonly stoppedIds = new Set<string>();
+	private readonly warm = new Map<string, DiscoveredWarmProvider>();
 
 	async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
+		if (this.createDelayMs > 0)
+			await new Promise((resolve) => setTimeout(resolve, this.createDelayMs));
 		if (this.failNextCreate) {
 			this.failNextCreate = false;
 			throw new Error("fake driver create failure");
@@ -34,8 +41,24 @@ export class FakeDriver implements WorkspaceDriver {
 		return ref;
 	}
 
+	async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
+		this.warmCreated.push(launch);
+		this.counter += 1;
+		const ref: ProviderRef = {
+			kind: this.kind,
+			id: `fake-warm-${this.counter}`,
+			poolRuntimeId: launch.runtimeId,
+		};
+		this.warm.set(launch.runtimeId, {
+			runtimeId: launch.runtimeId,
+			templateDigest: launch.template.digest,
+			ref,
+		});
+		return ref;
+	}
+
 	async inspect(ref: ProviderRef): Promise<ProviderState> {
-		const exists = [...this.live.values()].some((p) => p.ref.id === ref.id);
+		const exists = [...this.live.values(), ...this.warm.values()].some((p) => p.ref.id === ref.id);
 		return {
 			exists,
 			running: exists && !this.stoppedIds.has(ref.id),
@@ -54,10 +77,15 @@ export class FakeDriver implements WorkspaceDriver {
 		for (const [wsId, p] of this.live) {
 			if (p.ref.id === ref.id) this.live.delete(wsId);
 		}
+		for (const [id, p] of this.warm) if (p.ref.id === ref.id) this.warm.delete(id);
 	}
 
 	async list(): Promise<DiscoveredProvider[]> {
 		return [...this.live.values()];
+	}
+
+	async listWarm(): Promise<DiscoveredWarmProvider[]> {
+		return [...this.warm.values()];
 	}
 
 	inputFor(workspaceId: string) {

@@ -16,6 +16,7 @@ export function buildEventEnvelope(row: WorkspaceRow, occurredAt: Date): EventEn
 			state: row.state,
 			reason_code: row.reasonCode,
 			agent_state: row.agentState,
+			provisioning_mode: row.provisioningMode,
 			change_cursor: row.changeSeq,
 			failure:
 				row.state === "failed" && row.reasonCode

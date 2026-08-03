@@ -214,6 +214,19 @@ an application role with connect/usage/DML only.
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |
 | `POCKETCODER_SCHEDULER_INTERVAL_MS` | `1000` | Admission/sweep tick |
 | `POCKETCODER_OUTBOX_INTERVAL_MS` | `1000` | Event delivery tick |
+| `POCKETCODER_WARM_POOLS` | `[]` | Operator-only JSON array of stateless template pools |
+
+## Warm workspace pools
+
+Warm pools are disabled unless `POCKETCODER_WARM_POOLS` names an eligible template. Each entry resolves to an exact immutable template digest during startup:
+
+```sh
+export POCKETCODER_WARM_POOLS='[{"template":"fixture-echo","version":"1.0.0","min_ready":1,"max_warm_age":"15m","miss_policy":"cold","wait_timeout":"5s"}]'
+```
+
+`min_ready` defaults to `1`, `max_warm_age` to `15m`, and `miss_policy` to `cold`. The optional `wait` policy leaves a miss queued only through `wait_timeout`, then falls back to cold provisioning. Startup rejects unknown/retired templates, duplicate digests, desired capacity above the global workspace limit, persistence mounts, and any `secretRef:` because Docker and Pod mounts cannot be added after creation.
+
+Unbound providers contain only template identity and a single-use pool enrollment credential. Workspace identity, registration authority, source, and launch input arrive in memory after an atomic lease. Assigned providers are destroyed after one workspace and are never recycled. Use `pcd pools list` or `GET /v1/warm-pools` with an admin key to inspect inventory and counters.
 
 ## Operational notes
 

@@ -72,7 +72,7 @@ describe("pcd help", () => {
 		expect(result.output).toContain("A command is required.");
 	});
 
-	test.each(["server", "db", "principals", "keys", "templates", "workspaces"])(
+	test.each(["server", "db", "principals", "keys", "templates", "pools", "workspaces"])(
 		"a missing %s subcommand prints group help and fails",
 		async (group) => {
 			const result = await runCli([group]);
