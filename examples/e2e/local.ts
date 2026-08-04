@@ -6,6 +6,7 @@ import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gat
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { buildLocalImage } from "../local/runtime";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
+import { serverOutput } from "./process-output";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
@@ -282,6 +283,10 @@ try {
 	if (!key) throw new Error("pcd did not return a machine key");
 
 	const serverPort = freePort();
+	const serverProcessOutput = serverOutput({
+		interactive: localPiUi,
+		debug: process.env.POCKETCODER_EXAMPLE_DEBUG === "1",
+	});
 	serverProcess = Bun.spawn(["bun", "apps/pocketcoder-server/src/index.ts"], {
 		cwd: ROOT,
 		env: {
@@ -295,8 +300,7 @@ try {
 			POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
 			POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${serverPort}`,
 		},
-		stdout: "inherit",
-		stderr: "inherit",
+		...serverProcessOutput,
 	});
 	const baseUrl = `http://127.0.0.1:${serverPort}`;
 	await waitFor(

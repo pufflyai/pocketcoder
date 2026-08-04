@@ -22,6 +22,7 @@ import { buildServer } from "./app";
 import { configSummary, loadConfig, type ServerConfig } from "./config";
 import { Readiness } from "./health";
 import { createStructuredLogger } from "./observability";
+import { SERVER_IDLE_TIMEOUT_SECONDS } from "./server-timing";
 
 export type ServerLog = (message: string) => void;
 
@@ -261,6 +262,7 @@ export async function startPocketCoderServer(
 			server = Bun.serve({
 				hostname: config.listenHost,
 				port: config.listenPort,
+				idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
 				fetch: app.fetch,
 				websocket,
 			});

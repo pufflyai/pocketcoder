@@ -115,6 +115,9 @@ Set an OpenAI API key on the host and run:
 OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:pi:ui
 ```
 
+The interactive workflow keeps background server logs out of Pi's terminal.
+Set `POCKETCODER_EXAMPLE_DEBUG=1` to show them while troubleshooting.
+
 The command creates the disposable local PocketCoder stack and workspace,
 starts a short-lived host gateway that adds the OpenAI bearer credential, then
 opens Pi on the host. The initial message asks the remote agent to read the

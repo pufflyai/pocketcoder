@@ -9,6 +9,7 @@ import {
 import type { Store, WorkspaceListFilter } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../middleware";
 import { decodeStringCursor, encodeCursor } from "../pagination";
+import { MAX_WORKSPACE_CHANGE_WAIT_SECONDS } from "../server-timing";
 import { toResource, type WorkspaceService } from "../service";
 import { COMMON_ERROR_RESPONSES, IdempotencyHeadersSchema } from "./shared";
 
@@ -169,7 +170,7 @@ export function registerWorkspaceRoutes({
 				params: z.object({ id: z.uuid() }),
 				query: z.object({
 					after: z.coerce.number().int().nonnegative().default(0),
-					wait: z.coerce.number().int().min(0).max(30).default(0),
+					wait: z.coerce.number().int().min(0).max(MAX_WORKSPACE_CHANGE_WAIT_SECONDS).default(0),
 				}),
 			},
 			responses: {
