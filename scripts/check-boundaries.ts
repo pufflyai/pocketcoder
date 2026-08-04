@@ -1,3 +1,6 @@
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
+
 interface SourceFile {
 	path: string;
 	text: string;
@@ -57,51 +60,48 @@ export function boundaryViolations(files: SourceFile[]): string[] {
 	return violations;
 }
 
+const SKIPPED_DIRECTORIES = new Set(["node_modules", "dist"]);
+
+async function filesUnder(root: string, suffix: string): Promise<string[]> {
+	const paths: string[] = [];
+	for (const entry of await readdir(root, { withFileTypes: true })) {
+		const path = join(root, entry.name);
+		if (entry.isDirectory() && !SKIPPED_DIRECTORIES.has(entry.name)) {
+			paths.push(...(await filesUnder(path, suffix)));
+		} else if (entry.isFile() && entry.name.endsWith(suffix)) {
+			paths.push(path);
+		}
+	}
+	return paths;
+}
+
 async function sourceFiles(): Promise<SourceFile[]> {
-	const process = Bun.spawn(["rg", "--files", "apps", "packages", "examples", "-g", "*.ts"], {
-		stdout: "pipe",
-	});
-	const [output, exitCode] = await Promise.all([
-		new Response(process.stdout).text(),
-		process.exited,
-	]);
-	if (exitCode !== 0) throw new Error("could not enumerate TypeScript source files");
+	const paths = (
+		await Promise.all(["apps", "packages", "examples"].map((root) => filesUnder(root, ".ts")))
+	).flat();
 	return await Promise.all(
-		output
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map(async (path) => ({ path, text: await Bun.file(path).text() })),
+		paths.map(async (path) => ({ path, text: await Bun.file(path).text() })),
 	);
 }
 
 async function projectBoundaries(): Promise<ProjectBoundary[]> {
-	const process = Bun.spawn(["rg", "--files", "apps", "packages", "-g", "package.json"], {
-		stdout: "pipe",
-	});
-	const [output, exitCode] = await Promise.all([
-		new Response(process.stdout).text(),
-		process.exited,
-	]);
-	if (exitCode !== 0) throw new Error("could not enumerate project manifests");
+	const paths = (
+		await Promise.all(["apps", "packages"].map((root) => filesUnder(root, "package.json")))
+	).flat();
 	return await Promise.all(
-		output
-			.trim()
-			.split("\n")
-			.filter(Boolean)
-			.map(async (path) => {
-				const manifest = (await Bun.file(path).json()) as {
-					name: string;
-					nx?: { tags?: string[] };
-					dependencies?: Record<string, string>;
-				};
-				return {
-					path,
-					name: manifest.name,
-					tags: manifest.nx?.tags ?? [],
-					dependencies: Object.keys(manifest.dependencies ?? {}),
-				};
-			}),
+		paths.map(async (path) => {
+			const manifest = (await Bun.file(path).json()) as {
+				name: string;
+				nx?: { tags?: string[] };
+				dependencies?: Record<string, string>;
+			};
+			return {
+				path,
+				name: manifest.name,
+				tags: manifest.nx?.tags ?? [],
+				dependencies: Object.keys(manifest.dependencies ?? {}),
+			};
+		}),
 	);
 }
 

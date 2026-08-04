@@ -1,5 +1,24 @@
 import { expect, test } from "bun:test";
+import { join } from "node:path";
 import { boundaryViolations, projectBoundaryViolations } from "./check-boundaries";
+
+test("runs without external file discovery tools", async () => {
+	const child = Bun.spawn([process.execPath, join(import.meta.dir, "check-boundaries.ts")], {
+		cwd: join(import.meta.dir, ".."),
+		env: { ...process.env, PATH: "" },
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(child.stdout).text(),
+		new Response(child.stderr).text(),
+		child.exited,
+	]);
+
+	expect(stderr).toBe("");
+	expect(exitCode).toBe(0);
+	expect(stdout).toContain("Package boundaries are valid.");
+});
 
 test("reports deep source imports and production testkit dependencies", () => {
 	expect(
