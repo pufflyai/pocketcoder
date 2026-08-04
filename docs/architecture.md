@@ -242,15 +242,27 @@ per-connection monotonic sequence numbers; the newest accepted connection
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 `log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
 `checkpoint_status`, `restore_status`, `output_published`,
-`conversation_message`.
+`conversation_message`, `attachment_ack`, `attachment_result`,
+`attachment_resolved`.
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
-`shutdown`, `prepare_checkpoint`.
+`shutdown`, `prepare_checkpoint`, `attachment_start`, `attachment_chunk`,
+`attachment_finish`, `attachment_abort`, `attachment_resolve`.
 
-Protocol v3 adds a separate, narrowly scoped pool-enrollment socket for optional
-task-agnostic warm runtimes. Its only server message is a one-shot workspace
-assignment after an atomic durable claim; the runtime then uses the existing
-workspace registration protocol. There is no reusable worker lease, arbitrary
-command execution, shell stream, tunnel, or file API. The relay forwards only
+Workspace protocol v3 adds the attachment frames: caller files stream to the
+supervisor one acknowledged, bounded chunk at a time and land under
+`$HOME/.pcd/attachments` via same-directory temporary files and atomic
+renames; ID resolution feeds the generated message manifest. Servers accept
+v1–v3 supervisors, so rollout is server-first — connected v1/v2 supervisors
+keep text-only relay and attachment requests fail with
+`attachment.unsupported` until the workspace image updates.
+
+A separate, narrowly scoped pool-enrollment socket (its own version axis)
+serves optional task-agnostic warm runtimes. Its only server message is a
+one-shot workspace assignment after an atomic durable claim; the runtime then
+uses the existing workspace registration protocol. There is no reusable
+worker lease, arbitrary command execution, shell stream, or tunnel; file
+transfer exists only as the bounded attachment upload into supervisor-owned
+storage — there is no general file API. The relay forwards only
 template-declared loopback routes with exact method/path/query/size/deadline
 checks.
 

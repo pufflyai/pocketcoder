@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +66,76 @@ Bun.serve({
   },
 });
 `;
+
+// Uploads an attachment through the streaming API: the real supervisor
+// stores it under $HOME/.pcd/attachments, an identical retry is idempotent,
+// and a message referencing the ID reaches the harness with the generated
+// manifest and no attachment_ids.
+async function verifyAttachmentFlow(
+	baseUrl: string,
+	workspaceId: string,
+	authHeaders: Record<string, string>,
+	home: string,
+): Promise<void> {
+	const attachmentId = randomUUID();
+	const payload = "attachment payload for e2e";
+	const uploadInit = {
+		method: "PUT",
+		headers: {
+			authorization: authHeaders.authorization as string,
+			"content-type": "text/plain",
+			"content-disposition": 'attachment; filename="notes.txt"',
+			"content-length": String(payload.length),
+		},
+		body: payload,
+	};
+	const uploadUrl = `${baseUrl}/v1/workspaces/${workspaceId}/attachments/${attachmentId}`;
+	const uploaded = await fetch(uploadUrl, uploadInit);
+	expect(uploaded.status).toBe(201);
+	const descriptor = (await uploaded.json()) as { path: string; sha256: string };
+	expect(descriptor.path).toBe(join(home, ".pcd", "attachments", attachmentId, "notes.txt"));
+	expect(await Bun.file(descriptor.path).text()).toBe(payload);
+
+	const retried = await fetch(uploadUrl, uploadInit);
+	expect(retried.status).toBe(200);
+	expect(((await retried.json()) as { sha256: string }).sha256).toBe(descriptor.sha256);
+
+	const attached = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/agent/message`, {
+		method: "POST",
+		headers: authHeaders,
+		body: JSON.stringify({
+			type: "user",
+			content: "read the attachment",
+			attachment_ids: [attachmentId],
+		}),
+	});
+	expect(attached.status).toBe(200);
+	const manifestMessage = await waitFor(
+		async () => {
+			const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/services/agent/messages`, {
+				headers: authHeaders,
+			});
+			if (!res.ok) return null;
+			const body = (await res.json()) as { messages: Array<{ content: string }> };
+			return body.messages.find((m) => m.content.includes("<pocketcoder-attachments>"));
+		},
+		10_000,
+		"manifest-bearing message",
+	);
+	expect(manifestMessage.content).toContain(descriptor.path);
+	expect(manifestMessage.content).not.toContain("attachment_ids");
+	await waitFor(
+		async () => {
+			const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/conversation`, {
+				headers: authHeaders,
+			});
+			if (!res.ok) return null;
+			return ((await res.json()) as { items: unknown[] }).items.length >= 4;
+		},
+		10_000,
+		"attachment turn in the durable conversation",
+	);
+}
 
 async function waitFor<T>(
 	fn: () => Promise<T | null | undefined | false>,
@@ -181,7 +252,13 @@ describe("end-to-end workspace lifecycle", () => {
 			expect(input).toBeDefined();
 
 			// 3. Start the real supervisor with the provider input, pointed
-			// at the real WSS endpoint.
+			// at the real WSS endpoint. HOME points at the test directory so
+			// supervisor-owned attachment storage stays inside the sandbox.
+			const originalHome = process.env.HOME;
+			process.env.HOME = dir;
+			cleanups.push(() => {
+				process.env.HOME = originalHome;
+			});
 			const inputPath = join(dir, "input.json");
 			await writeFile(inputPath, JSON.stringify({ ...input, server_url: baseUrl }));
 			const supervisorDone = supervise(inputPath);
@@ -244,6 +321,9 @@ describe("end-to-end workspace lifecycle", () => {
 			]);
 			expect(conversation.map(({ seq }) => seq)).toEqual([1, 2]);
 
+			// 5b. Attachments flow end-to-end through the real supervisor.
+			await verifyAttachmentFlow(baseUrl, ws.id, authHeaders, dir);
+
 			// 6. Undeclared routes stay rejected even on a live workspace.
 			const forbidden = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/admin`, {
 				headers: authHeaders,
@@ -272,7 +352,7 @@ describe("end-to-end workspace lifecycle", () => {
 			});
 			expect(retainedRes.status).toBe(200);
 			const retained = (await retainedRes.json()) as { items: unknown[] };
-			expect(retained.items).toHaveLength(2);
+			expect(retained.items).toHaveLength(4);
 
 			// 8. Outbox recorded the full lifecycle.
 			const events = await store.claimDueEvents(new Date(), 100);

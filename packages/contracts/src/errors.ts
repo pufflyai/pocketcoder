@@ -43,6 +43,12 @@ export const ERROR_CODES = {
 	"relay.route_not_allowed": 422,
 	"relay.deadline_exceeded": 504,
 	"relay.upstream_error": 502,
+	"attachment.invalid": 400,
+	"attachment.too_large": 413,
+	"attachment.not_found": 404,
+	"attachment.conflict": 409,
+	"attachment.unsupported": 409,
+	"attachment.interrupted": 503,
 	"internal.error": 500,
 } as const;
 

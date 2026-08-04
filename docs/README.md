@@ -25,7 +25,7 @@ API drives the whole lifecycle.
 POCKETCODER_STORE=memory bun run pcd -- server start --foreground
 
 # 2. Operators manage principals/keys/templates with pcd
-pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,templates:read,logs:read --templates '*'
+pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,attachments:write,templates:read,logs:read --templates '*'
 pcd keys issue --principal my-backend --expires never   # shown once
 
 # 3. Callers (your backend, or the CLI) drive workspaces

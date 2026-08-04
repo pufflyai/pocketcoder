@@ -165,14 +165,18 @@ export class RemoteAgentClient {
 		return { cursor: body.cursor, agentState: body.workspace.agent_state };
 	}
 
-	async send(prompt: string, signal?: AbortSignal): Promise<string> {
+	async send(prompt: string, signal?: AbortSignal, attachmentIds: string[] = []): Promise<string> {
 		const before = await this.messages(signal);
 		const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
 		const baselineChange = await this.workspaceChange(0, 0, signal);
 		let changeCursor = baselineChange?.cursor ?? 0;
 		const response = await this.request("/message", {
 			method: "POST",
-			body: JSON.stringify({ content: prompt, type: "user" }),
+			body: JSON.stringify({
+				content: prompt,
+				type: "user",
+				...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
+			}),
 			signal,
 		});
 		if (!response.ok) {

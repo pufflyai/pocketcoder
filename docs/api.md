@@ -199,6 +199,74 @@ inbound network path to a workspace and no generic forwarding.
 
 Relay activity counts as workspace activity for the idle timeout.
 
+## Workspace attachments
+
+```text
+PUT /v1/workspaces/{id}/attachments/{attachment_id}   scope attachments:write
+```
+
+Streams a caller-selected file into supervisor-owned storage at
+`$HOME/.pcd/attachments/{attachment_id}/{name}` inside the workspace. The
+attachment ID is a caller-generated UUID and the idempotency key: a retry
+with identical bytes returns `200` with the existing descriptor, different
+bytes return `409 attachment.conflict`, and a new upload returns `201`.
+
+- Body: the raw file bytes, streamed in bounded acknowledged chunks over the
+  supervisor connection — never through a declared service route.
+- `Content-Disposition` (required): `attachment; filename="report.pdf"`; the
+  RFC 5987 `filename*=UTF-8''…` form is supported for non-ASCII names.
+- `Content-Length` (required): the exact byte count, at most 25 MiB
+  (zero-byte files are valid).
+- `Content-Type` (optional): the stored media type, defaulting to
+  `application/octet-stream`.
+
+```json
+{
+  "id": "c459d3dd-a9fb-439b-a090-ab849b089bca",
+  "name": "report.pdf",
+  "path": "/home/pocketcoder/.pcd/attachments/c459d3dd-…/report.pdf",
+  "media_type": "application/pdf",
+  "size_bytes": 42137,
+  "sha256": "…64 hex characters…"
+}
+```
+
+The supervisor sanitizes the filename, writes through a same-directory
+temporary file, verifies length and digest, and atomically exposes the
+completed file with `0700`/`0600` modes. The control plane persists neither
+bytes nor attachment metadata; the workspace filesystem is the only store,
+so attachments follow the workspace lifecycle and survive checkpoints only
+when a declared persistence mount contains `$HOME/.pcd`.
+
+Both AgentAPI message aliases accept an optional `attachment_ids` array
+(1–10 unique UUIDs, at most 100 MiB of resolved content):
+
+```json
+{ "type": "user", "content": "Summarize this.", "attachment_ids": ["…"] }
+```
+
+The server resolves every ID through the connected supervisor, removes
+`attachment_ids`, and appends a generated `<pocketcoder-attachments>` JSON
+block to the content carrying each file's `name`, `path`, `media_type`,
+`size_bytes`, and `sha256`. Any resolution failure rejects the whole message
+and AgentAPI receives nothing; messages without `attachment_ids` are relayed
+byte-identical. Generic custom services never resolve IDs — pass the
+descriptor's `path` through the service's own documented request format.
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 400 | `attachment.invalid` | Bad UUID, headers, filename, media type, length, or id list |
+| 404 | `attachment.not_found` | An ID cannot be resolved in this workspace |
+| 409 | `attachment.conflict` | The ID exists with different bytes or metadata |
+| 409 | `attachment.unsupported` | The connected supervisor predates workspace protocol v3 |
+| 413 | `attachment.too_large` | File over 25 MiB, or a message referencing over 100 MiB |
+| 503 | `attachment.interrupted` | The transfer aborted before atomic completion |
+
+Workspace gates match the relay (`workspace.not_ready`, `workspace.terminal`,
+`workspace.disconnected`), and attachment activity counts as workspace
+activity for the idle timeout. Existing machine keys do not gain
+`attachments:write` automatically; operators grant it explicitly.
+
 ## Attach, checkpoints, and restore
 
 Attach is ordinary use of the existing workspace and allowlisted relay; it

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
+import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
 import { serverOutput } from "./process-output";
@@ -257,7 +258,7 @@ try {
 			"--name",
 			`example-${runId}`,
 			"--scopes",
-			"templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read,conversations:read",
+			LOCAL_PI_PRINCIPAL_SCOPES.join(","),
 			"--templates",
 			"*",
 		],

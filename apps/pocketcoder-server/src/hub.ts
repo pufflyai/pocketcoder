@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
+	type AttachmentAck,
+	type AttachmentResolved,
+	type AttachmentResult,
 	PROTOCOL_VERSION,
 	type ProtocolVersion,
 	type ProxyRequest,
@@ -24,6 +27,7 @@ export interface LiveConnection {
 	registered: boolean;
 	protocolVersion: ProtocolVersion;
 	checkpoints: Map<string, PendingCheckpoint>;
+	attachments: Map<string, AttachmentChannel>;
 }
 
 interface PendingRelay {
@@ -34,6 +38,19 @@ interface PendingRelay {
 interface PendingCheckpoint {
 	resolve: (quiesced: boolean) => void;
 	timer: ReturnType<typeof setTimeout>;
+}
+
+export type AttachmentEvent =
+	| { kind: "ack"; payload: AttachmentAck }
+	| { kind: "result"; payload: AttachmentResult }
+	| { kind: "resolved"; payload: AttachmentResolved };
+
+// One channel per attachment operation: events queue until the single
+// in-flight awaiter consumes them, so a supervisor reply can never race a
+// not-yet-registered waiter.
+interface AttachmentChannel {
+	queue: AttachmentEvent[];
+	waiter: ((event: AttachmentEvent | null) => void) | null;
 }
 
 export const MAX_INFLIGHT_RELAY = 16;
@@ -69,6 +86,7 @@ export class Hub implements ConnectionHub {
 			registered: false,
 			protocolVersion,
 			checkpoints: new Map(),
+			attachments: new Map(),
 		};
 		this.byWorkspace.set(workspaceId, conn);
 		return conn;
@@ -184,6 +202,54 @@ export class Hub implements ConnectionHub {
 		});
 	}
 
+	openAttachment(conn: LiveConnection, operationId: string): void {
+		conn.attachments.set(operationId, { queue: [], waiter: null });
+	}
+
+	closeAttachment(conn: LiveConnection, operationId: string): void {
+		const channel = conn.attachments.get(operationId);
+		if (!channel) return;
+		conn.attachments.delete(operationId);
+		channel.waiter?.(null);
+	}
+
+	// Delivers a supervisor attachment reply; ignores stale epochs and
+	// operations the server is no longer waiting on.
+	pushAttachment(conn: LiveConnection, event: AttachmentEvent): void {
+		if (this.byWorkspace.get(conn.workspaceId) !== conn) return;
+		const channel = conn.attachments.get(event.payload.operation_id);
+		if (!channel) return;
+		if (channel.waiter) {
+			const waiter = channel.waiter;
+			channel.waiter = null;
+			waiter(event);
+			return;
+		}
+		channel.queue.push(event);
+	}
+
+	nextAttachment(
+		conn: LiveConnection,
+		operationId: string,
+		timeoutMs: number,
+	): Promise<AttachmentEvent | null> {
+		const channel = conn.attachments.get(operationId);
+		if (!channel) return Promise.resolve(null);
+		const queued = channel.queue.shift();
+		if (queued) return Promise.resolve(queued);
+		return new Promise((resolve) => {
+			const timer = setTimeout(() => {
+				if (channel.waiter === waiter) channel.waiter = null;
+				resolve(null);
+			}, timeoutMs);
+			const waiter = (event: AttachmentEvent | null) => {
+				clearTimeout(timer);
+				resolve(event);
+			};
+			channel.waiter = waiter;
+		});
+	}
+
 	// Resolves a pending relay; ignores responses from stale epochs or after
 	// the deadline already fired.
 	resolveRelay(conn: LiveConnection, response: ProxyResponse): void {
@@ -207,5 +273,9 @@ export class Hub implements ConnectionHub {
 			pending.resolve(false);
 		}
 		conn.checkpoints.clear();
+		for (const channel of conn.attachments.values()) {
+			channel.waiter?.(null);
+		}
+		conn.attachments.clear();
 	}
 }

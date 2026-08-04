@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { splitAttachmentManifest } from "@pstdio/pocketcoder-client";
 
 export const HISTORY_ENTRY_TYPE = "pocketcoder-conversation";
 export const NOTICE_ENTRY_TYPE = "pocketcoder-history-notice";
@@ -30,6 +31,18 @@ function roleHeader(data: ConversationEntryData, theme: ThemeLike): string {
 	return theme.fg("muted", `${data.role} · ${time}`);
 }
 
+// User messages may end in the generated attachment manifest; history shows
+// the attachment names instead of the raw markup and managed paths.
+function userBody(content: string, theme: ThemeLike): string {
+	const { text, attachments } = splitAttachmentManifest(content);
+	const body = theme.fg("userMessageText", text);
+	if (!attachments) return body;
+	const list = attachments
+		.map((attachment) => theme.fg("muted", `⌁ ${attachment.name} (${attachment.size_bytes} bytes)`))
+		.join("\n");
+	return `${body}\n${list}`;
+}
+
 export function formatConversationMessage(data: ConversationEntryData, theme: ThemeLike): string {
 	switch (data.kind ?? "text") {
 		// Future typed kinds (tool_use, permission_request, ...) become new cases;
@@ -38,7 +51,7 @@ export function formatConversationMessage(data: ConversationEntryData, theme: Th
 			const header = roleHeader(data, theme);
 			const body =
 				data.role === "user"
-					? theme.fg("userMessageText", data.content)
+					? userBody(data.content, theme)
 					: data.role === "assistant"
 						? data.content
 						: theme.fg("dim", data.content);

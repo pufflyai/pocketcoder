@@ -36,7 +36,10 @@ Environment variables:
 
 *Not required when `POCKETCODER_AGENTAPI_URL` is set.
 
-The machine key needs scopes `workspaces:read`, `services:relay`, and `conversations:read`. The in-UI create and cancel commands additionally use `templates:read`, `workspaces:create`, and `workspaces:cancel`; they degrade gracefully when the key lacks them.
+The machine key needs scopes `workspaces:read`, `services:relay`, and
+`conversations:read`. File attachments additionally require `attachments:write`.
+The in-UI create and cancel commands use `templates:read`, `workspaces:create`,
+and `workspaces:cancel`; they degrade gracefully when the key lacks them.
 
 ## Using your own Pi install
 
@@ -77,6 +80,21 @@ under a different Pi version is untested.
 - `/workspace` — pick and switch to another ready workspace (replays its history)
 - `/workspace-create` — pick a template, create a workspace, wait for ready, switch to it
 - `/workspace-cancel` — cancel the current workspace (with confirmation)
+- `/attach <path>` — queue a local file to upload with the next message
+
+## File attachments
+
+Three gestures turn local files into workspace files, all uploaded through
+the PocketCoder attachment API when the turn is sent:
+
+- paste or drop an image (stored as `pasted-image.<ext>`),
+- mention a file as `@./report.pdf` (or `@"my report.pdf"` for spaces),
+- queue one explicitly with `/attach <path>`.
+
+The agent receives each file's workspace path under `$HOME/.pcd/attachments`.
+If an upload fails the message is not sent. With a direct AgentAPI URL
+(`POCKETCODER_AGENTAPI_URL`) managed uploads are unavailable — attachment
+gestures fail with an explanation while plain text keeps working.
 
 ## Behavior notes
 
