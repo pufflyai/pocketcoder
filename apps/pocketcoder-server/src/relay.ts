@@ -79,7 +79,16 @@ function safeResponseHeaders(response: RelayResponse): Headers {
 
 export function relayHandler(
 	deps: RelayDeps,
-	options?: { service?: string; pathPrefix?: (workspaceId: string) => string },
+	options?: {
+		service?: string;
+		pathPrefix?: (workspaceId: string) => string;
+		// Rewrites the base64 request body after route gates and the size cap
+		// (used by the attachment-aware AgentAPI message aliases).
+		transformBodyB64?: (
+			c: Context<AppEnv>,
+			bodyB64: string | undefined,
+		) => Promise<string | undefined>;
+	},
 ) {
 	return async (c: Context<AppEnv>): Promise<Response> => {
 		const principal = c.get("principal");
@@ -104,7 +113,8 @@ export function relayHandler(
 			);
 		}
 		const query = allowedQuery(c.req.url, match.route.query);
-		const bodyB64 = await requestBody(c, method, match.route.maxRequestBytes);
+		let bodyB64 = await requestBody(c, method, match.route.maxRequestBytes);
+		if (options?.transformBodyB64) bodyB64 = await options.transformBodyB64(c, bodyB64);
 
 		if (!deps.hub.isConnected(id)) {
 			throw new ApiError(

@@ -84,6 +84,11 @@ function attachOptions(command: Argv) {
 	return idOption(command)
 		.option("after", { type: "string" })
 		.option("message", { type: "string" })
+		.option("file", {
+			type: "string",
+			array: true,
+			description: "Local file to upload as an attachment (repeatable, requires --message)",
+		})
 		.option("json", { type: "boolean" });
 }
 

@@ -1,4 +1,12 @@
 export { AdministrationApi } from "./admin";
+export {
+	AgentApi,
+	type AgentMessageInput,
+	type AttachmentDescriptor,
+	AttachmentsApi,
+	type AttachmentUploadInput,
+	splitAttachmentManifest,
+} from "./attachments";
 export { CheckpointsApi, OperationsApi } from "./checkpoints";
 export { PocketCoderClient } from "./client";
 export type { CursorListQuery, Page } from "./common";

@@ -110,7 +110,8 @@ pcd workspaces get --id <uuid>
 pcd workspaces logs --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces network-events --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces cancel --id <uuid>
-pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
+pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] \
+  [--file <path>]... [--json]
 pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \
   [--poll-interval-ms 500] [--response-timeout-seconds 600] [--cancel-on-exit]
 pcd workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
@@ -132,8 +133,16 @@ pcd workspaces outputs --id <uuid>
 - `cancel` is idempotent and never creates a replacement workspace.
 - `attach` stores only a message cursor in the local state directory (mode
   `0600`); it never stores a supervisor/reconnect credential.
+- `attach --file` uploads each local file to the workspace attachment API
+  (requires the `attachments:write` scope and `--message`) and sends their
+  IDs with the turn; the agent receives the files' workspace paths. A failed
+  upload aborts before any message is sent.
 - `chat` uses the same allowlisted AgentAPI message routes for repeated turns.
   Ctrl-C/EOF detaches without canceling unless `--cancel-on-exit` is supplied.
+- Inside `chat`, `/attach <path>` queues a local file, `/attachments` lists
+  the queue, and `/detach <index|all>` removes entries. Queued files upload
+  with the next non-command message; if an upload fails the message is not
+  sent and the queue is kept.
 - `preserve` ends the source execution. `restore` and `recreate` always create
   a new execution and accept a caller-chosen external ID.
 

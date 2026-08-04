@@ -245,6 +245,11 @@ Unbound providers contain only template identity and a single-use pool enrollmen
   against provider objects at startup.
 - **Rotation**: issue a new machine key, switch the caller, revoke the old
   one; old and new overlap safely.
+- **Protocol upgrades are server-first**: the server accepts workspace
+  protocol v1–v3, so deploy it before rolling new workspace images.
+  Connected older supervisors keep text-only relay; attachment requests to
+  them return `attachment.unsupported` until their image carries the v3
+  supervisor.
 - **Secrets**: never put provider/LLM credentials in templates or launch
   input. An LLM gateway (e.g. agentgateway) should remain the only credential
   boundary; env names that look like secrets are rejected unless they are

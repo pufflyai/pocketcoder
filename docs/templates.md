@@ -120,6 +120,10 @@ PVC name, or backend. Mounts must be normalized, non-overlapping, outside
 `/run/pocketcoder`, `/proc`, `/sys`, and `/dev`, and must not overlap tmpfs
 paths.
 
+Uploaded attachments live under `$HOME/.pcd/attachments` and are ephemeral by
+default: they persist across preserve/restore only when a declared mount
+contains the workspace user's `$HOME/.pcd` directory.
+
 ```json
 {
   "persistence": {

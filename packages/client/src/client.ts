@@ -1,4 +1,5 @@
 import { AdministrationApi } from "./admin";
+import { AgentApi, AttachmentsApi } from "./attachments";
 import { CheckpointsApi, OperationsApi } from "./checkpoints";
 import { ConversationsApi } from "./conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
@@ -10,6 +11,8 @@ export class PocketCoderClient {
 	private readonly transport: PocketCoderTransport;
 	readonly templates: TemplatesApi;
 	readonly workspaces: WorkspacesApi;
+	readonly attachments: AttachmentsApi;
+	readonly agent: AgentApi;
 	readonly conversations: ConversationsApi;
 	readonly checkpoints: CheckpointsApi;
 	readonly operations: OperationsApi;
@@ -22,6 +25,8 @@ export class PocketCoderClient {
 		this.transport = new PocketCoderTransport(config, fetchImpl);
 		this.templates = new TemplatesApi(this.transport);
 		this.workspaces = new WorkspacesApi(this.transport);
+		this.attachments = new AttachmentsApi(this.transport);
+		this.agent = new AgentApi(this.transport);
 		this.conversations = new ConversationsApi(this.transport);
 		this.checkpoints = new CheckpointsApi(this.transport);
 		this.operations = new OperationsApi(this.transport);

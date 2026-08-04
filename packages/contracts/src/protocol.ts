@@ -1,4 +1,14 @@
 import { z } from "zod";
+import {
+	AttachmentAbortPayload,
+	AttachmentAckPayload,
+	AttachmentChunkPayload,
+	AttachmentFinishPayload,
+	AttachmentResolvedPayload,
+	AttachmentResolvePayload,
+	AttachmentResultPayload,
+	AttachmentStartPayload,
+} from "./attachment";
 import { ConversationMessageInputSchema } from "./conversation";
 import {
 	CONVERSATION_RESTORE_CAPABILITIES,
@@ -9,12 +19,17 @@ import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from ".
 
 // The pocketcoder-agent supervisor protocol: JSON text frames over one
 // outbound WSS connection per workspace. There is no worker lease, arbitrary
-// command execution, shell stream, tunnel, or file API in this protocol.
+// command execution, shell stream, or tunnel in this protocol. File transfer
+// exists only as the bounded v3 attachment upload into supervisor-owned
+// storage; there is no general file API.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
+// Pool enrollment is a separate header/connection contract; its version
+// number coinciding with a workspace protocol version carries no meaning.
 export const POOL_PROTOCOL_VERSION = 3;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, PROTOCOL_VERSION] as const;
+export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -28,7 +43,7 @@ export const HEADER_POOL_RUNTIME = "x-pocketcoder-pool-runtime";
 export const HEADER_POOL_ENROLLMENT = "x-pocketcoder-pool-enrollment";
 
 const EnvelopeBase = z.object({
-	v: z.union([z.literal(LEGACY_PROTOCOL_VERSION), z.literal(PROTOCOL_VERSION)]),
+	v: z.union([z.literal(LEGACY_PROTOCOL_VERSION), z.literal(2), z.literal(PROTOCOL_VERSION)]),
 	workspace_id: z.uuid(),
 	connection_id: z.uuid(),
 	seq: z.number().int().nonnegative(),
@@ -136,6 +151,12 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({
 		type: z.literal("conversation_message"),
 		payload: ConversationMessagePayload,
+	}),
+	EnvelopeBase.extend({ type: z.literal("attachment_ack"), payload: AttachmentAckPayload }),
+	EnvelopeBase.extend({ type: z.literal("attachment_result"), payload: AttachmentResultPayload }),
+	EnvelopeBase.extend({
+		type: z.literal("attachment_resolved"),
+		payload: AttachmentResolvedPayload,
 	}),
 ]);
 
@@ -249,6 +270,14 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({
 		type: z.literal("prepare_checkpoint"),
 		payload: PrepareCheckpointPayload,
+	}),
+	EnvelopeBase.extend({ type: z.literal("attachment_start"), payload: AttachmentStartPayload }),
+	EnvelopeBase.extend({ type: z.literal("attachment_chunk"), payload: AttachmentChunkPayload }),
+	EnvelopeBase.extend({ type: z.literal("attachment_finish"), payload: AttachmentFinishPayload }),
+	EnvelopeBase.extend({ type: z.literal("attachment_abort"), payload: AttachmentAbortPayload }),
+	EnvelopeBase.extend({
+		type: z.literal("attachment_resolve"),
+		payload: AttachmentResolvePayload,
 	}),
 ]);
 

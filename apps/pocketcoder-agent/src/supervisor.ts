@@ -7,6 +7,7 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import { AgentConnection } from "./agent-connection";
 import { AgentHealthMonitor } from "./agent-health";
+import { AttachmentManager } from "./attachments";
 import { prepareCheckpoint } from "./checkpoint-coordinator";
 import { waitForPoolLease } from "./pool-lease";
 import { relayProxyRequest } from "./proxy-relay";
@@ -58,6 +59,7 @@ class Supervisor {
 	private readonly connection: AgentConnection;
 	private readonly logs: SupervisorLogs;
 	private readonly healthMonitor: AgentHealthMonitor;
+	private readonly attachments: AttachmentManager;
 	private exec: ExecSpec | null = null;
 	private child: ReturnType<typeof Bun.spawn> | null = null;
 	private childPhase: ChildPhase = "starting";
@@ -79,6 +81,7 @@ class Supervisor {
 			isStopped: () => this.shuttingDown || this.childExit !== null,
 		});
 		this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+		this.attachments = new AttachmentManager(this.sendFrame.bind(this));
 		this.healthMonitor = new AgentHealthMonitor({
 			exec: () => this.exec,
 			childPhase: () => this.childPhase,
@@ -193,6 +196,7 @@ class Supervisor {
 				if (!this.exec) {
 					this.exec = frame.payload.exec;
 					this.execReady();
+					void this.attachments.cleanupStartup().catch(() => {});
 				}
 				return;
 			}
@@ -219,6 +223,21 @@ class Supervisor {
 				await this.gracefulShutdown();
 				return;
 			}
+			case "attachment_start":
+				await this.attachments.handleStart(frame.payload);
+				return;
+			case "attachment_chunk":
+				await this.attachments.handleChunk(frame.payload);
+				return;
+			case "attachment_finish":
+				await this.attachments.handleFinish(frame.payload);
+				return;
+			case "attachment_abort":
+				await this.attachments.handleAbort(frame.payload);
+				return;
+			case "attachment_resolve":
+				await this.attachments.handleResolve(frame.payload);
+				return;
 			case "prepare_checkpoint": {
 				await prepareCheckpoint(frame.payload.operation_id, frame.payload.deadline_ms, {
 					exec: () => this.exec,

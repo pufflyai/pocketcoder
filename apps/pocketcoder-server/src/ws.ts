@@ -413,6 +413,15 @@ async function handleConnectedFrame(
 		case "checkpoint_status":
 			deps.hub.resolveCheckpoint(connection, frame.payload.operation_id, frame.payload.phase);
 			return;
+		case "attachment_ack":
+			deps.hub.pushAttachment(connection, { kind: "ack", payload: frame.payload });
+			return;
+		case "attachment_result":
+			deps.hub.pushAttachment(connection, { kind: "result", payload: frame.payload });
+			return;
+		case "attachment_resolved":
+			deps.hub.pushAttachment(connection, { kind: "resolved", payload: frame.payload });
+			return;
 		case "output_published":
 			await deps.persistence?.publishOutput(
 				frame.workspace_id,

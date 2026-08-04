@@ -7,6 +7,13 @@ import {
 	type Model,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	collectTurnFiles,
+	DIRECT_MODE_ATTACHMENT_ERROR,
+	registerAttachCommand,
+	uploadTurnFiles,
+	userTextOf,
+} from "./attachments";
 import { RemoteAgentClient } from "./client";
 import { registerWorkspaceCommands } from "./commands";
 import { ControlPlaneClient } from "./control-plane";
@@ -17,16 +24,6 @@ import { STATUS_KEY, StatusPoller } from "./status";
 
 const PROVIDER = "pocketcoder-agentapi";
 const MODEL = "remote-agent";
-
-function userText(context: Context): string {
-	const message = context.messages.findLast((candidate) => candidate.role === "user");
-	if (message?.role !== "user") throw new Error("local Pi did not provide a user message");
-	if (typeof message.content === "string") return message.content;
-	return message.content
-		.filter((part) => part.type === "text")
-		.map((part) => part.text)
-		.join("\n");
-}
 
 function emptyUsage(): AssistantMessage["usage"] {
 	return {
@@ -41,6 +38,8 @@ function emptyUsage(): AssistantMessage["usage"] {
 
 function remoteStream(
 	targets: TargetRef,
+	controlPlane: ControlPlaneClient | undefined,
+	attachmentQueue: string[],
 	model: Model<Api>,
 	context: Context,
 	signal?: AbortSignal,
@@ -64,8 +63,17 @@ function remoteStream(
 			if (target.mode === "unset") {
 				throw new Error("no workspace attached; run /workspace or /workspace-create first");
 			}
+			const files = collectTurnFiles(context, attachmentQueue);
+			if (files.length > 0 && (target.mode !== "relay" || !controlPlane)) {
+				throw new Error(DIRECT_MODE_ATTACHMENT_ERROR);
+			}
+			let attachmentIds: string[] = [];
+			if (files.length > 0 && target.mode === "relay" && controlPlane) {
+				attachmentIds = await uploadTurnFiles(controlPlane, target.workspaceId, files);
+				attachmentQueue.length = 0;
+			}
 			const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key });
-			const reply = await client.send(userText(context), signal);
+			const reply = await client.send(userTextOf(context), signal, attachmentIds);
 			output.content.push({ type: "text", text: reply });
 			stream.push({ type: "text_start", contentIndex: 0, partial: output });
 			stream.push({ type: "text_delta", contentIndex: 0, delta: reply, partial: output });
@@ -116,6 +124,7 @@ export default function (pi: ExtensionAPI): void {
 		initial.mode === "direct"
 			? undefined
 			: new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
+	const attachmentQueue: string[] = [];
 	let poller: StatusPoller | undefined;
 
 	pi.registerProvider(PROVIDER, {
@@ -128,17 +137,18 @@ export default function (pi: ExtensionAPI): void {
 				id: MODEL,
 				name: "PocketCoder remote agent",
 				reasoning: false,
-				input: ["text"],
+				input: ["text", "image"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 1_000_000,
 				maxTokens: 100_000,
 			},
 		],
 		streamSimple: (model, context, options) =>
-			remoteStream(targets, model, context, options?.signal),
+			remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal),
 	});
 
 	registerConversationRenderers(pi);
+	registerAttachCommand(pi, { targets, queue: attachmentQueue });
 	if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
 
 	pi.on("session_start", async (_event, context) => {

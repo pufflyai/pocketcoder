@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileFlags, handleAttachmentCommand, uploadAttachments } from "./workspace-attachments";
 
 export type ChatFlags = Record<string, unknown>;
 export type ApiRequest = (path: string, init?: RequestInit) => Promise<Response>;
@@ -74,11 +75,16 @@ async function sendWorkspaceMessage(
 	id: string,
 	message: unknown,
 	{ api, fail }: WorkspaceChatDeps,
+	attachmentIds: string[] = [],
 ): Promise<void> {
 	if (typeof message !== "string") return;
 	const response = await api(`/v1/workspaces/${id}/agent/message`, {
 		method: "POST",
-		body: JSON.stringify({ content: message, type: "user" }),
+		body: JSON.stringify({
+			content: message,
+			type: "user",
+			...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
+		}),
 	});
 	if (!response.ok) fail(`message failed (${response.status}): ${await response.text()}`);
 }
@@ -91,8 +97,20 @@ function messageCursor(messages: unknown[], after: string): string | number {
 
 export async function attachWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): Promise<void> {
 	const id = need(flags, "id", deps.fail);
+	const files = fileFlags(flags.file);
+	if (files.length > 0 && typeof flags.message !== "string") {
+		deps.fail("--file requires --message so the attachments arrive with a turn");
+	}
 	await assertWorkspaceAttachable(id, deps);
-	await sendWorkspaceMessage(id, flags.message, deps);
+	let attachmentIds: string[] = [];
+	if (files.length > 0) {
+		try {
+			attachmentIds = await uploadAttachments(deps.api, id, files, (line) => console.error(line));
+		} catch (error) {
+			deps.fail(error instanceof Error ? error.message : String(error));
+		}
+	}
+	await sendWorkspaceMessage(id, flags.message, deps, attachmentIds);
 	const file = cursorFile();
 	const cursors = readCursors(file);
 	const after = typeof flags.after === "string" ? flags.after : String(cursors[id] ?? 0);
@@ -314,12 +332,26 @@ export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): 
 	process.once("SIGINT", interrupt);
 	process.once("SIGTERM", interrupt);
 	let readline: ReturnType<typeof createInterface> | null = null;
+	const attachmentQueue: string[] = [];
 	const sendTurn = async (message: string) => {
 		if (!message.trim()) return;
+		let attachmentIds: string[] = [];
+		if (attachmentQueue.length > 0) {
+			try {
+				attachmentIds = await uploadAttachments(deps.api, id, attachmentQueue, (line) =>
+					console.error(line),
+				);
+				attachmentQueue.length = 0;
+			} catch (error) {
+				console.error(error instanceof Error ? error.message : String(error));
+				console.error("message not sent; the attachment queue is unchanged");
+				return;
+			}
+		}
 		const before = await readChatMessages(id, deps);
 		const baseline = messageBaseline(before);
 		advanceCursor(id, cursor, before);
-		await sendWorkspaceMessage(id, message, deps);
+		await sendWorkspaceMessage(id, message, deps, attachmentIds);
 		await pollTurnResponse(
 			id,
 			baseline,
@@ -364,7 +396,9 @@ export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): 
 		if (process.stdin.isTTY) process.stdout.write("pocketcoder> ");
 		for await (const line of readline) {
 			if (interrupted) break;
-			await sendTurn(line);
+			if (!handleAttachmentCommand(line, attachmentQueue, (out) => console.log(out))) {
+				await sendTurn(line);
+			}
 			if (process.stdin.isTTY && !interrupted) process.stdout.write("pocketcoder> ");
 		}
 		if (flags.follow === true && !interrupted) {

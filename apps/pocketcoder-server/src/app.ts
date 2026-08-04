@@ -19,6 +19,7 @@ import {
 } from "@pstdio/pocketcoder-runtime-core";
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
+import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments";
 import { Readiness } from "./health";
 import { Hub } from "./hub";
 import {
@@ -235,22 +236,52 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
 	// --- Templates ---
 
+	// --- Workspace attachments ---
+
+	const relayDeps = { store, hub, service };
+	app.put(
+		"/v1/workspaces/:id/attachments/:attachmentId",
+		requireScope("attachments:write"),
+		attachmentUploadHandler(relayDeps),
+	);
+
 	// --- Workspace service relay ---
 
+	// The AgentAPI message aliases are registered before the wildcard relay
+	// routes so attachment references resolve on both spellings.
+	const messageTransform = agentMessageBodyTransform(relayDeps);
+	app.post(
+		"/v1/workspaces/:id/agent/message",
+		requireScope("services:relay"),
+		relayHandler(relayDeps, {
+			service: "agent",
+			pathPrefix: (id) => `/v1/workspaces/${id}/agent`,
+			transformBodyB64: messageTransform,
+		}),
+	);
+	app.post(
+		"/v1/workspaces/:id/services/agent/message",
+		requireScope("services:relay"),
+		relayHandler(relayDeps, {
+			service: "agent",
+			pathPrefix: (id) => `/v1/workspaces/${id}/services/agent`,
+			transformBodyB64: messageTransform,
+		}),
+	);
 	app.on(
 		["GET", "POST", "PUT", "PATCH", "DELETE"],
 		"/v1/workspaces/:id/services/:service/*",
 		requireScope("services:relay"),
-		relayHandler({ store, hub, service }),
+		relayHandler(relayDeps),
 	);
 	app.on(
 		["GET", "POST"],
 		"/v1/workspaces/:id/agent/*",
 		requireScope("services:relay"),
-		relayHandler(
-			{ store, hub, service },
-			{ service: "agent", pathPrefix: (id) => `/v1/workspaces/${id}/agent` },
-		),
+		relayHandler(relayDeps, {
+			service: "agent",
+			pathPrefix: (id) => `/v1/workspaces/${id}/agent`,
+		}),
 	);
 
 	return {
