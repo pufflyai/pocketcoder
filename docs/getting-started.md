@@ -89,7 +89,7 @@ holding **machine keys** with explicit scopes and a template allowlist:
 
 ```sh
 bun run pcd principals create --name my-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,logs:read \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,attachments:write,logs:read \
   --templates '*'
 bun run pcd keys issue --principal my-backend --expires never
 ```

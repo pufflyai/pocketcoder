@@ -65,7 +65,7 @@ export POCKETCODER_DATABASE_SCHEMA=pocketcoder
 export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 
 bun run pcd db migrate
-bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,workspaces:restore,conversations:read,conversations:delete,services:relay,templates:read,logs:read --templates '*'
+bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,workspaces:restore,conversations:read,conversations:delete,services:relay,attachments:write,templates:read,logs:read --templates '*'
 bun run pcd keys issue --principal my-backend --expires never   # shown once
 
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \

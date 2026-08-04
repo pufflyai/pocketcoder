@@ -36,7 +36,10 @@ Environment variables:
 
 *Not required when `POCKETCODER_AGENTAPI_URL` is set.
 
-The machine key needs scopes `workspaces:read`, `services:relay`, and `conversations:read`. The in-UI create and cancel commands additionally use `templates:read`, `workspaces:create`, and `workspaces:cancel`; they degrade gracefully when the key lacks them.
+The machine key needs scopes `workspaces:read`, `services:relay`, and
+`conversations:read`. File attachments additionally require `attachments:write`.
+The in-UI create and cancel commands use `templates:read`, `workspaces:create`,
+and `workspaces:cancel`; they degrade gracefully when the key lacks them.
 
 ## Using your own Pi install
 

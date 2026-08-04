@@ -2,10 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { requireOpenAIKey, resolveLocalPiOptions } from "./options";
+import { LOCAL_PI_PRINCIPAL_SCOPES, requireOpenAIKey, resolveLocalPiOptions } from "./options";
 import { type LocalCommandRunner, preparePiRuntime } from "./runtime";
 
 describe("local Pi operator options", () => {
+	test("grants the local Pi client permission to upload attachments", () => {
+		expect(LOCAL_PI_PRINCIPAL_SCOPES).toContain("attachments:write");
+	});
+
 	test("resolves explicit model and gateway settings without requiring a provider key", () => {
 		const options = resolveLocalPiOptions({
 			argv: ["bun", "prepare.ts", "--template", "pi-harness", "--openai"],

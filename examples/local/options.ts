@@ -1,5 +1,16 @@
 import { resolve } from "node:path";
 
+export const LOCAL_PI_PRINCIPAL_SCOPES = [
+	"templates:read",
+	"workspaces:create",
+	"workspaces:read",
+	"workspaces:cancel",
+	"services:relay",
+	"attachments:write",
+	"logs:read",
+	"conversations:read",
+] as const;
+
 export interface LocalPiOptions {
 	root: string;
 	template: "pi-harness";
