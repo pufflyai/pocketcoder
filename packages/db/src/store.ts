@@ -1,21 +1,28 @@
 // biome-ignore-all lint/style/noExcessiveLinesPerFile: The PostgreSQL Store is one auditable implementation of the shared transactional contract.
 import { randomUUID } from "node:crypto";
 import {
+	AGENT_STATES,
+	CHECKPOINT_STATES,
 	type CheckpointManifest,
 	type CheckpointState,
-	type ConversationRestoreCapability,
+	CONVERSATION_RESTORE_CAPABILITIES,
 	canTransition,
 	isTerminal,
-	type LaunchMode,
+	LAUNCH_MODES,
+	NETWORK_STATES,
+	type NetworkEventInput,
+	OPERATION_KINDS,
+	OPERATION_STATES,
 	type OperationKind,
-	type OperationState,
 	parseDurationMs,
+	REASON_CODES,
 	type ReasonCode,
 	type ResolvedSource,
 	type SourceDescriptor,
-	type StorageState,
+	STORAGE_STATES,
 	type TemplateSnapshot,
 	TemplateSpecSchema,
+	WORKSPACE_STATES,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import {
@@ -25,21 +32,27 @@ import {
 	type ConversationStateRow,
 	type LogRow,
 	type MachineKeyRow,
+	type NetworkEventRow,
+	OperationCapacityExceededError,
 	type OutboxRow,
 	type PrincipalRow,
 	type StateHistoryRow,
 	type Store,
+	TEMPLATE_STATUSES,
 	type TemplateRow,
 	type TemplateStatus,
 	type TemplateUpsert,
 	type TransitionRequest,
 	type UpsertResult,
+	WARM_POOL_RUNTIME_STATES,
 	type WarmPoolClaim,
 	type WarmPoolRuntimePatch,
 	type WarmPoolRuntimeRow,
+	type WorkspaceAdmissionClaim,
 	type WorkspaceCheckpointPatch,
 	type WorkspaceCheckpointRow,
 	type WorkspaceInsert,
+	type WorkspaceInsertResult,
 	type WorkspaceListFilter,
 	type WorkspaceOperationPatch,
 	type WorkspaceOperationRow,
@@ -50,7 +63,7 @@ import {
 	type WorkspaceStorageRow,
 } from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
-import { migrate } from "./migrate";
+import { migrationStatus } from "./migrate";
 import { assertValidSchema } from "./schema";
 
 // PostgreSQL implementation of the Store contract. All identifiers are
@@ -100,14 +113,36 @@ function asJson<T>(value: unknown): T {
 	return value as T;
 }
 
+function asJsonOr<T>(value: unknown, fallback: T): T {
+	return value == null ? fallback : asJson<T>(value);
+}
+
 function asBoolean(value: unknown): boolean {
 	return value === true || value === 1 || value === "true";
+}
+
+function enumValue<const Values extends readonly string[]>(
+	value: unknown,
+	values: Values,
+	field: string,
+): Values[number] {
+	if (typeof value === "string" && values.includes(value)) return value as Values[number];
+	throw new Error(`database row has invalid ${field}`);
+}
+
+function nullableEnumValue<const Values extends readonly string[]>(
+	value: unknown,
+	values: Values,
+	field: string,
+): Values[number] | null {
+	return value == null ? null : enumValue(value, values, field);
 }
 
 export class PostgresStore implements Store {
 	private readonly sql: SQL;
 	private readonly schema: string;
 	private changeWaiters = new Map<string, Set<() => void>>();
+	private coordinatorRelease: (() => Promise<void>) | null = null;
 
 	constructor(databaseUrl: string, schema = "pocketcoder") {
 		this.schema = assertValidSchema(schema);
@@ -119,10 +154,49 @@ export class PostgresStore implements Store {
 	}
 
 	async init(): Promise<void> {
-		await migrate(this.sql, this.schema);
+		const status = await migrationStatus(this.sql, this.schema);
+		const drifted = status.filter((migration) => migration.drifted);
+		if (drifted.length > 0) {
+			throw new Error(
+				`database schema ${this.schema} has migration checksum drift: ${drifted
+					.map((migration) => migration.version)
+					.join(", ")}`,
+			);
+		}
+		const pending = status.filter((migration) => migration.appliedAt === null);
+		if (pending.length > 0) {
+			throw new Error(
+				`database schema ${this.schema} has pending migrations: ${pending
+					.map((migration) => migration.version)
+					.join(", ")}; run pcd db migrate`,
+			);
+		}
+	}
+
+	async acquireCoordinatorLease(): Promise<() => Promise<void>> {
+		if (this.coordinatorRelease) throw new Error("a PocketCoder coordinator is already active");
+		const connection = await this.sql.reserve();
+		const lockName = `${this.schema}:coordinator`;
+		const rows = (await connection.unsafe(
+			"SELECT pg_try_advisory_lock(hashtextextended($1, 7351)) AS acquired",
+			[lockName],
+		)) as Row[];
+		if (!asBoolean(rows[0]?.acquired)) {
+			connection.release();
+			throw new Error(`a PocketCoder coordinator is already active for schema ${this.schema}`);
+		}
+		const release = async () => {
+			if (this.coordinatorRelease !== release) return;
+			await connection.unsafe("SELECT pg_advisory_unlock(hashtextextended($1, 7351))", [lockName]);
+			connection.release();
+			this.coordinatorRelease = null;
+		};
+		this.coordinatorRelease = release;
+		return release;
 	}
 
 	async close(): Promise<void> {
+		await this.coordinatorRelease?.();
 		for (const waiters of this.changeWaiters.values()) {
 			for (const resolve of waiters) resolve();
 		}
@@ -147,7 +221,7 @@ export class PostgresStore implements Store {
 			digest: String(r.digest),
 			description: (r.description as string | null) ?? null,
 			spec: TemplateSpecSchema.parse(asJson(r.spec)),
-			status: r.status as TemplateStatus,
+			status: enumValue(r.status, TEMPLATE_STATUSES, "template status"),
 			createdAt: asDate(r.created_at),
 			retiredAt: asDateOrNull(r.retired_at),
 		};
@@ -231,7 +305,7 @@ export class PostgresStore implements Store {
 			templateDigest: String(r.template_digest),
 			driverKind: String(r.driver_kind),
 			eligibilityFingerprint: String(r.eligibility_fingerprint),
-			state: r.state as WarmPoolRuntimeRow["state"],
+			state: enumValue(r.state, WARM_POOL_RUNTIME_STATES, "warm pool state"),
 			providerRef: r.provider_ref == null ? null : asJson(r.provider_ref),
 			enrollmentDigest: asBytes(r.enrollment_digest),
 			enrollmentExpiresAt: asDateOrNull(r.enrollment_expires_at),
@@ -509,6 +583,8 @@ export class PostgresStore implements Store {
 	// --- Workspaces ---
 
 	private workspaceFromRow(r: Row): WorkspaceRow {
+		const rawSnapshot = asJson<TemplateSnapshot>(r.template_snapshot);
+		const templateSnapshot = { ...rawSnapshot, spec: TemplateSpecSchema.parse(rawSnapshot.spec) };
 		return {
 			id: String(r.id),
 			principalId: String(r.principal_id),
@@ -519,19 +595,29 @@ export class PostgresStore implements Store {
 			templateName: String(r.template_name),
 			templateVersion: String(r.template_version),
 			templateDigest: String(r.template_digest),
-			templateSnapshot: {
-				...asJson<TemplateSnapshot>(r.template_snapshot),
-				spec: TemplateSpecSchema.parse(asJson<TemplateSnapshot>(r.template_snapshot).spec),
-			},
-			state: r.state as WorkspaceState,
-			reasonCode: (r.reason_code as ReasonCode | null) ?? null,
-			agentState: (r.agent_state as WorkspaceRow["agentState"] | null) ?? "unknown",
+			templateSnapshot,
+			state: enumValue(r.state, WORKSPACE_STATES, "workspace state"),
+			reasonCode: nullableEnumValue(r.reason_code, REASON_CODES, "workspace reason code"),
+			agentState:
+				r.agent_state == null
+					? "unknown"
+					: enumValue(r.agent_state, AGENT_STATES, "workspace agent state"),
+			networkState:
+				(r.network_state == null
+					? null
+					: enumValue(r.network_state, NETWORK_STATES, "workspace network state")) ??
+				(templateSnapshot.spec.network.mode === "restricted" ? "starting" : "disabled"),
+			networkEventSeq: Number(r.network_event_seq ?? 0),
 			changeSeq: Number(r.change_seq ?? 1),
 			failureLogTail: (r.failure_log_tail as string | null) ?? null,
 			failureLogTailTruncated: asBoolean(r.failure_log_tail_truncated),
 			failureLastLogSeq: r.failure_last_log_seq == null ? null : Number(r.failure_last_log_seq),
-			terminalIntent: (r.terminal_intent as WorkspaceState | null) ?? null,
-			launchInput: r.launch_input == null ? null : asJson(r.launch_input),
+			terminalIntent: nullableEnumValue(
+				r.terminal_intent,
+				WORKSPACE_STATES,
+				"workspace terminal intent",
+			),
+			launchInput: asJsonOr(r.launch_input, null),
 			providerKind: (r.provider_kind as string | null) ?? null,
 			providerRef: r.provider_ref == null ? null : asJson(r.provider_ref),
 			provisioningMode: (r.provisioning_mode as "cold" | "warm" | null) ?? null,
@@ -552,46 +638,75 @@ export class PostgresStore implements Store {
 			terminalAt: asDateOrNull(r.terminal_at),
 			originWorkspaceId: (r.origin_workspace_id as string | null) ?? null,
 			restoredFromCheckpointId: (r.restored_from_checkpoint_id as string | null) ?? null,
-			sourceDescriptor:
-				r.source_descriptor == null ? null : asJson<SourceDescriptor>(r.source_descriptor),
-			resolvedSource: r.resolved_source == null ? null : asJson<ResolvedSource>(r.resolved_source),
+			sourceDescriptor: asJsonOr<SourceDescriptor | null>(r.source_descriptor, null),
+			resolvedSource: asJsonOr<ResolvedSource | null>(r.resolved_source, null),
 			persistenceCapability:
-				(r.persistence_capability as ConversationRestoreCapability | null) ?? "filesystem_only",
+				r.persistence_capability == null
+					? "filesystem_only"
+					: enumValue(
+							r.persistence_capability,
+							CONVERSATION_RESTORE_CAPABILITIES,
+							"workspace persistence capability",
+						),
 			latestCheckpointId: (r.latest_checkpoint_id as string | null) ?? null,
-			launchMode: (r.launch_mode as LaunchMode | null) ?? "create",
-			outputs: r.outputs == null ? {} : asJson(r.outputs),
+			launchMode:
+				r.launch_mode == null
+					? "create"
+					: enumValue(r.launch_mode, LAUNCH_MODES, "workspace launch mode"),
+			outputs: asJsonOr(r.outputs, {}),
 		};
+	}
+
+	private async workspaceInsertConflictTx(
+		tx: SQL,
+		row: WorkspaceInsert,
+	): Promise<WorkspaceInsertResult | null> {
+		const byKey = (await tx.unsafe(
+			`SELECT * FROM ${this.t("workspaces")}
+			 WHERE principal_id = $1 AND idempotency_key = $2`,
+			[row.principalId, row.idempotencyKey],
+		)) as Row[];
+		if (byKey[0]) {
+			const existing = this.workspaceFromRow(byKey[0]);
+			return existing.requestDigest === row.requestDigest
+				? { kind: "replayed", workspace: existing }
+				: { kind: "conflict", conflict: "idempotency", workspace: existing };
+		}
+		const byExternal = (await tx.unsafe(
+			`SELECT * FROM ${this.t("workspaces")}
+			 WHERE principal_id = $1 AND external_id = $2
+			   AND state NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved')`,
+			[row.principalId, row.externalId],
+		)) as Row[];
+		return byExternal[0]
+			? {
+					kind: "conflict",
+					conflict: "external_id",
+					workspace: this.workspaceFromRow(byExternal[0]),
+				}
+			: null;
+	}
+
+	private async workspaceQueueFullTx(tx: SQL, maximum: number | undefined): Promise<boolean> {
+		if (maximum === undefined) return false;
+		const queued = (await tx.unsafe(
+			`SELECT count(*)::int AS count FROM ${this.t("workspaces")} WHERE state = 'queued'`,
+		)) as Row[];
+		return Number(queued[0]?.count ?? 0) >= maximum;
 	}
 
 	async insertWorkspace(
 		row: WorkspaceInsert,
-	): Promise<{ workspace: WorkspaceRow; created: boolean; conflict: boolean }> {
+		options: { maxQueuedWorkspaces?: number } = {},
+	): Promise<WorkspaceInsertResult> {
 		return await this.sql.begin(async (tx) => {
-			const byKey = (await tx.unsafe(
-				`SELECT * FROM ${this.t("workspaces")}
-				 WHERE principal_id = $1 AND idempotency_key = $2`,
-				[row.principalId, row.idempotencyKey],
-			)) as Row[];
-			if (byKey.length > 0) {
-				const existing = this.workspaceFromRow(byKey[0] as Row);
-				return {
-					workspace: existing,
-					created: false,
-					conflict: existing.requestDigest !== row.requestDigest,
-				};
-			}
-			const byExternal = (await tx.unsafe(
-				`SELECT * FROM ${this.t("workspaces")}
-				 WHERE principal_id = $1 AND external_id = $2
-				   AND state NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved')`,
-				[row.principalId, row.externalId],
-			)) as Row[];
-			if (byExternal.length > 0) {
-				return {
-					workspace: this.workspaceFromRow(byExternal[0] as Row),
-					created: false,
-					conflict: true,
-				};
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7350))", [
+				`${this.schema}:workspace-queue`,
+			]);
+			const conflict = await this.workspaceInsertConflictTx(tx, row);
+			if (conflict) return conflict;
+			if (await this.workspaceQueueFullTx(tx, options.maxQueuedWorkspaces)) {
+				return { kind: "capacity_exceeded" };
 			}
 			const snapshot = row.templateSnapshot;
 			const inserted = (await tx.unsafe(
@@ -601,10 +716,10 @@ export class PostgresStore implements Store {
 					 template_snapshot, state, launch_input, metadata,
 					 deadline_at, created_at, updated_at, origin_workspace_id,
 					 restored_from_checkpoint_id, source_descriptor, resolved_source,
-					 persistence_capability, latest_checkpoint_id, launch_mode, outputs)
+					 persistence_capability, latest_checkpoint_id, launch_mode, outputs, network_state)
 				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'queued',
 						 $11::jsonb, $12::jsonb, $13, $14, $14, $15, $16, $17::jsonb,
-						 $18::jsonb, $19, $20, $21, $22::jsonb)
+						 $18::jsonb, $19, $20, $21, $22::jsonb, $23)
 				 RETURNING *`,
 				[
 					row.id,
@@ -629,13 +744,26 @@ export class PostgresStore implements Store {
 					row.latestCheckpointId ?? null,
 					row.launchMode ?? "create",
 					JSON.stringify(row.outputs ?? {}),
+					snapshot.spec.network.mode === "restricted" ? "starting" : "disabled",
 				],
 			)) as Row[];
 			const workspace = this.workspaceFromRow(inserted[0] as Row);
 			await this.appendHistoryTx(tx, workspace, null, "queued", null, row.createdAt);
 			await this.appendEventTx(tx, workspace, row.createdAt);
-			return { workspace, created: true, conflict: false };
+			return { kind: "created", workspace };
 		});
+	}
+
+	async getWorkspaceByIdempotency(
+		principalId: string,
+		idempotencyKey: string,
+	): Promise<WorkspaceRow | null> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspaces")}
+			 WHERE principal_id = $1 AND idempotency_key = $2`,
+			[principalId, idempotencyKey],
+		)) as Row[];
+		return rows[0] ? this.workspaceFromRow(rows[0]) : null;
 	}
 
 	async getWorkspace(id: string): Promise<WorkspaceRow | null> {
@@ -688,11 +816,14 @@ export class PostgresStore implements Store {
 		return rows.map((r) => this.workspaceFromRow(r));
 	}
 
-	async listQueued(limit: number): Promise<WorkspaceRow[]> {
+	async listQueuedHeads(): Promise<WorkspaceRow[]> {
 		const rows = (await this.sql.unsafe(
-			`SELECT * FROM ${this.t("workspaces")} WHERE state = 'queued'
-			 ORDER BY created_at ASC LIMIT $1`,
-			[limit],
+			`SELECT * FROM (
+				 SELECT DISTINCT ON (principal_id) * FROM ${this.t("workspaces")}
+				 WHERE state = 'queued'
+				 ORDER BY principal_id, created_at ASC, id ASC
+			 ) AS heads
+			 ORDER BY created_at ASC, id ASC`,
 		)) as Row[];
 		return rows.map((r) => this.workspaceFromRow(r));
 	}
@@ -728,6 +859,66 @@ export class PostgresStore implements Store {
 		return rows[0]?.n ?? 0;
 	}
 
+	async claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim): Promise<WorkspaceRow | null> {
+		const workspace = await this.sql.begin(async (tx) => {
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7351))", [
+				`${this.schema}:workspace-admission`,
+			]);
+			const rows = (await tx.unsafe(
+				`SELECT * FROM ${this.t("workspaces")} WHERE id = $1 FOR UPDATE`,
+				[claim.workspaceId],
+			)) as Row[];
+			const current = rows[0] ? this.workspaceFromRow(rows[0]) : null;
+			if (current?.state !== "queued") return null;
+
+			const activeRows = (await tx.unsafe(
+				`SELECT principal_id, template_name, count(*)::int AS n
+				 FROM ${this.t("workspaces")}
+				 WHERE state IN ('provisioning', 'connected', 'ready', 'preserving', 'terminating')
+				 GROUP BY principal_id, template_name`,
+			)) as Array<{ principal_id: string; template_name: string; n: number }>;
+			const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
+			for (const row of activeRows) {
+				counts.global += row.n;
+				counts.byPrincipal[row.principal_id] = (counts.byPrincipal[row.principal_id] ?? 0) + row.n;
+				counts.byTemplate[row.template_name] = (counts.byTemplate[row.template_name] ?? 0) + row.n;
+			}
+			if (counts.global >= claim.limits.globalActiveWorkspaces) return null;
+			if (
+				(counts.byPrincipal[current.principalId] ?? 0) >= claim.limits.perPrincipalActiveWorkspaces
+			) {
+				return null;
+			}
+			const templateLimit =
+				claim.limits.perTemplateActiveWorkspaces[current.templateName] ??
+				claim.limits.globalActiveWorkspaces;
+			if ((counts.byTemplate[current.templateName] ?? 0) >= templateLimit) return null;
+
+			const updated = (await tx.unsafe(
+				`UPDATE ${this.t("workspaces")}
+				 SET state = 'provisioning', updated_at = $2, change_seq = change_seq + 1,
+				     provisioning_mode = 'cold', registration_digest = $3,
+				     registration_expires_at = $4, launch_attempts = launch_attempts + 1
+				 WHERE id = $1 AND state = 'queued' RETURNING *`,
+				[claim.workspaceId, claim.at, claim.registrationDigest, claim.registrationExpiresAt],
+			)) as Row[];
+			if (!updated[0]) return null;
+			const claimed = this.workspaceFromRow(updated[0]);
+			await this.appendHistoryTx(
+				tx,
+				claimed,
+				"queued",
+				"provisioning",
+				claimed.reasonCode,
+				claim.at,
+			);
+			await this.appendEventTx(tx, claimed, claim.at);
+			return claimed;
+		});
+		if (workspace) this.notifyWorkspaceChange(workspace.id);
+		return workspace;
+	}
+
 	private static readonly PATCH_COLUMNS: Record<string, string> = {
 		terminalIntent: "terminal_intent",
 		launchInput: "launch_input",
@@ -745,6 +936,7 @@ export class PostgresStore implements Store {
 		launchAttempts: "launch_attempts",
 		health: "health",
 		agentState: "agent_state",
+		networkState: "network_state",
 		failureLogTail: "failure_log_tail",
 		failureLogTailTruncated: "failure_log_tail_truncated",
 		failureLastLogSeq: "failure_last_log_seq",
@@ -767,6 +959,7 @@ export class PostgresStore implements Store {
 		"disconnectedAt",
 		"health",
 		"agentState",
+		"networkState",
 		"failureLogTail",
 		"failureLogTailTruncated",
 		"failureLastLogSeq",
@@ -920,9 +1113,9 @@ export class PostgresStore implements Store {
 		return rows.map((r) => ({
 			id: String(r.id),
 			workspaceId: String(r.workspace_id),
-			fromState: (r.from_state as WorkspaceState | null) ?? null,
-			toState: r.to_state as WorkspaceState,
-			reasonCode: (r.reason_code as ReasonCode | null) ?? null,
+			fromState: nullableEnumValue(r.from_state, WORKSPACE_STATES, "history from state"),
+			toState: enumValue(r.to_state, WORKSPACE_STATES, "history to state"),
+			reasonCode: nullableEnumValue(r.reason_code, REASON_CODES, "history reason code"),
 			occurredAt: asDate(r.occurred_at),
 		}));
 	}
@@ -936,7 +1129,7 @@ export class PostgresStore implements Store {
 			principalId: String(r.principal_id),
 			providerKind: String(r.provider_kind),
 			providerRef: asJson(r.provider_ref),
-			state: r.state as StorageState,
+			state: enumValue(r.state, STORAGE_STATES, "storage state"),
 			mountManifest: asJson(r.mount_manifest),
 			logicalBytes: r.logical_bytes == null ? null : Number(r.logical_bytes),
 			fileCount: r.file_count == null ? null : Number(r.file_count),
@@ -1029,7 +1222,7 @@ export class PostgresStore implements Store {
 			principalId: String(r.principal_id),
 			storageId: String(r.storage_id),
 			parentCheckpointId: (r.parent_checkpoint_id as string | null) ?? null,
-			state: r.state as CheckpointState,
+			state: enumValue(r.state, CHECKPOINT_STATES, "checkpoint state"),
 			reasonCode: (r.reason_code as string | null) ?? null,
 			providerKind: String(r.provider_kind),
 			providerRef: r.provider_ref == null ? null : asJson(r.provider_ref),
@@ -1041,7 +1234,11 @@ export class PostgresStore implements Store {
 			logicalBytes: r.logical_bytes == null ? null : Number(r.logical_bytes),
 			storedBytes: r.stored_bytes == null ? null : Number(r.stored_bytes),
 			fileCount: r.file_count == null ? null : Number(r.file_count),
-			conversationRestore: r.conversation_restore as ConversationRestoreCapability,
+			conversationRestore: enumValue(
+				r.conversation_restore,
+				CONVERSATION_RESTORE_CAPABILITIES,
+				"checkpoint conversation restore capability",
+			),
 			label: (r.label as string | null) ?? null,
 			createdAt: asDate(r.created_at),
 			updatedAt: asDate(r.updated_at),
@@ -1166,8 +1363,8 @@ export class PostgresStore implements Store {
 		return {
 			id: String(r.id),
 			principalId: String(r.principal_id),
-			kind: r.kind as OperationKind,
-			state: r.state as OperationState,
+			kind: enumValue(r.kind, OPERATION_KINDS, "operation kind"),
+			state: enumValue(r.state, OPERATION_STATES, "operation state"),
 			idempotencyKey: String(r.idempotency_key),
 			requestDigest: String(r.request_digest),
 			workspaceId: (r.workspace_id as string | null) ?? null,
@@ -1183,61 +1380,64 @@ export class PostgresStore implements Store {
 
 	async insertOperation(
 		row: WorkspaceOperationRow,
+		options: { maxIncompleteOperations?: number } = {},
 	): Promise<{ operation: WorkspaceOperationRow; created: boolean; conflict: boolean }> {
-		const existing = await this.getOperationByIdempotency(
-			row.principalId,
-			row.kind,
-			row.idempotencyKey,
-		);
-		if (existing) {
+		return await this.sql.begin(async (tx) => {
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7352))", [
+				`${this.schema}:workspace-operations`,
+			]);
+			const existingRows = (await tx.unsafe(
+				`SELECT * FROM ${this.t("workspace_operations")}
+				 WHERE principal_id = $1 AND kind = $2 AND idempotency_key = $3`,
+				[row.principalId, row.kind, row.idempotencyKey],
+			)) as Row[];
+			if (existingRows[0]) {
+				const existing = this.operationFromRow(existingRows[0]);
+				return {
+					operation: existing,
+					created: false,
+					conflict: existing.requestDigest !== row.requestDigest,
+				};
+			}
+			if (options.maxIncompleteOperations !== undefined) {
+				const incomplete = (await tx.unsafe(
+					`SELECT count(*)::int AS count FROM ${this.t("workspace_operations")}
+					 WHERE state IN ('pending', 'running')`,
+				)) as Row[];
+				if (Number(incomplete[0]?.count ?? 0) >= options.maxIncompleteOperations) {
+					throw new OperationCapacityExceededError();
+				}
+			}
+			const rows = (await tx.unsafe(
+				`INSERT INTO ${this.t("workspace_operations")}
+					(id, principal_id, kind, state, idempotency_key, request_digest, workspace_id,
+					 checkpoint_id, result_workspace_id, reason_code, attempt_count, created_at,
+					 updated_at, completed_at)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+				 RETURNING *`,
+				[
+					row.id,
+					row.principalId,
+					row.kind,
+					row.state,
+					row.idempotencyKey,
+					row.requestDigest,
+					row.workspaceId,
+					row.checkpointId,
+					row.resultWorkspaceId,
+					row.reasonCode,
+					row.attemptCount,
+					row.createdAt,
+					row.updatedAt,
+					row.completedAt,
+				],
+			)) as Row[];
 			return {
-				operation: existing,
-				created: false,
-				conflict: existing.requestDigest !== row.requestDigest,
-			};
-		}
-		const rows = (await this.sql.unsafe(
-			`INSERT INTO ${this.t("workspace_operations")}
-				(id, principal_id, kind, state, idempotency_key, request_digest, workspace_id,
-				 checkpoint_id, result_workspace_id, reason_code, attempt_count, created_at,
-				 updated_at, completed_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-			 ON CONFLICT (principal_id, kind, idempotency_key) DO NOTHING RETURNING *`,
-			[
-				row.id,
-				row.principalId,
-				row.kind,
-				row.state,
-				row.idempotencyKey,
-				row.requestDigest,
-				row.workspaceId,
-				row.checkpointId,
-				row.resultWorkspaceId,
-				row.reasonCode,
-				row.attemptCount,
-				row.createdAt,
-				row.updatedAt,
-				row.completedAt,
-			],
-		)) as Row[];
-		if (rows[0]) {
-			return {
-				operation: this.operationFromRow(rows[0]),
+				operation: this.operationFromRow(rows[0] as Row),
 				created: true,
 				conflict: false,
 			};
-		}
-		const concurrent = await this.getOperationByIdempotency(
-			row.principalId,
-			row.kind,
-			row.idempotencyKey,
-		);
-		if (!concurrent) throw new Error("operation insert conflict without an existing row");
-		return {
-			operation: concurrent,
-			created: false,
-			conflict: concurrent.requestDigest !== row.requestDigest,
-		};
+		});
 	}
 
 	async getOperation(id: string): Promise<WorkspaceOperationRow | null> {
@@ -1472,6 +1672,79 @@ export class PostgresStore implements Store {
 			truncated: totalBytes > maxBytes,
 			lastSeq,
 		};
+	}
+
+	async appendNetworkEvents(
+		workspaceId: string,
+		sourceSessionId: string,
+		events: NetworkEventInput[],
+	): Promise<void> {
+		if (events.length === 0) return;
+		await this.sql.begin(async (tx) => {
+			await tx.unsafe("SELECT pg_advisory_xact_lock(hashtextextended($1, 7348))", [workspaceId]);
+			for (const event of events) {
+				const duplicate = (await tx.unsafe(
+					`SELECT 1 FROM ${this.t("workspace_network_events")}
+					 WHERE workspace_id = $1 AND source_session_id = $2 AND source_seq = $3`,
+					[workspaceId, sourceSessionId, event.source_seq],
+				)) as Row[];
+				if (duplicate.length > 0) continue;
+				const updated = (await tx.unsafe(
+					`UPDATE ${this.t("workspaces")} SET network_event_seq = network_event_seq + 1
+					 WHERE id = $1 RETURNING network_event_seq`,
+					[workspaceId],
+				)) as Row[];
+				if (!updated[0]) throw new Error("workspace.not_found");
+				await tx.unsafe(
+					`INSERT INTO ${this.t("workspace_network_events")}
+					 (workspace_id, seq, source_session_id, source_seq, occurred_at, decision,
+					  transport, host, port, method, path, matched_rule, reason)
+					 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+					[
+						workspaceId,
+						Number(updated[0].network_event_seq),
+						sourceSessionId,
+						event.source_seq,
+						event.occurred_at,
+						event.decision,
+						event.transport,
+						event.host,
+						event.port,
+						event.method,
+						event.path,
+						event.matched_rule,
+						event.reason,
+					],
+				);
+			}
+		});
+	}
+
+	async readNetworkEvents(
+		workspaceId: string,
+		afterSeq: number,
+		limit: number,
+	): Promise<NetworkEventRow[]> {
+		const rows = (await this.sql.unsafe(
+			`SELECT * FROM ${this.t("workspace_network_events")}
+			 WHERE workspace_id = $1 AND seq > $2 ORDER BY seq ASC LIMIT $3`,
+			[workspaceId, afterSeq, limit],
+		)) as Row[];
+		return rows.map((row) => ({
+			workspaceId: String(row.workspace_id),
+			seq: Number(row.seq),
+			sourceSessionId: String(row.source_session_id),
+			source_seq: Number(row.source_seq),
+			occurred_at: asDate(row.occurred_at).toISOString(),
+			decision: row.decision as NetworkEventRow["decision"],
+			transport: row.transport as NetworkEventRow["transport"],
+			host: String(row.host),
+			port: Number(row.port),
+			method: (row.method as string | null) ?? null,
+			path: (row.path as string | null) ?? null,
+			matched_rule: (row.matched_rule as string | null) ?? null,
+			reason: String(row.reason),
+		}));
 	}
 
 	// --- Durable conversation history ---

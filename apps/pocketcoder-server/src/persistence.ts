@@ -3,7 +3,9 @@ import {
 	ApiError,
 	canonicalJson,
 	digestOf,
+	type ErrorCode,
 	isAgentApiNative,
+	type OperationKind,
 	type PreserveRequest,
 	parseDurationMs,
 	type ReasonCode,
@@ -11,27 +13,41 @@ import {
 	type RestoreRequest,
 } from "@pstdio/pocketcoder-contracts";
 import type {
+	AuthStore,
+	ConversationStore,
+	OutboxStore,
+	OutputStore,
+	PersistenceStore,
 	PrincipalRow,
 	Scheduler,
 	StorageRef,
-	Store,
+	TemplateStore,
 	WorkspaceCheckpointRow,
 	WorkspaceDriver,
 	WorkspaceOperationRow,
 	WorkspaceRow,
 	WorkspaceStorageDriver,
 	WorkspaceStorageRow,
+	WorkspaceStore,
 } from "@pstdio/pocketcoder-runtime-core";
+import { OperationCapacityExceededError } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "./hub";
 import { templateAuthorized, type WorkspaceService } from "./service";
 
 export interface PersistenceServiceDeps {
-	store: Store;
+	store: AuthStore &
+		TemplateStore &
+		WorkspaceStore &
+		PersistenceStore &
+		OutputStore &
+		ConversationStore &
+		OutboxStore;
 	scheduler: Scheduler;
 	driver: WorkspaceDriver;
 	storageDriver?: WorkspaceStorageDriver;
 	hub: Hub;
 	workspaces: WorkspaceService;
+	maxQueuedWorkspaces: number;
 	now?: () => Date;
 	log?: (message: string) => void;
 	limits?: PersistenceLimits;
@@ -115,6 +131,55 @@ export class PersistenceService {
 		return this.deps.limits ?? DEFAULT_PERSISTENCE_LIMITS;
 	}
 
+	private async replayedOperation(
+		principalId: string,
+		kind: OperationKind,
+		idempotencyKey: string,
+		requestDigest: string,
+		conflictMessage: string,
+	) {
+		const operation = await this.deps.store.getOperationByIdempotency(
+			principalId,
+			kind,
+			idempotencyKey,
+		);
+		if (!operation) return null;
+		if (operation.requestDigest !== requestDigest) {
+			throw new ApiError("idempotency.conflict", conflictMessage);
+		}
+		return operation;
+	}
+
+	private throwFailedOperation(operation: WorkspaceOperationRow): void {
+		if (operation.state !== "failed") return;
+		const failures: Partial<Record<OperationKind, Record<string, [ErrorCode, string]>>> = {
+			preserve: {
+				checkpoint_quota_exceeded: ["checkpoint.quota_exceeded", "Checkpoint quota exceeded."],
+				checkpoint_storage_lost: [
+					"workspace.persistence_not_enabled",
+					"Workspace persistent storage is not ready.",
+				],
+			},
+			restore: {
+				image_unavailable: [
+					"restore.image_unavailable",
+					"The exact checkpoint template snapshot is unavailable.",
+				],
+				queue_full: ["capacity.queue_full", "The workspace queue is full; retry later."],
+				operation_conflict: [
+					"workspace.external_id_conflict",
+					"The restore request conflicts with an existing workspace.",
+				],
+			},
+			verify: {
+				checkpoint_corrupt: ["checkpoint.corrupt", "Checkpoint integrity verification failed."],
+			},
+		};
+		const failure = operation.reasonCode ? failures[operation.kind]?.[operation.reasonCode] : null;
+		if (failure) throw new ApiError(...failure);
+		throw new ApiError("internal.error", "The persistence operation failed.");
+	}
+
 	async getCheckpointOwned(principal: PrincipalRow, id: string): Promise<WorkspaceCheckpointRow> {
 		const row = await this.deps.store.getCheckpoint(id);
 		if (!row || row.principalId !== principal.id || row.state === "deleted") {
@@ -135,6 +200,22 @@ export class PersistenceService {
 		operation: WorkspaceOperationRow;
 	}> {
 		const workspace = await this.deps.workspaces.getOwned(principal, workspaceId);
+		const requestDigest = digestOf({ workspace_id: workspaceId, ...body });
+		const replay = await this.replayedOperation(
+			principal.id,
+			"preserve",
+			idempotencyKey,
+			requestDigest,
+			"This Idempotency-Key was already used with a different preserve request.",
+		);
+		if (replay) {
+			this.throwFailedOperation(replay);
+			const checkpoint = replay.checkpointId
+				? await this.deps.store.getCheckpoint(replay.checkpointId)
+				: null;
+			if (!checkpoint) throw new ApiError("internal.error", "Checkpoint metadata is missing.");
+			return { workspaceId, checkpoint, operation: replay };
+		}
 		if (workspace.templateSnapshot.spec.persistence.mounts.length === 0) {
 			throw new ApiError(
 				"workspace.persistence_not_enabled",
@@ -153,11 +234,10 @@ export class PersistenceService {
 			);
 		}
 		this.storageDriver();
-		const requestDigest = digestOf({ workspace_id: workspaceId, ...body });
 		const checkpointId = randomUUID();
 		const operationId = randomUUID();
 		const now = this.now();
-		const operationResult = await this.deps.store.insertOperation({
+		const operationResult = await this.insertOperation({
 			id: operationId,
 			principalId: principal.id,
 			kind: "preserve",
@@ -180,6 +260,7 @@ export class PersistenceService {
 			);
 		}
 		if (!operationResult.created) {
+			this.throwFailedOperation(operationResult.operation);
 			const existing = operationResult.operation.checkpointId
 				? await this.deps.store.getCheckpoint(operationResult.operation.checkpointId)
 				: null;
@@ -532,12 +613,52 @@ export class PersistenceService {
 		}
 	}
 
+	private async replayRestore(
+		principalId: string,
+		checkpointId: string,
+		body: RestoreRequest,
+		idempotencyKey: string,
+	) {
+		const requestDigest = digestOf({ checkpoint_id: checkpointId, ...body });
+		const replay = await this.replayedOperation(
+			principalId,
+			"restore",
+			idempotencyKey,
+			requestDigest,
+			"This Idempotency-Key was already used with a different restore request.",
+		);
+		if (!replay) return { requestDigest, result: null };
+		this.throwFailedOperation(replay);
+		const workspace = replay.resultWorkspaceId
+			? await this.deps.store.getWorkspace(replay.resultWorkspaceId)
+			: null;
+		if (!workspace) throw new ApiError("internal.error", "Restore metadata is incomplete.");
+		return { requestDigest, result: { workspaceId: workspace.id, operation: replay } };
+	}
+
+	private async replayInsertedRestore(operationResult: {
+		operation: WorkspaceOperationRow;
+		created: boolean;
+		conflict: boolean;
+	}) {
+		if (operationResult.created) return null;
+		this.throwFailedOperation(operationResult.operation);
+		const workspace = operationResult.operation.resultWorkspaceId
+			? await this.deps.store.getWorkspace(operationResult.operation.resultWorkspaceId)
+			: null;
+		if (workspace) return { workspaceId: workspace.id, operation: operationResult.operation };
+		throw new ApiError("restore.incompatible", "Restore metadata is incomplete.");
+	}
+
 	async restore(
 		principal: PrincipalRow,
 		checkpointId: string,
 		body: RestoreRequest,
 		idempotencyKey: string,
 	): Promise<{ workspaceId: string; operation: WorkspaceOperationRow }> {
+		const replay = await this.replayRestore(principal.id, checkpointId, body, idempotencyKey);
+		if (replay.result) return replay.result;
+		const { requestDigest } = replay;
 		const checkpoint = await this.getCheckpointOwned(principal, checkpointId);
 		if (checkpoint.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) {
 			throw new ApiError("checkpoint.not_ready", "Checkpoint is not ready for restore.");
@@ -550,10 +671,8 @@ export class PersistenceService {
 		}
 		this.storageDriver();
 		const now = this.now();
-		const requestDigest = digestOf({ checkpoint_id: checkpointId, ...body });
-		await this.assertOperationCapacity(principal.id, "restore", idempotencyKey);
 		const resultWorkspaceId = randomUUID();
-		const operationResult = await this.deps.store.insertOperation({
+		const operationResult = await this.insertOperation({
 			id: randomUUID(),
 			principalId: principal.id,
 			kind: "restore",
@@ -575,24 +694,8 @@ export class PersistenceService {
 				"This Idempotency-Key was already used with a different restore request.",
 			);
 		}
-		if (!operationResult.created) {
-			const existingWorkspace = operationResult.operation.resultWorkspaceId
-				? await this.deps.store.getWorkspace(operationResult.operation.resultWorkspaceId)
-				: null;
-			if (existingWorkspace) {
-				return {
-					workspaceId: existingWorkspace.id,
-					operation: operationResult.operation,
-				};
-			}
-			if (
-				!operationResult.operation.resultWorkspaceId ||
-				operationResult.operation.state === "failed" ||
-				operationResult.operation.state === "succeeded"
-			) {
-				throw new ApiError("restore.incompatible", "Restore metadata is incomplete.");
-			}
-		}
+		const operationReplay = await this.replayInsertedRestore(operationResult);
+		if (operationReplay) return operationReplay;
 		const restoreWorkspaceId = operationResult.operation.resultWorkspaceId ?? resultWorkspaceId;
 		const source = checkpoint.sourceProvenance
 			? {
@@ -612,30 +715,42 @@ export class PersistenceService {
 				"The exact checkpoint template snapshot is unavailable.",
 			);
 		}
-		const inserted = await this.deps.store.insertWorkspace({
-			id: restoreWorkspaceId,
-			principalId: principal.id,
-			externalId: body.external_id,
-			idempotencyKey: `restore:${operationResult.operation.id}`,
-			requestDigest,
-			templateId: template.id,
-			templateSnapshot: checkpoint.templateSnapshot,
-			launchInput: null,
-			metadata: body.metadata ?? {},
-			deadlineAt: new Date(
-				now.getTime() + parseDurationMs(checkpoint.templateSnapshot.spec.timeouts.maxAge),
-			),
-			createdAt: now,
-			originWorkspaceId: checkpoint.workspaceId,
-			restoredFromCheckpointId: checkpoint.id,
-			sourceDescriptor: source,
-			resolvedSource: checkpoint.sourceProvenance,
-			persistenceCapability: checkpoint.conversationRestore,
-			launchMode: "restore",
-		});
-		if (inserted.conflict) {
+		const inserted = await this.deps.store.insertWorkspace(
+			{
+				id: restoreWorkspaceId,
+				principalId: principal.id,
+				externalId: body.external_id,
+				idempotencyKey: `restore:${operationResult.operation.id}`,
+				requestDigest,
+				templateId: template.id,
+				templateSnapshot: checkpoint.templateSnapshot,
+				launchInput: null,
+				metadata: body.metadata ?? {},
+				deadlineAt: new Date(
+					now.getTime() + parseDurationMs(checkpoint.templateSnapshot.spec.timeouts.maxAge),
+				),
+				createdAt: now,
+				originWorkspaceId: checkpoint.workspaceId,
+				restoredFromCheckpointId: checkpoint.id,
+				sourceDescriptor: source,
+				resolvedSource: checkpoint.sourceProvenance,
+				persistenceCapability: checkpoint.conversationRestore,
+				launchMode: "restore",
+			},
+			{ maxQueuedWorkspaces: this.deps.maxQueuedWorkspaces },
+		);
+		if (inserted.kind === "capacity_exceeded") {
+			await this.failOperation(operationResult.operation.id, "queue_full");
+			throw new ApiError("capacity.queue_full", "The workspace queue is full; retry later.");
+		}
+		if (inserted.kind === "conflict") {
 			await this.failOperation(operationResult.operation.id, "operation_conflict");
-			throw new ApiError("idempotency.conflict", "The requested external_id is already active.");
+			throw new ApiError(
+				inserted.conflict === "external_id"
+					? "workspace.external_id_conflict"
+					: "idempotency.conflict",
+				"The restore request conflicts with an existing workspace.",
+			);
 		}
 		await this.deps.store.updateOperation(
 			operationResult.operation.id,
@@ -669,19 +784,30 @@ export class PersistenceService {
 		checkpointId: string,
 		idempotencyKey: string,
 	): Promise<WorkspaceOperationRow> {
+		const requestDigest = digestOf({ checkpoint_id: checkpointId });
+		const replay = await this.replayedOperation(
+			principal.id,
+			"verify",
+			idempotencyKey,
+			requestDigest,
+			"Changed verify request.",
+		);
+		if (replay) {
+			this.throwFailedOperation(replay);
+			return replay;
+		}
 		const checkpoint = await this.getCheckpointOwned(principal, checkpointId);
 		if (checkpoint.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) {
 			throw new ApiError("checkpoint.not_ready", "Checkpoint is not ready.");
 		}
 		const now = this.now();
-		await this.assertOperationCapacity(principal.id, "verify", idempotencyKey);
-		const inserted = await this.deps.store.insertOperation({
+		const inserted = await this.insertOperation({
 			id: randomUUID(),
 			principalId: principal.id,
 			kind: "verify",
 			state: "running",
 			idempotencyKey,
-			requestDigest: digestOf({ checkpoint_id: checkpointId }),
+			requestDigest,
 			workspaceId: checkpoint.workspaceId,
 			checkpointId,
 			resultWorkspaceId: null,
@@ -694,7 +820,10 @@ export class PersistenceService {
 		if (inserted.conflict) {
 			throw new ApiError("idempotency.conflict", "Changed verify request.");
 		}
-		if (!inserted.created) return inserted.operation;
+		if (!inserted.created) {
+			this.throwFailedOperation(inserted.operation);
+			return inserted.operation;
+		}
 		try {
 			await this.storageDriver().verifyCheckpoint(
 				checkpoint.providerRef as StorageRef,
@@ -723,6 +852,15 @@ export class PersistenceService {
 		checkpointId: string,
 		idempotencyKey: string,
 	): Promise<WorkspaceOperationRow> {
+		const requestDigest = digestOf({ checkpoint_id: checkpointId });
+		const replay = await this.replayedOperation(
+			principal.id,
+			"delete",
+			idempotencyKey,
+			requestDigest,
+			"Changed delete request.",
+		);
+		if (replay) return replay;
 		const checkpoint = await this.getCheckpointOwned(principal, checkpointId);
 		const activeRestore = (await this.deps.store.listIncompleteOperations()).some(
 			(operation) => operation.kind === "restore" && operation.checkpointId === checkpoint.id,
@@ -731,14 +869,13 @@ export class PersistenceService {
 			throw new ApiError("checkpoint.in_use", "Checkpoint has an active restore.");
 		}
 		const now = this.now();
-		await this.assertOperationCapacity(principal.id, "delete", idempotencyKey);
-		const inserted = await this.deps.store.insertOperation({
+		const inserted = await this.insertOperation({
 			id: randomUUID(),
 			principalId: principal.id,
 			kind: "delete",
 			state: "running",
 			idempotencyKey,
-			requestDigest: digestOf({ checkpoint_id: checkpointId }),
+			requestDigest,
 			workspaceId: checkpoint.workspaceId,
 			checkpointId,
 			resultWorkspaceId: null,
@@ -850,15 +987,29 @@ export class PersistenceService {
 		await this.deps.store.updateOperation(id, { state: "failed", reasonCode, completedAt: at }, at);
 	}
 
+	private async insertOperation(row: WorkspaceOperationRow) {
+		try {
+			return await this.deps.store.insertOperation(row, {
+				maxIncompleteOperations: this.limits().maxConcurrentOperations,
+			});
+		} catch (error) {
+			if (error instanceof OperationCapacityExceededError) {
+				throw new ApiError(
+					"storage.capacity_exhausted",
+					"Too many checkpoint operations are already running.",
+				);
+			}
+			throw error;
+		}
+	}
+
 	private async assertPreserveAdmission(principalId: string, declaredBytes: number): Promise<void> {
-		const [global, principal, incomplete] = await Promise.all([
+		const [global, principal] = await Promise.all([
 			this.deps.store.checkpointUsage(null),
 			this.deps.store.checkpointUsage(principalId),
-			this.deps.store.countIncompleteOperations(),
 		]);
 		const limits = this.limits();
 		if (
-			incomplete > limits.maxConcurrentOperations ||
 			principal.count >= limits.maxCheckpointsPerPrincipal ||
 			global.logicalBytes + declaredBytes > limits.maxRetainedBytes ||
 			principal.logicalBytes + declaredBytes > limits.maxRetainedBytesPerPrincipal
@@ -886,27 +1037,6 @@ export class PersistenceService {
 			principal.logicalBytes + logicalBytes > limits.maxRetainedBytesPerPrincipal
 		) {
 			throw new Error("checkpoint.quota_exceeded");
-		}
-	}
-
-	private async assertOperationCapacity(
-		principalId: string,
-		kind: "restore" | "verify" | "delete",
-		idempotencyKey: string,
-	): Promise<void> {
-		const existing = await this.deps.store.getOperationByIdempotency(
-			principalId,
-			kind,
-			idempotencyKey,
-		);
-		if (existing) return;
-		if (
-			(await this.deps.store.countIncompleteOperations()) >= this.limits().maxConcurrentOperations
-		) {
-			throw new ApiError(
-				"storage.capacity_exhausted",
-				"Too many checkpoint operations are already running.",
-			);
 		}
 	}
 

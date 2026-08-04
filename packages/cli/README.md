@@ -1,6 +1,6 @@
 # `@pstdio/pocketcoder-cli`
 
-The operator and diagnostics CLI for Pocketcoder.
+The operator and diagnostics CLI for PocketCoder.
 
 ## Install
 

@@ -8,6 +8,7 @@ import {
 	KubernetesPvcStorageDriver,
 	KubernetesSecretResolver,
 } from "@pstdio/pocketcoder-drivers";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
 	loadTemplateDir,
 	OutboxDispatcher,
@@ -16,9 +17,9 @@ import {
 	resolveWarmPools,
 	type Store,
 } from "@pstdio/pocketcoder-runtime-core";
-import { MemoryStore } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
-import { loadConfig, type ServerConfig } from "./config";
+import { configSummary, loadConfig, type ServerConfig } from "./config";
+import { Readiness } from "./health";
 
 export type ServerLog = (message: string) => void;
 
@@ -60,16 +61,32 @@ async function loadConfiguredTemplates(
 	}
 }
 
+async function requireEgressImageForRestrictedTemplates(store: Store, config: ServerConfig) {
+	const restricted = (await store.listTemplates(null)).some(
+		(template) => template.status === "active" && template.spec.network.mode === "restricted",
+	);
+	if (restricted && !config.egressImage) {
+		throw new Error(
+			"POCKETCODER_EGRESS_IMAGE is required when an active template uses restricted networking",
+		);
+	}
+}
+
 function createWorkspaceDriver(config: ServerConfig) {
+	const egress = {
+		...(config.egressImage ? { egressImage: config.egressImage } : {}),
+		egressSigningKey: config.eventSigningKey,
+	};
 	if (config.driverKind === "kubernetes") {
 		return new KubernetesDriver({
+			...egress,
 			namespace: config.kubernetesNamespace,
 			...(config.kubernetesServiceAccount
 				? { serviceAccountName: config.kubernetesServiceAccount }
 				: {}),
 		});
 	}
-	return new DockerDriver(config.inputDir ? { inputDir: config.inputDir } : {});
+	return new DockerDriver({ ...(config.inputDir ? { inputDir: config.inputDir } : {}), ...egress });
 }
 
 function createStorageDriver(config: ServerConfig) {
@@ -103,7 +120,7 @@ async function reconcileStartup(
 	driver: ReturnType<typeof createWorkspaceDriver>,
 	storageDriver: ReturnType<typeof createStorageDriver>,
 	log: ServerLog,
-): Promise<void> {
+): Promise<boolean> {
 	try {
 		await reconcileProviders({
 			store,
@@ -112,8 +129,10 @@ async function reconcileStartup(
 			log,
 		});
 		await reconcilePersistence({ store, driver, storageDriver, log });
+		return true;
 	} catch (error) {
-		log(`startup reconciliation skipped: ${String(error)}`);
+		log(`startup reconciliation failed: ${String(error)}`);
+		return false;
 	}
 }
 
@@ -140,9 +159,13 @@ export async function startPocketcoderServer(
 	options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<RunningPocketcoderServer> {
 	const log = options.log ?? defaultLog;
+	log(`config: ${JSON.stringify(configSummary(config))}`);
 	const store = await initializeStore(config, log);
 	try {
+		await store.acquireCoordinatorLease();
+		log("coordinator lease acquired");
 		await loadConfiguredTemplates(store, config.templateDir, log);
+		await requireEgressImageForRestrictedTemplates(store, config);
 		const driver = createWorkspaceDriver(config);
 		const warmPools = await resolveWarmPools(
 			store,
@@ -155,21 +178,27 @@ export async function startPocketcoderServer(
 			(await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
 		const storageDriver = createStorageDriver(config);
 		const secretResolver = createSecretResolver(config);
+		const readiness = new Readiness({ reconciliation: "pending" });
 		const { app, websocket, scheduler, persistence, warmPool } = buildServer({
 			store,
 			driver,
 			...(storageDriver ? { storageDriver } : {}),
 			...(secretResolver ? { secretResolver } : {}),
 			pepper: config.pepper,
+			eventSigningKey: config.eventSigningKey,
 			limits: config.limits,
 			workspaceServerUrl: config.workspaceServerUrl,
 			persistenceLimits: config.persistenceLimits,
 			...(options.instanceId ? { instanceId: options.instanceId } : {}),
 			log,
 			warmPools,
+			readiness,
 		});
 
-		await reconcileStartup(store, driver, storageDriver, log);
+		readiness.set(
+			"reconciliation",
+			(await reconcileStartup(store, driver, storageDriver, log)) ? "ok" : "failed",
+		);
 
 		const outbox = new OutboxDispatcher({
 			store,
@@ -180,7 +209,15 @@ export async function startPocketcoderServer(
 
 		const schedulerTimer = startExclusiveTimer(
 			config.schedulerIntervalMs,
-			() => scheduler.tick(),
+			async () => {
+				try {
+					await scheduler.tick();
+					readiness.set("coordinator", "ok");
+				} catch (error) {
+					readiness.set("coordinator", "failed");
+					throw error;
+				}
+			},
 			"scheduler tick failed",
 			log,
 		);

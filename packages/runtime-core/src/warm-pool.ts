@@ -281,7 +281,15 @@ export class WarmPoolManager {
 				digest: pool.templateRow.digest,
 				spec: pool.templateRow.spec,
 			};
-			const ref = await this.deps.driver.createWarm({ runtimeId: id, template, input });
+			const expiresAt = new Date(
+				now.getTime() + pool.maxWarmAgeMs + parseDurationMs(template.spec.timeouts.maxAge),
+			);
+			const ref = await this.deps.driver.createWarm({
+				runtimeId: id,
+				template,
+				input,
+				expiresAt,
+			});
 			await this.deps.store.updateWarmPoolRuntime(id, { providerRef: ref }, this.now());
 		} catch (error) {
 			this.metrics.replenishFailures += 1;

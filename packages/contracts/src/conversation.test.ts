@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { ConversationMessageInputSchema } from "./conversation";
-import { AgentFrameSchema, PROTOCOL_VERSION } from "./protocol";
+import { AgentFrameSchema, ExecSpecSchema, PROTOCOL_VERSION } from "./protocol";
+
+test("restricted exec specs carry only local firewall endpoints", () => {
+	const network = ExecSpecSchema.shape.network.parse({
+		mode: "restricted",
+		proxy_url: "http://127.0.0.1:18080",
+		health_url: "http://127.0.0.1:18082/healthz",
+	});
+	expect(network.mode).toBe("restricted");
+});
 
 describe("conversation contracts", () => {
 	test("accepts bounded canonical messages and protocol frames", () => {

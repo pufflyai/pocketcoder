@@ -13,7 +13,10 @@ export interface AppVariables {
 export type AppEnv = { Variables: AppVariables };
 
 export const requestId: MiddlewareHandler<AppEnv> = async (c, next) => {
-	c.set("requestId", randomUUID());
+	const candidate = c.req.header("x-request-id");
+	const id = candidate && /^[A-Za-z0-9._-]{1,128}$/.test(candidate) ? candidate : randomUUID();
+	c.set("requestId", id);
+	c.header("x-request-id", id);
 	await next();
 };
 

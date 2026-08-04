@@ -23,6 +23,14 @@
         "@pstdio/pocketcoder-contracts": "workspace:*",
       },
     },
+    "apps/pocketcoder-egress": {
+      "name": "@pstdio/pocketcoder-egress",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "zod": "^4.3.6",
+      },
+    },
     "apps/pocketcoder-server": {
       "name": "@pstdio/pocketcoder-server",
       "version": "0.1.0",
@@ -32,11 +40,13 @@
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-db": "workspace:*",
         "@pstdio/pocketcoder-drivers": "workspace:*",
+        "@pstdio/pocketcoder-memory-store": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "hono": "^4.8.0",
         "zod": "^4.0.0",
       },
       "devDependencies": {
+        "@pstdio/pocketcoder-client": "workspace:*",
         "@pstdio/pocketcoder-testkit": "workspace:*",
       },
     },
@@ -56,10 +66,24 @@
       },
       "devDependencies": {
         "@pstdio/pocketcoder-auth": "workspace:*",
+        "@pstdio/pocketcoder-client": "workspace:*",
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-db": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-server": "workspace:*",
         "@types/yargs": "^17.0.35",
+      },
+    },
+    "packages/client": {
+      "name": "@pstdio/pocketcoder-client",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "zod": "^4.0.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "typescript": "5.9.3",
       },
     },
     "packages/contracts": {
@@ -74,10 +98,12 @@
       "version": "0.1.0",
       "dependencies": {
         "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "drizzle-orm": "1.0.0-rc.4",
       },
       "devDependencies": {
+        "@pstdio/pocketcoder-testkit": "workspace:*",
         "drizzle-kit": "1.0.0-rc.4",
       },
     },
@@ -85,8 +111,20 @@
       "name": "@pstdio/pocketcoder-drivers",
       "version": "0.1.0",
       "dependencies": {
+        "@pstdio/pocketcoder-auth": "workspace:*",
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
+      },
+    },
+    "packages/memory-store": {
+      "name": "@pstdio/pocketcoder-memory-store",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@pstdio/pocketcoder-testkit": "workspace:*",
       },
     },
     "packages/remote": {
@@ -99,10 +137,18 @@
         "@earendil-works/pi-ai": "0.83.0",
         "@earendil-works/pi-coding-agent": "0.83.0",
         "@earendil-works/pi-tui": "0.83.0",
+        "@pstdio/pocketcoder-client": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "1.3.14",
         "typescript": "5.9.3",
+      },
+    },
+    "packages/runtime-contracts": {
+      "name": "@pstdio/pocketcoder-runtime-contracts",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
       },
     },
     "packages/runtime-core": {
@@ -111,8 +157,10 @@
       "dependencies": {
         "@pstdio/pocketcoder-auth": "workspace:*",
         "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
       },
       "devDependencies": {
+        "@pstdio/pocketcoder-memory-store": "workspace:*",
         "@pstdio/pocketcoder-testkit": "workspace:*",
       },
     },
@@ -121,7 +169,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@pstdio/pocketcoder-contracts": "workspace:*",
-        "@pstdio/pocketcoder-runtime-core": "workspace:*",
+        "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
       },
     },
   },
@@ -586,13 +634,21 @@
 
     "@pstdio/pocketcoder-cli": ["@pstdio/pocketcoder-cli@workspace:packages/cli"],
 
+    "@pstdio/pocketcoder-client": ["@pstdio/pocketcoder-client@workspace:packages/client"],
+
     "@pstdio/pocketcoder-contracts": ["@pstdio/pocketcoder-contracts@workspace:packages/contracts"],
 
     "@pstdio/pocketcoder-db": ["@pstdio/pocketcoder-db@workspace:packages/db"],
 
     "@pstdio/pocketcoder-drivers": ["@pstdio/pocketcoder-drivers@workspace:packages/drivers"],
 
+    "@pstdio/pocketcoder-egress": ["@pstdio/pocketcoder-egress@workspace:apps/pocketcoder-egress"],
+
+    "@pstdio/pocketcoder-memory-store": ["@pstdio/pocketcoder-memory-store@workspace:packages/memory-store"],
+
     "@pstdio/pocketcoder-remote": ["@pstdio/pocketcoder-remote@workspace:packages/remote"],
+
+    "@pstdio/pocketcoder-runtime-contracts": ["@pstdio/pocketcoder-runtime-contracts@workspace:packages/runtime-contracts"],
 
     "@pstdio/pocketcoder-runtime-core": ["@pstdio/pocketcoder-runtime-core@workspace:packages/runtime-core"],
 

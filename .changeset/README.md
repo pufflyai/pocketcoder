@@ -1,16 +1,15 @@
 # Changesets
 
-`@pstdio/pocketcoder-cli` is Pocketcoder's public npm package. Every other
-workspace is private and imported directly inside the monorepo. Do not add
-changesets for changes that affect only private packages.
-
-Add a changeset for every user-visible CLI change:
+PocketCoder publishes four npm packages: `@pstdio/pocketcoder-cli`,
+`@pstdio/pocketcoder-remote`, `@pstdio/pocketcoder-client`, and
+`@pstdio/pocketcoder-contracts`. Add a changeset whenever a change affects a
+published package's behavior, API, contracts, or packaged output. Do not add
+changesets for private-package-only tests or refactors.
 
 ```sh
 bun run changeset
 ```
 
 Commit the generated Markdown file with the implementation. On `main`, the
-`Release Packages` workflow considers only non-private packages, maintains their
-version pull request, and publishes them to npm. Private packages are never
-versioned, tagged, packed, or published by that workflow.
+`Release Packages` workflow versions, tags, packs, and publishes non-private
+packages. Private workspaces are never released.

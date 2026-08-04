@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { isScope } from "@pstdio/pocketcoder-contracts";
+import { PocketCoderClient } from "@pstdio/pocketcoder-client";
+import { isCheckpointState, isScope, isWorkspaceState } from "@pstdio/pocketcoder-contracts";
 import { migrate, migrationStatus, PostgresStore } from "@pstdio/pocketcoder-db";
 import { loadTemplateFile, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { SQL } from "bun";
@@ -128,16 +129,13 @@ function apiConfig(): { url: string; key: string } {
 	return { url, key };
 }
 
-async function api(path: string, init: RequestInit = {}): Promise<Response> {
+function controlPlaneClient() {
 	const { url, key } = apiConfig();
-	return await fetch(`${url}${path}`, {
-		...init,
-		headers: {
-			authorization: `Bearer ${key}`,
-			"content-type": "application/json",
-			...(init.headers ?? {}),
-		},
-	});
+	return new PocketCoderClient({ baseUrl: url, apiKey: key });
+}
+
+async function api(path: string, init: RequestInit = {}): Promise<Response> {
+	return await controlPlaneClient().raw(path, init);
 }
 
 async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
@@ -169,7 +167,7 @@ export function createCli(argv: string[]): Argv {
 		.parserConfiguration({ "camel-case-expansion": false })
 		.option("workdir", {
 			type: "string",
-			description: "Pocketcoder project directory used for .env discovery",
+			description: "PocketCoder project directory used for .env discovery",
 		})
 		.option("env-file", {
 			type: "string",
@@ -406,14 +404,27 @@ export function createCli(argv: string[]): Argv {
 						demandOption: true,
 						description: "Workspace ID",
 					})
-					.option("after", {
+					.option("cursor", {
 						type: "string",
-						description: "Only show log lines after this sequence",
+						description: "Continue from an opaque pagination cursor",
 					})
 					.option("limit", {
 						type: "string",
 						description: "Maximum number of log lines",
 					}),
+			)
+			.command("network-events", "Read durable workspace egress decisions", (command) =>
+				command
+					.option("id", {
+						type: "string",
+						demandOption: true,
+						description: "Workspace ID",
+					})
+					.option("cursor", {
+						type: "string",
+						description: "Continue from an opaque pagination cursor",
+					})
+					.option("limit", { type: "string", description: "Maximum number of events" }),
 			)
 			.command("cancel", "Cancel a workspace", (command) =>
 				command.option("id", {
@@ -691,18 +702,12 @@ async function validateTemplates(files: string[]): Promise<void> {
 }
 
 async function listTemplates(flags: Flags): Promise<void> {
-	const response = await api("/v1/templates");
-	const body = (await response.json()) as {
-		items?: Array<{ name: string; version: string; status: string; digest: string }>;
-	};
-	if (!response.ok) {
-		fail(`template discovery failed (${response.status}): ${JSON.stringify(body)}`);
-	}
+	const items = await controlPlaneClient().templates.list();
 	if (flags.json) {
-		console.log(JSON.stringify(body.items ?? [], null, 2));
+		console.log(JSON.stringify(items, null, 2));
 		return;
 	}
-	for (const template of body.items ?? []) {
+	for (const template of items) {
 		console.log(
 			`${template.name}@${template.version}\t${template.status}\t${template.digest.slice(0, 19)}...`,
 		);
@@ -738,24 +743,12 @@ async function handleTemplates(context: CommandContext): Promise<boolean> {
 
 async function handlePools(context: CommandContext): Promise<boolean> {
 	if (context.group !== "pools" || context.action !== "list") return false;
-	const response = await api("/v1/warm-pools");
-	const body = (await response.json()) as {
-		items?: Array<{
-			template: string;
-			version: string;
-			desired: number;
-			counts: Record<string, number>;
-			oldest_ready_age_ms: number | null;
-		}>;
-		metrics?: Record<string, number>;
-	};
-	if (!response.ok)
-		fail(`warm pool inventory failed (${response.status}): ${JSON.stringify(body)}`);
+	const body = await controlPlaneClient().administration.warmPools();
 	if (context.flags.json) {
 		console.log(JSON.stringify(body, null, 2));
 		return true;
 	}
-	for (const item of body.items ?? []) {
+	for (const item of body.items) {
 		const counts = Object.entries(item.counts)
 			.map(([state, count]) => `${state}=${count}`)
 			.join(" ");
@@ -763,36 +756,28 @@ async function handlePools(context: CommandContext): Promise<boolean> {
 			`${item.template}@${item.version}\tdesired=${item.desired}\t${counts || "empty"}\toldest_ready_ms=${item.oldest_ready_age_ms ?? "-"}`,
 		);
 	}
-	if (body.metrics)
-		console.log(
-			`metrics\t${Object.entries(body.metrics)
-				.map(([name, value]) => `${name}=${value}`)
-				.join(" ")}`,
-		);
+	console.log(
+		`metrics\t${Object.entries(body.metrics)
+			.map(([name, value]) => `${name}=${value}`)
+			.join(" ")}`,
+	);
 	return true;
 }
 
 async function listWorkspaces(flags: Flags): Promise<void> {
-	const params = new URLSearchParams();
-	for (const [flag, param] of [
-		["state", "state"],
-		["template", "template"],
-		["external-id", "external_id"],
-		["limit", "limit"],
-	] as const) {
-		if (typeof flags[flag] === "string") params.set(param, flags[flag] as string);
+	const state = typeof flags.state === "string" ? flags.state : undefined;
+	const workspaceState = state && isWorkspaceState(state) ? state : undefined;
+	if (state && !workspaceState) {
+		fail(`unknown workspace state: ${state}`);
 	}
-	const response = await api(`/v1/workspaces${params.size ? `?${params}` : ""}`);
-	const body = (await response.json()) as {
-		items?: Array<{
-			id: string;
-			external_id: string;
-			state: string;
-			reason_code: string | null;
-			template: { name: string; version: string };
-		}>;
-	};
-	let items = body.items ?? [];
+	let items = (
+		await controlPlaneClient().workspaces.list({
+			...(workspaceState ? { state: workspaceState } : {}),
+			...(typeof flags.template === "string" ? { template: flags.template } : {}),
+			...(typeof flags["external-id"] === "string" ? { externalId: flags["external-id"] } : {}),
+			...(typeof flags.limit === "string" ? { limit: Number(flags.limit) } : {}),
+		})
+	).items;
 	if (flags.active) {
 		items = items.filter(
 			(workspace) =>
@@ -812,31 +797,38 @@ async function listWorkspaces(flags: Flags): Promise<void> {
 }
 
 async function getWorkspace(flags: Flags): Promise<void> {
-	const response = await api(`/v1/workspaces/${need(flags, "id")}`);
-	console.log(JSON.stringify(await response.json(), null, 2));
+	console.log(
+		JSON.stringify(await controlPlaneClient().workspaces.get(need(flags, "id")), null, 2),
+	);
 }
 
 async function readWorkspaceLogs(flags: Flags): Promise<void> {
-	const after = typeof flags.after === "string" ? flags.after : "0";
-	const limit = typeof flags.limit === "string" ? flags.limit : "200";
-	const response = await api(
-		`/v1/workspaces/${need(flags, "id")}/logs?after=${after}&limit=${limit}`,
-	);
-	const body = (await response.json()) as {
-		items?: Array<{ seq: number; stream: string; content: string }>;
-	};
-	for (const line of body.items ?? []) {
+	const result = await controlPlaneClient().logs.list(need(flags, "id"), {
+		...(typeof flags.cursor === "string" ? { cursor: flags.cursor } : {}),
+		...(typeof flags.limit === "string" ? { limit: Number(flags.limit) } : {}),
+	});
+	for (const line of result.items) {
 		process.stdout.write(`[${line.stream} #${line.seq}] ${line.content}`);
 		if (!line.content.endsWith("\n")) process.stdout.write("\n");
 	}
-	if ((body.items ?? []).length === 0) console.log("(no logs)");
+	if (result.items.length === 0) console.log("(no logs)");
+	if (result.nextCursor) console.log(`next cursor: ${result.nextCursor}`);
+}
+
+async function readWorkspaceNetworkEvents(flags: Flags): Promise<void> {
+	const result = await controlPlaneClient().networkEvents.list(need(flags, "id"), {
+		...(typeof flags.cursor === "string" ? { cursor: flags.cursor } : {}),
+		...(typeof flags.limit === "string" ? { limit: Number(flags.limit) } : {}),
+	});
+	for (const event of result.items) console.log(JSON.stringify(event));
+	if (result.items.length === 0) console.log("(no network events)");
+	if (result.nextCursor) console.log(`next cursor: ${result.nextCursor}`);
 }
 
 async function cancelWorkspace(flags: Flags): Promise<void> {
-	const response = await api(`/v1/workspaces/${need(flags, "id")}/cancel`, {
-		method: "POST",
-	});
-	console.log(JSON.stringify(await response.json(), null, 2));
+	console.log(
+		JSON.stringify(await controlPlaneClient().workspaces.cancel(need(flags, "id")), null, 2),
+	);
 }
 
 async function handleWorkspaceCore(context: CommandContext): Promise<boolean> {
@@ -846,6 +838,7 @@ async function handleWorkspaceCore(context: CommandContext): Promise<boolean> {
 		create: () => createWorkspace(context.flags, { api, fail }),
 		get: () => getWorkspace(context.flags),
 		logs: () => readWorkspaceLogs(context.flags),
+		"network-events": () => readWorkspaceNetworkEvents(context.flags),
 		cancel: () => cancelWorkspace(context.flags),
 	};
 	const command = context.action ? commands[context.action] : undefined;
@@ -866,44 +859,40 @@ async function handleWorkspacePersistence({
 			...(typeof flags.retention === "string" ? { retention: flags.retention } : {}),
 			...(typeof flags.label === "string" ? { label: flags.label } : {}),
 		};
-		const res = await api(`/v1/workspaces/${id}/preserve`, {
-			method: "POST",
-			headers: { "idempotency-key": `preserve-${id}-${randomUUID()}` },
-			body: JSON.stringify(body),
-		});
-		console.log(JSON.stringify(await res.json(), null, 2));
-		if (!res.ok) process.exit(1);
+		const result = await controlPlaneClient().workspaces.preserve(
+			id,
+			body,
+			`preserve-${id}-${randomUUID()}`,
+		);
+		console.log(JSON.stringify(result, null, 2));
 		return true;
 	}
 
 	if (action === "restore") {
 		const externalId = need(flags, "external-id");
-		const res = await api(`/v1/checkpoints/${need(flags, "checkpoint")}/restore`, {
-			method: "POST",
-			headers: { "idempotency-key": externalId },
-			body: JSON.stringify({ external_id: externalId }),
-		});
-		console.log(JSON.stringify(await res.json(), null, 2));
-		if (!res.ok) process.exit(1);
+		const result = await controlPlaneClient().checkpoints.restore(
+			need(flags, "checkpoint"),
+			{ external_id: externalId },
+			externalId,
+		);
+		console.log(JSON.stringify(result, null, 2));
 		return true;
 	}
 
 	if (action === "recreate") {
 		const externalId = need(flags, "external-id");
-		const res = await api(`/v1/workspaces/${need(flags, "id")}/recreate`, {
-			method: "POST",
-			headers: { "idempotency-key": externalId },
-			body: JSON.stringify({ external_id: externalId }),
-		});
-		console.log(JSON.stringify(await res.json(), null, 2));
-		if (!res.ok) process.exit(1);
+		const result = await controlPlaneClient().workspaces.recreate(
+			need(flags, "id"),
+			{ external_id: externalId },
+			externalId,
+		);
+		console.log(JSON.stringify(result, null, 2));
 		return true;
 	}
 
 	if (action === "outputs") {
-		const res = await api(`/v1/workspaces/${need(flags, "id")}/outputs`);
-		console.log(JSON.stringify(await res.json(), null, 2));
-		if (!res.ok) process.exit(1);
+		const result = await controlPlaneClient().outputs.list(need(flags, "id"));
+		console.log(JSON.stringify(result, null, 2));
 		return true;
 	}
 	return false;
@@ -922,41 +911,39 @@ async function handleWorkspaceChat({ group, action, flags }: CommandContext): Pr
 }
 
 async function listCheckpoints(flags: Flags): Promise<void> {
-	const params = new URLSearchParams();
-	if (typeof flags.state === "string") params.set("state", flags.state);
-	const response = await api(
-		`/v1/workspaces/${need(flags, "workspace")}/checkpoints${params.size ? `?${params}` : ""}`,
-	);
-	const body = (await response.json()) as { items?: unknown[] };
-	if (flags.json) console.log(JSON.stringify(body.items ?? [], null, 2));
-	else for (const item of body.items ?? []) console.log(JSON.stringify(item));
-	if (!response.ok) process.exit(1);
+	const state = typeof flags.state === "string" ? flags.state : undefined;
+	const checkpointState = state && isCheckpointState(state) ? state : undefined;
+	if (state && !checkpointState) fail(`unknown checkpoint state: ${state}`);
+	const result = await controlPlaneClient().checkpoints.list(need(flags, "workspace"), {
+		...(checkpointState ? { state: checkpointState } : {}),
+	});
+	if (flags.json) console.log(JSON.stringify(result.items, null, 2));
+	else for (const item of result.items) console.log(JSON.stringify(item));
+	if (result.nextCursor) console.log(`next cursor: ${result.nextCursor}`);
 }
 
 async function getCheckpoint(flags: Flags): Promise<void> {
-	const response = await api(`/v1/checkpoints/${need(flags, "id")}`);
-	console.log(JSON.stringify(await response.json(), null, 2));
-	if (!response.ok) process.exit(1);
+	console.log(
+		JSON.stringify(await controlPlaneClient().checkpoints.get(need(flags, "id")), null, 2),
+	);
 }
 
 async function verifyCheckpoint(flags: Flags): Promise<void> {
 	const id = need(flags, "id");
-	const response = await api(`/v1/checkpoints/${id}/verify`, {
-		method: "POST",
-		headers: { "idempotency-key": `verify-${id}-${randomUUID()}` },
-	});
-	console.log(JSON.stringify(await response.json(), null, 2));
-	if (!response.ok) process.exit(1);
+	console.log(
+		JSON.stringify(
+			await controlPlaneClient().checkpoints.verify(id, `verify-${id}-${randomUUID()}`),
+			null,
+			2,
+		),
+	);
 }
 
 async function deleteCheckpoint(flags: Flags): Promise<void> {
 	const id = need(flags, "id");
-	const response = await api(`/v1/checkpoints/${id}`, {
-		method: "DELETE",
-		headers: { "idempotency-key": `delete-${id}` },
-	});
-	console.log(JSON.stringify(await response.json(), null, 2));
-	if (!response.ok) process.exit(1);
+	console.log(
+		JSON.stringify(await controlPlaneClient().checkpoints.delete(id, `delete-${id}`), null, 2),
+	);
 }
 
 async function handleCheckpoints(context: CommandContext): Promise<boolean> {
@@ -974,33 +961,20 @@ async function handleCheckpoints(context: CommandContext): Promise<boolean> {
 }
 
 async function inspectStorage(action: "doctor" | "list-orphans"): Promise<void> {
-	const response = await api("/v1/storage/inventory");
-	const body = (await response.json()) as {
-		backend?: string;
-		storage_count?: number;
-		checkpoint_count?: number;
-		unknown_storage?: string[];
-		unknown_checkpoints?: string[];
-	};
-	if (!response.ok) {
-		fail(`storage inventory failed (${response.status}): ${JSON.stringify(body)}`);
-	}
+	const body = await controlPlaneClient().administration.storageInventory();
 	if (action === "doctor") {
 		console.log(
-			`storage: ${body.backend ?? "unknown"}; allocations=${body.storage_count ?? 0}; checkpoints=${body.checkpoint_count ?? 0}`,
+			`storage: ${body.backend}; allocations=${body.storage_count}; checkpoints=${body.checkpoint_count}`,
 		);
 	}
-	for (const id of body.unknown_storage ?? []) console.log(`storage\t${id}`);
-	for (const id of body.unknown_checkpoints ?? []) console.log(`checkpoint\t${id}`);
-	const noOrphans =
-		(body.unknown_storage?.length ?? 0) === 0 && (body.unknown_checkpoints?.length ?? 0) === 0;
+	for (const id of body.unknown_storage) console.log(`storage\t${id}`);
+	for (const id of body.unknown_checkpoints) console.log(`checkpoint\t${id}`);
+	const noOrphans = body.unknown_storage.length === 0 && body.unknown_checkpoints.length === 0;
 	if (action === "list-orphans" && noOrphans) console.log("(no orphaned physical objects)");
 }
 
 async function pruneStorage(): Promise<void> {
-	const response = await api("/v1/storage/prune", { method: "POST" });
-	console.log(JSON.stringify(await response.json(), null, 2));
-	if (!response.ok) process.exit(1);
+	console.log(JSON.stringify(await controlPlaneClient().administration.pruneStorage(), null, 2));
 }
 
 async function handleStorage(context: CommandContext): Promise<boolean> {

@@ -13,15 +13,17 @@ import type {
 	AdmissionLimits,
 	PrincipalRow,
 	Scheduler,
-	Store,
+	TemplateRow,
+	TemplateStore,
 	WorkspaceRow,
+	WorkspaceStore,
 } from "@pstdio/pocketcoder-runtime-core";
 
 // Application service behind the workspace routes. Handlers stay focused on
 // request flow; scheduling, SQL, and driver logic live below this layer.
 
 export interface WorkspaceServiceDeps {
-	store: Store;
+	store: TemplateStore & WorkspaceStore;
 	scheduler: Scheduler;
 	limits: AdmissionLimits;
 	now?: () => Date;
@@ -43,6 +45,7 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
 		state: row.state,
 		reason_code: row.reasonCode,
 		agent_state: row.agentState,
+		network: { state: row.networkState },
 		change_cursor: row.changeSeq,
 		provider_kind: row.providerKind,
 		provisioning_mode: row.provisioningMode,
@@ -98,21 +101,16 @@ export class WorkspaceService {
 		return this.deps.now ? this.deps.now() : new Date();
 	}
 
-	async create(
-		principal: PrincipalRow,
-		body: WorkspaceCreateRequest,
-		idempotencyKey: string,
-	): Promise<{ workspace: WorkspaceRow; created: boolean }> {
-		const { store, limits } = this.deps;
+	private async activeTemplate(principal: PrincipalRow, body: WorkspaceCreateRequest) {
 		if (!templateAuthorized(principal, body.template.name)) {
 			throw new ApiError(
 				"template.not_authorized",
 				`Principal is not authorized for template ${body.template.name}.`,
 			);
 		}
-		const template = await store.getTemplate(body.template.name, body.template.version);
+		const template = await this.deps.store.getTemplate(body.template.name, body.template.version);
 		if (!template) {
-			const existsAtAll = (await store.listTemplates([body.template.name])).length > 0;
+			const existsAtAll = (await this.deps.store.listTemplates([body.template.name])).length > 0;
 			if (body.template.version && existsAtAll) {
 				throw new ApiError(
 					"template.version_not_found",
@@ -127,61 +125,96 @@ export class WorkspaceService {
 				`Template version ${template.name}@${template.version} is retired.`,
 			);
 		}
+		return template;
+	}
+
+	private validateCreateInput(template: TemplateRow, body: WorkspaceCreateRequest): void {
+		if (
+			body.launch_input !== undefined &&
+			Buffer.byteLength(canonicalJson(body.launch_input)) > template.spec.maxLaunchInputBytes
+		) {
+			throw new ApiError(
+				"validation.invalid",
+				`launch_input exceeds the template limit of ${template.spec.maxLaunchInputBytes} bytes.`,
+			);
+		}
+		if (
+			body.source &&
+			(!template.spec.source || !(body.source.repository in template.spec.source.repositories))
+		) {
+			throw new ApiError(
+				"source.not_allowed",
+				"The selected repository alias is not declared by this template.",
+			);
+		}
+	}
+
+	async create(
+		principal: PrincipalRow,
+		body: WorkspaceCreateRequest,
+		idempotencyKey: string,
+	): Promise<{ workspace: WorkspaceRow; created: boolean }> {
+		const { store, limits } = this.deps;
+		const requestDigest = digestOf(body);
+		const replay = await store.getWorkspaceByIdempotency(principal.id, idempotencyKey);
+		if (replay) {
+			if (replay.requestDigest !== requestDigest) {
+				throw new ApiError(
+					"idempotency.conflict",
+					"This Idempotency-Key was already used with a different request.",
+				);
+			}
+			return { workspace: replay, created: false };
+		}
+		const template = await this.activeTemplate(principal, body);
 		const snapshot: TemplateSnapshot = {
 			name: template.name,
 			version: template.version,
 			digest: template.digest,
 			spec: template.spec,
 		};
-		if (body.launch_input !== undefined) {
-			const size = Buffer.byteLength(canonicalJson(body.launch_input));
-			if (size > template.spec.maxLaunchInputBytes) {
-				throw new ApiError(
-					"validation.invalid",
-					`launch_input exceeds the template limit of ${template.spec.maxLaunchInputBytes} bytes.`,
-				);
-			}
-		}
-		if (body.source) {
-			const sourceSpec = template.spec.source;
-			if (!sourceSpec || !(body.source.repository in sourceSpec.repositories)) {
-				throw new ApiError(
-					"source.not_allowed",
-					"The selected repository alias is not declared by this template.",
-				);
-			}
-		}
-		if ((await store.countQueued()) >= limits.maxQueuedWorkspaces) {
+		this.validateCreateInput(template, body);
+		const now = this.now();
+		const result = await store.insertWorkspace(
+			{
+				id: randomUUID(),
+				principalId: principal.id,
+				externalId: body.external_id,
+				idempotencyKey,
+				requestDigest,
+				templateId: template.id,
+				templateSnapshot: snapshot,
+				launchInput: body.launch_input ?? null,
+				metadata: body.metadata ?? {},
+				sourceDescriptor: body.source ?? null,
+				persistenceCapability: template.spec.persistence.conversationRestore,
+				launchMode: "create",
+				deadlineAt: new Date(now.getTime() + parseDurationMs(template.spec.timeouts.maxAge)),
+				createdAt: now,
+			},
+			{ maxQueuedWorkspaces: limits.maxQueuedWorkspaces },
+		);
+		if (result.kind === "capacity_exceeded") {
 			throw new ApiError("capacity.queue_full", "The workspace queue is full; retry later.");
 		}
-		const now = this.now();
-		const result = await store.insertWorkspace({
-			id: randomUUID(),
-			principalId: principal.id,
-			externalId: body.external_id,
-			idempotencyKey,
-			requestDigest: digestOf(body),
-			templateId: template.id,
-			templateSnapshot: snapshot,
-			launchInput: body.launch_input ?? null,
-			metadata: body.metadata ?? {},
-			sourceDescriptor: body.source ?? null,
-			persistenceCapability: template.spec.persistence.conversationRestore,
-			launchMode: "create",
-			deadlineAt: new Date(now.getTime() + parseDurationMs(template.spec.timeouts.maxAge)),
-			createdAt: now,
-		});
-		if (result.conflict) {
+		if (result.kind === "conflict") {
+			if (result.conflict === "external_id") {
+				throw new ApiError(
+					"workspace.external_id_conflict",
+					"The external_id is already active for another workspace.",
+				);
+			}
 			throw new ApiError(
 				"idempotency.conflict",
-				"This Idempotency-Key or external_id was already used with a different request.",
+				"This Idempotency-Key was already used with a different request.",
 			);
 		}
-		if (result.created) {
+		const created = result.kind === "created";
+		if (created) {
 			// Nudge admission without waiting for the next interval tick.
 			void this.deps.scheduler.tick().catch(() => {});
 		}
-		return { workspace: result.workspace, created: result.created };
+		return { workspace: result.workspace, created };
 	}
 
 	async getOwned(principal: PrincipalRow, id: string): Promise<WorkspaceRow> {

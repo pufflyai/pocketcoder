@@ -71,6 +71,11 @@ export const AgentStatePayload = z.object({
 	state: z.enum(["running", "stable"]),
 });
 
+export const NetworkStatePayload = z.object({
+	state: z.enum(["starting", "ready", "degraded"]),
+	detail: z.string().max(512).optional(),
+});
+
 export const LogChunkPayload = z.object({
 	stream: z.enum(["stdout", "stderr", "runtime"]),
 	content_b64: z.string().max(87_400), // ~64 KiB decoded
@@ -120,6 +125,7 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("process_state"), payload: ProcessStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("service_health"), payload: ServiceHealthPayload }),
 	EnvelopeBase.extend({ type: z.literal("agent_state"), payload: AgentStatePayload }),
+	EnvelopeBase.extend({ type: z.literal("network_state"), payload: NetworkStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("log_chunk"), payload: LogChunkPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_response"), payload: ProxyResponsePayload }),
 	EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
@@ -152,6 +158,16 @@ export const ExecSpecSchema = z.object({
 			writable_memory_paths: z.array(z.string()),
 		})
 		.default({ writable_memory_paths: [] }),
+	network: z
+		.discriminatedUnion("mode", [
+			z.object({ mode: z.literal("unrestricted") }),
+			z.object({
+				mode: z.literal("restricted"),
+				proxy_url: z.url(),
+				health_url: z.url(),
+			}),
+		])
+		.default({ mode: "unrestricted" }),
 	launch_mode: z.enum(LAUNCH_MODES).default("create"),
 	source: SourceDescriptorSchema.extend({
 		url: z.url(),

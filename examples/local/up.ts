@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import { loadConfig } from "../../apps/pocketcoder-server/src/config";
-import { startPocketcoderServer } from "../../apps/pocketcoder-server/src/lifecycle";
+import { loadConfig } from "@pstdio/pocketcoder-server/config";
+import { startPocketcoderServer } from "@pstdio/pocketcoder-server/lifecycle";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { requireOpenAIKey, resolveLocalPiOptions } from "./options";
 import { preparePiRuntime } from "./runtime";

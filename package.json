@@ -10,9 +10,10 @@
 	],
 	"scripts": {
 		"build": "lerna run build",
-		"check": "biome check . && knip",
+		"check": "biome check . && knip && bun scripts/check-boundaries.ts",
 		"check-licenses": "bun scripts/check-licenses.ts",
 		"check-licenses:test": "bun test scripts/check-licenses.test.ts",
+		"check-boundaries:test": "bun test scripts/check-boundaries.test.ts",
 		"check:fix": "biome check --write .",
 		"changeset": "changeset",
 		"changeset:status": "changeset status",
@@ -36,7 +37,10 @@
 		"packages": "lerna list --all",
 		"release": "bun run build && changeset publish",
 		"start": "bun run --filter '@pstdio/pocketcoder-server' start",
-		"test": "lerna run test",
+		"test": "bun run test:all",
+		"test:all": "bun run test:unit && bun run example:test && bun run check-licenses:test && bun run --cwd examples/harnesses/pi typecheck && bun run --cwd examples/harnesses/pi test",
+		"test:integration": "bun test packages/db/src/store.test.ts packages/drivers/src/kubernetes.test.ts apps/pocketcoder-egress/src/docker-conformance.test.ts apps/pocketcoder-egress/src/kubernetes-conformance.test.ts",
+		"test:unit": "lerna run test",
 		"typecheck": "lerna run typecheck",
 		"version-packages": "changeset version"
 	},

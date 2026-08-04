@@ -9,12 +9,32 @@ import {
 	type ProviderInput,
 } from "@pstdio/pocketcoder-contracts";
 import {
+	enforcedEnvironment,
 	isConversationControlLine,
 	pumpLineFramedText,
 	splitUtf8Chunks,
 	verifyWritableMemoryPaths,
 	waitForPoolLease,
 } from "./supervisor";
+
+test("restricted child environments cannot replace enforced proxy variables", () => {
+	const exec = {
+		network: {
+			mode: "restricted" as const,
+			proxy_url: "http://127.0.0.1:18080",
+			health_url: "http://127.0.0.1:18082/healthz",
+		},
+		env: { HTTP_PROXY: "http://template.invalid" },
+	} as unknown as Parameters<typeof enforcedEnvironment>[0];
+	const environment = enforcedEnvironment(exec, {
+		https_proxy: "http://step.invalid",
+		ALL_PROXY: "socks5://bypass.invalid",
+	});
+	expect(environment.HTTP_PROXY).toBe("http://127.0.0.1:18080");
+	expect(environment.https_proxy).toBe("http://127.0.0.1:18080");
+	expect(environment.ALL_PROXY).toBe("");
+	expect(environment.NO_PROXY).toBe("127.0.0.1,localhost,::1");
+});
 
 describe("warm pool bootstrap", () => {
 	test("waits unbound and returns only the post-commit in-memory assignment", async () => {

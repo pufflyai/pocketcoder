@@ -125,6 +125,11 @@ describe("pcd help", () => {
 			error: "Missing required argument: id",
 		},
 		{
+			args: ["workspaces", "network-events"],
+			usage: "pcd workspaces network-events",
+			error: "Missing required argument: id",
+		},
+		{
 			args: ["workspaces", "cancel"],
 			usage: "pcd workspaces cancel",
 			error: "Missing required argument: id",
@@ -166,7 +171,7 @@ describe("pcd server lifecycle", () => {
 			expect(status.exitCode).toBe(0);
 			expect(status.output).toContain('"state": "running"');
 
-			const health = await fetch(`http://127.0.0.1:${port}/healthz`);
+			const health = await fetch(`http://127.0.0.1:${port}/readyz`);
 			expect(health.status).toBe(200);
 
 			const stopped = await runCli(["server", "stop"], { env });
@@ -517,7 +522,7 @@ describe("pcd environment", () => {
 			port: 0,
 			fetch(request) {
 				authorizations.push(request.headers.get("authorization"));
-				return Response.json({ items: [] });
+				return Response.json({ items: [], next_cursor: null });
 			},
 		});
 		try {
@@ -545,7 +550,7 @@ describe("pcd environment", () => {
 			port: 0,
 			fetch(request) {
 				authorizations.push(request.headers.get("authorization"));
-				return Response.json({ items: [] });
+				return Response.json({ items: [], next_cursor: null });
 			},
 		});
 		try {
@@ -576,7 +581,7 @@ describe("pcd environment", () => {
 			port: 0,
 			fetch(request) {
 				authorizations.push(request.headers.get("authorization"));
-				return Response.json({ items: [] });
+				return Response.json({ items: [], next_cursor: null });
 			},
 		});
 		try {

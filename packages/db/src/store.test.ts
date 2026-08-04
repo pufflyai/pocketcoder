@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceInsertResult } from "@pstdio/pocketcoder-runtime-core";
+import { registerStoreContract } from "@pstdio/pocketcoder-testkit";
 import { SQL } from "bun";
 import { migrate, migrationStatus } from "./migrate";
 import { advisoryLockKey, assertValidSchema } from "./schema";
@@ -12,6 +14,31 @@ import { PostgresStore } from "./store";
 // inside an existing database; both placements must behave identically.
 
 const TEST_URL = process.env.POCKETCODER_TEST_DATABASE_URL;
+
+registerStoreContract("PostgreSQL", {
+	enabled: Boolean(TEST_URL),
+	async create() {
+		const url = TEST_URL as string;
+		const schema = `pkt_contract_${randomUUID().slice(0, 8)}`;
+		const sql = new SQL(url);
+		await migrate(sql, schema);
+		const store = new PostgresStore(url, schema);
+		await store.init();
+		return {
+			store,
+			async dispose() {
+				await store.close();
+				await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+				await sql.end();
+			},
+		};
+	},
+});
+
+function workspaceOf(result: WorkspaceInsertResult) {
+	if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
+	return result.workspace;
+}
 
 describe("schema helpers", () => {
 	test("schema names are validated before qualification", () => {
@@ -67,6 +94,48 @@ async function migrateTestSchema(url: string, schema: string): Promise<SQL> {
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: One isolated-schema scenario intentionally verifies the full migration and store lifecycle.
 describe.skipIf(!TEST_URL)("postgres store", () => {
 	const schema = `pkt_test_${randomUUID().slice(0, 8)}`;
+
+	test("store startup checks migrations without applying them", async () => {
+		const url = TEST_URL as string;
+		const isolatedSchema = `pkt_init_${randomUUID().slice(0, 8)}`;
+		const sql = new SQL(url);
+		const store = new PostgresStore(url, isolatedSchema);
+		try {
+			await expect(store.init()).rejects.toThrow("pending migrations");
+			expect(
+				(await migrationStatus(sql, isolatedSchema)).every(
+					(migration) => migration.appliedAt === null,
+				),
+			).toBe(true);
+			await migrate(sql, isolatedSchema);
+			await store.init();
+		} finally {
+			await store.close();
+			await sql.unsafe(`DROP SCHEMA IF EXISTS "${isolatedSchema}" CASCADE`);
+			await sql.end();
+		}
+	});
+
+	test("allows only one PostgreSQL coordinator per schema", async () => {
+		const url = TEST_URL as string;
+		const isolatedSchema = `pkt_lease_${randomUUID().slice(0, 8)}`;
+		const sql = new SQL(url);
+		const first = new PostgresStore(url, isolatedSchema);
+		const second = new PostgresStore(url, isolatedSchema);
+		try {
+			await migrate(sql, isolatedSchema);
+			await Promise.all([first.init(), second.init()]);
+			const release = await first.acquireCoordinatorLease();
+
+			await expect(second.acquireCoordinatorLease()).rejects.toThrow("already active");
+			await release();
+			await expect(second.acquireCoordinatorLease()).resolves.toBeFunction();
+		} finally {
+			await Promise.all([first.close(), second.close()]);
+			await sql.unsafe(`DROP SCHEMA IF EXISTS "${isolatedSchema}" CASCADE`);
+			await sql.end();
+		}
+	});
 
 	// biome-ignore lint/complexity/noExcessiveLinesPerFunction: The assertions share one disposable schema and must remain in a single cleanup scope.
 	test("migrates into an isolated schema and round-trips core entities", async () => {
@@ -136,7 +205,8 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 				deadlineAt: new Date(Date.now() + 60_000),
 				createdAt: new Date(),
 			});
-			expect(insert.created).toBe(true);
+			expect(insert.kind).toBe("created");
+			const workspace = workspaceOf(insert);
 			const repeat = await store.insertWorkspace({
 				...{
 					id: randomUUID(),
@@ -152,15 +222,15 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 					createdAt: new Date(),
 				},
 			});
-			expect(repeat.created).toBe(false);
-			expect(repeat.workspace.id).toBe(insert.workspace.id);
+			expect(repeat.kind).toBe("replayed");
+			expect(workspaceOf(repeat).id).toBe(workspace.id);
 			const filtered = await store.listWorkspaces(principal.id, {
 				metadata: { source: "test" },
 				limit: 10,
 			});
-			expect(filtered.map((workspace) => workspace.id)).toContain(insert.workspace.id);
+			expect(filtered.map((row) => row.id)).toContain(workspace.id);
 			const conversationInput = {
-				workspaceId: insert.workspace.id,
+				workspaceId: workspace.id,
 				messageId: "pg-message-1",
 				role: "assistant" as const,
 				content: "durable response",
@@ -170,7 +240,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			};
 			expect((await store.appendConversationMessage(conversationInput)).created).toBe(true);
 			expect((await store.appendConversationMessage(conversationInput)).created).toBe(false);
-			expect(await store.readConversation(insert.workspace.id, 0, 10)).toEqual([
+			expect(await store.readConversation(workspace.id, 0, 10)).toEqual([
 				expect.objectContaining({
 					seq: 1,
 					messageId: "pg-message-1",
@@ -178,7 +248,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 				}),
 			]);
 
-			const warmWorkspace = (
+			const warmWorkspace = workspaceOf(
 				await store.insertWorkspace({
 					id: randomUUID(),
 					principalId: principal.id,
@@ -191,8 +261,8 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 					metadata: {},
 					deadlineAt: new Date(Date.now() + 60_000),
 					createdAt: new Date(),
-				})
-			).workspace;
+				}),
+			);
 			const runtimeId = randomUUID();
 			const runtimeNow = new Date();
 			await store.insertWarmPoolRuntime({
@@ -231,7 +301,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
 			expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);
 
-			const provisioning = await store.transition(insert.workspace.id, {
+			const provisioning = await store.transition(workspace.id, {
 				from: ["queued"],
 				to: "provisioning",
 				at: new Date(),
@@ -239,17 +309,13 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			});
 			expect(provisioning?.state).toBe("provisioning");
 			const changeCursor = provisioning?.changeSeq ?? 0;
-			const changeWait = store.waitForWorkspaceChange(insert.workspace.id, changeCursor, 1000);
-			await store.updateWorkspace(
-				insert.workspace.id,
-				{ health: { agent: "healthy" } },
-				new Date(),
-			);
+			const changeWait = store.waitForWorkspaceChange(workspace.id, changeCursor, 1000);
+			await store.updateWorkspace(workspace.id, { health: { agent: "healthy" } }, new Date());
 			await changeWait;
-			expect((await store.getWorkspace(insert.workspace.id))?.changeSeq).toBe(changeCursor + 1);
+			expect((await store.getWorkspace(workspace.id))?.changeSeq).toBe(changeCursor + 1);
 			// Illegal transition is refused.
 			expect(
-				await store.transition(insert.workspace.id, {
+				await store.transition(workspace.id, {
 					from: ["provisioning"],
 					to: "ready",
 					at: new Date(),
@@ -259,7 +325,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			// Terminal transition with a patch that overlaps the automatic
 			// launch_input/registration_digest clears must not produce
 			// duplicate column assignments.
-			const failed = await store.transition(insert.workspace.id, {
+			const failed = await store.transition(workspace.id, {
 				from: ["provisioning"],
 				to: "failed",
 				reason: "launch_failed",
@@ -271,10 +337,10 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 
 			const events = await store.claimDueEvents(new Date(), 10);
 			expect(
-				events.filter((event) => event.workspaceId === insert.workspace.id).map((e) => e.eventType),
+				events.filter((event) => event.workspaceId === workspace.id).map((e) => e.eventType),
 			).toEqual(["workspace.queued", "workspace.provisioning", "workspace.failed"]);
 
-			await store.appendLogs(insert.workspace.id, [
+			await store.appendLogs(workspace.id, [
 				{
 					stream: "runtime",
 					occurredAt: new Date(),
@@ -286,19 +352,38 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 					content: new TextEncoder().encode("\nPermissionError: /home/onefin/.pi\n"),
 				},
 			]);
-			const logs = await store.readLogs(insert.workspace.id, 0, 10);
+			const logs = await store.readLogs(workspace.id, 0, 10);
 			expect(logs.length).toBe(2);
 			expect(new TextDecoder().decode(logs[0]?.content)).toBe("hello");
-			const tail = await store.readLogTail(insert.workspace.id, 24);
+			const tail = await store.readLogTail(workspace.id, 24);
 			expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/onefin/.pi\n");
 			expect(tail.truncated).toBe(true);
 			expect(tail.lastSeq).toBe(2);
+
+			const networkSession = randomUUID();
+			const networkEvent = {
+				source_seq: 1,
+				occurred_at: new Date().toISOString(),
+				decision: "deny" as const,
+				transport: "https" as const,
+				host: "blocked.example",
+				port: 443,
+				method: null,
+				path: null,
+				matched_rule: null,
+				reason: "no_matching_rule",
+			};
+			await store.appendNetworkEvents(workspace.id, networkSession, [networkEvent]);
+			await store.appendNetworkEvents(workspace.id, networkSession, [networkEvent]);
+			expect(await store.readNetworkEvents(workspace.id, 0, 10)).toEqual([
+				expect.objectContaining({ seq: 1, sourceSessionId: networkSession, source_seq: 1 }),
+			]);
 
 			const storageId = randomUUID();
 			const now = new Date();
 			await store.insertWorkspaceStorage({
 				id: storageId,
-				workspaceId: insert.workspace.id,
+				workspaceId: workspace.id,
 				principalId: principal.id,
 				providerKind: "filesystem",
 				providerRef: { kind: "filesystem", id: storageId, root: "/opaque" },
@@ -323,7 +408,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			};
 			await store.insertCheckpoint({
 				id: checkpointId,
-				workspaceId: insert.workspace.id,
+				workspaceId: workspace.id,
 				principalId: principal.id,
 				storageId,
 				parentCheckpointId: null,
@@ -359,7 +444,7 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 				state: "succeeded",
 				idempotencyKey: "verify-pg",
 				requestDigest: digestOf({ checkpointId }),
-				workspaceId: insert.workspace.id,
+				workspaceId: workspace.id,
 				checkpointId,
 				resultWorkspaceId: null,
 				reasonCode: null,
@@ -372,13 +457,23 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 			expect((await store.getCheckpoint(checkpointId))?.label).toBe("postgres-roundtrip");
 			expect((await store.checkpointUsage(principal.id)).count).toBe(1);
 			await store.appendOutput({
-				workspaceId: insert.workspace.id,
+				workspaceId: workspace.id,
 				seq: 0,
 				name: "commit",
 				value: "a".repeat(40),
 				occurredAt: now,
 			});
-			expect((await store.listOutputs(insert.workspace.id))[0]?.name).toBe("commit");
+			expect((await store.listOutputs(workspace.id))[0]?.name).toBe("commit");
+			let invalidStateRejected = false;
+			try {
+				await sql.unsafe(
+					`UPDATE "${schema}"."workspaces" SET state = 'not-a-state' WHERE id = $1`,
+					[workspace.id],
+				);
+			} catch {
+				invalidStateRejected = true;
+			}
+			expect(invalidStateRejected).toBe(true);
 
 			// The runtime never created anything outside its schema.
 			const foreign = (await sql.unsafe(

@@ -120,6 +120,14 @@ Secret per workspace. The PVC storage adapter gives every execution an opaque
 subdirectory on a server-mounted claim; restore copies an immutable checkpoint
 into a new subdirectory before Job admission.
 
+Restricted templates require Kubernetes 1.29 or newer with the `SidecarContainers` feature
+enabled; 1.33 or newer is recommended because native sidecars are stable there. PocketCoder adds a
+restartable init sidecar and startup probe. Only that trusted sidecar receives `NET_ADMIN` plus the
+transient `SETUID`/`SETGID` capabilities needed to drop to UID 999 after installing the rules; the
+UID transition clears all three before the proxy begins serving. The
+firewall/audit Secret; the workspace container remains non-root, capability-free, read-only, and
+unable to mount those credentials.
+
 [`deploy/kubernetes/pocketcoder.yaml`](../deploy/kubernetes/pocketcoder.yaml)
 contains separate controller/workspace service accounts, least-privilege
 Role/RoleBinding, a single-replica server Deployment, Service, and PVC:
@@ -175,10 +183,10 @@ POCKETCODER_DATABASE_SCHEMA   table namespace, default pocketcoder
 The URL may target a dedicated database or an existing application database.
 Runtime queries are schema-qualified, while generated Drizzle migrations run
 with `search_path` pinned to the configured schema on a reserved connection.
-Pocketcoder never touches `public`, other schemas, extensions, or application
+PocketCoder never touches `public`, other schemas, extensions, or application
 tables, and creates no cross-schema dependencies. Migrations run under a
-schema-scoped advisory lock via `pcd db migrate` (the server also
-migrates on startup). Recommended roles: a migration role owning the schema,
+	schema-scoped advisory lock via `pcd db migrate`. Server startup verifies that
+	all migrations are applied but never changes the schema. Recommended roles: a migration role owning the schema,
 an application role with connect/usage/DML only.
 
 ## Configuration reference
@@ -191,6 +199,7 @@ an application role with connect/usage/DML only.
 | `POCKETCODER_AUTH_PEPPER` | required (postgres store) | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
+| `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
 | `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `7080` | Listen address |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |

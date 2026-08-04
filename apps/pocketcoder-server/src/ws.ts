@@ -158,6 +158,14 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 		security: {
 			writable_memory_paths: spec.security.writableMemoryPaths,
 		},
+		network:
+			spec.network.mode === "restricted"
+				? {
+						mode: "restricted",
+						proxy_url: "http://127.0.0.1:18080",
+						health_url: "http://127.0.0.1:18082/healthz",
+					}
+				: { mode: "unrestricted" },
 		launch_mode: row.launchMode,
 		source:
 			row.sourceDescriptor && sourceRepository && sourceMount
@@ -207,6 +215,7 @@ type RegisteredFrame = Extract<AgentFrame, { type: "registered" }>;
 type ServiceHealthFrame = Extract<AgentFrame, { type: "service_health" }>;
 type ProcessStateFrame = Extract<AgentFrame, { type: "process_state" }>;
 type AgentStateFrame = Extract<AgentFrame, { type: "agent_state" }>;
+type NetworkStateFrame = Extract<AgentFrame, { type: "network_state" }>;
 type CloseProtocol = (ws: WSContext, message: string) => void;
 
 async function registerConnection(
@@ -276,11 +285,21 @@ async function handleServiceHealth(deps: WsDeps, frame: ServiceHealthFrame): Pro
 	if (!row || isTerminal(row.state)) return;
 	const health = { ...row.health, [frame.payload.service]: frame.payload.health };
 	await deps.store.updateWorkspace(row.id, { health }, new Date());
+	await maybeMarkReady(deps, row, health, row.networkState);
+}
+
+async function maybeMarkReady(
+	deps: WsDeps,
+	row: WorkspaceRow,
+	health: Record<string, string>,
+	networkState: WorkspaceRow["networkState"],
+) {
 	if (row.state !== "connected") return;
 	const allRequiredHealthy = Object.entries(templateServices(row.templateSnapshot.spec))
 		.filter(([, service]) => service.required)
 		.every(([name]) => health[name] === "healthy");
 	if (!allRequiredHealthy) return;
+	if (row.templateSnapshot.spec.network.mode === "restricted" && networkState !== "ready") return;
 	const now = new Date();
 	if (row.sourceDescriptor && !row.resolvedSource) {
 		await deps.scheduler.finalize(row, "failed", "source_resolution_failed", now);
@@ -295,9 +314,13 @@ async function handleServiceHealth(deps: WsDeps, frame: ServiceHealthFrame): Pro
 }
 
 async function handleProcessState(deps: WsDeps, frame: ProcessStateFrame): Promise<void> {
-	if (frame.payload.phase !== "exited") return;
 	const row = await deps.store.getWorkspace(frame.workspace_id);
 	if (!row || isTerminal(row.state) || row.state === "preserving") return;
+	if (frame.payload.phase === "running") {
+		await maybeMarkReady(deps, row, row.health, row.networkState);
+		return;
+	}
+	if (frame.payload.phase !== "exited") return;
 	const now = new Date();
 	if (row.state === "terminating") {
 		await deps.scheduler.finalize(
@@ -325,6 +348,16 @@ async function handleAgentState(deps: WsDeps, frame: AgentStateFrame): Promise<v
 	);
 }
 
+async function handleNetworkState(deps: WsDeps, frame: NetworkStateFrame): Promise<void> {
+	const row = await deps.store.getWorkspace(frame.workspace_id);
+	if (!row || isTerminal(row.state)) return;
+	await deps.store.updateWorkspace(row.id, { networkState: frame.payload.state }, new Date());
+	if (frame.payload.state === "degraded") {
+		await deps.scheduler.finalize(row, "failed", "network_policy_failed", new Date());
+		return;
+	}
+}
+
 async function handleConnectedFrame(
 	deps: WsDeps,
 	connection: LiveConnection,
@@ -350,6 +383,9 @@ async function handleConnectedFrame(
 			return;
 		case "agent_state":
 			await handleAgentState(deps, frame);
+			return;
+		case "network_state":
+			await handleNetworkState(deps, frame);
 			return;
 		case "log_chunk":
 			await deps.store.appendLogs(frame.workspace_id, [

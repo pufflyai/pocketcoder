@@ -44,9 +44,12 @@ async function collectTranscriptTail(
 	const tail: ConversationEntryData[] = [];
 	let total = 0;
 	let pages = 0;
-	let after = 0;
+	let cursor: string | undefined;
 	while (pages < options.maxPages) {
-		const page = await controlPlane.readConversationPage(workspaceId, after, options.pageLimit);
+		const page = await controlPlane.conversations.list(workspaceId, {
+			cursor,
+			limit: options.pageLimit,
+		});
 		pages += 1;
 		for (const message of page.items) {
 			total += 1;
@@ -61,7 +64,7 @@ async function collectTranscriptTail(
 			if (tail.length > options.maxMessages) tail.shift();
 		}
 		if (page.nextCursor === null) return { tail, total, pages, exhaustedPages: false };
-		after = page.nextCursor;
+		cursor = page.nextCursor;
 	}
 	return { tail, total, pages, exhaustedPages: true };
 }

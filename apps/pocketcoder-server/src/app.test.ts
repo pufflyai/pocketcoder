@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { issueEgressAuditToken, issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { PocketCoderClient } from "@pstdio/pocketcoder-client";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS, type Store } from "@pstdio/pocketcoder-runtime-core";
-import {
-	FakeDriver,
-	fixtureTemplateEcho,
-	fixtureTemplateSleep,
-	MemoryStore,
-} from "@pstdio/pocketcoder-testkit";
+import { FakeDriver, fixtureTemplateEcho, fixtureTemplateSleep } from "@pstdio/pocketcoder-testkit";
 import type { WSContext } from "hono/ws";
 import { type BuiltServer, buildServer } from "./app";
+import { Readiness } from "./health";
 
 const PEPPER = "test-pepper";
 
@@ -20,7 +18,7 @@ interface TestServer extends BuiltServer {
 	limitedToken: string;
 }
 
-async function createTestServer(limits = {}): Promise<TestServer> {
+async function createTestServer(limits = {}, readiness?: Readiness): Promise<TestServer> {
 	const store = new MemoryStore();
 	const driver = new FakeDriver();
 	const principal = await store.createPrincipal(
@@ -35,6 +33,7 @@ async function createTestServer(limits = {}): Promise<TestServer> {
 			"conversations:delete",
 			"services:relay",
 			"logs:read",
+			"network:read",
 		],
 		["fixture-echo"],
 	);
@@ -77,6 +76,7 @@ async function createTestServer(limits = {}): Promise<TestServer> {
 		pepper: PEPPER,
 		limits: { ...DEFAULT_LIMITS, ...limits },
 		workspaceServerUrl: "http://127.0.0.1:0",
+		...(readiness ? { readiness } : {}),
 	});
 	return { ...built, store, driver, token: key.token, limitedToken: limitedKey.token };
 }
@@ -111,6 +111,24 @@ describe("authentication", () => {
 
 		const res2 = await app.request("/v1/templates", authed("pkt_bad_token"));
 		expect(res2.status).toBe(401);
+	});
+
+	test("propagates a bounded caller request ID on success and errors", async () => {
+		const { app, token } = await createTestServer();
+		const requestId = "caller-trace-123";
+		const success = await app.request(
+			"/v1/templates",
+			authed(token, { headers: { "x-request-id": requestId } }),
+		);
+		expect(success.headers.get("x-request-id")).toBe(requestId);
+
+		const failure = await app.request("/v1/templates", {
+			headers: { "x-request-id": requestId },
+		});
+		expect(failure.headers.get("x-request-id")).toBe(requestId);
+		expect(((await failure.json()) as { error: { request_id: string } }).error.request_id).toBe(
+			requestId,
+		);
 	});
 
 	test("rejects revoked keys on the next request", async () => {
@@ -150,6 +168,41 @@ describe("authentication", () => {
 	});
 });
 
+describe("health", () => {
+	test("separates process liveness from dependency readiness", async () => {
+		const { app } = await createTestServer();
+		const live = await app.request("/livez");
+		const ready = await app.request("/readyz");
+
+		expect(live.status).toBe(200);
+		expect(await live.json()).toMatchObject({ ok: true });
+		expect(ready.status).toBe(200);
+		expect(await ready.json()).toMatchObject({
+			ok: true,
+			checks: {
+				database: "ok",
+				schema: "ok",
+				reconciliation: "ok",
+				coordinator: "ok",
+			},
+		});
+	});
+
+	test("keeps liveness healthy while a failed dependency makes readiness unavailable", async () => {
+		const readiness = new Readiness();
+		readiness.set("reconciliation", "failed");
+		const { app } = await createTestServer({}, readiness);
+
+		expect((await app.request("/livez")).status).toBe(200);
+		const ready = await app.request("/readyz");
+		expect(ready.status).toBe(503);
+		expect(await ready.json()).toMatchObject({
+			ok: false,
+			checks: { reconciliation: "failed" },
+		});
+	});
+});
+
 describe("templates", () => {
 	test("lists only authorized templates", async () => {
 		const { app, token } = await createTestServer();
@@ -162,6 +215,81 @@ describe("templates", () => {
 		const { app, token } = await createTestServer();
 		const res = await app.request("/v1/templates/fixture-sleep", authed(token));
 		expect(res.status).toBe(404);
+	});
+});
+
+describe("workspace network audits", () => {
+	test("authenticates, deduplicates, redacts, paginates, and authorizes events", async () => {
+		const server = await createTestServer();
+		const createdResponse = await server.app.request(
+			"/v1/workspaces",
+			authed(server.token, {
+				method: "POST",
+				headers: { "idempotency-key": "network-audit" },
+				body: createBody("network-audit"),
+			}),
+		);
+		const workspace = (await createdResponse.json()) as { id: string };
+		const auditToken = issueEgressAuditToken(PEPPER, {
+			kind: "workspace",
+			id: workspace.id,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
+		const sourceSession = randomUUID();
+		const event = {
+			source_seq: 1,
+			occurred_at: new Date().toISOString(),
+			decision: "allow",
+			transport: "http",
+			host: "github.com",
+			port: 443,
+			method: "GET",
+			path: "/repos/pstdio/pocketcoder",
+			matched_rule: "github.com",
+			reason: "matched_rule",
+		};
+		const body = JSON.stringify({ source_session_id: sourceSession, events: [event] });
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const response = await server.app.request("/v1/internal/egress/events", {
+				method: "POST",
+				headers: { authorization: `Bearer ${auditToken}`, "content-type": "application/json" },
+				body,
+			});
+			expect(response.status).toBe(202);
+		}
+		const page = await server.app.request(
+			`/v1/workspaces/${workspace.id}/network-events?limit=1`,
+			authed(server.token),
+		);
+		expect(page.status).toBe(200);
+		const events = (await page.json()) as {
+			items: Array<Record<string, unknown>>;
+			next_cursor: string | null;
+		};
+		expect(events.items).toHaveLength(1);
+		expect(events.items[0]).toMatchObject({ seq: 1, host: "github.com", path: event.path });
+		expect(JSON.stringify(events)).not.toContain("authorization");
+		expect(events.next_cursor).toBeNull();
+		const forbidden = await server.app.request(
+			`/v1/workspaces/${workspace.id}/network-events`,
+			authed(server.limitedToken),
+		);
+		expect(forbidden.status).toBe(403);
+	});
+
+	test("rejects expired audit credentials", async () => {
+		const server = await createTestServer();
+		const token = issueEgressAuditToken(PEPPER, {
+			kind: "workspace",
+			id: randomUUID(),
+			expiresAt: new Date(Date.now() - 1),
+		});
+		const response = await server.app.request("/v1/internal/egress/events", {
+			method: "POST",
+			headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+			body: "{}",
+		});
+		expect(response.status).toBe(401);
 	});
 });
 
@@ -191,6 +319,81 @@ describe("workspace creation", () => {
 		);
 		expect(repeat.status).toBe(200);
 		expect(((await repeat.json()) as { id: string }).id).toBe(created.id);
+	});
+
+	test("replays an existing workspace even after the queue becomes full", async () => {
+		const { app, token } = await createTestServer({
+			maxQueuedWorkspaces: 1,
+			globalActiveWorkspaces: 0,
+		});
+		const body = createBody("retry-after-capacity");
+		const first = await app.request(
+			"/v1/workspaces",
+			authed(token, {
+				method: "POST",
+				headers: { "idempotency-key": "retry-after-capacity" },
+				body,
+			}),
+		);
+		expect(first.status).toBe(201);
+		const created = (await first.json()) as { id: string };
+
+		const replay = await app.request(
+			"/v1/workspaces",
+			authed(token, {
+				method: "POST",
+				headers: { "idempotency-key": "retry-after-capacity" },
+				body,
+			}),
+		);
+
+		expect(replay.status).toBe(200);
+		expect(((await replay.json()) as { id: string }).id).toBe(created.id);
+	});
+
+	test("reserves queue capacity atomically across concurrent creates", async () => {
+		const { app, token, store } = await createTestServer({
+			maxQueuedWorkspaces: 1,
+			globalActiveWorkspaces: 0,
+		});
+		const requests = ["concurrent-capacity-a", "concurrent-capacity-b"].map((id) =>
+			app.request(
+				"/v1/workspaces",
+				authed(token, {
+					method: "POST",
+					headers: { "idempotency-key": id },
+					body: createBody(id),
+				}),
+			),
+		);
+
+		const responses = await Promise.all(requests);
+
+		expect(responses.map((response) => response.status).sort()).toEqual([201, 429]);
+		expect(await store.countQueued()).toBe(1);
+	});
+
+	test("does not advertise a next page at an exact collection boundary", async () => {
+		const { app, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+		for (const id of ["page-boundary-a", "page-boundary-b"]) {
+			expect(
+				(
+					await app.request(
+						"/v1/workspaces",
+						authed(token, {
+							method: "POST",
+							headers: { "idempotency-key": id },
+							body: createBody(id),
+						}),
+					)
+				).status,
+			).toBe(201);
+		}
+
+		const response = await app.request("/v1/workspaces?limit=2", authed(token));
+		const page = (await response.json()) as { items: unknown[]; next_cursor: string | null };
+		expect(page.items).toHaveLength(2);
+		expect(page.next_cursor).toBeNull();
 	});
 
 	test("conflicting body under the same idempotency key returns 409", async () => {
@@ -228,7 +431,9 @@ describe("workspace creation", () => {
 			"Idempotency-Key header is required.",
 		);
 	});
+});
 
+describe("workspace creation diagnostics", () => {
 	test("long-polls a durable workspace change cursor", async () => {
 		const { app, store, token } = await createTestServer({ globalActiveWorkspaces: 0 });
 		const createdRes = await app.request(
@@ -527,28 +732,32 @@ describe("historical conversations", () => {
 		});
 
 		const page1 = await server.app.request(
-			`/v1/workspaces/${workspace.id}/conversation?after=0&limit=1`,
+			`/v1/workspaces/${workspace.id}/conversation?limit=1`,
 			authed(server.token),
 		);
 		expect(page1.status).toBe(200);
 		const firstPage = (await page1.json()) as {
 			items: Array<{ message_id: string; content: string }>;
-			next_cursor: number;
+			next_cursor: string;
 			retention: { status: string; expires_at: string };
 		};
 		expect(firstPage.items).toEqual([
 			expect.objectContaining({ message_id: "m-1", content: "Fix the failing test" }),
 		]);
-		expect(firstPage.next_cursor).toBe(1);
+		expect(typeof firstPage.next_cursor).toBe("string");
+		expect(firstPage.next_cursor).not.toBe("1");
 		expect(firstPage.retention.status).toBe("retained");
 
 		const page2 = await server.app.request(
-			`/v1/workspaces/${workspace.id}/conversation?after=${firstPage.next_cursor}&limit=1`,
+			`/v1/workspaces/${workspace.id}/conversation?cursor=${encodeURIComponent(firstPage.next_cursor)}&limit=1`,
 			authed(server.token),
 		);
-		expect(
-			((await page2.json()) as { items: Array<{ message_id: string }> }).items[0]?.message_id,
-		).toBe("m-2");
+		const secondPage = (await page2.json()) as {
+			items: Array<{ message_id: string }>;
+			next_cursor: string | null;
+		};
+		expect(secondPage.items[0]?.message_id).toBe("m-2");
+		expect(secondPage.next_cursor).toBeNull();
 		await server.store.setConversationExpiry(workspace.id, new Date(Date.now() - 1), new Date());
 		const expired = await server.app.request(
 			`/v1/workspaces/${workspace.id}/conversation`,
@@ -751,7 +960,23 @@ describe("openapi", () => {
 		const doc = (await res.json()) as {
 			paths: Record<
 				string,
-				{ post?: { parameters?: Array<{ name: string; in: string; required?: boolean }> } }
+				{
+					get?: {
+						operationId?: string;
+						tags?: string[];
+						parameters?: Array<{ name: string; in: string; required?: boolean }>;
+						responses: Record<string, { content?: Record<string, { schema?: unknown }> }>;
+					};
+					post?: {
+						operationId?: string;
+						tags?: string[];
+						parameters?: Array<{ name: string; in: string; required?: boolean }>;
+						responses: Record<string, unknown>;
+					};
+					put?: { operationId?: string; tags?: string[]; responses: Record<string, unknown> };
+					patch?: { operationId?: string; tags?: string[]; responses: Record<string, unknown> };
+					delete?: { operationId?: string; tags?: string[]; responses: Record<string, unknown> };
+				}
 			>;
 		};
 		expect(Object.keys(doc.paths)).toContain("/v1/workspaces");
@@ -763,5 +988,51 @@ describe("openapi", () => {
 				required: true,
 			}),
 		);
+		for (const path of [
+			"/v1/templates",
+			"/v1/workspaces",
+			"/v1/workspaces/{id}/checkpoints",
+			"/v1/workspaces/{id}/conversation",
+			"/v1/workspaces/{id}/outputs",
+			"/v1/workspaces/{id}/network-events",
+			"/v1/workspaces/{id}/logs",
+		]) {
+			const queryNames =
+				doc.paths[path]?.get?.parameters
+					?.filter((parameter) => parameter.in === "query")
+					.map((parameter) => parameter.name) ?? [];
+			expect(queryNames).toContain("cursor");
+			expect(queryNames).not.toContain("after");
+		}
+		for (const path of Object.values(doc.paths)) {
+			for (const operation of [path.get, path.post, path.put, path.patch, path.delete]) {
+				if (!operation) continue;
+				expect(operation.operationId).toBeString();
+				expect(operation.tags?.length).toBeGreaterThan(0);
+				for (const status of ["400", "401", "403"]) {
+					expect(operation.responses).toHaveProperty(status);
+				}
+			}
+		}
+	});
+});
+
+describe("typed client conformance", () => {
+	test("validates real Hono responses without a parallel DTO layer", async () => {
+		const server = await createTestServer({ globalActiveWorkspaces: 0 });
+		const fetchImpl = ((input: string | URL | Request, init?: RequestInit) =>
+			server.app.request(input, init)) as typeof fetch;
+		const client = new PocketCoderClient(
+			{ baseUrl: "http://pocketcoder.test", apiKey: server.token },
+			fetchImpl,
+		);
+
+		const templates = await client.templates.list();
+		expect(templates.map((template) => template.name)).toContain("fixture-echo");
+		const created = await client.workspaces.create({
+			externalId: "client-conformance",
+			templateName: "fixture-echo",
+		});
+		expect((await client.workspaces.get(created.id)).external_id).toBe("client-conformance");
 	});
 });

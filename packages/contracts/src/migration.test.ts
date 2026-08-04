@@ -23,7 +23,9 @@ describe("coder-lite migration freeze", () => {
 			) {
 				continue;
 			}
-			const text = await Bun.file(resolve(repository, path)).text();
+			const file = Bun.file(resolve(repository, path));
+			if (!(await file.exists())) continue;
+			const text = await file.text();
 			if (LEGACY_IDENTIFIERS.test(text)) matches.push(path);
 		}
 		const readme = await Bun.file(resolve(repository, "README.md")).text();

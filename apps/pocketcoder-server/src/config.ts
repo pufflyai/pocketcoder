@@ -18,6 +18,7 @@ export interface ServerConfig {
 	pepper: string;
 	eventSigningKey: string;
 	eventSinkUrl: string | null;
+	egressImage: string | null;
 	templateDir: string | null;
 	driverKind: "docker" | "kubernetes";
 	// Directory for workspace provider input files. When the server itself
@@ -97,6 +98,35 @@ function intEnv(env: Environment, key: string, fallback: number): number {
 	return value;
 }
 
+function enumEnv<const T extends readonly string[]>(
+	env: Environment,
+	key: string,
+	values: T,
+	fallback: T[number],
+): T[number] {
+	const raw = env[key];
+	if (raw === undefined) return fallback;
+	if (!values.includes(raw)) {
+		throw new Error(`${key} must be one of: ${values.join(", ")}`);
+	}
+	return raw as T[number];
+}
+
+function httpUrlEnv(env: Environment, key: string, fallback: string | null): string | null {
+	const value = env[key] ?? fallback;
+	if (value === null) return null;
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		throw new Error(`${key} must be a valid HTTP(S) URL`);
+	}
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new Error(`${key} must be a valid HTTP(S) URL`);
+	}
+	return value;
+}
+
 function bytesEnv(env: Environment, key: string, fallback: number): number {
 	const raw = env[key];
 	if (!raw) return fallback;
@@ -118,7 +148,7 @@ function bytesEnv(env: Environment, key: string, fallback: number): number {
 }
 
 function resolveStore(env: Environment): Pick<ServerConfig, "storeKind" | "databaseUrl"> {
-	const storeKind = env.POCKETCODER_STORE === "memory" ? "memory" : "postgres";
+	const storeKind = enumEnv(env, "POCKETCODER_STORE", ["postgres", "memory"] as const, "postgres");
 	const databaseUrl = env.POCKETCODER_DATABASE_URL ?? null;
 	if (storeKind === "postgres" && !databaseUrl) {
 		throw new Error(
@@ -147,13 +177,12 @@ function resolveStorage(
 	ServerConfig,
 	"storageBackend" | "workspaceDataDir" | "checkpointDir" | "kubernetesWorkspaceClaim"
 > {
-	const storageBackend =
-		env.POCKETCODER_STORAGE_BACKEND === "kubernetes-pvc"
-			? "kubernetes-pvc"
-			: env.POCKETCODER_STORAGE_BACKEND === "filesystem" ||
-					env.POCKETCODER_STORAGE_BACKEND === "docker-local"
-				? "filesystem"
-				: "disabled";
+	const storageBackend = enumEnv(
+		env,
+		"POCKETCODER_STORAGE_BACKEND",
+		["disabled", "filesystem", "kubernetes-pvc"] as const,
+		"disabled",
+	);
 	const workspaceDataDir = env.POCKETCODER_WORKSPACE_DATA_DIR ?? null;
 	const checkpointDir = env.POCKETCODER_CHECKPOINT_DIR ?? null;
 	if (storageBackend === "filesystem" && (!workspaceDataDir || !checkpointDir)) {
@@ -180,12 +209,12 @@ function resolveStorage(
 }
 
 function resolveSecrets(env: Environment): Pick<ServerConfig, "secretProvider" | "secretRoot"> {
-	const secretProvider: ServerConfig["secretProvider"] =
-		env.POCKETCODER_SECRET_PROVIDER === "file"
-			? "file"
-			: env.POCKETCODER_SECRET_PROVIDER === "kubernetes"
-				? "kubernetes"
-				: "disabled";
+	const secretProvider = enumEnv(
+		env,
+		"POCKETCODER_SECRET_PROVIDER",
+		["disabled", "file", "kubernetes"] as const,
+		"disabled",
+	);
 	const secretRoot = env.POCKETCODER_SECRET_ROOT ?? null;
 	if (secretProvider === "file" && !secretRoot) {
 		throw new Error("POCKETCODER_SECRET_ROOT is required for the file secret provider");
@@ -244,14 +273,57 @@ function resolvePersistenceLimits(env: Environment): PersistenceLimits {
 	};
 }
 
+function assertCompatibleBackends(
+	driverKind: ServerConfig["driverKind"],
+	storage: ReturnType<typeof resolveStorage>,
+	secrets: ReturnType<typeof resolveSecrets>,
+): void {
+	if (driverKind === "docker" && storage.storageBackend === "kubernetes-pvc") {
+		throw new Error("POCKETCODER_DRIVER=docker cannot use kubernetes-pvc storage");
+	}
+	if (driverKind === "kubernetes" && storage.storageBackend === "filesystem") {
+		throw new Error("POCKETCODER_STORAGE_BACKEND=filesystem cannot be used with Kubernetes");
+	}
+	if (driverKind === "docker" && secrets.secretProvider === "kubernetes") {
+		throw new Error("POCKETCODER_DRIVER=docker cannot use the Kubernetes secret provider");
+	}
+	if (driverKind === "kubernetes" && secrets.secretProvider === "file") {
+		throw new Error("POCKETCODER_SECRET_PROVIDER=file cannot be used with Kubernetes");
+	}
+}
+
+export function configSummary(config: ServerConfig) {
+	return {
+		listen: `${config.listenHost}:${config.listenPort}`,
+		store: config.storeKind,
+		databaseSchema: config.storeKind === "postgres" ? config.databaseSchema : null,
+		driver: config.driverKind,
+		storage: config.storageBackend,
+		secrets: config.secretProvider,
+		persistenceEnabled: config.storageBackend !== "disabled",
+		warmPoolCount: config.warmPools.length,
+	};
+}
+
 export function loadConfig(env: Environment = process.env): ServerConfig {
 	const { storeKind, databaseUrl } = resolveStore(env);
 	const pepper = resolvePepper(env, storeKind);
 	const listenPort = intEnv(env, "POCKETCODER_PORT", 7080);
-	const driverKind = env.POCKETCODER_DRIVER === "kubernetes" ? "kubernetes" : "docker";
+	if (listenPort > 65_535) throw new Error("POCKETCODER_PORT must be at most 65535");
+	const driverKind = enumEnv(
+		env,
+		"POCKETCODER_DRIVER",
+		["docker", "kubernetes"] as const,
+		"docker",
+	);
 	const kubernetesNamespace = env.POCKETCODER_KUBERNETES_NAMESPACE ?? "default";
 	const storage = resolveStorage(env);
 	const secrets = resolveSecrets(env);
+	assertCompatibleBackends(driverKind, storage, secrets);
+	const egressImage = env.POCKETCODER_EGRESS_IMAGE ?? null;
+	if (egressImage && !/@sha256:[0-9a-f]{64}$/.test(egressImage)) {
+		throw new Error("POCKETCODER_EGRESS_IMAGE must be an immutable sha256 digest reference");
+	}
 	return {
 		listenHost: env.POCKETCODER_HOST ?? "127.0.0.1",
 		listenPort,
@@ -260,7 +332,8 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
 		databaseSchema: env.POCKETCODER_DATABASE_SCHEMA ?? "pocketcoder",
 		pepper,
 		eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,
-		eventSinkUrl: env.POCKETCODER_EVENT_SINK_URL ?? null,
+		eventSinkUrl: httpUrlEnv(env, "POCKETCODER_EVENT_SINK_URL", null),
+		egressImage,
 		templateDir: env.POCKETCODER_TEMPLATE_DIR ?? null,
 		driverKind,
 		inputDir: env.POCKETCODER_INPUT_DIR ?? null,
@@ -269,11 +342,13 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
 		kubernetesNamespace,
 		kubernetesServiceAccount: env.POCKETCODER_KUBERNETES_SERVICE_ACCOUNT ?? null,
 		kubernetesWorkspaceSubPath: env.POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH ?? "workspaces",
-		workspaceServerUrl:
-			env.POCKETCODER_WORKSPACE_SERVER_URL ??
-			(driverKind === "kubernetes"
+		workspaceServerUrl: httpUrlEnv(
+			env,
+			"POCKETCODER_WORKSPACE_SERVER_URL",
+			driverKind === "kubernetes"
 				? `http://pocketcoder-server.${kubernetesNamespace}.svc:${listenPort}`
-				: `http://host.docker.internal:${listenPort}`),
+				: `http://host.docker.internal:${listenPort}`,
+		) as string,
 		limits: resolveAdmissionLimits(env),
 		schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
 		outboxIntervalMs: intEnv(env, "POCKETCODER_OUTBOX_INTERVAL_MS", 1000),

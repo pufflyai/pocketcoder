@@ -61,7 +61,7 @@ function requireRelayCapable(deps: WorkspaceCommandDeps, ctx: CommandContext): b
 }
 
 async function pickWorkspace(deps: WorkspaceCommandDeps, ctx: CommandContext): Promise<void> {
-	const workspaces = await deps.controlPlane.listWorkspaces({ state: "ready" });
+	const workspaces = (await deps.controlPlane.workspaces.list({ state: "ready" })).items;
 	if (workspaces.length === 0) {
 		ctx.ui.notify("no ready workspaces; use /workspace-create", "info");
 		return;
@@ -74,7 +74,7 @@ async function pickWorkspace(deps: WorkspaceCommandDeps, ctx: CommandContext): P
 }
 
 async function createWorkspace(deps: WorkspaceCommandDeps, ctx: CommandContext): Promise<void> {
-	const templates = await deps.controlPlane.listTemplates();
+	const templates = await deps.controlPlane.templates.list();
 	if (templates.length === 0) {
 		ctx.ui.notify("no templates available to this key", "warning");
 		return;
@@ -89,13 +89,17 @@ async function createWorkspace(deps: WorkspaceCommandDeps, ctx: CommandContext):
 
 	try {
 		ctx.ui.setWorkingMessage(`creating workspace ${externalId}`);
-		const created = await deps.controlPlane.createWorkspace({
+		const created = await deps.controlPlane.workspaces.create({
 			externalId,
 			templateName: template.name,
 		});
-		const ready = await deps.controlPlane.waitForReady(created, deps.waitTimeoutMs ?? 300_000, {
-			onTick: (workspace) => ctx.ui.setWorkingMessage(`workspace ${workspace.state}`),
-		});
+		const ready = await deps.controlPlane.workspaces.waitForReady(
+			created,
+			deps.waitTimeoutMs ?? 300_000,
+			{
+				onTick: (workspace) => ctx.ui.setWorkingMessage(`workspace ${workspace.state}`),
+			},
+		);
 		await switchToWorkspace(deps, ctx, ready.id);
 	} catch (error) {
 		const message =
@@ -119,7 +123,7 @@ async function cancelWorkspace(deps: WorkspaceCommandDeps, ctx: CommandContext):
 		`Cancel workspace ${target.workspaceId}? The remote agent stops and the workspace is discarded.`,
 	);
 	if (!confirmed) return;
-	await deps.controlPlane.cancelWorkspace(target.workspaceId);
+	await deps.controlPlane.workspaces.cancel(target.workspaceId);
 	ctx.ui.notify(`workspace ${target.workspaceId.slice(0, 8)} canceled`, "info");
 }
 

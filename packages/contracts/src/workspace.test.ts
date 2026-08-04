@@ -1,5 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { canTransition, isTerminal, TERMINAL_STATES, WORKSPACE_STATES } from "./workspace";
+import {
+	canTransition,
+	isTerminal,
+	REASON_CODES,
+	TERMINAL_STATES,
+	WORKSPACE_STATES,
+	WorkspaceResourceSchema,
+} from "./workspace";
+
+test("workspace resources expose firewall state and reason", () => {
+	expect(REASON_CODES).toContain("network_policy_failed");
+	expect(WorkspaceResourceSchema.shape.network.parse({ state: "degraded" })).toEqual({
+		state: "degraded",
+	});
+});
 
 describe("workspace state machine", () => {
 	test("happy path is allowed", () => {

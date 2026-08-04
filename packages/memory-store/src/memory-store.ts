@@ -14,6 +14,8 @@ import {
 	type ConversationStateRow,
 	type LogRow,
 	type MachineKeyRow,
+	type NetworkEventRow,
+	OperationCapacityExceededError,
 	type OutboxRow,
 	type PrincipalRow,
 	type StateHistoryRow,
@@ -26,9 +28,11 @@ import {
 	type WarmPoolClaim,
 	type WarmPoolRuntimePatch,
 	type WarmPoolRuntimeRow,
+	type WorkspaceAdmissionClaim,
 	type WorkspaceCheckpointPatch,
 	type WorkspaceCheckpointRow,
 	type WorkspaceInsert,
+	type WorkspaceInsertResult,
 	type WorkspaceListFilter,
 	type WorkspaceOperationPatch,
 	type WorkspaceOperationRow,
@@ -37,11 +41,10 @@ import {
 	type WorkspaceRow,
 	type WorkspaceStoragePatch,
 	type WorkspaceStorageRow,
-} from "@pstdio/pocketcoder-runtime-core";
+} from "@pstdio/pocketcoder-runtime-contracts";
 
-// In-memory Store used by tests and single-process development. PostgreSQL
-// (@pstdio/pocketcoder-db) is the durable implementation; both must satisfy the same
-// behavior suite.
+// In-memory adapter for tests and single-process development. PostgreSQL is
+// the durable implementation; both satisfy the same behavioral contract.
 
 const ACTIVE_STATES: readonly WorkspaceState[] = [
 	"provisioning",
@@ -76,6 +79,7 @@ export class MemoryStore implements Store {
 	private history: StateHistoryRow[] = [];
 	private outbox: OutboxRow[] = [];
 	private logs = new Map<string, LogRow[]>();
+	private networkEvents = new Map<string, NetworkEventRow[]>();
 	private logBytes = new Map<string, number>();
 	private claimedEvents = new Set<string>();
 	private storage = new Map<string, WorkspaceStorageRow>();
@@ -86,9 +90,18 @@ export class MemoryStore implements Store {
 	private conversationBytes = new Map<string, number>();
 	private conversationStates = new Map<string, ConversationStateRow>();
 	private changeWaiters = new Map<string, Set<() => void>>();
+	private coordinatorActive = false;
 
 	async init(): Promise<void> {}
+	async acquireCoordinatorLease(): Promise<() => Promise<void>> {
+		if (this.coordinatorActive) throw new Error("a PocketCoder coordinator is already active");
+		this.coordinatorActive = true;
+		return async () => {
+			this.coordinatorActive = false;
+		};
+	}
 	async close(): Promise<void> {
+		this.coordinatorActive = false;
 		for (const waiters of this.changeWaiters.values()) {
 			for (const resolve of waiters) resolve();
 		}
@@ -289,22 +302,36 @@ export class MemoryStore implements Store {
 	}
 
 	// --- Workspaces ---
-
-	async insertWorkspace(
-		row: WorkspaceInsert,
-	): Promise<{ workspace: WorkspaceRow; created: boolean; conflict: boolean }> {
+	private workspaceInsertConflict(row: WorkspaceInsert): WorkspaceInsertResult | null {
 		for (const existing of this.workspaces.values()) {
 			if (existing.principalId !== row.principalId) continue;
 			if (existing.idempotencyKey === row.idempotencyKey) {
-				if (existing.requestDigest === row.requestDigest) {
-					return { workspace: { ...existing }, created: false, conflict: false };
-				}
-				return { workspace: { ...existing }, created: false, conflict: true };
+				return existing.requestDigest === row.requestDigest
+					? { kind: "replayed", workspace: { ...existing } }
+					: { kind: "conflict", conflict: "idempotency", workspace: { ...existing } };
 			}
 			if (existing.externalId === row.externalId && !isTerminal(existing.state)) {
-				return { workspace: { ...existing }, created: false, conflict: true };
+				return { kind: "conflict", conflict: "external_id", workspace: { ...existing } };
 			}
 		}
+		return null;
+	}
+
+	private queueIsFull(maxQueuedWorkspaces: number | undefined): boolean {
+		return (
+			maxQueuedWorkspaces !== undefined &&
+			[...this.workspaces.values()].filter((workspace) => workspace.state === "queued").length >=
+				maxQueuedWorkspaces
+		);
+	}
+
+	async insertWorkspace(
+		row: WorkspaceInsert,
+		options: { maxQueuedWorkspaces?: number } = {},
+	): Promise<WorkspaceInsertResult> {
+		const conflict = this.workspaceInsertConflict(row);
+		if (conflict) return conflict;
+		if (this.queueIsFull(options.maxQueuedWorkspaces)) return { kind: "capacity_exceeded" };
 		const snapshot = row.templateSnapshot;
 		const workspace: WorkspaceRow = {
 			id: row.id,
@@ -320,6 +347,8 @@ export class MemoryStore implements Store {
 			state: "queued",
 			reasonCode: null,
 			agentState: "unknown",
+			networkState: snapshot.spec.network.mode === "restricted" ? "starting" : "disabled",
+			networkEventSeq: 0,
 			changeSeq: 1,
 			failureLogTail: null,
 			failureLogTailTruncated: false,
@@ -356,7 +385,18 @@ export class MemoryStore implements Store {
 		this.workspaces.set(workspace.id, workspace);
 		this.appendHistory(workspace, null, "queued", null, row.createdAt);
 		this.appendWorkspaceEvent(workspace, row.createdAt);
-		return { workspace: { ...workspace }, created: true, conflict: false };
+		return { kind: "created", workspace: { ...workspace } };
+	}
+
+	async getWorkspaceByIdempotency(
+		principalId: string,
+		idempotencyKey: string,
+	): Promise<WorkspaceRow | null> {
+		const workspace = [...this.workspaces.values()].find(
+			(candidate) =>
+				candidate.principalId === principalId && candidate.idempotencyKey === idempotencyKey,
+		);
+		return workspace ? { ...workspace } : null;
 	}
 
 	async getWorkspace(id: string): Promise<WorkspaceRow | null> {
@@ -385,19 +425,22 @@ export class MemoryStore implements Store {
 		return rows.slice(0, filter.limit).map((w) => ({ ...w }));
 	}
 
-	async listQueued(limit: number): Promise<WorkspaceRow[]> {
-		return [...this.workspaces.values()]
+	async listQueuedHeads(): Promise<WorkspaceRow[]> {
+		const queued = [...this.workspaces.values()]
 			.filter((w) => w.state === "queued")
-			.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-			.slice(0, limit)
-			.map((w) => ({ ...w }));
+			.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+		const heads = new Map<string, WorkspaceRow>();
+		for (const workspace of queued) {
+			if (!heads.has(workspace.principalId)) heads.set(workspace.principalId, workspace);
+		}
+		return [...heads.values()].map((workspace) => ({ ...workspace }));
 	}
 
 	async listNonterminal(): Promise<WorkspaceRow[]> {
 		return [...this.workspaces.values()].filter((w) => !isTerminal(w.state)).map((w) => ({ ...w }));
 	}
 
-	async countActive(): Promise<ActiveCounts> {
+	private activeCounts(): ActiveCounts {
 		const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
 		for (const w of this.workspaces.values()) {
 			if (!ACTIVE_STATES.includes(w.state)) continue;
@@ -408,8 +451,39 @@ export class MemoryStore implements Store {
 		return counts;
 	}
 
+	async countActive(): Promise<ActiveCounts> {
+		return this.activeCounts();
+	}
+
 	async countQueued(): Promise<number> {
 		return [...this.workspaces.values()].filter((w) => w.state === "queued").length;
+	}
+
+	async claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim): Promise<WorkspaceRow | null> {
+		const workspace = this.workspaces.get(claim.workspaceId);
+		if (workspace?.state !== "queued") return null;
+		const counts = this.activeCounts();
+		if (counts.global >= claim.limits.globalActiveWorkspaces) return null;
+		if (
+			(counts.byPrincipal[workspace.principalId] ?? 0) >= claim.limits.perPrincipalActiveWorkspaces
+		) {
+			return null;
+		}
+		const templateLimit =
+			claim.limits.perTemplateActiveWorkspaces[workspace.templateName] ??
+			claim.limits.globalActiveWorkspaces;
+		if ((counts.byTemplate[workspace.templateName] ?? 0) >= templateLimit) return null;
+		return this.transition(workspace.id, {
+			from: ["queued"],
+			to: "provisioning",
+			at: claim.at,
+			patch: {
+				provisioningMode: "cold",
+				registrationDigest: claim.registrationDigest,
+				registrationExpiresAt: claim.registrationExpiresAt,
+				launchAttempts: workspace.launchAttempts + 1,
+			},
+		});
 	}
 
 	async updateWorkspace(id: string, patch: WorkspacePatch, at: Date): Promise<void> {
@@ -572,6 +646,7 @@ export class MemoryStore implements Store {
 
 	async insertOperation(
 		row: WorkspaceOperationRow,
+		options: { maxIncompleteOperations?: number } = {},
 	): Promise<{ operation: WorkspaceOperationRow; created: boolean; conflict: boolean }> {
 		const existing = [...this.operations.values()].find(
 			(candidate) =>
@@ -585,6 +660,14 @@ export class MemoryStore implements Store {
 				created: false,
 				conflict: existing.requestDigest !== row.requestDigest,
 			};
+		}
+		if (
+			options.maxIncompleteOperations !== undefined &&
+			[...this.operations.values()].filter((operation) =>
+				["pending", "running"].includes(operation.state),
+			).length >= options.maxIncompleteOperations
+		) {
+			throw new OperationCapacityExceededError();
 		}
 		this.assertOperationReferences(row);
 		this.operations.set(row.id, { ...row });
@@ -747,6 +830,32 @@ export class MemoryStore implements Store {
 			truncated: totalBytes > maxBytes,
 			lastSeq,
 		};
+	}
+
+	async appendNetworkEvents(
+		workspaceId: string,
+		sourceSessionId: string,
+		events: Parameters<Store["appendNetworkEvents"]>[2],
+	): Promise<void> {
+		const rows = this.networkEvents.get(workspaceId) ?? [];
+		const seen = new Set(rows.map((row) => `${row.sourceSessionId}:${row.source_seq}`));
+		const workspace = this.workspaces.get(workspaceId);
+		if (!workspace) throw new Error("workspace.not_found");
+		for (const event of events) {
+			const key = `${sourceSessionId}:${event.source_seq}`;
+			if (seen.has(key)) continue;
+			workspace.networkEventSeq += 1;
+			rows.push({ ...event, workspaceId, sourceSessionId, seq: workspace.networkEventSeq });
+			seen.add(key);
+		}
+		this.networkEvents.set(workspaceId, rows);
+	}
+
+	async readNetworkEvents(workspaceId: string, afterSeq: number, limit: number) {
+		return (this.networkEvents.get(workspaceId) ?? [])
+			.filter((row) => row.seq > afterSeq)
+			.slice(0, limit)
+			.map((row) => ({ ...row }));
 	}
 
 	// --- Durable conversation history ---

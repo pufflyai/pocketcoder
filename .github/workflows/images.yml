@@ -25,6 +25,7 @@ jobs:
     outputs:
       server-digest: ${{ steps.server-build.outputs.digest }}
       workspace-digest: ${{ steps.workspace-build.outputs.digest }}
+      egress-digest: ${{ steps.egress-build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -85,14 +86,38 @@ jobs:
           cache-from: type=gha,scope=workspace
           cache-to: type=gha,scope=workspace,mode=max
 
+      - name: Egress image metadata
+        id: egress-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/egress
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=sha,format=long
+      - name: Build and push egress image
+        id: egress-build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/pocketcoder-egress/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.egress-meta.outputs.tags }}
+          labels: ${{ steps.egress-meta.outputs.labels }}
+          cache-from: type=gha,scope=egress
+          cache-to: type=gha,scope=egress,mode=max
+
       - name: Record published digests
         env:
           SERVER_DIGEST: ${{ steps.server-build.outputs.digest }}
           WORKSPACE_DIGEST: ${{ steps.workspace-build.outputs.digest }}
+          EGRESS_DIGEST: ${{ steps.egress-build.outputs.digest }}
         run: |
           {
             echo "server=ghcr.io/${{ github.repository }}/server@${SERVER_DIGEST}"
             echo "workspace=ghcr.io/${{ github.repository }}/workspace@${WORKSPACE_DIGEST}"
+            echo "egress=ghcr.io/${{ github.repository }}/egress@${EGRESS_DIGEST}"
           } | tee "$RUNNER_TEMP/pocketcoder-image-digests.txt"
           {
             echo "## Published image digests"
@@ -115,10 +140,12 @@ jobs:
           TAG: ${{ github.ref_name }}
           SERVER_DIGEST: ${{ needs.images.outputs.server-digest }}
           WORKSPACE_DIGEST: ${{ needs.images.outputs.workspace-digest }}
+          EGRESS_DIGEST: ${{ needs.images.outputs.egress-digest }}
         run: |
           {
             echo "server=ghcr.io/${{ github.repository }}/server@${SERVER_DIGEST}"
             echo "workspace=ghcr.io/${{ github.repository }}/workspace@${WORKSPACE_DIGEST}"
+            echo "egress=ghcr.io/${{ github.repository }}/egress@${EGRESS_DIGEST}"
           } > "$RUNNER_TEMP/pocketcoder-image-digests.txt"
           gh release view "$TAG" >/dev/null 2>&1 ||
             gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"

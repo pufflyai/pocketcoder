@@ -68,7 +68,12 @@ else if (args[0] === "run") { writeFileSync(${JSON.stringify(log)}, JSON.stringi
 		};
 		const inputDir = join(directory, "input");
 		const driver = new DockerDriver({ dockerBin: docker, inputDir });
-		await driver.createWarm({ runtimeId, template: snapshotOf(parsed), input });
+		await driver.createWarm({
+			runtimeId,
+			template: snapshotOf(parsed),
+			input,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
 		const persisted = JSON.parse(await readFile(join(inputDir, `pool-${runtimeId}.json`), "utf8"));
 		expect(persisted).toEqual(input);
 		expect(persisted.workspace_id).toBeUndefined();
@@ -183,6 +188,76 @@ if (args[0] === "image") {
 		expect(args).not.toContain("MODEL_KEY_FILE=secretRef:model/key");
 		expect(args).toContain("/tmp:rw,noexec,nosuid,size=256m,uid=12345,gid=23456,mode=0700");
 		expect(args).toContain("/home/onefin:rw,noexec,nosuid,size=256m,uid=12345,gid=23456,mode=0700");
+	});
+
+	test("shares a restricted network namespace with a capability-limited egress companion", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pocketcoder-docker-egress-"));
+		temporaryDirectories.push(directory);
+		const log = join(directory, "calls.ndjson");
+		const docker = await dockerMock(`
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+if (args[0] === "image") console.log(args[2]);
+else if (args[0] === "run") {
+  appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
+  const name = args[args.indexOf("--name") + 1];
+  console.log(name.startsWith("pocketcoder-egress-") ? "egress-id" : "workspace-id");
+}
+`);
+		const parsed = parseTemplateManifest({
+			apiVersion: "pocketcoder.dev/v1alpha1",
+			kind: "Template",
+			metadata: { name: "docker-egress" },
+			spec: {
+				version: "1.0.0",
+				image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
+				harness: { command: ["/bin/true"] },
+				resources: { cpu: "1", memory: "256Mi" },
+				network: { mode: "restricted", allow: [{ domain: "github.com" }] },
+			},
+		});
+		const id = randomUUID();
+		const input: ProviderInput = {
+			workspace_id: id,
+			server_url: "http://host.docker.internal:7080",
+			registration_secret: "one-time",
+			template_digest: parsed.digest,
+			template_name: "docker-egress",
+			template_version: "1.0.0",
+			launch_mode: "create",
+		};
+		const inputDir = join(directory, "input");
+		const driver = new DockerDriver({
+			dockerBin: docker,
+			inputDir,
+			egressImage: `registry.example/egress@sha256:${"e".repeat(64)}`,
+			egressSigningKey: "test-signing-key",
+		});
+		const ref = await driver.create({
+			workspace: {
+				id,
+				templateDigest: parsed.digest,
+				templateSnapshot: snapshotOf(parsed),
+				deadlineAt: new Date(Date.now() + 60_000),
+			} as WorkspaceRow,
+			input,
+			mounts: [],
+			secrets: [],
+		});
+		const calls = (await readFile(log, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as string[]);
+		expect(calls).toHaveLength(2);
+		expect(calls[0]).toContain("NET_ADMIN");
+		expect(calls[1]).toContain("container:egress-id");
+		expect(ref).toMatchObject({ id: "workspace-id", egressId: "egress-id" });
+		const workspaceInput = JSON.parse(await readFile(join(inputDir, `${id}.json`), "utf8"));
+		expect(workspaceInput.server_url).toBe("http://127.0.0.1:18081");
+		expect(JSON.stringify(workspaceInput)).not.toContain("audit_token");
+		const gatewayInput = JSON.parse(await readFile(join(inputDir, `${id}-egress.json`), "utf8"));
+		expect(gatewayInput.control_url).toBe(input.server_url);
+		expect(gatewayInput.audit_token).toStartWith("pce1.");
 	});
 });
 

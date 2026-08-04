@@ -2,7 +2,7 @@
 	"name": "@pstdio/pocketcoder-testkit",
 	"version": "0.1.0",
 	"private": true,
-	"description": "In-memory test utilities for Pocketcoder integrations.",
+	"description": "Test fixtures and utilities for PocketCoder integrations.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -21,11 +21,11 @@
 		"bun": ">=1.3.14"
 	},
 	"scripts": {
-		"test": "bun test",
+		"test": "bun test --pass-with-no-tests",
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
 		"@pstdio/pocketcoder-contracts": "workspace:*",
-		"@pstdio/pocketcoder-runtime-core": "workspace:*"
+		"@pstdio/pocketcoder-runtime-contracts": "workspace:*"
 	}
 }

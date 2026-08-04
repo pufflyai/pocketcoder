@@ -112,11 +112,11 @@ spec:
                   key: auth-pepper
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /livez
               port: http
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
           volumeMounts:
             - name: data

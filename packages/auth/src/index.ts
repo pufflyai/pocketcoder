@@ -96,6 +96,70 @@ export function verifyEventSignature(
 	return timingSafeEqual(a, b);
 }
 
+const EGRESS_TOKEN_PREFIX = "pce1";
+const EGRESS_TOKEN_DOMAIN = "pocketcoder-egress-audit-v1\0";
+
+export interface EgressAuditSubject {
+	kind: "workspace" | "pool";
+	id: string;
+}
+
+export function issueEgressAuditToken(
+	signingKey: string,
+	subject: EgressAuditSubject & { expiresAt: Date },
+): string {
+	const payload = Buffer.from(
+		JSON.stringify({
+			v: 1,
+			aud: "egress-audit",
+			kind: subject.kind,
+			id: subject.id,
+			exp: subject.expiresAt.getTime(),
+		}),
+	).toString("base64url");
+	const signature = createHmac("sha256", signingKey)
+		.update(`${EGRESS_TOKEN_DOMAIN}${payload}`)
+		.digest("base64url");
+	return `${EGRESS_TOKEN_PREFIX}.${payload}.${signature}`;
+}
+
+export function verifyEgressAuditToken(
+	signingKey: string,
+	token: string,
+	now = new Date(),
+): EgressAuditSubject | null {
+	const [prefix, payload, signature, extra] = token.split(".");
+	if (prefix !== EGRESS_TOKEN_PREFIX || !payload || !signature || extra) return null;
+	const expected = createHmac("sha256", signingKey)
+		.update(`${EGRESS_TOKEN_DOMAIN}${payload}`)
+		.digest("base64url");
+	const actualBytes = Buffer.from(signature);
+	const expectedBytes = Buffer.from(expected);
+	if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) {
+		return null;
+	}
+	try {
+		const value = JSON.parse(Buffer.from(payload, "base64url").toString()) as Record<
+			string,
+			unknown
+		>;
+		if (
+			value.v !== 1 ||
+			value.aud !== "egress-audit" ||
+			(value.kind !== "workspace" && value.kind !== "pool") ||
+			typeof value.id !== "string" ||
+			!value.id ||
+			typeof value.exp !== "number" ||
+			value.exp <= now.getTime()
+		) {
+			return null;
+		}
+		return { kind: value.kind, id: value.id };
+	} catch {
+		return null;
+	}
+}
+
 // Redacts values that must never reach logs.
 const REDACT_PATTERNS = [/pkt_[0-9a-f-]{36}_[A-Za-z0-9_-]+/g, /(authorization:?\s*bearer\s+)\S+/gi];
 

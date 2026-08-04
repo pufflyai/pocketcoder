@@ -35,6 +35,7 @@ export const EXIT_SETUP_FAILED = 30;
 export const EXIT_REGISTRATION_FAILED = 31;
 export const EXIT_PROTOCOL_ERROR = 32;
 export const EXIT_WRITABLE_MEMORY_FAILED = 33;
+export const EXIT_NETWORK_POLICY_FAILED = 34;
 
 const LOG_CHUNK_LIMIT = 32 * 1024;
 const HEALTH_INTERVAL_MS = 5000;
@@ -124,6 +125,26 @@ export function splitUtf8Chunks(text: string, maxBytes = LOG_CHUNK_LIMIT): strin
 
 export function isConversationControlLine(text: string): boolean {
 	return text.startsWith("POCKETCODER_CONVERSATION ");
+}
+
+export function enforcedEnvironment(
+	exec: ExecSpec,
+	overrides: Record<string, string | undefined> = {},
+) {
+	const environment = { ...process.env, ...exec.env, ...overrides };
+	if (exec.network.mode !== "restricted") return environment;
+	const noProxy = "127.0.0.1,localhost,::1";
+	return {
+		...environment,
+		HTTP_PROXY: exec.network.proxy_url,
+		http_proxy: exec.network.proxy_url,
+		HTTPS_PROXY: exec.network.proxy_url,
+		https_proxy: exec.network.proxy_url,
+		ALL_PROXY: "",
+		all_proxy: "",
+		NO_PROXY: noProxy,
+		no_proxy: noProxy,
+	};
 }
 
 export async function supervise(inputPath: string): Promise<number> {
@@ -235,6 +256,7 @@ class Supervisor {
 		if (raced !== null) return raced;
 		const exec = this.exec;
 		if (!exec) return EXIT_PROTOCOL_ERROR;
+		if (!(await this.preflightNetwork(exec))) return EXIT_NETWORK_POLICY_FAILED;
 
 		if (exec.launch_mode === "restore") {
 			this.sendFrame("restore_status", {
@@ -271,6 +293,7 @@ class Supervisor {
 		}
 		this.startHarness(exec);
 		this.startHealthLoop(exec);
+		this.startNetworkHealthLoop(exec);
 		this.startHeartbeatLoop();
 		return await this.done;
 	}
@@ -385,6 +408,51 @@ class Supervisor {
 	// --- Setup commands ---
 
 	private failedSetupStep: string | null = null;
+	private networkFailures = 0;
+
+	private async preflightNetwork(exec: ExecSpec): Promise<boolean> {
+		if (exec.network.mode !== "restricted") return true;
+		this.sendFrame("network_state", { state: "starting" });
+		try {
+			const response = await fetch(exec.network.health_url, { signal: AbortSignal.timeout(3000) });
+			if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
+			this.sendFrame("network_state", { state: "ready" });
+			return true;
+		} catch (error) {
+			this.sendFrame("network_state", {
+				state: "degraded",
+				detail: error instanceof Error ? error.message.slice(0, 512) : "firewall unavailable",
+			});
+			await this.flushAndClose();
+			return false;
+		}
+	}
+
+	private startNetworkHealthLoop(exec: ExecSpec): void {
+		if (exec.network.mode !== "restricted") return;
+		const network = exec.network;
+		const timer = setInterval(() => {
+			void (async () => {
+				try {
+					const response = await fetch(network.health_url, {
+						signal: AbortSignal.timeout(3000),
+					});
+					if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
+					this.networkFailures = 0;
+				} catch {
+					this.networkFailures += 1;
+					if (this.networkFailures < 3) return;
+					this.sendFrame("network_state", {
+						state: "degraded",
+						detail: "firewall health failed three consecutive probes",
+					});
+					this.child?.kill("SIGKILL");
+					this.exitWith(EXIT_NETWORK_POLICY_FAILED);
+				}
+			})();
+		}, HEALTH_INTERVAL_MS);
+		this.timers.push(timer);
+	}
 
 	private async probeWritableMemory(exec: ExecSpec): Promise<boolean> {
 		try {
@@ -405,14 +473,12 @@ class Supervisor {
 			// default working directory is not accessible to the workspace uid.
 			const proc = Bun.spawn(step.command, {
 				cwd: step.cwd ?? exec.harness.cwd ?? "/",
-				env: {
-					...process.env,
-					...exec.env,
+				env: enforcedEnvironment(exec, {
 					...step.env,
 					POCKETCODER_LAUNCH_MODE: exec.launch_mode,
 					...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
 					...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
-				},
+				}),
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -458,11 +524,12 @@ class Supervisor {
 	}
 
 	private async prepareCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
-		if (this.exec?.agentapi_native) {
+		const exec = this.exec;
+		if (exec?.agentapi_native) {
 			await this.prepareAgentApiCheckpoint(operationId, deadlineMs);
 			return;
 		}
-		const hook = this.exec?.checkpoint_hook;
+		const hook = exec?.checkpoint_hook;
 		this.sendFrame("checkpoint_status", {
 			operation_id: operationId,
 			phase: "quiescing",
@@ -477,13 +544,11 @@ class Supervisor {
 		}
 		try {
 			const proc = Bun.spawn(hook.command, {
-				cwd: hook.cwd ?? this.exec?.harness.cwd ?? "/",
-				env: {
-					...process.env,
-					...this.exec?.env,
+				cwd: hook.cwd ?? exec.harness.cwd ?? "/",
+				env: enforcedEnvironment(exec, {
 					...hook.env,
 					POCKETCODER_CHECKPOINT_OPERATION: operationId,
-				},
+				}),
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -563,9 +628,7 @@ class Supervisor {
 		// supervisor and the server erases its copy at readiness.
 		const child = Bun.spawn(exec.harness.command, {
 			cwd: exec.harness.cwd ?? "/",
-			env: {
-				...process.env,
-				...exec.env,
+			env: enforcedEnvironment(exec, {
 				...exec.harness.env,
 				POCKETCODER_LAUNCH_MODE: exec.launch_mode,
 				...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
@@ -573,7 +636,7 @@ class Supervisor {
 				...(this.input.launch_input
 					? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(this.input.launch_input) }
 					: {}),
-			},
+			}),
 			stdout: "pipe",
 			stderr: "pipe",
 		});

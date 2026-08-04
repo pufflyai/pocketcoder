@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { canonicalJson, digestOf } from "./canonical";
 import { isDuration, parseDurationMs } from "./duration";
+import { NetworkPolicySchema } from "./network";
 import {
 	LAUNCH_MODES,
 	OutputDeclarationSchema,
@@ -176,6 +177,7 @@ const TemplateSpecInputSchema = z
 		timeouts: TimeoutsSchema.prefault({}),
 		services: z.record(z.string().regex(NAME_RE), ServiceSchema).optional(),
 		security: SecuritySchema.prefault({}),
+		network: NetworkPolicySchema,
 		maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
 		compat: z
 			.object({
@@ -261,6 +263,7 @@ export const TemplateManifestSchema = z
 		validateOutputs(manifest.spec, ctx);
 		validateWritableMemoryPaths(manifest.spec, ctx);
 		validatePersistence(manifest.spec, ctx);
+		validateNetworkEnvironment(manifest.spec, ctx);
 	});
 
 export type TemplateManifest = z.infer<typeof TemplateManifestSchema>;
@@ -319,6 +322,22 @@ function envSources(spec: TemplateSpec): Array<[Array<string | number>, Record<s
 		sources.push([["spec", "checkpointHook", "env"], spec.checkpointHook.env]);
 	}
 	return sources;
+}
+
+const NETWORK_ENV = new Set(["http_proxy", "https_proxy", "all_proxy", "no_proxy"]);
+
+function validateNetworkEnvironment(spec: TemplateSpec, ctx: z.RefinementCtx): void {
+	if (spec.network.mode !== "restricted") return;
+	for (const [path, env] of envSources(spec)) {
+		for (const key of Object.keys(env)) {
+			if (!NETWORK_ENV.has(key.toLowerCase())) continue;
+			ctx.addIssue({
+				code: "custom",
+				path: [...path, key],
+				message: "proxy variables are reserved by restricted networking",
+			});
+		}
+	}
 }
 
 function validateServices(spec: TemplateSpec, ctx: z.RefinementCtx): void {

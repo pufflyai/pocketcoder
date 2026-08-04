@@ -2,14 +2,30 @@ import { describe, expect, test } from "bun:test";
 import {
 	digestOpaque,
 	generateOpaqueSecret,
+	issueEgressAuditToken,
 	issueMachineKey,
 	parseMachineKey,
 	redact,
 	signEvent,
+	verifyEgressAuditToken,
 	verifyEventSignature,
 	verifyOpaque,
 	verifySecret,
 } from "./index";
+
+test("egress audit tokens are scoped, expiring, and tamper evident", () => {
+	const token = issueEgressAuditToken("audit-key", {
+		kind: "workspace",
+		id: "018f5f8a-642d-7c4d-bd3a-076c6bce14d0",
+		expiresAt: new Date("2030-01-01T00:00:00.000Z"),
+	});
+	expect(verifyEgressAuditToken("audit-key", token, new Date("2029-01-01"))).toEqual({
+		kind: "workspace",
+		id: "018f5f8a-642d-7c4d-bd3a-076c6bce14d0",
+	});
+	expect(verifyEgressAuditToken("other-key", token, new Date("2029-01-01"))).toBeNull();
+	expect(verifyEgressAuditToken("audit-key", token, new Date("2030-01-01"))).toBeNull();
+});
 
 const PEPPER = "test-pepper";
 

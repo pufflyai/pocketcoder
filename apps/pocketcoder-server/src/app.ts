@@ -1,47 +1,36 @@
-import { randomUUID } from "node:crypto";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import {
-	ApiError,
-	CHECKPOINT_STATES,
-	CheckpointResourceSchema,
-	ConversationListQuerySchema,
-	ConversationMessageResourceSchema,
-	ConversationResumeOutcomeSchema,
-	OperationResourceSchema,
-	PreserveRequestSchema,
-	parseDurationMs,
-	RestoreRequestSchema,
-	TemplateListItemSchema,
-	WorkspaceCreateRequestSchema,
-	WorkspaceListQuerySchema,
-	WorkspaceResourceSchema,
-} from "@pstdio/pocketcoder-contracts";
+	digestOpaque,
+	generateOpaqueSecret,
+	verifyEgressAuditToken,
+} from "@pstdio/pocketcoder-auth";
+import { ApiError, NetworkEventBatchSchema } from "@pstdio/pocketcoder-contracts";
 import {
 	type AdmissionLimits,
 	type ResolvedWarmPool,
 	Scheduler,
 	type Store,
-	type TemplateRow,
 	WarmPoolManager,
 	type WorkspaceDriver,
-	type WorkspaceListFilter,
 	type WorkspaceSecretResolver,
 	type WorkspaceStorageDriver,
 } from "@pstdio/pocketcoder-runtime-core";
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
+import { Readiness } from "./health";
 import { Hub } from "./hub";
 import { type AppEnv, handleError, machineAuth, requestId, requireScope } from "./middleware";
-import {
-	type PersistenceLimits,
-	PersistenceService,
-	toCheckpointResource,
-	toOperationResource,
-} from "./persistence";
+import { type PersistenceLimits, PersistenceService } from "./persistence";
 import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
 import { relayHandler } from "./relay";
-import { templateAuthorized, toResource, WorkspaceService } from "./service";
+import { registerAdministrationRoutes } from "./routes/administration";
+import { registerCatalogRoutes } from "./routes/catalog";
+import { registerCheckpointRoutes } from "./routes/checkpoints";
+import { registerConversationRoutes } from "./routes/conversations";
+import { registerDiagnosticRoutes } from "./routes/diagnostics";
+import { registerRecoveryRoutes } from "./routes/recovery";
+import { registerWorkspaceRoutes } from "./routes/workspaces";
+import { WorkspaceService } from "./service";
 import { agentConnectValidator, agentWsEvents } from "./ws";
 
 export interface BuildDeps {
@@ -51,11 +40,13 @@ export interface BuildDeps {
 	secretResolver?: WorkspaceSecretResolver;
 	persistenceLimits?: PersistenceLimits;
 	pepper: string;
+	eventSigningKey?: string;
 	limits: AdmissionLimits;
 	workspaceServerUrl: string;
 	instanceId?: string;
 	log?: (msg: string) => void;
 	warmPools?: ResolvedWarmPool[];
+	readiness?: Readiness;
 }
 
 export interface BuiltServer {
@@ -68,64 +59,6 @@ export interface BuiltServer {
 	warmPool?: WarmPoolManager;
 }
 
-function safeTemplateItem(row: TemplateRow) {
-	return {
-		name: row.name,
-		version: row.version,
-		digest: row.digest,
-		...(row.description ? { description: row.description } : {}),
-		status: row.status,
-	};
-}
-
-const WorkspaceMetadataFilterSchema = z
-	.record(z.string().min(1).max(64), z.string().max(512))
-	.refine((value) => Object.keys(value).length <= 16, "metadata filter has at most 16 keys");
-
-function parseMetadataFilter(value: string | undefined): Record<string, string> | undefined {
-	if (!value) return undefined;
-	try {
-		const parsed = WorkspaceMetadataFilterSchema.safeParse(JSON.parse(value));
-		if (parsed.success) return parsed.data;
-	} catch {
-		// Stable validation envelope below.
-	}
-	throw new ApiError(
-		"validation.invalid",
-		"metadata must be a JSON object containing bounded string keys and values.",
-	);
-}
-
-function workspaceListFilterOf(
-	query: z.infer<typeof WorkspaceListQuerySchema>,
-): WorkspaceListFilter {
-	const metadata = parseMetadataFilter(query.metadata);
-	const createdAfter = query.created_after ? new Date(query.created_after) : undefined;
-	const createdBefore = query.created_before ? new Date(query.created_before) : undefined;
-	if (createdAfter && createdBefore && createdAfter >= createdBefore) {
-		throw new ApiError("validation.invalid", "created_after must be before created_before.");
-	}
-	return {
-		...(query.external_id ? { externalId: query.external_id } : {}),
-		...(query.state ? { state: query.state } : {}),
-		...(query.template ? { template: query.template } : {}),
-		...(metadata ? { metadata } : {}),
-		...(createdAfter ? { createdAfter } : {}),
-		...(createdBefore ? { createdBefore } : {}),
-		limit: query.limit,
-		...(query.cursor ? { cursor: query.cursor } : {}),
-	};
-}
-
-const WorkspaceCreateHeadersSchema = z.object({
-	"Idempotency-Key": z.string().min(1).max(256).openapi({
-		description:
-			"Opaque caller key. Reusing it with the same request returns the original workspace; a different request returns idempotency.conflict.",
-		example: "onefin-task-018f6f0e",
-	}),
-});
-
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: OpenAPI route declarations stay together so middleware, schemas, and handlers remain auditable.
 export function buildServer(deps: BuildDeps): BuiltServer {
 	const { store, driver, pepper, limits, log } = deps;
 	const hub = new Hub();
@@ -168,6 +101,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
 		hub,
 		workspaces: service,
+		maxQueuedWorkspaces: limits.maxQueuedWorkspaces,
 		...(log ? { log } : {}),
 		...(deps.persistenceLimits ? { limits: deps.persistenceLimits } : {}),
 	});
@@ -192,12 +126,23 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 	app.onError(handleError);
 	app.use("*", requestId);
 
-	app.get("/healthz", (c) =>
+	const readiness = deps.readiness ?? new Readiness();
+	app.get("/livez", (c) =>
 		c.json({
 			ok: true,
 			...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
 		}),
 	);
+	app.get("/readyz", (c) => {
+		const snapshot = readiness.snapshot();
+		return c.json(
+			{
+				...snapshot,
+				...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
+			},
+			snapshot.ok ? 200 : 503,
+		);
+	});
 
 	// Agent supervisor connection; authenticated by registration/reconnect
 	// credentials, not machine keys, so it is registered before machineAuth.
@@ -226,6 +171,31 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 			),
 		);
 	}
+	app.post("/v1/internal/egress/events", async (c) => {
+		const authorization = c.req.header("authorization") ?? "";
+		const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+		const subject = verifyEgressAuditToken(deps.eventSigningKey ?? pepper, token);
+		if (!subject) return c.json({ error: "invalid_audit_token" }, 401);
+		const raw = await c.req.text();
+		if (Buffer.byteLength(raw) > 4 * 1024 * 1024) return c.json({ error: "batch_too_large" }, 413);
+		let body: unknown = null;
+		try {
+			body = JSON.parse(raw);
+		} catch {
+			// Stable invalid_batch response below.
+		}
+		const parsed = NetworkEventBatchSchema.safeParse(body);
+		if (!parsed.success) return c.json({ error: "invalid_batch" }, 400);
+		const workspaceId =
+			subject.kind === "workspace"
+				? subject.id
+				: (await store.getWarmPoolRuntime(subject.id))?.workspaceId;
+		if (!workspaceId || !(await store.getWorkspace(workspaceId))) {
+			return c.json({ error: "audit_subject_unassigned" }, 409);
+		}
+		await store.appendNetworkEvents(workspaceId, parsed.data.source_session_id, parsed.data.events);
+		return c.json({ accepted: parsed.data.events.length }, 202);
+	});
 
 	// The generated OpenAPI document is served without machine auth so
 	// tooling can consume the contract; it contains no secrets.
@@ -240,840 +210,15 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
 	app.use("/v1/*", machineAuth(store, pepper));
 
+	registerCatalogRoutes({ app, store });
+	registerAdministrationRoutes({ app, persistence, warmPool });
+	registerCheckpointRoutes({ app, store, service, persistence });
+	registerRecoveryRoutes({ app, store, service, persistence });
+	registerConversationRoutes({ app, store, service });
+	registerWorkspaceRoutes({ app, store, service });
+	registerDiagnosticRoutes({ app, store, service });
+
 	// --- Templates ---
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/templates",
-			middleware: [requireScope("templates:read")] as const,
-			responses: {
-				200: {
-					description: "Authorized template versions",
-					content: {
-						"application/json": {
-							schema: z.object({ items: z.array(TemplateListItemSchema) }),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const names = principal.templateNames.includes("*") ? null : principal.templateNames;
-			const rows = await store.listTemplates(names);
-			return c.json({ items: rows.map(safeTemplateItem) }, 200);
-		},
-	);
-
-	if (warmPool) {
-		app.openapi(
-			createRoute({
-				method: "get",
-				path: "/v1/warm-pools",
-				middleware: [requireScope("admin")] as const,
-				responses: {
-					200: {
-						description: "Warm runtime inventory and cumulative metrics",
-						content: {
-							"application/json": {
-								schema: z.object({
-									items: z.array(z.record(z.string(), z.unknown())),
-									metrics: z.record(z.string(), z.number()),
-								}),
-							},
-						},
-					},
-				},
-			}),
-			async (c) => c.json(await warmPool.inventory(), 200),
-		);
-	}
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/storage/inventory",
-			middleware: [requireScope("admin")] as const,
-			responses: {
-				200: {
-					description: "Physical storage inventory without backend paths",
-					content: {
-						"application/json": {
-							schema: z.object({
-								backend: z.string(),
-								storage_count: z.number(),
-								checkpoint_count: z.number(),
-								unknown_storage: z.array(z.string()),
-								unknown_checkpoints: z.array(z.string()),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => c.json(await persistence.storageInventory(), 200),
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/storage/prune",
-			middleware: [requireScope("admin")] as const,
-			responses: {
-				200: {
-					description: "Delete expired ready checkpoints through durable delete operations",
-					content: {
-						"application/json": {
-							schema: z.object({
-								deleted: z.number(),
-								skipped: z.number(),
-								transcripts_deleted: z.number(),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const result = await persistence.pruneExpired();
-			return c.json(
-				{
-					deleted: result.deleted,
-					skipped: result.skipped,
-					transcripts_deleted: result.transcriptsDeleted,
-				},
-				200,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/workspaces/{id}/preserve",
-			middleware: [requireScope("workspaces:preserve")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-				body: { content: { "application/json": { schema: PreserveRequestSchema } } },
-			},
-			responses: {
-				202: {
-					description: "Durable preserve operation accepted",
-					content: {
-						"application/json": {
-							schema: z.object({
-								workspace: WorkspaceResourceSchema,
-								checkpoint: CheckpointResourceSchema,
-								operation: OperationResourceSchema,
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			const result = await persistence.preserve(
-				principal,
-				id,
-				c.req.valid("json"),
-				c.req.valid("header")["idempotency-key"],
-			);
-			const [workspace, checkpoint, operation] = await Promise.all([
-				service.getOwned(principal, result.workspaceId),
-				store.getCheckpoint(result.checkpoint.id),
-				store.getOperation(result.operation.id),
-			]);
-			return c.json(
-				{
-					workspace: toResource(workspace),
-					checkpoint: toCheckpointResource(checkpoint ?? result.checkpoint),
-					operation: toOperationResource(operation ?? result.operation),
-				},
-				202,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/operations/{id}",
-			middleware: [requireScope("workspaces:read")] as const,
-			request: { params: z.object({ id: z.uuid() }) },
-			responses: {
-				200: {
-					description: "Durable persistence operation",
-					content: { "application/json": { schema: OperationResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const row = await store.getOperation(c.req.valid("param").id);
-			if (!row || row.principalId !== c.get("principal").id) {
-				throw new ApiError("workspace.not_found", "Unknown operation.");
-			}
-			return c.json(toOperationResource(row), 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}/checkpoints",
-			middleware: [requireScope("checkpoints:read")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				query: z.object({ state: z.enum(CHECKPOINT_STATES).optional() }),
-			},
-			responses: {
-				200: {
-					description: "Principal-owned checkpoints for a workspace",
-					content: {
-						"application/json": {
-							schema: z.object({ items: z.array(CheckpointResourceSchema) }),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			await service.getOwned(principal, id);
-			const state = c.req.valid("query").state;
-			const items = await store.listCheckpoints(principal.id, {
-				workspaceId: id,
-				...(state ? { state } : {}),
-			});
-			return c.json({ items: items.map(toCheckpointResource) }, 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/checkpoints/{id}",
-			middleware: [requireScope("checkpoints:read")] as const,
-			request: { params: z.object({ id: z.uuid() }) },
-			responses: {
-				200: {
-					description: "Checkpoint resource",
-					content: { "application/json": { schema: CheckpointResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const row = await persistence.getCheckpointOwned(c.get("principal"), c.req.valid("param").id);
-			return c.json(toCheckpointResource(row), 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/checkpoints/{id}/verify",
-			middleware: [requireScope("checkpoints:read")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-			},
-			responses: {
-				202: {
-					description: "Checkpoint verification result",
-					content: { "application/json": { schema: OperationResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const operation = await persistence.verify(
-				c.get("principal"),
-				c.req.valid("param").id,
-				c.req.valid("header")["idempotency-key"],
-			);
-			return c.json(toOperationResource(operation), 202);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "delete",
-			path: "/v1/checkpoints/{id}",
-			middleware: [requireScope("checkpoints:delete")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-			},
-			responses: {
-				202: {
-					description: "Checkpoint deletion operation",
-					content: { "application/json": { schema: OperationResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const operation = await persistence.delete(
-				c.get("principal"),
-				c.req.valid("param").id,
-				c.req.valid("header")["idempotency-key"],
-			);
-			return c.json(toOperationResource(operation), 202);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/checkpoints/{id}/restore",
-			middleware: [requireScope("workspaces:restore")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-				body: { content: { "application/json": { schema: RestoreRequestSchema } } },
-			},
-			responses: {
-				202: {
-					description: "New workspace queued from immutable checkpoint",
-					content: {
-						"application/json": {
-							schema: z.object({
-								workspace: WorkspaceResourceSchema,
-								operation: OperationResourceSchema,
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const result = await persistence.restore(
-				principal,
-				c.req.valid("param").id,
-				c.req.valid("json"),
-				c.req.valid("header")["idempotency-key"],
-			);
-			const workspace = await service.getOwned(principal, result.workspaceId);
-			return c.json(
-				{
-					workspace: toResource(workspace),
-					operation: toOperationResource(result.operation),
-				},
-				202,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/workspaces/{id}/recreate",
-			middleware: [requireScope("workspaces:restore")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-				body: { content: { "application/json": { schema: RestoreRequestSchema } } },
-			},
-			responses: {
-				202: {
-					description: "New workspace queued from latest checkpoint",
-					content: {
-						"application/json": {
-							schema: z.object({
-								workspace: WorkspaceResourceSchema,
-								operation: OperationResourceSchema,
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const source = await service.getOwned(principal, c.req.valid("param").id);
-			const checkpoints = await store.listCheckpoints(principal.id, {
-				workspaceId: source.id,
-				state: "ready",
-			});
-			const checkpoint = checkpoints[0];
-			if (!checkpoint) {
-				throw new ApiError("checkpoint.none_ready", "Workspace has no ready checkpoint.");
-			}
-			const result = await persistence.restore(
-				principal,
-				checkpoint.id,
-				c.req.valid("json"),
-				c.req.valid("header")["idempotency-key"],
-			);
-			const workspace = await service.getOwned(principal, result.workspaceId);
-			return c.json(
-				{
-					workspace: toResource(workspace),
-					operation: toOperationResource(result.operation),
-				},
-				202,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/workspaces/{id}/resume",
-			middleware: [requireScope("workspaces:restore")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				headers: z.object({ "idempotency-key": z.string().min(1).max(256) }),
-				body: { content: { "application/json": { schema: RestoreRequestSchema } } },
-			},
-			responses: {
-				202: {
-					description: "New workspace queued with supported conversation context",
-					content: {
-						"application/json": {
-							schema: z.object({
-								workspace: WorkspaceResourceSchema,
-								operation: OperationResourceSchema,
-								resume: ConversationResumeOutcomeSchema,
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const source = await service.getOwned(principal, c.req.valid("param").id);
-			const checkpoints = await store.listCheckpoints(principal.id, {
-				workspaceId: source.id,
-				state: "ready",
-			});
-			const checkpoint = checkpoints[0];
-			if (!checkpoint) {
-				throw new ApiError("checkpoint.none_ready", "Workspace has no ready checkpoint.");
-			}
-			if (checkpoint.conversationRestore !== "supported") {
-				const reason =
-					checkpoint.conversationRestore === "filesystem_only"
-						? "filesystem_only"
-						: "capability_unknown";
-				throw new ApiError(
-					"resume.unsupported",
-					"This checkpoint cannot restore conversation context.",
-					{ reason, checkpoint_id: checkpoint.id },
-				);
-			}
-			const result = await persistence.restore(
-				principal,
-				checkpoint.id,
-				c.req.valid("json"),
-				c.req.valid("header")["idempotency-key"],
-			);
-			const workspace = await service.getOwned(principal, result.workspaceId);
-			return c.json(
-				{
-					workspace: toResource(workspace),
-					operation: toOperationResource(result.operation),
-					resume: {
-						status: "supported" as const,
-						reason: null,
-						source_workspace_id: source.id,
-						checkpoint_id: checkpoint.id,
-					},
-				},
-				202,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}/conversation",
-			middleware: [requireScope("conversations:read")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				query: ConversationListQuerySchema,
-			},
-			responses: {
-				200: {
-					description: "Durable conversation transcript for an active or terminal workspace",
-					content: {
-						"application/json": {
-							schema: z.object({
-								items: z.array(ConversationMessageResourceSchema),
-								next_cursor: z.number().int().positive().nullable(),
-								retention: z.object({
-									status: z.literal("retained"),
-									expires_at: z.iso.datetime().nullable(),
-								}),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const workspace = await service.getOwned(principal, c.req.valid("param").id);
-			const state = await store.getConversationState(workspace.id);
-			if (state?.status === "deleted") {
-				throw new ApiError("conversation.deleted", "Conversation history was deleted.");
-			}
-			const expiresAt =
-				state?.expiresAt ??
-				(workspace.terminalAt
-					? new Date(
-							workspace.terminalAt.getTime() +
-								parseDurationMs(workspace.templateSnapshot.spec.persistence.conversationRetention),
-						)
-					: null);
-			if (expiresAt && expiresAt <= new Date()) {
-				throw new ApiError("conversation.expired", "Conversation history has expired.");
-			}
-			const { after, limit } = c.req.valid("query");
-			const rows = await store.readConversation(workspace.id, after, limit);
-			const last = rows.at(-1);
-			return c.json(
-				{
-					items: rows.map((row) => ({
-						message_id: row.messageId,
-						seq: row.seq,
-						role: row.role,
-						content: row.content,
-						occurred_at: row.occurredAt.toISOString(),
-						metadata: row.metadata,
-					})),
-					next_cursor: rows.length === limit && last ? last.seq : null,
-					retention: { status: "retained" as const, expires_at: expiresAt?.toISOString() ?? null },
-				},
-				200,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "delete",
-			path: "/v1/workspaces/{id}/conversation",
-			middleware: [requireScope("conversations:delete")] as const,
-			request: { params: z.object({ id: z.uuid() }) },
-			responses: { 204: { description: "Conversation content deleted idempotently" } },
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const workspace = await service.getOwned(principal, c.req.valid("param").id);
-			const at = new Date();
-			const previous = await store.getConversationState(workspace.id);
-			await store.deleteConversation(workspace.id, at);
-			if (previous?.status !== "deleted") {
-				await store.appendEvent(
-					workspace.id,
-					"workspace.conversation_deleted",
-					{
-						id: randomUUID(),
-						type: "workspace.conversation_deleted",
-						occurred_at: at.toISOString(),
-						workspace_id: workspace.id,
-					},
-					at,
-				);
-			}
-			return c.body(null, 204);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}/outputs",
-			middleware: [requireScope("outputs:read")] as const,
-			request: { params: z.object({ id: z.uuid() }) },
-			responses: {
-				200: {
-					description: "Append-only workspace outputs",
-					content: {
-						"application/json": {
-							schema: z.object({
-								items: z.array(
-									z.object({
-										seq: z.number(),
-										name: z.string(),
-										value: z.unknown(),
-										occurred_at: z.string(),
-									}),
-								),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			await service.getOwned(principal, id);
-			const rows = await store.listOutputs(id);
-			return c.json(
-				{
-					items: rows.map((row) => ({
-						seq: row.seq,
-						name: row.name,
-						value: row.value,
-						occurred_at: row.occurredAt.toISOString(),
-					})),
-				},
-				200,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/templates/{name}",
-			middleware: [requireScope("templates:read")] as const,
-			request: { params: z.object({ name: z.string() }) },
-			responses: {
-				200: {
-					description: "Template versions and safe metadata",
-					content: {
-						"application/json": {
-							schema: z.object({
-								name: z.string(),
-								versions: z.array(TemplateListItemSchema),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { name } = c.req.valid("param");
-			if (!templateAuthorized(principal, name)) {
-				throw new ApiError("template.not_found", `Unknown template: ${name}.`);
-			}
-			const rows = await store.listTemplates([name]);
-			if (rows.length === 0) {
-				throw new ApiError("template.not_found", `Unknown template: ${name}.`);
-			}
-			return c.json({ name, versions: rows.map(safeTemplateItem) }, 200);
-		},
-	);
-
-	// --- Workspaces ---
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/workspaces",
-			middleware: [requireScope("workspaces:create")] as const,
-			request: {
-				headers: WorkspaceCreateHeadersSchema,
-				body: {
-					content: { "application/json": { schema: WorkspaceCreateRequestSchema } },
-				},
-			},
-			responses: {
-				201: {
-					description: "Workspace created",
-					content: { "application/json": { schema: WorkspaceResourceSchema } },
-				},
-				200: {
-					description: "Existing workspace returned idempotently",
-					content: { "application/json": { schema: WorkspaceResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const body = c.req.valid("json");
-			const idempotencyKey = c.req.valid("header")["Idempotency-Key"];
-			const { workspace, created } = await service.create(principal, body, idempotencyKey);
-			return c.json(toResource(workspace), created ? 201 : 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces",
-			middleware: [requireScope("workspaces:read")] as const,
-			request: { query: WorkspaceListQuerySchema },
-			responses: {
-				200: {
-					description: "Principal-scoped workspaces",
-					content: {
-						"application/json": {
-							schema: z.object({
-								items: z.array(WorkspaceResourceSchema),
-								next_cursor: z.string().nullable(),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const query = c.req.valid("query");
-			const rows = await store.listWorkspaces(principal.id, workspaceListFilterOf(query));
-			const last = rows[rows.length - 1];
-			return c.json(
-				{
-					items: rows.map(toResource),
-					next_cursor: rows.length === query.limit && last ? last.id : null,
-				},
-				200,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}",
-			middleware: [requireScope("workspaces:read")] as const,
-			request: { params: z.object({ id: z.uuid() }) },
-			responses: {
-				200: {
-					description: "Workspace resource",
-					content: { "application/json": { schema: WorkspaceResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			const row = await service.getOwned(principal, id);
-			return c.json(toResource(row), 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}/changes",
-			middleware: [requireScope("workspaces:read")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				query: z.object({
-					after: z.coerce.number().int().nonnegative().default(0),
-					wait: z.coerce.number().int().min(0).max(30).default(0),
-				}),
-			},
-			responses: {
-				200: {
-					description:
-						"Current workspace resource, returned after a newer durable change or the bounded wait",
-					content: {
-						"application/json": {
-							schema: z.object({
-								cursor: z.number().int().nonnegative(),
-								changed: z.boolean(),
-								workspace: WorkspaceResourceSchema,
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			const { after, wait } = c.req.valid("query");
-			const result = await service.waitForChange(principal, id, after, wait, c.req.raw.signal);
-			return c.json(
-				{
-					cursor: result.workspace.changeSeq,
-					changed: result.changed,
-					workspace: toResource(result.workspace),
-				},
-				200,
-			);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "post",
-			path: "/v1/workspaces/{id}/cancel",
-			middleware: [requireScope("workspaces:cancel")] as const,
-			// The optional bounded reason body is read manually; an empty body
-			// must stay valid because cancellation is idempotent and minimal.
-			request: {
-				params: z.object({ id: z.uuid() }),
-			},
-			responses: {
-				200: {
-					description: "Current workspace resource after idempotent cancellation",
-					content: { "application/json": { schema: WorkspaceResourceSchema } },
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			const row = await service.cancel(principal, id);
-			return c.json(toResource(row), 200);
-		},
-	);
-
-	app.openapi(
-		createRoute({
-			method: "get",
-			path: "/v1/workspaces/{id}/logs",
-			middleware: [requireScope("logs:read")] as const,
-			request: {
-				params: z.object({ id: z.uuid() }),
-				query: z.object({
-					after: z.coerce.number().int().nonnegative().default(0),
-					limit: z.coerce.number().int().positive().max(1000).default(200),
-				}),
-			},
-			responses: {
-				200: {
-					description: "Bounded operational log chunks",
-					content: {
-						"application/json": {
-							schema: z.object({
-								items: z.array(
-									z.object({
-										seq: z.number(),
-										stream: z.string(),
-										occurred_at: z.string(),
-										content: z.string(),
-									}),
-								),
-							}),
-						},
-					},
-				},
-			},
-		}),
-		async (c) => {
-			const principal = c.get("principal");
-			const { id } = c.req.valid("param");
-			const { after, limit } = c.req.valid("query");
-			await service.getOwned(principal, id);
-			const logs = await store.readLogs(id, after, limit);
-			return c.json(
-				{
-					items: logs.map((l) => ({
-						seq: l.seq,
-						stream: l.stream,
-						occurred_at: l.occurredAt.toISOString(),
-						content: Buffer.from(l.content).toString("utf8"),
-					})),
-				},
-				200,
-			);
-		},
-	);
 
 	// --- Workspace service relay ---
 

@@ -13,7 +13,14 @@ import type {
 	WorkspaceSecretResolver,
 	WorkspaceStorageDriver,
 } from "./driver";
-import type { ActiveCounts, Store, WorkspacePatch, WorkspaceRow } from "./types";
+import type {
+	ActiveCounts,
+	LogStore,
+	PersistenceStore,
+	WorkspacePatch,
+	WorkspaceRow,
+	WorkspaceStore,
+} from "./types";
 import type { WarmPoolManager } from "./warm-pool";
 
 const FAILURE_LOG_TAIL_BYTES = 16 * 1024;
@@ -79,7 +86,7 @@ export interface SecretFactory {
 }
 
 export interface SchedulerDeps {
-	store: Store;
+	store: WorkspaceStore & PersistenceStore & LogStore;
 	driver: WorkspaceDriver;
 	storageDriver?: WorkspaceStorageDriver;
 	secretResolver?: WorkspaceSecretResolver;
@@ -100,6 +107,7 @@ export interface SchedulerDeps {
 export class Scheduler {
 	private readonly deps: SchedulerDeps;
 	private lastAdmittedPrincipal: string | null = null;
+	private activeTick: Promise<void> | null = null;
 
 	constructor(deps: SchedulerDeps) {
 		this.deps = deps;
@@ -139,7 +147,15 @@ export class Scheduler {
 		}
 	}
 
-	async tick(): Promise<void> {
+	tick(): Promise<void> {
+		if (this.activeTick) return this.activeTick;
+		this.activeTick = this.runTick().finally(() => {
+			this.activeTick = null;
+		});
+		return this.activeTick;
+	}
+
+	private async runTick(): Promise<void> {
 		await this.sweep();
 		await this.admit();
 	}
@@ -483,8 +499,10 @@ export class Scheduler {
 			const row = list?.[0];
 			if (!row || !this.canAdmit(row, counts)) continue;
 			list?.shift();
-			if (await this.launch(row)) this.recordAdmission(row, counts);
-			progressed = true;
+			if (await this.launch(row)) {
+				this.recordAdmission(row, counts);
+				progressed = true;
+			}
 		}
 		return progressed;
 	}
@@ -492,21 +510,26 @@ export class Scheduler {
 	async admit(): Promise<void> {
 		const { store, limits } = this.deps;
 		let counts: ActiveCounts;
-		let queued: WorkspaceRow[];
 		try {
 			counts = await store.countActive();
-			queued = await store.listQueued(200);
 		} catch (err) {
-			this.report("admit.list", err);
+			this.report("admit.count", err);
 			return;
 		}
-		if (queued.length === 0) return;
-		// FIFO within a principal, round-robin across principals.
-		const byPrincipal = this.groupQueuedByPrincipal(queued);
-		const rotation = this.principalRotation(byPrincipal);
-		let progressed = true;
-		while (progressed && counts.global < limits.globalActiveWorkspaces) {
-			progressed = await this.admitRound(byPrincipal, rotation, counts);
+		while (counts.global < limits.globalActiveWorkspaces) {
+			let queued: WorkspaceRow[];
+			try {
+				queued = await store.listQueuedHeads();
+			} catch (err) {
+				this.report("admit.list", err);
+				return;
+			}
+			if (queued.length === 0) return;
+			// The store returns only each principal's FIFO head, so a deep backlog
+			// cannot hide another principal from the round-robin rotation.
+			const byPrincipal = this.groupQueuedByPrincipal(queued);
+			const rotation = this.principalRotation(byPrincipal);
+			if (!(await this.admitRound(byPrincipal, rotation, counts))) return;
 		}
 	}
 
@@ -545,16 +568,12 @@ export class Scheduler {
 			if (hit) return true;
 			if (this.deps.warmPool.missDecision(row) === "wait") return false;
 		}
-		const claimed = await store.transition(row.id, {
-			from: ["queued"],
-			to: "provisioning",
+		const claimed = await store.claimWorkspaceAdmission({
+			workspaceId: row.id,
 			at: now,
-			patch: {
-				provisioningMode: "cold",
-				registrationDigest,
-				registrationExpiresAt,
-				launchAttempts: row.launchAttempts + 1,
-			},
+			registrationDigest,
+			registrationExpiresAt,
+			limits: this.deps.limits,
 		});
 		if (!claimed) return false;
 		try {

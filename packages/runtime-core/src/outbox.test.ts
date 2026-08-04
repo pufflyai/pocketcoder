@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { fixtureTemplateEcho, MemoryStore } from "@pstdio/pocketcoder-testkit";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { OutboxDispatcher } from "./outbox";
 
 async function storeWithEvent() {

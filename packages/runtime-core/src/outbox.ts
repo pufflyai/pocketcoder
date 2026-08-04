@@ -3,13 +3,13 @@ import {
 	EVENT_HEADER_SIGNATURE,
 	EVENT_HEADER_TIMESTAMP,
 } from "@pstdio/pocketcoder-contracts";
-import type { Store } from "./types";
+import type { OutboxStore } from "./types";
 
 // At-least-once delivery of signed lifecycle events with bounded exponential
 // backoff. Consumers deduplicate by event ID and poll for convergence.
 
 export interface OutboxDeps {
-	store: Store;
+	store: OutboxStore;
 	// Callback URL, or null when no consumer is configured (events are then
 	// marked delivered immediately so the outbox stays bounded).
 	sinkUrl: string | null;

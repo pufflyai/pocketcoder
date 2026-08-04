@@ -91,7 +91,7 @@ async function pickInitialWorkspace(
 ): Promise<void> {
 	const target = targets.current;
 	if (target.mode !== "unset" || !context.hasUI) return;
-	const workspaces = await controlPlane.listWorkspaces({ state: "ready" });
+	const workspaces = (await controlPlane.workspaces.list({ state: "ready" })).items;
 	if (workspaces.length === 0) {
 		context.ui.notify("no ready workspaces; run /workspace-create", "warning");
 		return;
@@ -159,7 +159,7 @@ export default function (pi: ExtensionAPI): void {
 		context.ui.setStatus(STATUS_KEY, `ws ${target.workspaceId.slice(0, 8)}`);
 		if (!controlPlane) return;
 		try {
-			const workspace = await controlPlane.getWorkspace(target.workspaceId);
+			const workspace = await controlPlane.workspaces.get(target.workspaceId);
 			await replayHistory(pi, controlPlane, target.workspaceId);
 			poller = new StatusPoller(controlPlane, workspace, context.ui);
 			poller.start();
