@@ -118,7 +118,7 @@ The DELETE returns `204`. The following GET returns `410` with error code
 
 ## Failure triage
 
-- No durable messages: confirm the harness emits one complete
+- No durable messages on a legacy template: confirm the harness emits one complete
   `POCKETCODER_CONVERSATION {json}` line per message on stdout and uses a stable
   `message_id` when replaying provider history.
 - `403`: add `conversations:read` or `conversations:delete` to both the

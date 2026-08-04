@@ -20,16 +20,9 @@
 				"timeoutSeconds": 600
 			}
 		],
-		"harness": {
-			"command": [
-				"agentapi",
-				"server",
-				"--port",
-				"3284",
-				"--",
-				"claude",
-				"--dangerously-skip-permissions"
-			],
+		"agent": {
+			"type": "claude",
+			"command": ["claude", "--dangerously-skip-permissions"],
 			"cwd": "/home/agent/workspace",
 			"env": {
 				"ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080"
@@ -45,22 +38,6 @@
 			"idle": "20m",
 			"disconnectGrace": "5m",
 			"terminateGrace": "15s"
-		},
-		"services": {
-			"agent": {
-				"baseUrl": "http://127.0.0.1:3284",
-				"healthPath": "/status",
-				"routes": [
-					{ "method": "GET", "path": "/status", "maxResponseBytes": 65536 },
-					{ "method": "GET", "path": "/messages", "query": ["after"], "maxResponseBytes": 1048576 },
-					{
-						"method": "POST",
-						"path": "/message",
-						"maxRequestBytes": 65536,
-						"maxResponseBytes": 65536
-					}
-				]
-			}
 		},
 		"security": {
 			"uid": 10001,

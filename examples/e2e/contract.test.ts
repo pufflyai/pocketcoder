@@ -24,13 +24,13 @@ describe("harness E2E contract", () => {
 				workspaceState = "canceled";
 				return Response.json({ id: "example-workspace", state: workspaceState });
 			}
-			if (url.pathname.endsWith("/services/agent/status")) {
+			if (url.pathname.endsWith("/agent/status")) {
 				return Response.json({ status: "stable" });
 			}
-			if (request.method === "GET" && url.pathname.endsWith("/services/agent/messages")) {
+			if (request.method === "GET" && url.pathname.endsWith("/agent/messages")) {
 				return Response.json({ messages });
 			}
-			if (request.method === "POST" && url.pathname.endsWith("/services/agent/message")) {
+			if (request.method === "POST" && url.pathname.endsWith("/agent/message")) {
 				const body = (await request.json()) as { content: string };
 				messages.push({ role: "user", content: body.content });
 				setTimeout(() => {

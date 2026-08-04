@@ -3,6 +3,7 @@ import {
 	ApiError,
 	canonicalJson,
 	digestOf,
+	isAgentApiNative,
 	type PreserveRequest,
 	parseDurationMs,
 	type ReasonCode,
@@ -164,7 +165,7 @@ export class PersistenceService {
 			idempotencyKey,
 			requestDigest,
 			workspaceId,
-			checkpointId,
+			checkpointId: null,
 			resultWorkspaceId: null,
 			reasonCode: null,
 			attemptCount: 0,
@@ -239,6 +240,7 @@ export class PersistenceService {
 			expiresAt,
 			deletedAt: null,
 		});
+		await this.deps.store.updateOperation(operationId, { checkpointId: checkpoint.id }, now);
 		await this.emitCheckpointEvent("checkpoint.creating", checkpoint);
 		const preserving = await this.deps.store.transition(workspace.id, {
 			from: ["connected", "ready"],
@@ -258,7 +260,13 @@ export class PersistenceService {
 		void this.runPreserve(preserving.id, checkpoint.id, operationId).catch((error) => {
 			this.deps.log?.(`preserve ${operationId}: ${String(error)}`);
 		});
-		return { workspaceId, checkpoint, operation: operationResult.operation };
+		return {
+			workspaceId,
+			checkpoint,
+			operation:
+				(await this.deps.store.getOperation(operationResult.operation.id)) ??
+				operationResult.operation,
+		};
 	}
 
 	async preserveByPolicy(
@@ -343,10 +351,16 @@ export class PersistenceService {
 	}
 
 	private async stopForSnapshot(workspace: WorkspaceRow, operationId: string): Promise<boolean> {
-		const hook = workspace.templateSnapshot.spec.checkpointHook;
-		const quiesced = hook
-			? await this.deps.hub.prepareCheckpoint(workspace.id, operationId, hook.timeoutSeconds * 1000)
-			: false;
+		const spec = workspace.templateSnapshot.spec;
+		const native = isAgentApiNative(spec);
+		const hook = native ? undefined : spec.checkpointHook;
+		const deadlineMs = native
+			? parseDurationMs(spec.timeouts.terminateGrace)
+			: (hook?.timeoutSeconds ?? 0) * 1000;
+		const quiesced =
+			native || hook
+				? await this.deps.hub.prepareCheckpoint(workspace.id, operationId, deadlineMs)
+				: false;
 		if (!workspace.providerRef) return quiesced;
 		await this.deps.driver.stop(
 			{
@@ -548,7 +562,7 @@ export class PersistenceService {
 			requestDigest,
 			workspaceId: checkpoint.workspaceId,
 			checkpointId,
-			resultWorkspaceId,
+			resultWorkspaceId: null,
 			reasonCode: null,
 			attemptCount: 0,
 			createdAt: now,
@@ -623,6 +637,11 @@ export class PersistenceService {
 			await this.failOperation(operationResult.operation.id, "operation_conflict");
 			throw new ApiError("idempotency.conflict", "The requested external_id is already active.");
 		}
+		await this.deps.store.updateOperation(
+			operationResult.operation.id,
+			{ resultWorkspaceId: inserted.workspace.id },
+			now,
+		);
 		await this.deps.store.appendEvent(
 			checkpoint.workspaceId,
 			"workspace.restore_queued",
@@ -639,7 +658,9 @@ export class PersistenceService {
 		void this.deps.scheduler.tick().catch(() => {});
 		return {
 			workspaceId: inserted.workspace.id,
-			operation: operationResult.operation,
+			operation:
+				(await this.deps.store.getOperation(operationResult.operation.id)) ??
+				operationResult.operation,
 		};
 	}
 

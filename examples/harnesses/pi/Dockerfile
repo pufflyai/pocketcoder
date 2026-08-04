@@ -29,10 +29,10 @@ RUN bun install --production --frozen-lockfile
 COPY --from=agentapi-download /agentapi /usr/local/bin/agentapi
 COPY examples/harnesses/pi/agentapi-compat.ts /opt/pi/agentapi-compat.ts
 COPY examples/harnesses/pi/workspace/ /opt/pocketcoder-fixtures/
-COPY examples/harnesses/pi/run-agentapi-pi /usr/local/bin/run-agentapi-pi
+COPY examples/harnesses/pi/run-pi /usr/local/bin/run-pi
 COPY --from=supervisor-build /out/agent.js /opt/pocketcoder/agent.js
 COPY deploy/image/pocketcoder-agent /usr/local/bin/pocketcoder-agent
-RUN chmod 0755 /usr/local/bin/agentapi /usr/local/bin/run-agentapi-pi /usr/local/bin/pocketcoder-agent \
+RUN chmod 0755 /usr/local/bin/agentapi /usr/local/bin/run-pi /usr/local/bin/pocketcoder-agent \
 	&& agentapi --version \
 	&& /opt/pi/node_modules/.bin/pi --version
 

@@ -141,6 +141,7 @@ export type AgentFrame = z.infer<typeof AgentFrameSchema>;
 // service allowlist, and timeouts to the supervisor at registration time, so
 // custom setup and custom harnesses require no image rebuild.
 export const ExecSpecSchema = z.object({
+	agentapi_native: z.boolean().default(false),
 	setup: z.array(SetupStepSchema),
 	harness: HarnessSchema,
 	env: z.record(z.string(), z.string()),

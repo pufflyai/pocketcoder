@@ -1,6 +1,11 @@
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { secretMountPath, type TemplateSpec } from "@pstdio/pocketcoder-contracts";
+import {
+	agentApiHarness,
+	isAgentApiNative,
+	secretMountPath,
+	type TemplateSpec,
+} from "@pstdio/pocketcoder-contracts";
 import type {
 	RuntimeSecretRef,
 	WorkspaceRow,
@@ -21,9 +26,9 @@ function collectReferences(spec: TemplateSpec, repository?: string): Set<string>
 		}
 	};
 	collect(spec.env);
-	collect(spec.harness.env);
+	collect(agentApiHarness(spec).env);
 	for (const step of spec.setup) collect(step.env);
-	if (spec.checkpointHook) collect(spec.checkpointHook.env);
+	if (!isAgentApiNative(spec) && spec.checkpointHook) collect(spec.checkpointHook.env);
 	if (repository && spec.source) {
 		const credential = spec.source.repositories[repository]?.credential;
 		if (credential) references.add(credential);

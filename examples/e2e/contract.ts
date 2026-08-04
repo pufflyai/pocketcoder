@@ -255,18 +255,18 @@ export async function runHarnessE2E(
 		);
 		const { request, workspaceId, readyInMs } = workspace;
 
-		const statusResponse = await request(`/v1/workspaces/${workspaceId}/services/agent/status`);
+		const statusResponse = await request(`/v1/workspaces/${workspaceId}/agent/status`);
 		if (!statusResponse.ok) {
 			throw new Error(
 				`status relay failed (${statusResponse.status}): ${errorBody(await readBody(statusResponse))}`,
 			);
 		}
 
-		const beforeResponse = await request(`/v1/workspaces/${workspaceId}/services/agent/messages`);
+		const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
 		const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
 
 		const messageStartedAt = Date.now();
-		const sendResponse = await request(`/v1/workspaces/${workspaceId}/services/agent/message`, {
+		const sendResponse = await request(`/v1/workspaces/${workspaceId}/agent/message`, {
 			method: "POST",
 			body: JSON.stringify({ content: config.prompt, type: "user" }),
 		});
@@ -278,7 +278,7 @@ export async function runHarnessE2E(
 
 		const observedText = await waitFor(
 			async () => {
-				const response = await request(`/v1/workspaces/${workspaceId}/services/agent/messages`);
+				const response = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
 				if (!response.ok) return null;
 				const messages = messageList(await readBody(response));
 				const harnessError = messages.slice(before.length).map(messageError).find(Boolean);

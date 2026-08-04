@@ -201,7 +201,8 @@ try {
 	const template = JSON.parse(await readFile(templatePath, "utf8")) as {
 		spec: {
 			image: string;
-			harness: { env?: Record<string, string> };
+			agent?: { env?: Record<string, string> };
+			harness?: { env?: Record<string, string> };
 		};
 	};
 	template.spec.image = `${localImage}@${imageId}`;
@@ -218,8 +219,9 @@ try {
 			modelGateway = startFakePiGateway(gatewayBearer);
 			usesFakeGateway = true;
 		}
-		template.spec.harness.env = {
-			...template.spec.harness.env,
+		if (!template.spec.agent) throw new Error("Pi template must use spec.agent");
+		template.spec.agent.env = {
+			...template.spec.agent.env,
 			PI_GATEWAY_URL:
 				process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
 			PI_GATEWAY_MODEL:

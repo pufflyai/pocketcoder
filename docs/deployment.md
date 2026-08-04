@@ -10,14 +10,15 @@ CI publishes two images to the GitHub Container Registry on every push to
   `kubectl`.
   Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
 - `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
-  `pocketcoder-agent` supervisor and a loopback echo harness, useful for probe
+  `pocketcoder-agent` supervisor, checksum-pinned AgentAPI, and a loopback echo harness, useful for probe
   templates and as a starting point for real agent images. Built from
   [`deploy/image/Dockerfile`](../deploy/image/Dockerfile).
 
-Real coding-agent images extend the pattern: install AgentAPI by checksum,
-your agent CLI, and the supervisor; keep everything runnable by the template's
-non-root uid. Always reference images by digest in templates — mutable tags
-are rejected.
+Real coding-agent images extend the workspace base and install only their agent
+CLI and application environment. If they use another base, they must provide
+the supported checksum-pinned AgentAPI at `/usr/local/bin/agentapi` and the
+supervisor. Keep everything runnable by the template's non-root uid. Always
+reference images by digest in templates — mutable tags are rejected.
 
 Publishing the versioned CLI automatically creates the matching `v<version>`
 tag. That tag publishes semver image tags and creates or updates the matching

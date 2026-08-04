@@ -36,7 +36,8 @@ export function machineAuth(store: Store, pepper: string): MiddlewareHandler<App
 		if (found.principal.disabledAt) {
 			throw new ApiError("auth.disabled_principal", "This principal is disabled.");
 		}
-		const effectiveScopes = found.key.scopes.filter(
+		const keyScopes = found.key.scopes.length === 0 ? found.principal.scopes : found.key.scopes;
+		const effectiveScopes = keyScopes.filter(
 			(s) => found.principal.scopes.includes(s) || found.principal.scopes.includes("admin"),
 		);
 		c.set("principal", found.principal);

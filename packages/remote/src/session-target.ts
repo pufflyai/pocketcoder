@@ -27,7 +27,7 @@ export function relayTarget(baseUrl: string, key: string, workspaceId: string): 
 		baseUrl: base,
 		key,
 		workspaceId,
-		serviceUrl: `${base}/v1/workspaces/${encodeURIComponent(workspaceId)}/services/agent`,
+		serviceUrl: `${base}/v1/workspaces/${encodeURIComponent(workspaceId)}/agent`,
 	};
 }
 

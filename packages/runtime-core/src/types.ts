@@ -48,6 +48,7 @@ export interface MachineKeyRow {
 	id: string;
 	principalId: string;
 	secretDigest: Uint8Array;
+	// Empty means inherit the principal's live scopes; non-empty narrows them.
 	scopes: string[];
 	createdAt: Date;
 	expiresAt: Date | null;
@@ -436,6 +437,11 @@ export interface Store {
 	createPrincipal(name: string, scopes: string[], templateNames: string[]): Promise<PrincipalRow>;
 	getPrincipalByName(name: string): Promise<PrincipalRow | null>;
 	listPrincipals(): Promise<PrincipalRow[]>;
+	updatePrincipal(
+		id: string,
+		scopes: string[],
+		templateNames: string[],
+	): Promise<PrincipalRow | null>;
 	setPrincipalDisabled(id: string, disabled: boolean): Promise<void>;
 	insertMachineKey(row: MachineKeyRow): Promise<void>;
 	getMachineKeyWithPrincipal(

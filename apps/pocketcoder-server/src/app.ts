@@ -1083,6 +1083,15 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		requireScope("services:relay"),
 		relayHandler({ store, hub, service }),
 	);
+	app.on(
+		["GET", "POST"],
+		"/v1/workspaces/:id/agent/*",
+		requireScope("services:relay"),
+		relayHandler(
+			{ store, hub, service },
+			{ service: "agent", pathPrefix: (id) => `/v1/workspaces/${id}/agent` },
+		),
+	);
 
 	return {
 		app,

@@ -1,4 +1,4 @@
-import { secretMountPath } from "@pstdio/pocketcoder-contracts";
+import { agentApiHarness, isAgentApiNative, secretMountPath } from "@pstdio/pocketcoder-contracts";
 import type {
 	RuntimeSecretRef,
 	WorkspaceRow,
@@ -12,9 +12,9 @@ function collect(workspace: WorkspaceRow): Set<string> {
 	};
 	const spec = workspace.templateSnapshot.spec;
 	for (const value of Object.values(spec.env)) add(value);
-	for (const value of Object.values(spec.harness.env)) add(value);
+	for (const value of Object.values(agentApiHarness(spec).env)) add(value);
 	for (const step of spec.setup) for (const value of Object.values(step.env)) add(value);
-	if (spec.checkpointHook) {
+	if (!isAgentApiNative(spec) && spec.checkpointHook) {
 		for (const value of Object.values(spec.checkpointHook.env)) add(value);
 	}
 	if (spec.source && workspace.sourceDescriptor) {

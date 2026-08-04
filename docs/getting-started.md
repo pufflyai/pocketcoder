@@ -95,8 +95,10 @@ bun run pcd keys issue --principal my-backend --expires never
 ```
 
 The key (`pkt_…`) is printed once. Store it; the database keeps only a keyed
-digest. Revoke anytime with `keys revoke --id <key-id>` (takes effect on the
-next request).
+digest. Because it was issued without `--scopes`, it follows later scope changes
+made with `principals update`. Pass `keys issue --scopes ...` only when one key
+must be narrower than its principal. Revoke anytime with `keys revoke --id
+<key-id>` (takes effect on the next request).
 
 ## 3. Launch a workspace
 
@@ -126,10 +128,10 @@ pcd workspaces chat --id <uuid>
 For direct API integration, the same relay routes are available:
 
 ```sh
-curl -s -X POST "$POCKETCODER_URL/v1/workspaces/<uuid>/services/agent/message" \
+curl -s -X POST "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/message" \
   -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
   -d '{"content":"fix the failing test","type":"user"}'
-curl -s "$POCKETCODER_URL/v1/workspaces/<uuid>/services/agent/messages" \
+curl -s "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/messages" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 

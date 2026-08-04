@@ -144,13 +144,13 @@ export async function preparePiRuntime(
 		spec: {
 			version: string;
 			image: string;
-			harness: { env?: Record<string, string> };
+			agent: { env?: Record<string, string> };
 		};
 	};
 	const sourceVersion = source.spec.version;
 	source.spec.image = builtImage.image;
-	source.spec.harness.env = {
-		...source.spec.harness.env,
+	source.spec.agent.env = {
+		...source.spec.agent.env,
 		PI_GATEWAY_URL: options.gatewayUrl,
 		PI_GATEWAY_MODEL: options.gatewayModel,
 		PI_GATEWAY_PROVIDER: options.gatewayProvider ?? "pocketcoder-openai",

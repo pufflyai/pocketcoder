@@ -14,10 +14,10 @@ coding-agent use case while keeping the two concepts that matter:
 - a **workspace** is one isolated instance of a template and the lifecycle
   record for a single coding-agent session.
 
-## Custom setup commands and harnesses
+## AgentAPI-native workspaces
 
-Templates own the whole execution surface, so different coding agents need no
-code changes, only a new reviewed template:
+Templates declare the coding agent; PocketCoder owns AgentAPI startup,
+readiness, relay routes, durable transcript capture, and checkpoint shutdown:
 
 ```jsonc
 // examples/templates/claude-code-agent.json (excerpt)
@@ -27,28 +27,19 @@ code changes, only a new reviewed template:
     { "name": "clone-workspace-repo", "command": ["/usr/local/bin/clone-repo.sh"] },
     { "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"] }
   ],
-  "harness": {                                          // custom harness
-    "command": ["agentapi", "server", "--port", "3284", "--", "claude", "--dangerously-skip-permissions"],
+  "agent": {                                            // coding agent only
+    "type": "claude",
+    "command": ["claude", "--dangerously-skip-permissions"],
     "cwd": "/home/agent/workspace"
-  },
-  "services": {                                         // exact relay allowlist
-    "agent": {
-      "baseUrl": "http://127.0.0.1:3284",
-      "routes": [
-        { "method": "GET", "path": "/status" },
-        { "method": "GET", "path": "/messages", "query": ["after"] },
-        { "method": "POST", "path": "/message" }
-      ]
-    }
   }
 }
 ```
 
-`setup` steps run sequentially before the harness starts; the `harness` is the
-long-running conversation service (AgentAPI plus any coding-agent CLI, or
-anything else that serves the declared loopback routes). The supervisor
-receives both from the server at registration time, so changing them is a
-template version bump, not an image rebuild.
+`setup` steps run sequentially before PocketCoder launches its pinned
+`/usr/local/bin/agentapi` around `agent.command`. The fixed, bounded
+conversation API is `/v1/workspaces/{id}/agent/{status|messages|message}`.
+Legacy `harness` and `services` templates remain readable for one migration
+release, but cannot be mixed with `agent`.
 
 ## Quick start (development)
 
@@ -81,6 +72,10 @@ POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
 bun run pcd -- server start
 ```
 
+Keys issued without `--scopes` inherit live principal scopes. Use `pcd
+principals update --name my-backend --scopes ...` to change them without direct
+database edits; pass `keys issue --scopes ...` for a key-specific restriction.
+
 For the included Pi harness, the repository convenience builds and
 materializes that runtime catalog before starting the gateway and server:
 
@@ -111,7 +106,7 @@ bun run pcd -- workspaces chat --id $WS
 bun run pcd -- workspaces preserve --id $WS
 
 # Converse through the relay once the workspace is ready:
-curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/services/agent/message" \
+curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/agent/message" \
   -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
   -d '{"content":"fix the failing test"}'
 

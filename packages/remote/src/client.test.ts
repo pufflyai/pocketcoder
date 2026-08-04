@@ -47,7 +47,7 @@ describe("local Pi AgentAPI client", () => {
 		}) as typeof fetch;
 		const client = new RemoteAgentClient(
 			{
-				serviceUrl: "http://pocketcoder.test/v1/workspaces/ws/services/agent",
+				serviceUrl: "http://pocketcoder.test/v1/workspaces/ws/agent",
 				key: "pkt_example",
 				pollIntervalMs: 1,
 				timeoutMs: 100,
@@ -109,7 +109,7 @@ describe("local Pi AgentAPI client", () => {
 				POCKETCODER_WORKSPACE_ID: "workspace id",
 			}),
 		).toEqual({
-			serviceUrl: "http://localhost:7080/v1/workspaces/workspace%20id/services/agent",
+			serviceUrl: "http://localhost:7080/v1/workspaces/workspace%20id/agent",
 			key: "pkt_example",
 		});
 	});

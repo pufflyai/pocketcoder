@@ -44,6 +44,18 @@ function need(flags: Flags, key: string): string {
 	return value;
 }
 
+function scopeList(value: string): string[] {
+	const scopes = value.split(",").map((scope) => scope.trim());
+	for (const scope of scopes) {
+		if (!isScope(scope)) fail(`unknown scope: ${scope}`);
+	}
+	return scopes;
+}
+
+function valueList(value: string): string[] {
+	return value.split(",").map((item) => item.trim());
+}
+
 function fail(message: string): never {
 	console.error(`pcd: ${message}`);
 	process.exit(1);
@@ -221,6 +233,23 @@ export function createCli(argv: string[]): Argv {
 	parser = commandGroup(parser, "principals", "Manage principals", (group) =>
 		group
 			.command("create", "Create a principal", (command) =>
+				command
+					.option("name", {
+						type: "string",
+						demandOption: true,
+						description: "Principal name",
+					})
+					.option("scopes", {
+						type: "string",
+						demandOption: true,
+						description: "Comma-separated scopes",
+					})
+					.option("templates", {
+						type: "string",
+						description: "Comma-separated template names, or * for all templates",
+					}),
+			)
+			.command("update", "Update a principal", (command) =>
 				command
 					.option("name", {
 						type: "string",
@@ -564,17 +593,26 @@ async function handlePrincipals({ group, action, flags }: CommandContext): Promi
 	if (group !== "principals") return false;
 	if (action === "create") {
 		const name = need(flags, "name");
-		const scopes = need(flags, "scopes")
-			.split(",")
-			.map((s) => s.trim());
-		for (const scope of scopes) {
-			if (!isScope(scope)) fail(`unknown scope: ${scope}`);
-		}
-		const templates =
-			typeof flags.templates === "string" ? flags.templates.split(",").map((s) => s.trim()) : [];
+		const scopes = scopeList(need(flags, "scopes"));
+		const templates = typeof flags.templates === "string" ? valueList(flags.templates) : [];
 		await withStore(async (store) => {
 			const row = await store.createPrincipal(name, scopes, templates);
 			console.log(`created principal ${row.name} (${row.id})`);
+		});
+		return true;
+	}
+
+	if (action === "update") {
+		const name = need(flags, "name");
+		const scopes = scopeList(need(flags, "scopes"));
+		await withStore(async (store) => {
+			const principal = await store.getPrincipalByName(name);
+			if (!principal) fail(`unknown principal: ${name}`);
+			const templates =
+				typeof flags.templates === "string" ? valueList(flags.templates) : principal.templateNames;
+			const updated = await store.updatePrincipal(principal.id, scopes, templates);
+			if (!updated) fail(`unknown principal: ${name}`);
+			console.log(`updated principal ${updated.name} (${updated.id})`);
 		});
 		return true;
 	}
@@ -601,10 +639,7 @@ async function handleKeys({ group, action, flags }: CommandContext): Promise<boo
 		await withStore(async (store) => {
 			const principal = await store.getPrincipalByName(principalName);
 			if (!principal) fail(`unknown principal: ${principalName}`);
-			const scopes =
-				typeof flags.scopes === "string"
-					? flags.scopes.split(",").map((s) => s.trim())
-					: principal.scopes;
+			const scopes = typeof flags.scopes === "string" ? scopeList(flags.scopes) : [];
 			const expiresRaw = typeof flags.expires === "string" ? flags.expires : "never";
 			const expiresAt = expiresRaw === "never" ? null : new Date(expiresRaw);
 			if (expiresAt && Number.isNaN(expiresAt.getTime())) {
@@ -1016,7 +1051,7 @@ async function waitForDoctorReady(workspaceId: string): Promise<void> {
 }
 
 async function verifyDoctorStatus(workspaceId: string): Promise<void> {
-	const response = await api(`/v1/workspaces/${workspaceId}/services/agent/status`);
+	const response = await api(`/v1/workspaces/${workspaceId}/agent/status`);
 	const text = await response.text();
 	console.log(`doctor: relay status ${response.status}: ${text}`);
 	if (!response.ok) throw new Error(`agent status probe failed (${response.status})`);
@@ -1039,7 +1074,7 @@ function containsDoctorNonce(message: Record<string, unknown>, nonce: string): b
 async function runDoctorTurn(workspaceId: string, timeoutSeconds: number): Promise<void> {
 	const nonce = `pocketcoder-doctor-${randomUUID()}`;
 	console.log("doctor: sending a correlated request/response probe");
-	const messageResponse = await api(`/v1/workspaces/${workspaceId}/services/agent/message`, {
+	const messageResponse = await api(`/v1/workspaces/${workspaceId}/agent/message`, {
 		method: "POST",
 		body: JSON.stringify({
 			type: "user",
@@ -1056,7 +1091,7 @@ async function runDoctorTurn(workspaceId: string, timeoutSeconds: number): Promi
 	let after = "0";
 	while (Date.now() < deadline) {
 		const response = await api(
-			`/v1/workspaces/${workspaceId}/services/agent/messages?after=${encodeURIComponent(after)}`,
+			`/v1/workspaces/${workspaceId}/agent/messages?after=${encodeURIComponent(after)}`,
 		);
 		if (!response.ok) {
 			throw new Error(`agent messages probe failed (${response.status}): ${await response.text()}`);
