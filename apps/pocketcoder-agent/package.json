@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-agent",
+	"nx": {
+		"tags": [
+			"scope:agent",
+			"type:app"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",

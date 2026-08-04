@@ -12,6 +12,7 @@ import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
 	loadTemplateDir,
 	OutboxDispatcher,
+	RuntimeMetrics,
 	reconcilePersistence,
 	reconcileProviders,
 	resolveWarmPools,
@@ -20,10 +21,11 @@ import {
 import { buildServer } from "./app";
 import { configSummary, loadConfig, type ServerConfig } from "./config";
 import { Readiness } from "./health";
+import { createStructuredLogger } from "./observability";
 
 export type ServerLog = (message: string) => void;
 
-export interface RunningPocketcoderServer {
+export interface RunningPocketCoderServer {
 	config: ServerConfig;
 	url: string;
 	stop(): Promise<void>;
@@ -120,6 +122,7 @@ async function reconcileStartup(
 	driver: ReturnType<typeof createWorkspaceDriver>,
 	storageDriver: ReturnType<typeof createStorageDriver>,
 	log: ServerLog,
+	metrics: RuntimeMetrics,
 ): Promise<boolean> {
 	try {
 		await reconcileProviders({
@@ -127,8 +130,9 @@ async function reconcileStartup(
 			driver,
 			...(storageDriver ? { storageDriver } : {}),
 			log,
+			metrics,
 		});
-		await reconcilePersistence({ store, driver, storageDriver, log });
+		await reconcilePersistence({ store, driver, storageDriver, log, metrics });
 		return true;
 	} catch (error) {
 		log(`startup reconciliation failed: ${String(error)}`);
@@ -154,11 +158,13 @@ function startExclusiveTimer(
 	}, intervalMs);
 }
 
-export async function startPocketcoderServer(
+export async function startPocketCoderServer(
 	config: ServerConfig = loadConfig(),
 	options: { log?: ServerLog; instanceId?: string } = {},
-): Promise<RunningPocketcoderServer> {
+): Promise<RunningPocketCoderServer> {
 	const log = options.log ?? defaultLog;
+	const logger = createStructuredLogger((record) => log(JSON.stringify(record)));
+	const metrics = new RuntimeMetrics();
 	log(`config: ${JSON.stringify(configSummary(config))}`);
 	const store = await initializeStore(config, log);
 	try {
@@ -178,7 +184,7 @@ export async function startPocketcoderServer(
 			(await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
 		const storageDriver = createStorageDriver(config);
 		const secretResolver = createSecretResolver(config);
-		const readiness = new Readiness({ reconciliation: "pending" });
+		const readiness = new Readiness({ reconciliation: "pending" }, metrics);
 		const { app, websocket, scheduler, persistence, warmPool } = buildServer({
 			store,
 			driver,
@@ -190,14 +196,15 @@ export async function startPocketcoderServer(
 			workspaceServerUrl: config.workspaceServerUrl,
 			persistenceLimits: config.persistenceLimits,
 			...(options.instanceId ? { instanceId: options.instanceId } : {}),
-			log,
+			logger,
+			metrics,
 			warmPools,
 			readiness,
 		});
 
 		readiness.set(
 			"reconciliation",
-			(await reconcileStartup(store, driver, storageDriver, log)) ? "ok" : "failed",
+			(await reconcileStartup(store, driver, storageDriver, log, metrics)) ? "ok" : "failed",
 		);
 
 		const outbox = new OutboxDispatcher({
@@ -205,6 +212,7 @@ export async function startPocketcoderServer(
 			sinkUrl: config.eventSinkUrl,
 			sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
 			onError: (context, error) => log(`${context}: ${String(error)}`),
+			metrics,
 		});
 
 		const schedulerTimer = startExclusiveTimer(
@@ -300,11 +308,11 @@ export async function startPocketcoderServer(
 	}
 }
 
-export async function runPocketcoderServerUntilSignal(
+export async function runPocketCoderServerUntilSignal(
 	config: ServerConfig = loadConfig(),
 	options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<void> {
-	const running = await startPocketcoderServer(config, options);
+	const running = await startPocketCoderServer(config, options);
 	await new Promise<void>((resolve, reject) => {
 		let stopping = false;
 		const shutdown = () => {

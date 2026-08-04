@@ -282,7 +282,9 @@ describe("status poller", () => {
 			if (!step || !new URL(request.url).pathname.endsWith("/changes")) {
 				return new Response("not found", { status: 404 });
 			}
-			if (step.fail) return new Response("boom", { status: 500 });
+			if (step.fail) {
+				return new Response("boom", { status: 500, headers: { "retry-after": "0" } });
+			}
 			return Response.json({
 				cursor: call,
 				changed: true,
@@ -332,6 +334,10 @@ describe("status poller", () => {
 
 	test("backs off and reports reconnecting on errors", async () => {
 		const { poller, delays, statuses, notifications } = pollerHarness([
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
 			{ fail: true, state: "ready" },
 			{ fail: true, state: "ready" },
 			{ state: "canceled" },

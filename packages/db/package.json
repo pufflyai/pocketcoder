@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-db",
+	"nx": {
+		"tags": [
+			"scope:persistence",
+			"type:adapter"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"description": "PostgreSQL persistence for PocketCoder.",

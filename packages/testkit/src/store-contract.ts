@@ -93,15 +93,20 @@ export function registerStoreContract(name: string, harness: StoreContractHarnes
 					"created",
 				]);
 
-				const created = results.find((result) => result.kind === "created");
+				const createdIndex = results.findIndex((result) => result.kind === "created");
+				const created = results[createdIndex];
 				if (created?.kind !== "created") throw new Error("expected one created workspace");
-				expect(await store.insertWorkspace(first, { maxQueuedWorkspaces: 1 })).toMatchObject({
-					kind: "replayed",
-					workspace: { id: created.workspace.id },
-				});
+				const createdInput = [first, second][createdIndex];
+				if (!createdInput) throw new Error("expected created workspace input");
+				expect(await store.insertWorkspace(createdInput, { maxQueuedWorkspaces: 1 })).toMatchObject(
+					{
+						kind: "replayed",
+						workspace: { id: created.workspace.id },
+					},
+				);
 				expect(
 					await store.insertWorkspace(
-						{ ...first, requestDigest: digestOf({ changed: true }) },
+						{ ...createdInput, requestDigest: digestOf({ changed: true }) },
 						{ maxQueuedWorkspaces: 1 },
 					),
 				).toMatchObject({ kind: "conflict", conflict: "idempotency" });

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
+import { RuntimeMetrics } from "./metrics";
 import { OutboxDispatcher } from "./outbox";
 
 async function storeWithEvent() {
@@ -35,6 +36,7 @@ async function storeWithEvent() {
 describe("outbox dispatcher", () => {
 	test("delivers signed events and marks them delivered", async () => {
 		const store = await storeWithEvent();
+		const metrics = new RuntimeMetrics();
 		const seen: Array<{ sig: string | null; id: string | null; body: string }> = [];
 		const dispatcher = new OutboxDispatcher({
 			store,
@@ -43,12 +45,13 @@ describe("outbox dispatcher", () => {
 			fetchFn: (async (_url: unknown, init?: RequestInit) => {
 				const headers = new Headers(init?.headers);
 				seen.push({
-					sig: headers.get("X-Pocketcoder-Signature"),
-					id: headers.get("X-Pocketcoder-Event-ID"),
+					sig: headers.get("X-PocketCoder-Signature"),
+					id: headers.get("X-PocketCoder-Event-ID"),
 					body: String(init?.body),
 				});
 				return new Response("ok", { status: 200 });
 			}) as unknown as typeof fetch,
+			metrics,
 		});
 		await dispatcher.tick();
 		expect(seen.length).toBe(1);
@@ -57,6 +60,9 @@ describe("outbox dispatcher", () => {
 		expect(JSON.parse(seen[0]?.body ?? "{}").type).toBe("workspace.queued");
 		// Nothing left to deliver.
 		expect((await store.claimDueEvents(new Date(), 10)).length).toBe(0);
+		expect(metrics.snapshot()).toMatchObject({
+			counters: { 'outbox.delivery.total{result="delivered"}': 1 },
+		});
 	});
 
 	test("failed delivery retries with backoff", async () => {

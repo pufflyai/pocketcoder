@@ -12,6 +12,7 @@ import {
 	type ConnectionHub,
 	DEFAULT_LIMITS,
 	decodeFailureLogTail,
+	RuntimeMetrics,
 	Scheduler,
 	type Store,
 } from "./index";
@@ -79,7 +80,7 @@ async function queueWorkspace(
 	return result.workspace;
 }
 
-function makeScheduler(store: Store, driver: FakeDriver, overrides = {}) {
+function makeScheduler(store: Store, driver: FakeDriver, overrides = {}, metrics?: RuntimeMetrics) {
 	return new Scheduler({
 		store,
 		driver,
@@ -87,6 +88,7 @@ function makeScheduler(store: Store, driver: FakeDriver, overrides = {}) {
 		secrets,
 		limits: { ...DEFAULT_LIMITS, ...overrides },
 		workspaceServerUrl: "http://127.0.0.1:0",
+		...(metrics ? { metrics } : {}),
 	});
 }
 
@@ -107,7 +109,8 @@ describe("scheduler admission", () => {
 		const driver = new FakeDriver();
 		const { principal, echo, echoRow } = await seed(store);
 		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
-		await makeScheduler(store, driver).tick();
+		const metrics = new RuntimeMetrics();
+		await makeScheduler(store, driver, {}, metrics).tick();
 
 		const after = await store.getWorkspace(ws.id);
 		expect(after?.state).toBe("provisioning");
@@ -118,6 +121,9 @@ describe("scheduler admission", () => {
 		expect(input?.template_digest).toBe(echo.digest);
 		expect(input?.launch_input).toEqual({ bootstrap_code: "opaque" });
 		expect(input?.registration_secret.startsWith("secret-")).toBe(true);
+		expect(metrics.snapshot()).toMatchObject({
+			counters: { 'admission.total{result="accepted"}': 1 },
+		});
 	});
 
 	test("respects the global active limit and preserves FIFO", async () => {

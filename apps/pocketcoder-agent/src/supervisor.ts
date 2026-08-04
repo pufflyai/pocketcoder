@@ -1,151 +1,48 @@
-import { randomUUID } from "node:crypto";
-import { open, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
 import {
-	type AgentFrame,
-	ConversationMessageInputSchema,
 	type ExecSpec,
-	HEADER_POOL_ENROLLMENT,
-	HEADER_POOL_RUNTIME,
-	HEADER_PROTOCOL,
-	HEADER_RECONNECT,
-	HEADER_REGISTRATION,
-	HEADER_WORKSPACE,
-	LeaseAssignmentFrameSchema,
-	POOL_PROTOCOL_VERSION,
-	type PoolProviderInput,
-	PROTOCOL_VERSION,
 	ProviderBootstrapInputSchema,
 	type ProviderInput,
-	type ProxyRequest,
 	parseDurationMs,
 	ServerFrameSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { agentApiConversationMessages } from "./agentapi";
+import { AgentConnection } from "./agent-connection";
+import { AgentHealthMonitor } from "./agent-health";
+import { prepareCheckpoint } from "./checkpoint-coordinator";
+import { waitForPoolLease } from "./pool-lease";
+import { relayProxyRequest } from "./proxy-relay";
+import {
+	EXIT_NETWORK_POLICY_FAILED,
+	EXIT_PROTOCOL_ERROR,
+	EXIT_REGISTRATION_FAILED,
+	EXIT_SETUP_FAILED,
+	EXIT_WRITABLE_MEMORY_FAILED,
+} from "./supervisor-constants";
+import { SupervisorLogs } from "./supervisor-logs";
+import {
+	preflightNetwork,
+	probeWritableMemory,
+	reportResolvedSource,
+	runSetupSteps,
+	startNetworkMonitor,
+} from "./supervisor-setup";
+import { enforcedEnvironment } from "./supervisor-utils";
+
+export { waitForPoolLease } from "./pool-lease";
+export { EXIT_NETWORK_POLICY_FAILED } from "./supervisor-constants";
+export {
+	enforcedEnvironment,
+	isConversationControlLine,
+	pumpLineFramedText,
+	splitUtf8Chunks,
+	verifyWritableMemoryPaths,
+} from "./supervisor-utils";
 
 // pocketcoder-agent supervise: PID 1 inside every workspace. It registers with
 // pocketcoder-server over one outbound WSS connection, runs the template's
 // setup commands, supervises the harness process, probes declared loopback
 // services, forwards bounded logs, and answers allowlisted relay requests.
 
-export const AGENT_VERSION = "0.1.0";
-
-// Stable supervisor exit codes for outcomes that are not the child's own.
-export const EXIT_SETUP_FAILED = 30;
-export const EXIT_REGISTRATION_FAILED = 31;
-export const EXIT_PROTOCOL_ERROR = 32;
-export const EXIT_WRITABLE_MEMORY_FAILED = 33;
-export const EXIT_NETWORK_POLICY_FAILED = 34;
-
-const LOG_CHUNK_LIMIT = 32 * 1024;
-const HEALTH_INTERVAL_MS = 5000;
-
 type ChildPhase = "starting" | "setup" | "running" | "exited" | "terminating";
-
-interface AgentApiStatus {
-	state: "unknown" | "stable" | "running";
-}
-
-export async function verifyWritableMemoryPaths(paths: string[]): Promise<void> {
-	for (const path of paths) {
-		const probePath = join(path, `.pocketcoder-write-probe-${randomUUID()}`);
-		const expected = randomUUID();
-		let handle: Awaited<ReturnType<typeof open>> | null = null;
-		try {
-			handle = await open(probePath, "wx", 0o600);
-			await handle.writeFile(expected, "utf8");
-			await handle.sync();
-			await handle.close();
-			handle = null;
-			const actual = await readFile(probePath, "utf8");
-			if (actual !== expected) {
-				throw new Error("read-back content did not match");
-			}
-			await rm(probePath);
-		} catch (error) {
-			throw new Error(
-				`writable memory preflight failed for ${path}: ${
-					error instanceof Error ? error.message : "unknown error"
-				}`,
-				{ cause: error },
-			);
-		} finally {
-			await handle?.close().catch(() => {});
-			await rm(probePath, { force: true }).catch(() => {});
-		}
-	}
-}
-
-export async function pumpLineFramedText(
-	stream: ReadableStream<Uint8Array>,
-	emit: (text: string) => void,
-	capture?: (value: Uint8Array) => void,
-): Promise<void> {
-	const reader = stream.getReader();
-	const decoder = new TextDecoder();
-	let pending = "";
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			capture?.(value);
-			pending += decoder.decode(value, { stream: true });
-			let newline = pending.indexOf("\n");
-			while (newline >= 0) {
-				emit(pending.slice(0, newline + 1));
-				pending = pending.slice(newline + 1);
-				newline = pending.indexOf("\n");
-			}
-		}
-	} catch {
-		// Stream ended with the process.
-	} finally {
-		pending += decoder.decode();
-		if (pending !== "") emit(pending);
-	}
-}
-
-export function splitUtf8Chunks(text: string, maxBytes = LOG_CHUNK_LIMIT): string[] {
-	const chunks: string[] = [];
-	let chunk = "";
-	let chunkBytes = 0;
-	for (const character of text) {
-		const bytes = Buffer.byteLength(character);
-		if (chunkBytes + bytes > maxBytes && chunk !== "") {
-			chunks.push(chunk);
-			chunk = "";
-			chunkBytes = 0;
-		}
-		chunk += character;
-		chunkBytes += bytes;
-	}
-	if (chunk !== "") chunks.push(chunk);
-	return chunks;
-}
-
-export function isConversationControlLine(text: string): boolean {
-	return text.startsWith("POCKETCODER_CONVERSATION ");
-}
-
-export function enforcedEnvironment(
-	exec: ExecSpec,
-	overrides: Record<string, string | undefined> = {},
-) {
-	const environment = { ...process.env, ...exec.env, ...overrides };
-	if (exec.network.mode !== "restricted") return environment;
-	const noProxy = "127.0.0.1,localhost,::1";
-	return {
-		...environment,
-		HTTP_PROXY: exec.network.proxy_url,
-		http_proxy: exec.network.proxy_url,
-		HTTPS_PROXY: exec.network.proxy_url,
-		https_proxy: exec.network.proxy_url,
-		ALL_PROXY: "",
-		all_proxy: "",
-		NO_PROXY: noProxy,
-		no_proxy: noProxy,
-	};
-}
 
 export async function supervise(inputPath: string): Promise<number> {
 	const raw = await Bun.file(inputPath).text();
@@ -156,62 +53,17 @@ export async function supervise(inputPath: string): Promise<number> {
 	return await supervisor.run();
 }
 
-export function waitForPoolLease(input: PoolProviderInput): Promise<ProviderInput> {
-	return new Promise((resolve, reject) => {
-		const base = input.server_url.replace(/^http/, "ws").replace(/\/$/, "");
-		const ws = new WebSocket(`${base}/v1/agent/pool-connect`, {
-			headers: {
-				[HEADER_PROTOCOL]: String(POOL_PROTOCOL_VERSION),
-				[HEADER_POOL_RUNTIME]: input.pool_runtime_id,
-				[HEADER_POOL_ENROLLMENT]: input.enrollment_secret,
-			},
-		} as unknown as string[]);
-		let assigned = false;
-		ws.onopen = () => {
-			ws.send(
-				JSON.stringify({
-					v: POOL_PROTOCOL_VERSION,
-					type: "pool_registered",
-					pool_runtime_id: input.pool_runtime_id,
-					template: {
-						name: input.template_name,
-						version: input.template_version,
-						digest: input.template_digest,
-					},
-					agent_version: AGENT_VERSION,
-				}),
-			);
-		};
-		ws.onmessage = (event) => {
-			const parsed = LeaseAssignmentFrameSchema.safeParse(JSON.parse(String(event.data)));
-			if (!parsed.success || assigned) return;
-			assigned = true;
-			ws.close(1000, "lease received");
-			resolve(parsed.data.input);
-		};
-		ws.onerror = () => {};
-		ws.onclose = () => {
-			if (!assigned) reject(new Error("warm pool enrollment closed before assignment"));
-		};
-	});
-}
-
 class Supervisor {
 	private readonly input: ProviderInput;
-	private ws: WebSocket | null = null;
-	private connectionId = "";
-	private seq = 0;
-	private reconnectCredential: string | null = null;
+	private readonly connection: AgentConnection;
+	private readonly logs: SupervisorLogs;
+	private readonly healthMonitor: AgentHealthMonitor;
 	private exec: ExecSpec | null = null;
 	private child: ReturnType<typeof Bun.spawn> | null = null;
 	private childPhase: ChildPhase = "starting";
 	private childExit: number | null = null;
 	private shuttingDown = false;
 	private quiescing = false;
-	private agentapi: AgentApiStatus = { state: "unknown" };
-	private lastAgentApiMessageId = -1;
-	private transcriptSync: Promise<void> | null = null;
-	private readonly health = new Map<string, string>();
 	private readonly done: Promise<number>;
 	private finish!: (code: number) => void;
 	private timers: Array<ReturnType<typeof setInterval>> = [];
@@ -220,17 +72,25 @@ class Supervisor {
 
 	constructor(input: ProviderInput) {
 		this.input = input;
+		this.connection = new AgentConnection(input, {
+			services: () => (this.exec ? Object.keys(this.exec.services) : []),
+			onMessage: (raw) => void this.handleMessage(raw),
+			onRegistrationFailure: () => this.exitWith(EXIT_REGISTRATION_FAILED),
+			isStopped: () => this.shuttingDown || this.childExit !== null,
+		});
+		this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+		this.healthMonitor = new AgentHealthMonitor({
+			exec: () => this.exec,
+			childPhase: () => this.childPhase,
+			send: this.sendFrame.bind(this),
+			log: this.logs.log.bind(this.logs),
+		});
 		this.done = new Promise((resolve) => {
 			this.finish = resolve;
 		});
 		this.execReadyPromise = new Promise((resolve) => {
 			this.execReady = resolve;
 		});
-	}
-
-	private wsUrl(): string {
-		const base = this.input.server_url.replace(/^http/, "ws").replace(/\/$/, "");
-		return `${base}/v1/agent/connect`;
 	}
 
 	async run(): Promise<number> {
@@ -248,7 +108,7 @@ class Supervisor {
 	}
 
 	private async runWorkspace(): Promise<number> {
-		this.connect(true);
+		this.connection.connect();
 		// Wait until the server delivered the exec spec, then run setup and
 		// start the harness exactly once. Registration failure resolves
 		// `done` first, so a rejected connection cannot hang the supervisor.
@@ -256,7 +116,9 @@ class Supervisor {
 		if (raced !== null) return raced;
 		const exec = this.exec;
 		if (!exec) return EXIT_PROTOCOL_ERROR;
-		if (!(await this.preflightNetwork(exec))) return EXIT_NETWORK_POLICY_FAILED;
+		if (!(await preflightNetwork(exec, this.sendFrame.bind(this), this.flushAndClose.bind(this)))) {
+			return EXIT_NETWORK_POLICY_FAILED;
+		}
 
 		if (exec.launch_mode === "restore") {
 			this.sendFrame("restore_status", {
@@ -264,8 +126,9 @@ class Supervisor {
 				capability: exec.persistence.conversation_restore,
 			});
 		}
-		const memoryOk = await this.probeWritableMemory(exec);
+		const memoryOk = await probeWritableMemory(exec, this.logs.log.bind(this.logs));
 		if (!memoryOk) {
+			this.failedSetupStep = "writable-memory-preflight";
 			this.sendFrame("process_state", {
 				phase: "exited",
 				exit_code: EXIT_WRITABLE_MEMORY_FAILED,
@@ -274,8 +137,15 @@ class Supervisor {
 			await this.flushAndClose();
 			return EXIT_WRITABLE_MEMORY_FAILED;
 		}
-		const setupOk = await this.runSetup(exec);
-		if (!setupOk) {
+		this.failedSetupStep = await runSetupSteps(exec, {
+			send: this.sendFrame.bind(this),
+			log: this.logs.log.bind(this.logs),
+			pump: this.logs.pump.bind(this.logs),
+			setSetupPhase: () => {
+				this.childPhase = "setup";
+			},
+		});
+		if (this.failedSetupStep) {
 			this.sendFrame("process_state", {
 				phase: "exited",
 				exit_code: EXIT_SETUP_FAILED,
@@ -284,7 +154,7 @@ class Supervisor {
 			await this.flushAndClose();
 			return EXIT_SETUP_FAILED;
 		}
-		await this.reportResolvedSource(exec);
+		await reportResolvedSource(exec, this.sendFrame.bind(this), this.logs.log.bind(this.logs));
 		if (exec.launch_mode === "restore") {
 			this.sendFrame("restore_status", {
 				phase: "ready",
@@ -292,75 +162,20 @@ class Supervisor {
 			});
 		}
 		this.startHarness(exec);
-		this.startHealthLoop(exec);
-		this.startNetworkHealthLoop(exec);
-		this.startHeartbeatLoop();
+		this.timers.push(this.healthMonitor.start(exec));
+		const networkMonitor = startNetworkMonitor(exec, this.sendFrame.bind(this), (code) => {
+			this.child?.kill("SIGKILL");
+			this.exitWith(code);
+		});
+		if (networkMonitor) this.timers.push(networkMonitor);
+		this.timers.push(this.healthMonitor.startHeartbeat());
 		return await this.done;
 	}
 
 	// --- Connection ---
 
-	private connect(first: boolean): void {
-		const headers: Record<string, string> = {
-			[HEADER_PROTOCOL]: String(PROTOCOL_VERSION),
-			[HEADER_WORKSPACE]: this.input.workspace_id,
-		};
-		if (first || !this.reconnectCredential) {
-			headers[HEADER_REGISTRATION] = this.input.registration_secret;
-		} else {
-			headers[HEADER_RECONNECT] = this.reconnectCredential;
-		}
-		this.connectionId = randomUUID();
-		this.seq = 0;
-		const ws = new WebSocket(this.wsUrl(), { headers } as unknown as string[]);
-		this.ws = ws;
-		ws.onopen = () => {
-			this.sendFrame("registered", {
-				agent_version: AGENT_VERSION,
-				template: {
-					name: this.input.template_name,
-					version: this.input.template_version,
-					digest: this.input.template_digest,
-				},
-				services: this.exec ? Object.keys(this.exec.services) : [],
-				pid: process.pid,
-			});
-		};
-		ws.onmessage = (event) => {
-			void this.handleMessage(String(event.data));
-		};
-		ws.onclose = () => {
-			if (this.shuttingDown || this.childExit !== null) return;
-			if (!this.reconnectCredential) {
-				// Registration never completed; the workspace will fail with
-				// registration_timeout on the server side.
-				this.exitWith(EXIT_REGISTRATION_FAILED);
-				return;
-			}
-			setTimeout(() => {
-				if (!this.shuttingDown && this.childExit === null) this.connect(false);
-			}, 2000);
-		};
-		ws.onerror = () => {
-			// onclose follows; reconnect logic lives there.
-		};
-	}
-
-	private sendFrame(type: AgentFrame["type"], payload: unknown): boolean {
-		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
-		this.seq += 1;
-		this.ws.send(
-			JSON.stringify({
-				v: PROTOCOL_VERSION,
-				type,
-				workspace_id: this.input.workspace_id,
-				connection_id: this.connectionId,
-				seq: this.seq,
-				sent_at: new Date().toISOString(),
-				payload,
-			}),
-		);
-		return true;
+	private sendFrame(type: Parameters<AgentConnection["send"]>[0], payload: unknown) {
+		return this.connection.send(type, payload);
 	}
 
 	private async handleMessage(raw: string): Promise<void> {
@@ -370,10 +185,10 @@ class Supervisor {
 		switch (frame.type) {
 			case "registered_ack": {
 				if (frame.payload.reconnect_credential) {
-					this.reconnectCredential = frame.payload.reconnect_credential;
+					this.connection.setReconnectCredential(frame.payload.reconnect_credential);
 				}
-				if (this.agentapi.state !== "unknown") {
-					this.sendFrame("agent_state", { state: this.agentapi.state });
+				if (this.healthMonitor.state !== "unknown") {
+					this.sendFrame("agent_state", { state: this.healthMonitor.state });
 				}
 				if (!this.exec) {
 					this.exec = frame.payload.exec;
@@ -382,7 +197,13 @@ class Supervisor {
 				return;
 			}
 			case "proxy_request":
-				await this.handleProxy(frame.payload);
+				await relayProxyRequest(frame.payload, {
+					exec: () => this.exec,
+					isQuiescing: () => this.quiescing,
+					send: this.sendFrame.bind(this),
+					onAgentTurn: () => this.healthMonitor.setAgentState("running"),
+					probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
+				});
 				return;
 			case "signal": {
 				this.forwardSignal(frame.payload.signal === "KILL" ? "SIGKILL" : "SIGTERM");
@@ -391,7 +212,7 @@ class Supervisor {
 			}
 			case "health_probe": {
 				const exec = this.exec;
-				if (exec) await this.probeService(exec, frame.payload.service, true);
+				if (exec) await this.healthMonitor.probeService(exec, frame.payload.service, true);
 				return;
 			}
 			case "shutdown": {
@@ -399,7 +220,18 @@ class Supervisor {
 				return;
 			}
 			case "prepare_checkpoint": {
-				await this.prepareCheckpoint(frame.payload.operation_id, frame.payload.deadline_ms);
+				await prepareCheckpoint(frame.payload.operation_id, frame.payload.deadline_ms, {
+					exec: () => this.exec,
+					send: this.sendFrame.bind(this),
+					pump: this.logs.pump.bind(this.logs),
+					readAgentApiStatus: this.healthMonitor.readAgentApiStatus.bind(this.healthMonitor),
+					syncAgentApiMessages: this.healthMonitor.syncMessages.bind(this.healthMonitor),
+					child: () => this.child,
+					childExited: () => this.childExit !== null,
+					setQuiescing: (value) => {
+						this.quiescing = value;
+					},
+				});
 				return;
 			}
 		}
@@ -408,215 +240,6 @@ class Supervisor {
 	// --- Setup commands ---
 
 	private failedSetupStep: string | null = null;
-	private networkFailures = 0;
-
-	private async preflightNetwork(exec: ExecSpec): Promise<boolean> {
-		if (exec.network.mode !== "restricted") return true;
-		this.sendFrame("network_state", { state: "starting" });
-		try {
-			const response = await fetch(exec.network.health_url, { signal: AbortSignal.timeout(3000) });
-			if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
-			this.sendFrame("network_state", { state: "ready" });
-			return true;
-		} catch (error) {
-			this.sendFrame("network_state", {
-				state: "degraded",
-				detail: error instanceof Error ? error.message.slice(0, 512) : "firewall unavailable",
-			});
-			await this.flushAndClose();
-			return false;
-		}
-	}
-
-	private startNetworkHealthLoop(exec: ExecSpec): void {
-		if (exec.network.mode !== "restricted") return;
-		const network = exec.network;
-		const timer = setInterval(() => {
-			void (async () => {
-				try {
-					const response = await fetch(network.health_url, {
-						signal: AbortSignal.timeout(3000),
-					});
-					if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
-					this.networkFailures = 0;
-				} catch {
-					this.networkFailures += 1;
-					if (this.networkFailures < 3) return;
-					this.sendFrame("network_state", {
-						state: "degraded",
-						detail: "firewall health failed three consecutive probes",
-					});
-					this.child?.kill("SIGKILL");
-					this.exitWith(EXIT_NETWORK_POLICY_FAILED);
-				}
-			})();
-		}, HEALTH_INTERVAL_MS);
-		this.timers.push(timer);
-	}
-
-	private async probeWritableMemory(exec: ExecSpec): Promise<boolean> {
-		try {
-			await verifyWritableMemoryPaths(exec.security.writable_memory_paths);
-			return true;
-		} catch (error) {
-			this.failedSetupStep = "writable-memory-preflight";
-			this.log(error instanceof Error ? error.message : "writable memory preflight failed");
-			return false;
-		}
-	}
-
-	private async runSetup(exec: ExecSpec): Promise<boolean> {
-		for (const step of exec.setup) {
-			this.childPhase = "setup";
-			this.sendFrame("process_state", { phase: "setup", setup_step: step.name });
-			// An explicit cwd avoids EACCES from posix_spawn when the image's
-			// default working directory is not accessible to the workspace uid.
-			const proc = Bun.spawn(step.command, {
-				cwd: step.cwd ?? exec.harness.cwd ?? "/",
-				env: enforcedEnvironment(exec, {
-					...step.env,
-					POCKETCODER_LAUNCH_MODE: exec.launch_mode,
-					...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
-					...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
-				}),
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const pumps = [
-				this.pumpStream(proc.stdout, "stdout"),
-				this.pumpStream(proc.stderr, "stderr"),
-			];
-			const timeout = setTimeout(() => proc.kill("SIGKILL"), step.timeoutSeconds * 1000);
-			const code = await proc.exited;
-			clearTimeout(timeout);
-			await Promise.all(pumps);
-			if (code !== 0) {
-				this.failedSetupStep = step.name;
-				this.log(`setup step ${step.name} failed with exit code ${code}`);
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private async reportResolvedSource(exec: ExecSpec): Promise<void> {
-		if (!exec.source) return;
-		try {
-			const proc = Bun.spawn(
-				["git", "-C", exec.source.destination, "rev-parse", "--verify", "HEAD"],
-				{ stdout: "pipe", stderr: "pipe" },
-			);
-			const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-			const commit = stdout.trim().toLowerCase();
-			if (code !== 0 || !/^[0-9a-f]{40,64}$/.test(commit)) {
-				throw new Error("git did not return an immutable commit");
-			}
-			this.sendFrame("source_resolved", {
-				repository: exec.source.repository,
-				requested_revision: exec.source.revision,
-				resolved_commit: commit,
-			});
-		} catch (error) {
-			this.log(
-				`source resolution failed: ${error instanceof Error ? error.message : "unknown error"}`,
-			);
-		}
-	}
-
-	private async prepareCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
-		const exec = this.exec;
-		if (exec?.agentapi_native) {
-			await this.prepareAgentApiCheckpoint(operationId, deadlineMs);
-			return;
-		}
-		const hook = exec?.checkpoint_hook;
-		this.sendFrame("checkpoint_status", {
-			operation_id: operationId,
-			phase: "quiescing",
-		});
-		if (!hook) {
-			this.sendFrame("checkpoint_status", {
-				operation_id: operationId,
-				phase: "failed",
-				detail: "template has no checkpoint hook",
-			});
-			return;
-		}
-		try {
-			const proc = Bun.spawn(hook.command, {
-				cwd: hook.cwd ?? exec.harness.cwd ?? "/",
-				env: enforcedEnvironment(exec, {
-					...hook.env,
-					POCKETCODER_CHECKPOINT_OPERATION: operationId,
-				}),
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const pumps = [
-				this.pumpStream(proc.stdout, "stdout"),
-				this.pumpStream(proc.stderr, "stderr"),
-			];
-			const timeout = setTimeout(
-				() => proc.kill("SIGKILL"),
-				Math.min(deadlineMs, hook.timeout_seconds * 1000),
-			);
-			const code = await proc.exited;
-			clearTimeout(timeout);
-			await Promise.all(pumps);
-			this.sendFrame("checkpoint_status", {
-				operation_id: operationId,
-				phase: code === 0 ? "quiesced" : "failed",
-				...(code === 0 ? {} : { detail: `checkpoint hook exited ${code}` }),
-			});
-		} catch (error) {
-			this.sendFrame("checkpoint_status", {
-				operation_id: operationId,
-				phase: "failed",
-				detail: error instanceof Error ? error.message.slice(0, 512) : "hook failed",
-			});
-		}
-	}
-
-	private async prepareAgentApiCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
-		this.quiescing = true;
-		this.sendFrame("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
-		const deadline = Date.now() + deadlineMs;
-		try {
-			let stable = false;
-			while (Date.now() < deadline) {
-				const state = await this.readAgentApiStatus(Math.min(3000, deadline - Date.now()));
-				if (state === "stable") {
-					stable = true;
-					break;
-				}
-				await Bun.sleep(100);
-			}
-			if (!stable) throw new Error("AgentAPI did not become stable");
-			await this.syncAgentApiMessages();
-			const child = this.child;
-			if (!child || this.childExit !== null) throw new Error("AgentAPI is not running");
-			child.kill("SIGTERM");
-			const remaining = deadline - Date.now();
-			if (remaining <= 0) throw new Error("AgentAPI shutdown deadline exceeded");
-			const code = await Promise.race([
-				child.exited,
-				new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
-			]);
-			if (code === null) {
-				child.kill("SIGKILL");
-				throw new Error("AgentAPI shutdown deadline exceeded");
-			}
-			if (code !== 0 && code !== 143) throw new Error(`AgentAPI exited ${code}`);
-			this.sendFrame("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
-		} catch (error) {
-			if (this.childExit === null) this.quiescing = false;
-			this.sendFrame("checkpoint_status", {
-				operation_id: operationId,
-				phase: "failed",
-				detail: error instanceof Error ? error.message.slice(0, 512) : "quiesce failed",
-			});
-		}
-	}
 
 	// --- Harness ---
 
@@ -641,10 +264,7 @@ class Supervisor {
 			stderr: "pipe",
 		});
 		this.child = child;
-		const pumps = [
-			this.pumpStream(child.stdout, "stdout"),
-			this.pumpStream(child.stderr, "stderr"),
-		];
+		const pumps = [this.logs.pump(child.stdout, "stdout"), this.logs.pump(child.stderr, "stderr")];
 		void child.exited.then(async (code) => {
 			this.childPhase = "exited";
 			this.childExit = code;
@@ -686,259 +306,6 @@ class Supervisor {
 		this.sendFrame("termination_ack", { phase: "exited" });
 	}
 
-	// --- Relay ---
-
-	private async handleProxy(request: ProxyRequest): Promise<void> {
-		const exec = this.exec;
-		const service = exec?.services[request.service];
-		const route = service?.routes.find(
-			(r) => r.method === request.method && r.path === request.path,
-		);
-		if (!service || !route) {
-			this.sendFrame("proxy_response", {
-				request_id: request.request_id,
-				headers: {},
-				error_code: "unreachable",
-			});
-			return;
-		}
-		const beginsAgentTurn =
-			request.service === "agent" && request.method === "POST" && request.path === "/message";
-		if (this.quiescing && beginsAgentTurn) {
-			this.sendFrame("proxy_response", {
-				request_id: request.request_id,
-				status: 409,
-				headers: { "content-type": "application/json" },
-				body_b64: Buffer.from(JSON.stringify({ error: "workspace is quiescing" })).toString(
-					"base64",
-				),
-			});
-			return;
-		}
-		if (beginsAgentTurn) this.setAgentState("running");
-		const url = new URL(request.path, service.baseUrl);
-		for (const [key, value] of Object.entries(request.query)) {
-			url.searchParams.set(key, value);
-		}
-		try {
-			const res = await fetch(url, {
-				method: request.method,
-				headers: request.headers,
-				...(request.body_b64 ? { body: Buffer.from(request.body_b64, "base64") } : {}),
-				signal: AbortSignal.timeout(request.deadline_ms),
-			});
-			const body = Buffer.from(await res.arrayBuffer());
-			if (body.byteLength > route.maxResponseBytes) {
-				this.sendFrame("proxy_response", {
-					request_id: request.request_id,
-					headers: {},
-					error_code: "too_large",
-				});
-				return;
-			}
-			this.sendFrame("proxy_response", {
-				request_id: request.request_id,
-				status: res.status,
-				headers: res.headers.get("content-type")
-					? { "content-type": res.headers.get("content-type") as string }
-					: {},
-				...(body.byteLength > 0 ? { body_b64: body.toString("base64") } : {}),
-			});
-			if (beginsAgentTurn && exec) void this.probeService(exec, "agent", true);
-		} catch (err) {
-			this.sendFrame("proxy_response", {
-				request_id: request.request_id,
-				headers: {},
-				error_code:
-					err instanceof Error && err.name === "TimeoutError" ? "deadline" : "unreachable",
-			});
-		}
-	}
-
-	// --- Health and heartbeat ---
-
-	private setAgentState(state: "running" | "stable"): void {
-		if (this.agentapi.state === state) return;
-		this.agentapi = { state };
-		this.sendFrame("agent_state", { state });
-	}
-
-	private startHealthLoop(exec: ExecSpec): void {
-		const timer = setInterval(() => {
-			void (async () => {
-				for (const name of Object.keys(exec.services)) {
-					await this.probeService(exec, name, false);
-				}
-			})();
-		}, HEALTH_INTERVAL_MS);
-		this.timers.push(timer);
-		// Probe immediately so readiness is not delayed by the interval.
-		void (async () => {
-			for (const name of Object.keys(exec.services)) {
-				await this.probeService(exec, name, true);
-			}
-		})();
-	}
-
-	private async probeService(exec: ExecSpec, name: string, force: boolean): Promise<void> {
-		const service = exec.services[name];
-		if (!service) return;
-		let health: "healthy" | "unhealthy" | "starting" = "starting";
-		try {
-			const res = await fetch(new URL(service.healthPath, service.baseUrl), {
-				signal: AbortSignal.timeout(3000),
-			});
-			health = res.ok ? "healthy" : "unhealthy";
-			if (res.ok && name === "agent") {
-				const body = (await res.json().catch(() => null)) as { status?: string } | null;
-				if (body?.status === "running" || body?.status === "stable") {
-					this.setAgentState(body.status);
-					if (body.status === "stable" && exec.agentapi_native) {
-						void this.syncAgentApiMessages().catch(() => {});
-					}
-				}
-			}
-		} catch {
-			health = this.childPhase === "running" ? "unhealthy" : "starting";
-		}
-		if (force || this.health.get(name) !== health) {
-			this.health.set(name, health);
-			this.sendFrame("service_health", { service: name, health });
-		}
-	}
-
-	private async readAgentApiStatus(timeoutMs: number): Promise<"running" | "stable" | null> {
-		const service = this.exec?.services.agent;
-		if (!service || timeoutMs <= 0) return null;
-		try {
-			const response = await fetch(new URL(service.healthPath, service.baseUrl), {
-				signal: AbortSignal.timeout(timeoutMs),
-			});
-			if (!response.ok) return null;
-			const body = (await response.json()) as { status?: unknown };
-			if (body.status !== "running" && body.status !== "stable") return null;
-			this.setAgentState(body.status);
-			return body.status;
-		} catch {
-			return null;
-		}
-	}
-
-	private syncAgentApiMessages(): Promise<void> {
-		if (this.transcriptSync) return this.transcriptSync;
-		this.transcriptSync = this.performAgentApiMessageSync().finally(() => {
-			this.transcriptSync = null;
-		});
-		return this.transcriptSync;
-	}
-
-	private async performAgentApiMessageSync(): Promise<void> {
-		const service = this.exec?.services.agent;
-		if (!service || this.agentapi.state !== "stable") return;
-		try {
-			const response = await fetch(new URL("/messages", service.baseUrl), {
-				signal: AbortSignal.timeout(3000),
-			});
-			if (!response.ok) throw new Error(`AgentAPI messages returned ${response.status}`);
-			for (const message of agentApiConversationMessages(await response.json())) {
-				const id = Number(message.message_id.slice("agentapi:".length));
-				if (id <= this.lastAgentApiMessageId) continue;
-				if (!this.sendFrame("conversation_message", message)) return;
-				this.lastAgentApiMessageId = id;
-			}
-		} catch (error) {
-			this.log(
-				`AgentAPI transcript sync failed: ${error instanceof Error ? error.message : "unknown error"}`,
-			);
-			throw error;
-		}
-	}
-
-	private startHeartbeatLoop(): void {
-		const timer = setInterval(() => {
-			this.sendFrame("heartbeat", {
-				child: this.childPhase,
-				agentapi_state: this.agentapi.state,
-			});
-		}, 15_000);
-		this.timers.push(timer);
-	}
-
-	// --- Logs ---
-
-	private async pumpStream(
-		stream: ReadableStream<Uint8Array> | null,
-		name: "stdout" | "stderr",
-	): Promise<void> {
-		if (!stream) return;
-		await pumpLineFramedText(
-			stream,
-			(text) => {
-				// Transcript content has its own retention and deletion contract; do
-				// not duplicate canonical control lines into operational logs.
-				if (name === "stdout" && isConversationControlLine(text)) return;
-				this.emitLogText(name, text);
-			},
-			name === "stdout" ? (value) => this.captureOutputs(value) : undefined,
-		);
-	}
-
-	private emitLogText(stream: "stdout" | "stderr", text: string): void {
-		for (const chunk of splitUtf8Chunks(text)) {
-			this.sendFrame("log_chunk", {
-				stream,
-				content_b64: Buffer.from(chunk).toString("base64"),
-				occurred_at: new Date().toISOString(),
-			});
-		}
-	}
-
-	private outputBuffer = "";
-
-	private captureOutputs(value: Uint8Array): void {
-		this.outputBuffer += Buffer.from(value).toString("utf8");
-		const lines = this.outputBuffer.split("\n");
-		this.outputBuffer = lines.pop() ?? "";
-		for (const line of lines) {
-			if (line.startsWith("POCKETCODER_OUTPUT ")) {
-				try {
-					const parsed = JSON.parse(line.slice("POCKETCODER_OUTPUT ".length)) as {
-						name?: unknown;
-						value?: unknown;
-					};
-					if (typeof parsed.name === "string") {
-						this.sendFrame("output_published", {
-							name: parsed.name,
-							value: parsed.value,
-						});
-					}
-				} catch {
-					this.log("ignored malformed POCKETCODER_OUTPUT line");
-				}
-				continue;
-			}
-			if (line.startsWith("POCKETCODER_CONVERSATION ")) {
-				try {
-					const parsed = ConversationMessageInputSchema.safeParse(
-						JSON.parse(line.slice("POCKETCODER_CONVERSATION ".length)),
-					);
-					if (parsed.success) this.sendFrame("conversation_message", parsed.data);
-					else this.log("ignored invalid POCKETCODER_CONVERSATION line");
-				} catch {
-					this.log("ignored malformed POCKETCODER_CONVERSATION line");
-				}
-			}
-		}
-	}
-
-	private log(message: string): void {
-		this.sendFrame("log_chunk", {
-			stream: "runtime",
-			content_b64: Buffer.from(`${message}\n`).toString("base64"),
-			occurred_at: new Date().toISOString(),
-		});
-	}
-
 	// --- Exit ---
 
 	private async flushAndClose(): Promise<void> {
@@ -947,7 +314,7 @@ class Supervisor {
 		this.shuttingDown = true;
 		for (const timer of this.timers) clearInterval(timer);
 		try {
-			this.ws?.close(1000, "supervisor exiting");
+			this.connection.close();
 		} catch {
 			// Already closed.
 		}

@@ -2,7 +2,10 @@
 
 Runtime-validated TypeScript client for the PocketCoder control-plane API. It
 uses platform `fetch`, composes timeouts with caller abort signals, validates
-successful and error responses, and exposes typed pagination.
+successful and error responses, and exposes typed pagination. Retryable
+transport failures and 408/425/429/5xx responses are retried only for reads or
+mutations carrying an `Idempotency-Key`; configure the bounded retry count with
+`maxRetries` (default `2`).
 
 ```ts
 import { PocketCoderClient } from "@pstdio/pocketcoder-client";

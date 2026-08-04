@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-client",
+	"nx": {
+		"tags": [
+			"scope:client",
+			"type:library"
+		]
+	},
 	"version": "0.1.0",
 	"private": false,
 	"description": "Runtime-validated TypeScript client for the PocketCoder control plane.",

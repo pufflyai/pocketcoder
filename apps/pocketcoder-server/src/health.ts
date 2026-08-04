@@ -16,12 +16,16 @@ const HEALTHY_CHECKS: Record<ReadinessCheck, ReadinessStatus> = {
 export class Readiness {
 	private readonly checks: Record<ReadinessCheck, ReadinessStatus>;
 
-	constructor(initial: Partial<Record<ReadinessCheck, ReadinessStatus>> = {}) {
+	constructor(
+		initial: Partial<Record<ReadinessCheck, ReadinessStatus>> = {},
+		private readonly metrics?: MetricSink,
+	) {
 		this.checks = { ...HEALTHY_CHECKS, ...initial };
 	}
 
 	set(check: ReadinessCheck, status: ReadinessStatus): void {
 		this.checks[check] = status;
+		if (status === "failed") this.metrics?.increment("readiness.failure.total", { check });
 	}
 
 	snapshot(): ReadinessSnapshot {
@@ -32,3 +36,5 @@ export class Readiness {
 		};
 	}
 }
+
+import type { MetricSink } from "@pstdio/pocketcoder-runtime-core";

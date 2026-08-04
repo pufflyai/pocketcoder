@@ -1,24 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceInsertResult } from "@pstdio/pocketcoder-runtime-core";
 import { registerStoreContract } from "@pstdio/pocketcoder-testkit";
 import { SQL } from "bun";
 import { migrate, migrationStatus } from "./migrate";
 import { advisoryLockKey, assertValidSchema } from "./schema";
 import { PostgresStore } from "./store";
-
-// Integration tests run only when a disposable PostgreSQL is provided:
-//   POCKETCODER_TEST_DATABASE_URL=postgres://... bun test
-// The same suite runs against a dedicated database and a non-default schema
-// inside an existing database; both placements must behave identically.
-
-const TEST_URL = process.env.POCKETCODER_TEST_DATABASE_URL;
+import { TEST_DATABASE_URL } from "./store-test-fixtures";
 
 registerStoreContract("PostgreSQL", {
-	enabled: Boolean(TEST_URL),
+	enabled: Boolean(TEST_DATABASE_URL),
 	async create() {
-		const url = TEST_URL as string;
+		const url = TEST_DATABASE_URL as string;
 		const schema = `pkt_contract_${randomUUID().slice(0, 8)}`;
 		const sql = new SQL(url);
 		await migrate(sql, schema);
@@ -35,11 +27,6 @@ registerStoreContract("PostgreSQL", {
 	},
 });
 
-function workspaceOf(result: WorkspaceInsertResult) {
-	if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
-	return result.workspace;
-}
-
 describe("schema helpers", () => {
 	test("schema names are validated before qualification", () => {
 		expect(assertValidSchema("pocketcoder")).toBe("pocketcoder");
@@ -53,438 +40,43 @@ describe("schema helpers", () => {
 	});
 });
 
-function fixture() {
-	return parseTemplateManifest({
-		apiVersion: "pocketcoder.dev/v1alpha1",
-		kind: "Template",
-		metadata: { name: "pg-fixture", description: "pg" },
-		spec: {
-			version: "1.0.0",
-			image: `example.test/pg@sha256:${"d".repeat(64)}`,
-			harness: { command: ["sleep", "1"] },
-			resources: { cpu: "1", memory: "256Mi" },
-			services: {},
-			persistence: {
-				mounts: [
-					{
-						name: "worktree",
-						target: "/workspace",
-						maxBytes: 1024,
-						maxFiles: 10,
-					},
-				],
-			},
-			outputs: { commit: { type: "gitSha" } },
-		},
-	});
-}
-
-async function migrateTestSchema(url: string, schema: string): Promise<SQL> {
-	const sql = new SQL(url);
-	await migrate(sql, schema);
-	// Re-running is a no-op with matching checksums.
-	expect(await migrate(sql, schema)).toEqual([]);
-	const status = await migrationStatus(sql, schema);
-	expect(status.every((migration) => migration.appliedAt !== null && !migration.drifted)).toBe(
-		true,
-	);
-	return sql;
-}
-
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: One isolated-schema scenario intentionally verifies the full migration and store lifecycle.
-describe.skipIf(!TEST_URL)("postgres store", () => {
-	const schema = `pkt_test_${randomUUID().slice(0, 8)}`;
-
+describe.skipIf(!TEST_DATABASE_URL)("postgres store lifecycle", () => {
 	test("store startup checks migrations without applying them", async () => {
-		const url = TEST_URL as string;
-		const isolatedSchema = `pkt_init_${randomUUID().slice(0, 8)}`;
+		const url = TEST_DATABASE_URL as string;
+		const schema = `pkt_init_${randomUUID().slice(0, 8)}`;
 		const sql = new SQL(url);
-		const store = new PostgresStore(url, isolatedSchema);
+		const store = new PostgresStore(url, schema);
 		try {
 			await expect(store.init()).rejects.toThrow("pending migrations");
 			expect(
-				(await migrationStatus(sql, isolatedSchema)).every(
-					(migration) => migration.appliedAt === null,
-				),
+				(await migrationStatus(sql, schema)).every((migration) => migration.appliedAt === null),
 			).toBe(true);
-			await migrate(sql, isolatedSchema);
+			await migrate(sql, schema);
 			await store.init();
 		} finally {
 			await store.close();
-			await sql.unsafe(`DROP SCHEMA IF EXISTS "${isolatedSchema}" CASCADE`);
+			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
 			await sql.end();
 		}
 	});
 
 	test("allows only one PostgreSQL coordinator per schema", async () => {
-		const url = TEST_URL as string;
-		const isolatedSchema = `pkt_lease_${randomUUID().slice(0, 8)}`;
+		const url = TEST_DATABASE_URL as string;
+		const schema = `pkt_lease_${randomUUID().slice(0, 8)}`;
 		const sql = new SQL(url);
-		const first = new PostgresStore(url, isolatedSchema);
-		const second = new PostgresStore(url, isolatedSchema);
+		const first = new PostgresStore(url, schema);
+		const second = new PostgresStore(url, schema);
 		try {
-			await migrate(sql, isolatedSchema);
+			await migrate(sql, schema);
 			await Promise.all([first.init(), second.init()]);
 			const release = await first.acquireCoordinatorLease();
-
 			await expect(second.acquireCoordinatorLease()).rejects.toThrow("already active");
 			await release();
 			await expect(second.acquireCoordinatorLease()).resolves.toBeFunction();
 		} finally {
 			await Promise.all([first.close(), second.close()]);
-			await sql.unsafe(`DROP SCHEMA IF EXISTS "${isolatedSchema}" CASCADE`);
+			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
 			await sql.end();
 		}
 	});
-
-	// biome-ignore lint/complexity/noExcessiveLinesPerFunction: The assertions share one disposable schema and must remain in a single cleanup scope.
-	test("migrates into an isolated schema and round-trips core entities", async () => {
-		const url = TEST_URL as string;
-		const sql = await migrateTestSchema(url, schema);
-		const store = new PostgresStore(url, schema);
-		try {
-			const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
-			const inheritedKeyId = randomUUID();
-			await store.insertMachineKey({
-				id: inheritedKeyId,
-				principalId: principal.id,
-				secretDigest: new Uint8Array([1, 2, 3]),
-				scopes: [],
-				createdAt: new Date(),
-				expiresAt: null,
-				revokedAt: null,
-				lastUsedAt: null,
-			});
-			expect(
-				await store.updatePrincipal(principal.id, ["admin", "templates:read"], ["pg-fixture"]),
-			).toMatchObject({ scopes: ["admin", "templates:read"], templateNames: ["pg-fixture"] });
-			expect((await store.getMachineKeyWithPrincipal(inheritedKeyId))?.key.scopes).toEqual([]);
-			const parsed = fixture();
-			const { row: template, created } = await store.upsertTemplate({
-				name: "pg-fixture",
-				version: "1.0.0",
-				digest: parsed.digest,
-				description: null,
-				spec: parsed.manifest.spec,
-			});
-			expect(created).toBe(true);
-			// Same content is idempotent; different content conflicts.
-			expect(
-				(
-					await store.upsertTemplate({
-						name: "pg-fixture",
-						version: "1.0.0",
-						digest: parsed.digest,
-						description: null,
-						spec: parsed.manifest.spec,
-					})
-				).conflict,
-			).toBe(false);
-			expect(
-				(
-					await store.upsertTemplate({
-						name: "pg-fixture",
-						version: "1.0.0",
-						digest: "sha256:different",
-						description: null,
-						spec: parsed.manifest.spec,
-					})
-				).conflict,
-			).toBe(true);
-
-			const insert = await store.insertWorkspace({
-				id: randomUUID(),
-				principalId: principal.id,
-				externalId: "pg-task",
-				idempotencyKey: "pg-task",
-				requestDigest: digestOf({ x: 1 }),
-				templateId: template.id,
-				templateSnapshot: snapshotOf(parsed),
-				launchInput: { code: "opaque" },
-				metadata: { source: "test" },
-				deadlineAt: new Date(Date.now() + 60_000),
-				createdAt: new Date(),
-			});
-			expect(insert.kind).toBe("created");
-			const workspace = workspaceOf(insert);
-			const repeat = await store.insertWorkspace({
-				...{
-					id: randomUUID(),
-					principalId: principal.id,
-					externalId: "pg-task",
-					idempotencyKey: "pg-task",
-					requestDigest: digestOf({ x: 1 }),
-					templateId: template.id,
-					templateSnapshot: snapshotOf(parsed),
-					launchInput: { code: "opaque" },
-					metadata: {},
-					deadlineAt: new Date(Date.now() + 60_000),
-					createdAt: new Date(),
-				},
-			});
-			expect(repeat.kind).toBe("replayed");
-			expect(workspaceOf(repeat).id).toBe(workspace.id);
-			const filtered = await store.listWorkspaces(principal.id, {
-				metadata: { source: "test" },
-				limit: 10,
-			});
-			expect(filtered.map((row) => row.id)).toContain(workspace.id);
-			const conversationInput = {
-				workspaceId: workspace.id,
-				messageId: "pg-message-1",
-				role: "assistant" as const,
-				content: "durable response",
-				occurredAt: new Date(),
-				metadata: { provider: "agentapi" },
-				createdAt: new Date(),
-			};
-			expect((await store.appendConversationMessage(conversationInput)).created).toBe(true);
-			expect((await store.appendConversationMessage(conversationInput)).created).toBe(false);
-			expect(await store.readConversation(workspace.id, 0, 10)).toEqual([
-				expect.objectContaining({
-					seq: 1,
-					messageId: "pg-message-1",
-					content: "durable response",
-				}),
-			]);
-
-			const warmWorkspace = workspaceOf(
-				await store.insertWorkspace({
-					id: randomUUID(),
-					principalId: principal.id,
-					externalId: "pg-warm-task",
-					idempotencyKey: "pg-warm-task",
-					requestDigest: digestOf({ warm: true }),
-					templateId: template.id,
-					templateSnapshot: snapshotOf(parsed),
-					launchInput: { code: "in-memory-after-claim" },
-					metadata: {},
-					deadlineAt: new Date(Date.now() + 60_000),
-					createdAt: new Date(),
-				}),
-			);
-			const runtimeId = randomUUID();
-			const runtimeNow = new Date();
-			await store.insertWarmPoolRuntime({
-				id: runtimeId,
-				templateId: template.id,
-				templateName: template.name,
-				templateVersion: template.version,
-				templateDigest: template.digest,
-				driverKind: "docker",
-				eligibilityFingerprint: "sha256:eligible",
-				state: "ready",
-				providerRef: { kind: "docker", id: "warm-provider" },
-				enrollmentDigest: null,
-				enrollmentExpiresAt: null,
-				workspaceId: null,
-				createdAt: runtimeNow,
-				updatedAt: runtimeNow,
-				readyAt: runtimeNow,
-				leasedAt: null,
-				failureCode: null,
-			});
-			const claim = {
-				workspaceId: warmWorkspace.id,
-				templateDigest: template.digest,
-				driverKind: "docker",
-				eligibilityFingerprint: "sha256:eligible",
-				registrationDigest: new TextEncoder().encode("one-time"),
-				registrationExpiresAt: new Date(Date.now() + 60_000),
-				at: new Date(),
-			};
-			const claims = await Promise.all([
-				store.claimWarmPoolRuntime(claim),
-				store.claimWarmPoolRuntime(claim),
-			]);
-			expect(claims.filter(Boolean)).toHaveLength(1);
-			expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
-			expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);
-
-			const provisioning = await store.transition(workspace.id, {
-				from: ["queued"],
-				to: "provisioning",
-				at: new Date(),
-				patch: { launchAttempts: 1 },
-			});
-			expect(provisioning?.state).toBe("provisioning");
-			const changeCursor = provisioning?.changeSeq ?? 0;
-			const changeWait = store.waitForWorkspaceChange(workspace.id, changeCursor, 1000);
-			await store.updateWorkspace(workspace.id, { health: { agent: "healthy" } }, new Date());
-			await changeWait;
-			expect((await store.getWorkspace(workspace.id))?.changeSeq).toBe(changeCursor + 1);
-			// Illegal transition is refused.
-			expect(
-				await store.transition(workspace.id, {
-					from: ["provisioning"],
-					to: "ready",
-					at: new Date(),
-				}),
-			).toBeNull();
-
-			// Terminal transition with a patch that overlaps the automatic
-			// launch_input/registration_digest clears must not produce
-			// duplicate column assignments.
-			const failed = await store.transition(workspace.id, {
-				from: ["provisioning"],
-				to: "failed",
-				reason: "launch_failed",
-				at: new Date(),
-				patch: { launchInput: null, registrationDigest: null },
-			});
-			expect(failed?.state).toBe("failed");
-			expect(failed?.terminalAt).not.toBeNull();
-
-			const events = await store.claimDueEvents(new Date(), 10);
-			expect(
-				events.filter((event) => event.workspaceId === workspace.id).map((e) => e.eventType),
-			).toEqual(["workspace.queued", "workspace.provisioning", "workspace.failed"]);
-
-			await store.appendLogs(workspace.id, [
-				{
-					stream: "runtime",
-					occurredAt: new Date(),
-					content: new TextEncoder().encode("hello"),
-				},
-				{
-					stream: "stderr",
-					occurredAt: new Date(),
-					content: new TextEncoder().encode("\nPermissionError: /home/onefin/.pi\n"),
-				},
-			]);
-			const logs = await store.readLogs(workspace.id, 0, 10);
-			expect(logs.length).toBe(2);
-			expect(new TextDecoder().decode(logs[0]?.content)).toBe("hello");
-			const tail = await store.readLogTail(workspace.id, 24);
-			expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/onefin/.pi\n");
-			expect(tail.truncated).toBe(true);
-			expect(tail.lastSeq).toBe(2);
-
-			const networkSession = randomUUID();
-			const networkEvent = {
-				source_seq: 1,
-				occurred_at: new Date().toISOString(),
-				decision: "deny" as const,
-				transport: "https" as const,
-				host: "blocked.example",
-				port: 443,
-				method: null,
-				path: null,
-				matched_rule: null,
-				reason: "no_matching_rule",
-			};
-			await store.appendNetworkEvents(workspace.id, networkSession, [networkEvent]);
-			await store.appendNetworkEvents(workspace.id, networkSession, [networkEvent]);
-			expect(await store.readNetworkEvents(workspace.id, 0, 10)).toEqual([
-				expect.objectContaining({ seq: 1, sourceSessionId: networkSession, source_seq: 1 }),
-			]);
-
-			const storageId = randomUUID();
-			const now = new Date();
-			await store.insertWorkspaceStorage({
-				id: storageId,
-				workspaceId: workspace.id,
-				principalId: principal.id,
-				providerKind: "filesystem",
-				providerRef: { kind: "filesystem", id: storageId, root: "/opaque" },
-				state: "retained",
-				mountManifest: parsed.manifest.spec.persistence.mounts,
-				logicalBytes: 12,
-				fileCount: 1,
-				retainedUntil: new Date(now.getTime() + 60_000),
-				createdAt: now,
-				updatedAt: now,
-				deletedAt: null,
-				lastErrorCode: null,
-			});
-			const checkpointId = randomUUID();
-			const manifest = {
-				format: "pocketcoder-checkpoint/v1" as const,
-				checkpoint_id: checkpointId,
-				template_digest: parsed.digest,
-				mounts: [{ name: "worktree", entries: [] }],
-				logical_bytes: 0,
-				file_count: 0,
-			};
-			await store.insertCheckpoint({
-				id: checkpointId,
-				workspaceId: workspace.id,
-				principalId: principal.id,
-				storageId,
-				parentCheckpointId: null,
-				state: "ready",
-				reasonCode: null,
-				providerKind: "filesystem",
-				providerRef: {
-					kind: "filesystem",
-					id: checkpointId,
-					root: "/opaque-checkpoint",
-				},
-				templateSnapshot: snapshotOf(parsed),
-				templateDigest: parsed.digest,
-				sourceProvenance: null,
-				manifest,
-				manifestDigest: digestOf(manifest),
-				logicalBytes: 0,
-				storedBytes: 0,
-				fileCount: 0,
-				conversationRestore: "filesystem_only",
-				label: "postgres-roundtrip",
-				createdAt: now,
-				updatedAt: now,
-				readyAt: now,
-				expiresAt: new Date(now.getTime() + 60_000),
-				deletedAt: null,
-			});
-			const operationId = randomUUID();
-			const operation = await store.insertOperation({
-				id: operationId,
-				principalId: principal.id,
-				kind: "verify",
-				state: "succeeded",
-				idempotencyKey: "verify-pg",
-				requestDigest: digestOf({ checkpointId }),
-				workspaceId: workspace.id,
-				checkpointId,
-				resultWorkspaceId: null,
-				reasonCode: null,
-				attemptCount: 1,
-				createdAt: now,
-				updatedAt: now,
-				completedAt: now,
-			});
-			expect(operation.created).toBe(true);
-			expect((await store.getCheckpoint(checkpointId))?.label).toBe("postgres-roundtrip");
-			expect((await store.checkpointUsage(principal.id)).count).toBe(1);
-			await store.appendOutput({
-				workspaceId: workspace.id,
-				seq: 0,
-				name: "commit",
-				value: "a".repeat(40),
-				occurredAt: now,
-			});
-			expect((await store.listOutputs(workspace.id))[0]?.name).toBe("commit");
-			let invalidStateRejected = false;
-			try {
-				await sql.unsafe(
-					`UPDATE "${schema}"."workspaces" SET state = 'not-a-state' WHERE id = $1`,
-					[workspace.id],
-				);
-			} catch {
-				invalidStateRejected = true;
-			}
-			expect(invalidStateRejected).toBe(true);
-
-			// The runtime never created anything outside its schema.
-			const foreign = (await sql.unsafe(
-				`SELECT count(*)::int AS n FROM information_schema.tables
-				 WHERE table_schema = 'public' AND table_name LIKE 'workspace%'`,
-			)) as Array<{ n: number }>;
-			expect(foreign[0]?.n).toBe(0);
-		} finally {
-			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-			await sql.end();
-			await store.close();
-		}
-	}, 30_000);
 });

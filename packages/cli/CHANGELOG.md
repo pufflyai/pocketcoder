@@ -29,4 +29,4 @@
 
 - [`db90cc4`](https://github.com/pufflyai/pocketcoder/commit/db90cc401f00f21201970f602143ab4ebe409868) Thanks [@au-re](https://github.com/au-re)! - Use yargs for command parsing, print contextual help when required arguments are missing, and load project-scoped `.env` configuration.
 
-- [`d06b66d`](https://github.com/pufflyai/pocketcoder/commit/d06b66df1196bf4aa99a6c479686d7061ae3f6da) Thanks [@au-re](https://github.com/au-re)! - Publish Pocketcoder's bundled operator CLI while keeping its implementation packages private.
+- [`d06b66d`](https://github.com/pufflyai/pocketcoder/commit/d06b66df1196bf4aa99a6c479686d7061ae3f6da) Thanks [@au-re](https://github.com/au-re)! - Publish PocketCoder's bundled operator CLI while keeping its implementation packages private.

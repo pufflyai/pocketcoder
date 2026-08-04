@@ -84,8 +84,8 @@ GET  /v1/workspaces                    scope workspaces:read    filters: externa
 GET  /v1/workspaces/{id}               scope workspaces:read
 POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; returns the current resource
 GET  /v1/workspaces/{id}/changes       scope workspaces:read    query: after (change_cursor), wait (0..30 seconds)
-GET  /v1/workspaces/{id}/logs          scope logs:read          query: after (seq), limit
-GET  /v1/workspaces/{id}/network-events scope network:read      query: after (seq), limit
+GET  /v1/workspaces/{id}/logs          scope logs:read          query: cursor (opaque), limit
+GET  /v1/workspaces/{id}/network-events scope network:read      query: cursor (opaque), limit
 ```
 
 States: `queued → provisioning → connected → ready`, followed by
@@ -144,7 +144,7 @@ and `created_before` is exclusive.
 ## Durable conversation history
 
 ```text
-GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: after (seq), limit (max 200)
+GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: cursor (opaque), limit (max 200)
 DELETE /v1/workspaces/{id}/conversation   scope conversations:delete  idempotent
 ```
 
@@ -252,8 +252,8 @@ delivered at least once from a transactional outbox with bounded exponential
 backoff:
 
 ```text
-POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
-              X-Pocketcoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
+POST <sink>   headers: X-PocketCoder-Event-ID, X-PocketCoder-Timestamp,
+              X-PocketCoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
 ```
 
 Workspace events use `{ id, type: "workspace.<state>", occurred_at, workspace:

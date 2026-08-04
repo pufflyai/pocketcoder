@@ -124,4 +124,36 @@ describe("PocketCoderClient", () => {
 		controller.abort();
 		expect(requests[0]?.signal.aborted).toBe(true);
 	});
+
+	test("retries retryable reads and idempotency-key mutations only", async () => {
+		let calls = 0;
+		const retryingFetch = (async () => {
+			calls += 1;
+			return calls === 1
+				? new Response("unavailable", { status: 503, headers: { "retry-after": "0" } })
+				: new Response("ok");
+		}) as unknown as typeof fetch;
+		const client = new PocketCoderClient(
+			{ baseUrl: "http://pocketcoder.test", apiKey: "pkt_example" },
+			retryingFetch,
+		);
+
+		expect((await client.raw("/livez")).status).toBe(200);
+		expect(calls).toBe(2);
+
+		calls = 0;
+		expect((await client.raw("/unsafe", { method: "POST" })).status).toBe(503);
+		expect(calls).toBe(1);
+
+		calls = 0;
+		expect(
+			(
+				await client.raw("/safe", {
+					method: "POST",
+					headers: { "Idempotency-Key": "operation-1" },
+				})
+			).status,
+		).toBe(200);
+		expect(calls).toBe(2);
+	});
 });

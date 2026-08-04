@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-drivers",
+	"nx": {
+		"tags": [
+			"scope:providers",
+			"type:adapter"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"description": "Workspace driver implementations for PocketCoder.",

@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-remote",
+	"nx": {
+		"tags": [
+			"scope:remote",
+			"type:app"
+		]
+	},
 	"version": "0.1.0",
 	"private": false,
 	"description": "Pi-based terminal UI for PocketCoder workspaces.",

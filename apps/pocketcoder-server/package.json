@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-server",
+	"nx": {
+		"tags": [
+			"scope:control-plane",
+			"type:app"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",

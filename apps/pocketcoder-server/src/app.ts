@@ -7,7 +7,9 @@ import {
 import { ApiError, NetworkEventBatchSchema } from "@pstdio/pocketcoder-contracts";
 import {
 	type AdmissionLimits,
+	type MetricSink,
 	type ResolvedWarmPool,
+	RuntimeMetrics,
 	Scheduler,
 	type Store,
 	WarmPoolManager,
@@ -19,7 +21,15 @@ import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { Readiness } from "./health";
 import { Hub } from "./hub";
-import { type AppEnv, handleError, machineAuth, requestId, requireScope } from "./middleware";
+import {
+	type AppEnv,
+	errorHandler,
+	machineAuth,
+	requestId,
+	requestLogging,
+	requireScope,
+} from "./middleware";
+import { createStructuredLogger, type StructuredLogger } from "./observability";
 import { type PersistenceLimits, PersistenceService } from "./persistence";
 import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
 import { relayHandler } from "./relay";
@@ -44,7 +54,8 @@ export interface BuildDeps {
 	limits: AdmissionLimits;
 	workspaceServerUrl: string;
 	instanceId?: string;
-	log?: (msg: string) => void;
+	logger?: StructuredLogger;
+	metrics?: MetricSink;
 	warmPools?: ResolvedWarmPool[];
 	readiness?: Readiness;
 }
@@ -57,10 +68,14 @@ export interface BuiltServer {
 	service: WorkspaceService;
 	persistence: PersistenceService;
 	warmPool?: WarmPoolManager;
+	metrics: MetricSink;
 }
 
 export function buildServer(deps: BuildDeps): BuiltServer {
-	const { store, driver, pepper, limits, log } = deps;
+	const { store, driver, pepper, limits } = deps;
+	const logger = deps.logger ?? createStructuredLogger(() => {});
+	const metrics = deps.metrics ?? new RuntimeMetrics();
+	const log = (message: string) => logger.info("runtime.message", { message });
 	const hub = new Hub();
 	const poolHub = new PoolConnectionHub();
 	const secretFactory = {
@@ -75,7 +90,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 				secrets: secretFactory,
 				workspaceServerUrl: deps.workspaceServerUrl,
 				pools: deps.warmPools,
-				onError: (context, error) => log?.(`${context}: ${String(error)}`),
+				onError: (context, error) => log(`${context}: ${String(error)}`),
 			})
 		: undefined;
 	const persistenceHolder: { service?: PersistenceService } = {};
@@ -88,10 +103,11 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		secrets: secretFactory,
 		limits,
 		workspaceServerUrl: deps.workspaceServerUrl,
+		metrics,
 		...(warmPool ? { warmPool } : {}),
 		preserveByPolicy: async (row, trigger) =>
 			persistenceHolder.service?.preserveByPolicy(row, trigger) ?? false,
-		onError: (context, err) => log?.(`scheduler ${context}: ${String(err)}`),
+		onError: (context, err) => log(`scheduler ${context}: ${String(err)}`),
 	});
 	const service = new WorkspaceService({ store, scheduler, limits });
 	const persistence = new PersistenceService({
@@ -102,7 +118,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		hub,
 		workspaces: service,
 		maxQueuedWorkspaces: limits.maxQueuedWorkspaces,
-		...(log ? { log } : {}),
+		log,
 		...(deps.persistenceLimits ? { limits: deps.persistenceLimits } : {}),
 	});
 	persistenceHolder.service = persistence;
@@ -123,8 +139,9 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 			}
 		},
 	});
-	app.onError(handleError);
+	app.onError(errorHandler(logger));
 	app.use("*", requestId);
+	app.use("*", requestLogging(logger));
 
 	const readiness = deps.readiness ?? new Readiness();
 	app.get("/livez", (c) =>
@@ -154,7 +171,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		...(driver.cleanupInput
 			? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() }
 			: {}),
-		...(log ? { log } : {}),
+		log,
 		persistence,
 	};
 	app.get(
@@ -166,9 +183,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		app.get(
 			"/v1/agent/pool-connect",
 			poolConnectValidator({ store, pepper }),
-			upgradeWebSocket(
-				poolWsEvents({ store, hub: poolHub, manager: warmPool, ...(log ? { log } : {}) }),
-			),
+			upgradeWebSocket(poolWsEvents({ store, hub: poolHub, manager: warmPool, log })),
 		);
 	}
 	app.post("/v1/internal/egress/events", async (c) => {
@@ -245,6 +260,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		scheduler,
 		service,
 		persistence,
+		metrics,
 		...(warmPool ? { warmPool } : {}),
 	};
 }

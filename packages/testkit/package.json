@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-testkit",
+	"nx": {
+		"tags": [
+			"scope:testkit",
+			"type:test"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"description": "Test fixtures and utilities for PocketCoder integrations.",

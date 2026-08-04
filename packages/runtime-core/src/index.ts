@@ -1,9 +1,95 @@
-export * from "./driver";
-export * from "./events";
-export * from "./outbox";
-export * from "./persistence-reconcile";
-export * from "./reconcile";
-export * from "./registry";
-export * from "./scheduler";
-export * from "./types";
-export * from "./warm-pool";
+export {
+	type ActiveCounts,
+	type AllocatedStorage,
+	type AuthStore,
+	buildEventEnvelope,
+	type CheckpointRef,
+	type CheckpointUsage,
+	type ConversationMessageRow,
+	type ConversationStateRow,
+	type ConversationStore,
+	type DiscoveredCheckpoint,
+	type DiscoveredProvider,
+	type DiscoveredStorage,
+	type DiscoveredWarmProvider,
+	type LogRow,
+	type LogStore,
+	type MachineKeyRow,
+	type NetworkAuditStore,
+	type NetworkEventRow,
+	OperationCapacityExceededError,
+	type OutboxRow,
+	type OutboxStore,
+	type OutputStore,
+	type PersistenceStore,
+	type PrincipalRow,
+	type ProviderRef,
+	type ProviderState,
+	type RuntimeMountRef,
+	type RuntimeMountSource,
+	type RuntimeSecretRef,
+	type SnapshotResult,
+	type StateHistoryRow,
+	type StorageAllocation,
+	type StorageRef,
+	type Store,
+	type StoreLifecycle,
+	TEMPLATE_STATUSES,
+	type TemplateRow,
+	type TemplateStatus,
+	type TemplateStore,
+	type TemplateUpsert,
+	type TransitionRequest,
+	type UpsertResult,
+	WARM_POOL_RUNTIME_STATES,
+	type WarmPoolClaim,
+	type WarmPoolRuntimePatch,
+	type WarmPoolRuntimeRow,
+	type WarmPoolRuntimeState,
+	type WarmPoolStore,
+	type WarmRuntimeLaunch,
+	type WorkspaceAdmissionClaim,
+	type WorkspaceCheckpointPatch,
+	type WorkspaceCheckpointRow,
+	type WorkspaceDriver,
+	type WorkspaceInsert,
+	type WorkspaceInsertResult,
+	type WorkspaceLaunch,
+	type WorkspaceListFilter,
+	type WorkspaceOperationPatch,
+	type WorkspaceOperationRow,
+	type WorkspaceOutputRow,
+	type WorkspacePatch,
+	type WorkspaceRow,
+	type WorkspaceSecretResolver,
+	type WorkspaceStorageDriver,
+	type WorkspaceStoragePatch,
+	type WorkspaceStorageRow,
+	type WorkspaceStore,
+} from "./driver";
+export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./metrics";
+export { type OutboxDeps, OutboxDispatcher } from "./outbox";
+export { type PersistenceReconcileDeps, reconcilePersistence } from "./persistence-reconcile";
+export { type ReconcileDeps, reconcileProviders } from "./reconcile";
+export { loadTemplateDir, loadTemplateFile, type RegistryLoadResult } from "./registry";
+export {
+	type AdmissionLimits,
+	type ConnectionHub,
+	DEFAULT_LIMITS,
+	decodeFailureLogTail,
+	Scheduler,
+	type SchedulerDeps,
+	type SecretFactory,
+} from "./scheduler";
+export {
+	type ResolvedWarmPool,
+	resolveWarmPools,
+	validateWarmPoolTemplate,
+	type WarmPoolConfigEntry,
+	type WarmPoolConnections,
+	type WarmPoolInventory,
+	type WarmPoolInventoryItem,
+	WarmPoolManager,
+	type WarmPoolMetrics,
+	warmPoolFingerprint,
+} from "./warm-pool";

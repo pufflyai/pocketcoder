@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { loadConfig } from "@pstdio/pocketcoder-server/config";
-import { startPocketcoderServer } from "@pstdio/pocketcoder-server/lifecycle";
+import { startPocketCoderServer } from "@pstdio/pocketcoder-server/lifecycle";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { requireOpenAIKey, resolveLocalPiOptions } from "./options";
 import { preparePiRuntime } from "./runtime";
@@ -25,7 +25,7 @@ const gateway = apiKey
 		})
 	: null;
 
-const server = await startPocketcoderServer(
+const server = await startPocketCoderServer(
 	loadConfig({
 		...process.env,
 		POCKETCODER_TEMPLATE_DIR: resolve(options.root, ".pocketcoder/local/templates"),

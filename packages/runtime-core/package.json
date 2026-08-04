@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-runtime-core",
+	"nx": {
+		"tags": [
+			"scope:runtime",
+			"type:application"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
 	"description": "Scheduler and runtime primitives for PocketCoder.",

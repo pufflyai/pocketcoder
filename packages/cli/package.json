@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-cli",
+	"nx": {
+		"tags": [
+			"scope:cli",
+			"type:app"
+		]
+	},
 	"version": "0.3.0",
 	"private": false,
 	"description": "Operator and diagnostics CLI for PocketCoder.",

@@ -107,8 +107,8 @@ pcd workspaces create --template <name> [--version <v>] \
   [--external-id <id>] [--input '<json>'] [--source <alias>] [--revision <rev>] \
   [--wait] [--wait-timeout-seconds 300] [--cancel-on-exit] [--json]
 pcd workspaces get --id <uuid>
-pcd workspaces logs --id <uuid> [--after <seq>] [--limit <n>]
-pcd workspaces network-events --id <uuid> [--after <seq>] [--limit <n>]
+pcd workspaces logs --id <uuid> [--cursor <opaque>] [--limit <n>]
+pcd workspaces network-events --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces cancel --id <uuid>
 pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
 pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \

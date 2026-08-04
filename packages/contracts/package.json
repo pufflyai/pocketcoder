@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-contracts",
+	"nx": {
+		"tags": [
+			"scope:contracts",
+			"type:library"
+		]
+	},
 	"version": "0.1.0",
 	"private": false,
 	"description": "Runtime schemas and protocol contracts for PocketCoder.",
