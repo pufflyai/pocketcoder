@@ -23,6 +23,7 @@ export interface WorkspaceCreateInput {
 	idempotencyKey?: string;
 	launchInput?: WorkspaceCreateRequest["launch_input"];
 	metadata?: WorkspaceCreateRequest["metadata"];
+	source?: WorkspaceCreateRequest["source"];
 }
 
 export interface WorkspaceListQuery {
@@ -74,6 +75,7 @@ export class WorkspacesApi {
 			},
 			...(input.launchInput ? { launch_input: input.launchInput } : {}),
 			...(input.metadata ? { metadata: input.metadata } : {}),
+			...(input.source ? { source: input.source } : {}),
 		};
 		return this.transport.request("/v1/workspaces", WorkspaceResourceSchema, {
 			method: "POST",

@@ -835,7 +835,7 @@ async function handleWorkspaceCore(context: CommandContext): Promise<boolean> {
 	if (context.group !== "workspaces") return false;
 	const commands: Record<string, () => Promise<void>> = {
 		list: () => listWorkspaces(context.flags),
-		create: () => createWorkspace(context.flags, { api, fail }),
+		create: () => createWorkspace(context.flags, { client: controlPlaneClient(), fail }),
 		get: () => getWorkspace(context.flags),
 		logs: () => readWorkspaceLogs(context.flags),
 		"network-events": () => readWorkspaceNetworkEvents(context.flags),

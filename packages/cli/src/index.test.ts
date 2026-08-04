@@ -214,6 +214,54 @@ describe("pcd server lifecycle", () => {
 });
 
 describe("pcd workspace workflows", () => {
+	const waitingWorkspaceId = "11111111-1111-4111-8111-111111111111";
+	const failedWorkspaceId = "22222222-2222-4222-8222-222222222222";
+	function workspaceResource(
+		id: string,
+		state: "queued" | "ready" | "failed",
+		changeCursor: number,
+	) {
+		return {
+			id,
+			external_id: `external-${id}`,
+			template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+			state,
+			reason_code: state === "failed" ? "launch_failed" : null,
+			agent_state: state === "ready" ? "stable" : "unknown",
+			change_cursor: changeCursor,
+			provider_kind: null,
+			provisioning_mode: null,
+			network: { state: state === "ready" ? "ready" : "starting" },
+			health: {},
+			created_at: "2026-01-01T00:00:00Z",
+			updated_at: "2026-01-01T00:00:00Z",
+			connected_at: state === "ready" ? "2026-01-01T00:00:01Z" : null,
+			ready_at: state === "ready" ? "2026-01-01T00:00:02Z" : null,
+			deadline_at: "2026-01-01T01:00:00Z",
+			terminal_at: state === "failed" ? "2026-01-01T00:00:02Z" : null,
+			metadata: {},
+			origin_workspace_id: null,
+			restored_from_checkpoint_id: null,
+			source: null,
+			persistence: {
+				enabled: false,
+				conversation_restore: "filesystem_only",
+				conversation_resume: { status: "unsupported", reason: "filesystem_only" },
+				latest_checkpoint_id: null,
+			},
+			outputs: {},
+			failure:
+				state === "failed"
+					? {
+							reason_code: "launch_failed",
+							log_tail: "docker image is unavailable",
+							log_tail_truncated: false,
+							last_log_seq: 1,
+						}
+					: null,
+		};
+	}
+
 	test("creates a workspace and waits for the durable ready change", async () => {
 		let changeReads = 0;
 		const server = Bun.serve({
@@ -222,22 +270,18 @@ describe("pcd workspace workflows", () => {
 			fetch(request) {
 				const url = new URL(request.url);
 				if (request.method === "POST" && url.pathname === "/v1/workspaces") {
-					return Response.json(
-						{ id: "workspace-wait", state: "queued", change_cursor: 1 },
-						{ status: 201 },
-					);
+					return Response.json(workspaceResource(waitingWorkspaceId, "queued", 1), { status: 201 });
 				}
-				if (request.method === "GET" && url.pathname === "/v1/workspaces/workspace-wait/changes") {
+				if (
+					request.method === "GET" &&
+					url.pathname === `/v1/workspaces/${waitingWorkspaceId}/changes`
+				) {
 					changeReads += 1;
 					expect(url.searchParams.get("after")).toBe("1");
 					return Response.json({
 						cursor: 2,
 						changed: true,
-						workspace: {
-							id: "workspace-wait",
-							state: "ready",
-							change_cursor: 2,
-						},
+						workspace: workspaceResource(waitingWorkspaceId, "ready", 2),
 					});
 				}
 				return new Response("not found", { status: 404 });
@@ -264,7 +308,7 @@ describe("pcd workspace workflows", () => {
 			);
 			expect(result.exitCode).toBe(0);
 			expect(JSON.parse(result.output)).toMatchObject({
-				id: "workspace-wait",
+				id: waitingWorkspaceId,
 				state: "ready",
 			});
 			expect(changeReads).toBe(1);
@@ -280,25 +324,13 @@ describe("pcd workspace workflows", () => {
 			fetch(request) {
 				const url = new URL(request.url);
 				if (request.method === "POST" && url.pathname === "/v1/workspaces") {
-					return Response.json(
-						{ id: "workspace-failed", state: "queued", change_cursor: 1 },
-						{ status: 201 },
-					);
+					return Response.json(workspaceResource(failedWorkspaceId, "queued", 1), { status: 201 });
 				}
 				if (url.pathname.endsWith("/changes")) {
 					return Response.json({
 						cursor: 2,
 						changed: true,
-						workspace: {
-							id: "workspace-failed",
-							state: "failed",
-							reason_code: "launch_failed",
-							change_cursor: 2,
-							failure: {
-								reason_code: "launch_failed",
-								log_tail: "docker image is unavailable",
-							},
-						},
+						workspace: workspaceResource(failedWorkspaceId, "failed", 2),
 					});
 				}
 				return new Response("not found", { status: 404 });
