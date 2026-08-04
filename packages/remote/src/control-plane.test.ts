@@ -16,7 +16,28 @@ function workspace(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary 
 		agent_state: "stable",
 		change_cursor: 3,
 		reason_code: null,
-		template: { name: "pi-harness", version: "1" },
+		template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+		provider_kind: "docker",
+		provisioning_mode: "cold",
+		network: { state: "ready" },
+		health: {},
+		created_at: "2026-01-01T00:00:00Z",
+		updated_at: "2026-01-01T00:00:00Z",
+		connected_at: "2026-01-01T00:00:00Z",
+		ready_at: "2026-01-01T00:00:00Z",
+		deadline_at: "2026-01-01T01:00:00Z",
+		terminal_at: null,
+		metadata: {},
+		origin_workspace_id: null,
+		restored_from_checkpoint_id: null,
+		source: null,
+		persistence: {
+			enabled: false,
+			conversation_restore: "filesystem_only",
+			conversation_resume: { status: "unsupported", reason: "filesystem_only" },
+			latest_checkpoint_id: null,
+		},
+		outputs: {},
 		failure: null,
 		...overrides,
 	};
@@ -49,7 +70,7 @@ describe("control plane client", () => {
 			return undefined;
 		}, requests);
 
-		const items = await client.listWorkspaces({ state: "ready", limit: 20 });
+		const items = (await client.workspaces.list({ state: "ready", limit: 20 })).items;
 		expect(items).toHaveLength(1);
 		expect(items[0]?.external_id).toBe("demo");
 		expect(requests[0]?.headers.get("authorization")).toBe("Bearer pkt_example");
@@ -65,7 +86,7 @@ describe("control plane client", () => {
 			return undefined;
 		}, requests);
 
-		const created = await client.createWorkspace({
+		const created = await client.workspaces.create({
 			externalId: "pi-1",
 			templateName: "pi-harness",
 		});
@@ -81,8 +102,8 @@ describe("control plane client", () => {
 		const client = fixtureClient((request) => {
 			const url = new URL(request.url);
 			if (url.pathname.endsWith("/conversation")) {
-				const after = Number(url.searchParams.get("after"));
-				if (after === 0) {
+				const cursor = url.searchParams.get("cursor");
+				if (cursor === null) {
 					return Response.json({
 						items: [
 							{
@@ -94,7 +115,7 @@ describe("control plane client", () => {
 								metadata: {},
 							},
 						],
-						next_cursor: 1,
+						next_cursor: "page-2",
 						retention: { status: "retained", expires_at: null },
 					});
 				}
@@ -107,10 +128,10 @@ describe("control plane client", () => {
 			return undefined;
 		});
 
-		const first = await client.readConversationPage("ws", 0, 200);
+		const first = await client.conversations.list("ws", { limit: 200 });
 		expect(first.items).toHaveLength(1);
-		expect(first.nextCursor).toBe(1);
-		const second = await client.readConversationPage("ws", 1, 200);
+		expect(first.nextCursor).toBe("page-2");
+		const second = await client.conversations.list("ws", { cursor: "page-2", limit: 200 });
 		expect(second.items).toHaveLength(0);
 		expect(second.nextCursor).toBeNull();
 	});
@@ -126,29 +147,31 @@ describe("control plane client", () => {
 			return undefined;
 		});
 
-		expect(client.readConversationPage("ws", 0, 200)).rejects.toBeInstanceOf(ConversationGoneError);
+		expect(client.conversations.list("ws", { limit: 200 })).rejects.toBeInstanceOf(
+			ConversationGoneError,
+		);
 	});
 
 	test("surfaces error codes on other failures", async () => {
 		const client = fixtureClient(() =>
 			Response.json(
-				{ error: { code: "auth.forbidden", message: "no scope", request_id: "r2" } },
+				{ error: { code: "auth.missing_scope", message: "no scope", request_id: "r2" } },
 				{ status: 403 },
 			),
 		);
 
 		try {
-			await client.listTemplates();
+			await client.templates.list();
 			throw new Error("expected failure");
 		} catch (error) {
 			expect(error).toBeInstanceOf(ControlPlaneError);
-			expect((error as ControlPlaneError).code).toBe("auth.forbidden");
+			expect((error as ControlPlaneError).code).toBe("auth.missing_scope");
 			expect((error as ControlPlaneError).status).toBe(403);
 		}
 	});
 
 	test("waitForReady follows the change cursor until ready", async () => {
-		const states = ["provisioning", "connected", "ready"];
+		const states = ["provisioning", "connected", "ready"] as const;
 		let calls = 0;
 		const client = fixtureClient((request) => {
 			const url = new URL(request.url);
@@ -165,7 +188,7 @@ describe("control plane client", () => {
 		});
 
 		const seen: string[] = [];
-		const ready = await client.waitForReady(
+		const ready = await client.workspaces.waitForReady(
 			workspace({ state: "queued", change_cursor: 0 }),
 			5_000,
 			{
@@ -185,7 +208,12 @@ describe("control plane client", () => {
 					workspace: workspace({
 						state: "failed",
 						reason_code: "launch_failed",
-						failure: { reason_code: "launch_failed", log_tail: "boom" },
+						failure: {
+							reason_code: "launch_failed",
+							log_tail: "boom",
+							log_tail_truncated: false,
+							last_log_seq: 1,
+						},
 					}),
 				});
 			}
@@ -193,7 +221,7 @@ describe("control plane client", () => {
 		});
 
 		try {
-			await client.waitForReady(workspace({ state: "queued", change_cursor: 0 }), 5_000);
+			await client.workspaces.waitForReady(workspace({ state: "queued", change_cursor: 0 }), 5_000);
 			throw new Error("expected failure");
 		} catch (error) {
 			expect(error).toBeInstanceOf(WorkspaceTerminalError);

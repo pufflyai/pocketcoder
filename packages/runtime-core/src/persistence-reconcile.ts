@@ -1,4 +1,6 @@
 import type { CheckpointRef, ProviderRef, WorkspaceDriver, WorkspaceStorageDriver } from "./driver";
+import type { MetricSink } from "./metrics";
+import { measureReconciliation } from "./reconciliation-metrics";
 import type {
 	Store,
 	WorkspaceCheckpointRow,
@@ -13,6 +15,7 @@ export interface PersistenceReconcileDeps {
 	storageDriver?: WorkspaceStorageDriver;
 	now?: () => Date;
 	log?: (message: string) => void;
+	metrics?: MetricSink;
 }
 
 interface OperationContext {
@@ -185,8 +188,9 @@ async function reconcileOperation(
 // deleted merely because metadata is missing; unknown objects are surfaced for
 // operator quarantine. Operations either resume from verified metadata or
 // fail while retaining their last recoverable storage allocation.
-export async function reconcilePersistence(deps: PersistenceReconcileDeps): Promise<void> {
-	if (!deps.storageDriver) return;
+async function reconcilePersistenceState(
+	deps: PersistenceReconcileDeps & { storageDriver: WorkspaceStorageDriver },
+): Promise<void> {
 	const now = deps.now ? deps.now() : new Date();
 	const [operations, discoveredStorage, discoveredCheckpoints] = await Promise.all([
 		deps.store.listIncompleteOperations(),
@@ -212,4 +216,15 @@ export async function reconcilePersistence(deps: PersistenceReconcileDeps): Prom
 			);
 		}
 	}
+}
+
+export async function reconcilePersistence(deps: PersistenceReconcileDeps): Promise<void> {
+	const storageDriver = deps.storageDriver;
+	if (!storageDriver) {
+		await measureReconciliation(deps.metrics, "persistence", true, async () => {});
+		return;
+	}
+	await measureReconciliation(deps.metrics, "persistence", false, () =>
+		reconcilePersistenceState({ ...deps, storageDriver }),
+	);
 }

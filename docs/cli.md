@@ -77,7 +77,7 @@ pcd keys revoke --id <key-id>
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
 `workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
 `checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,
-`logs:read`, `admin`. A key issued without `--scopes` inherits its principal's
+`logs:read`, `network:read`, `admin`. A key issued without `--scopes` inherits its principal's
 current scopes, including later changes made by `principals update`. Passing
 `--scopes` creates a permanently narrower key whose effective scopes are the
 intersection of that restriction and its principal's current scopes. Omitting
@@ -107,7 +107,8 @@ pcd workspaces create --template <name> [--version <v>] \
   [--external-id <id>] [--input '<json>'] [--source <alias>] [--revision <rev>] \
   [--wait] [--wait-timeout-seconds 300] [--cancel-on-exit] [--json]
 pcd workspaces get --id <uuid>
-pcd workspaces logs --id <uuid> [--after <seq>] [--limit <n>]
+pcd workspaces logs --id <uuid> [--cursor <opaque>] [--limit <n>]
+pcd workspaces network-events --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces cancel --id <uuid>
 pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] [--json]
 pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \

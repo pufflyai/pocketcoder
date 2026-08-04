@@ -36,6 +36,7 @@ const input = args.includes("apply") ? await Bun.stdin.text() : "";
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input }) + "\\n");
 if (args.includes("get") && args.includes("job")) console.log(JSON.stringify({ status: { active: 1 } }));
 if (args.includes("get") && args.includes("jobs")) console.log(JSON.stringify({ items: [] }));
+if (args.includes("version")) console.log(JSON.stringify({ serverVersion: { major: "1", minor: "33" } }));
 `,
 		{ mode: 0o755 },
 	);
@@ -86,6 +87,8 @@ function fixtureWorkspace(): WorkspaceRow {
 		state: "provisioning",
 		reasonCode: null,
 		agentState: "unknown",
+		networkState: "disabled",
+		networkEventSeq: 0,
 		changeSeq: 1,
 		failureLogTail: null,
 		failureLogTailTruncated: false,
@@ -135,7 +138,12 @@ describe("Kubernetes workspace driver", () => {
 			template_version: workspace.templateVersion,
 		};
 		const driver = new KubernetesDriver({ namespace: "agents", kubectlBin: fake.bin });
-		await driver.createWarm({ runtimeId, template: workspace.templateSnapshot, input });
+		await driver.createWarm({
+			runtimeId,
+			template: workspace.templateSnapshot,
+			input,
+			expiresAt: new Date(Date.now() + 60_000),
+		});
 		const calls = (await readFile(fake.log, "utf8"))
 			.trim()
 			.split("\n")
@@ -217,15 +225,13 @@ describe("Kubernetes workspace driver", () => {
 						serviceAccountName: string;
 						automountServiceAccountToken: boolean;
 						securityContext: {
-							runAsUser: number;
-							runAsGroup: number;
-							runAsNonRoot: boolean;
 							fsGroup: number;
 							fsGroupChangePolicy: string;
 							seccompProfile: { type: string };
 						};
 						containers: Array<{
 							env: Array<{ name: string; value: string }>;
+							securityContext: Record<string, unknown>;
 							volumeMounts: Array<{ mountPath: string }>;
 						}>;
 						volumes: Array<Record<string, unknown>>;
@@ -236,12 +242,15 @@ describe("Kubernetes workspace driver", () => {
 		expect(job.spec.template.spec.serviceAccountName).toBe("workspace");
 		expect(job.spec.template.spec.automountServiceAccountToken).toBe(false);
 		expect(job.spec.template.spec.securityContext).toEqual({
-			runAsUser: 12_345,
-			runAsGroup: 23_456,
-			runAsNonRoot: true,
 			fsGroup: 23_456,
 			fsGroupChangePolicy: "OnRootMismatch",
 			seccompProfile: { type: "RuntimeDefault" },
+		});
+		expect(job.spec.template.spec.containers[0]?.securityContext).toMatchObject({
+			runAsUser: 12_345,
+			runAsGroup: 23_456,
+			runAsNonRoot: true,
+			allowPrivilegeEscalation: false,
 		});
 		expect(job.spec.template.spec.containers[0]?.env).toEqual([
 			{ name: "SAFE_VALUE", value: "yes" },
@@ -256,6 +265,78 @@ describe("Kubernetes workspace driver", () => {
 			job.spec.template.spec.containers[0]?.volumeMounts.map((mount) => mount.mountPath),
 		).toContain("/home/onefin");
 		expect(job.spec.template.spec.volumes).toHaveLength(5);
+	});
+
+	test("places NET_ADMIN and audit credentials only in a restartable native sidecar", async () => {
+		const fake = await fakeKubectl();
+		const workspace = fixtureWorkspace();
+		workspace.templateSnapshot.spec.network = {
+			mode: "restricted",
+			allow: [{ domain: "github.com", ports: [443], allowPrivate: false }],
+		};
+		workspace.networkState = "starting";
+		const input: ProviderInput = {
+			workspace_id: workspace.id,
+			server_url: "http://pocketcoder-server.agents.svc:7080",
+			registration_secret: "one-time",
+			template_digest: workspace.templateDigest,
+			template_name: workspace.templateName,
+			template_version: workspace.templateVersion,
+			launch_mode: "create",
+		};
+		const driver = new KubernetesDriver({
+			namespace: "agents",
+			kubectlBin: fake.bin,
+			egressImage: `registry.example/egress@sha256:${"e".repeat(64)}`,
+			egressSigningKey: "test-signing-key",
+		});
+		await driver.create({ workspace, input, mounts: [], secrets: [] });
+		const manifests = (await readFile(fake.log, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { args: string[]; input: string })
+			.filter((call) => call.args.includes("apply"))
+			.map((call) => JSON.parse(call.input) as Record<string, unknown>);
+		expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Secret", "Job"]);
+		const providerSecret = manifests[0] as { stringData: Record<string, string> };
+		expect(JSON.parse(providerSecret.stringData["input.json"] as string).server_url).toBe(
+			"http://127.0.0.1:18081",
+		);
+		const egressSecret = manifests[1] as { stringData: Record<string, string> };
+		const egress = JSON.parse(egressSecret.stringData["egress.json"] as string);
+		expect(egress.control_url).toBe(input.server_url);
+		expect(egress.audit_token).toStartWith("pce1.");
+		const job = manifests[2] as {
+			spec: {
+				template: {
+					spec: {
+						initContainers: Array<Record<string, unknown>>;
+						containers: Array<{
+							securityContext: { capabilities: { add?: string[] } };
+							volumeMounts: Array<{ name: string }>;
+						}>;
+					};
+				};
+			};
+		};
+		const sidecar = job.spec.template.spec.initContainers[0] as {
+			restartPolicy: string;
+			startupProbe: unknown;
+			securityContext: { capabilities: { add: string[]; drop: string[] } };
+			volumeMounts: Array<{ name: string }>;
+		};
+		expect(sidecar.restartPolicy).toBe("Always");
+		expect(sidecar.startupProbe).toBeDefined();
+		expect(sidecar.securityContext.capabilities).toEqual({
+			drop: ["ALL"],
+			add: ["NET_ADMIN", "SETUID", "SETGID"],
+		});
+		expect(sidecar.volumeMounts.map((mount) => mount.name)).toContain("egress-config");
+		const workspaceContainer = job.spec.template.spec.containers[0];
+		expect(workspaceContainer?.securityContext.capabilities.add).toBeUndefined();
+		expect(workspaceContainer?.volumeMounts.map((mount) => mount.name)).not.toContain(
+			"egress-config",
+		);
 	});
 });
 

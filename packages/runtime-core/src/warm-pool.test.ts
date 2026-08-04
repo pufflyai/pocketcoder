@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
 	FakeDriver,
 	fixtureTemplateEcho,
 	fixtureTemplatePersistent,
-	MemoryStore,
 } from "@pstdio/pocketcoder-testkit";
 import {
 	DEFAULT_LIMITS,
@@ -44,21 +44,21 @@ async function seed(store: Store, persistent = false) {
 
 async function queue(store: Store, seeded: Awaited<ReturnType<typeof seed>>, name: string) {
 	const now = new Date();
-	return (
-		await store.insertWorkspace({
-			id: randomUUID(),
-			principalId: seeded.principal.id,
-			externalId: name,
-			idempotencyKey: name,
-			requestDigest: digestOf({ name }),
-			templateId: seeded.template.id,
-			templateSnapshot: snapshotOf(seeded.parsed),
-			launchInput: { task: name },
-			metadata: {},
-			deadlineAt: new Date(now.getTime() + 60_000),
-			createdAt: now,
-		})
-	).workspace;
+	const result = await store.insertWorkspace({
+		id: randomUUID(),
+		principalId: seeded.principal.id,
+		externalId: name,
+		idempotencyKey: name,
+		requestDigest: digestOf({ name }),
+		templateId: seeded.template.id,
+		templateSnapshot: snapshotOf(seeded.parsed),
+		launchInput: { task: name },
+		metadata: {},
+		deadlineAt: new Date(now.getTime() + 60_000),
+		createdAt: now,
+	});
+	if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
+	return result.workspace;
 }
 
 class Assignments implements WarmPoolConnections {

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { NETWORK_STATES } from "./network";
+import { CursorPageSchema } from "./pagination";
 import {
 	CONVERSATION_RESTORE_CAPABILITIES,
 	ResolvedSourceSchema,
@@ -23,6 +25,10 @@ export const WORKSPACE_STATES = [
 ] as const;
 
 export type WorkspaceState = (typeof WORKSPACE_STATES)[number];
+
+export function isWorkspaceState(value: string): value is WorkspaceState {
+	return WORKSPACE_STATES.some((state) => state === value);
+}
 
 export const TERMINAL_STATES: readonly WorkspaceState[] = [
 	"succeeded",
@@ -84,6 +90,7 @@ export const REASON_CODES = [
 	"source_resolution_failed",
 	"secret_resolution_failed",
 	"operation_conflict",
+	"network_policy_failed",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];
@@ -122,6 +129,7 @@ export const WorkspaceResourceSchema = z.object({
 	change_cursor: z.number().int().nonnegative(),
 	provider_kind: z.string().nullable(),
 	provisioning_mode: z.enum(["cold", "warm"]).nullable(),
+	network: z.object({ state: z.enum(NETWORK_STATES) }),
 	health: z.record(z.string(), z.string()),
 	created_at: z.iso.datetime(),
 	updated_at: z.iso.datetime(),
@@ -160,9 +168,7 @@ export const WorkspaceResourceSchema = z.object({
 
 export type WorkspaceResource = z.infer<typeof WorkspaceResourceSchema>;
 
-export const WorkspaceCancelRequestSchema = z.object({
-	reason: z.string().max(512).optional(),
-});
+export const WorkspacePageSchema = CursorPageSchema(WorkspaceResourceSchema);
 
 export const WorkspaceListQuerySchema = z.object({
 	external_id: z.string().optional(),

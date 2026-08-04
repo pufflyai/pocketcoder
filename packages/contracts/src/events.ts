@@ -52,6 +52,6 @@ export const EventEnvelopeSchema = z.object({
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;
 
-export const EVENT_HEADER_ID = "X-Pocketcoder-Event-ID";
-export const EVENT_HEADER_TIMESTAMP = "X-Pocketcoder-Timestamp";
-export const EVENT_HEADER_SIGNATURE = "X-Pocketcoder-Signature";
+export const EVENT_HEADER_ID = "X-PocketCoder-Event-ID";
+export const EVENT_HEADER_TIMESTAMP = "X-PocketCoder-Timestamp";
+export const EVENT_HEADER_SIGNATURE = "X-PocketCoder-Signature";

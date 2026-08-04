@@ -1,5 +1,7 @@
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { StorageRef, WorkspaceDriver, WorkspaceStorageDriver } from "./driver";
+import type { MetricSink } from "./metrics";
+import { measureReconciliation } from "./reconciliation-metrics";
 import type { Store, WorkspaceRow } from "./types";
 
 // Server-restart recovery: reconcile PostgreSQL state with provider objects.
@@ -12,6 +14,7 @@ export interface ReconcileDeps {
 	storageDriver?: WorkspaceStorageDriver;
 	now?: () => Date;
 	log?: (msg: string) => void;
+	metrics?: MetricSink;
 }
 
 async function reconcileProviderRow(
@@ -55,7 +58,7 @@ async function reconcileProviderRow(
 	}
 }
 
-export async function reconcileProviders(deps: ReconcileDeps): Promise<void> {
+async function reconcileProviderState(deps: ReconcileDeps): Promise<void> {
 	const now = deps.now ? deps.now() : new Date();
 	const rows = await deps.store.listNonterminal();
 	const discovered = await deps.driver.list();
@@ -75,6 +78,10 @@ export async function reconcileProviders(deps: ReconcileDeps): Promise<void> {
 	for (const row of rows) {
 		await reconcileProviderRow(deps, row, byWorkspace.get(row.id), now);
 	}
+}
+
+export async function reconcileProviders(deps: ReconcileDeps): Promise<void> {
+	await measureReconciliation(deps.metrics, "provider", false, () => reconcileProviderState(deps));
 }
 
 async function settleLostStorage(deps: ReconcileDeps, row: WorkspaceRow, now: Date): Promise<void> {

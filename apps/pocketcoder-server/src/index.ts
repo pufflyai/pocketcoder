@@ -1,9 +1,14 @@
-import { runPocketcoderServerUntilSignal } from "./lifecycle";
+import { runPocketCoderServerUntilSignal } from "./lifecycle";
 
-export * from "./lifecycle";
+export {
+	type RunningPocketCoderServer,
+	runPocketCoderServerUntilSignal,
+	type ServerLog,
+	startPocketCoderServer,
+} from "./lifecycle";
 
 if (import.meta.main) {
-	runPocketcoderServerUntilSignal().catch((error) => {
+	runPocketCoderServerUntilSignal().catch((error) => {
 		console.error(`[pocketcoder-server] fatal: ${error instanceof Error ? error.message : error}`);
 		process.exit(1);
 	});

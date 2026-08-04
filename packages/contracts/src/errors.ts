@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 // Stable error codes shared by the REST API, relay, and CLI. The error
 // envelope is the only error shape callers ever see; provider errors, SQL
 // errors, and stack traces never appear in responses.
@@ -14,6 +16,7 @@ export const ERROR_CODES = {
 	"template.version_not_found": 404,
 	"template.not_authorized": 403,
 	"workspace.not_found": 404,
+	"workspace.external_id_conflict": 409,
 	"workspace.not_ready": 409,
 	"workspace.terminal": 410,
 	"workspace.disconnected": 503,
@@ -45,14 +48,18 @@ export const ERROR_CODES = {
 
 export type ErrorCode = keyof typeof ERROR_CODES;
 
-export interface ErrorEnvelope {
-	error: {
-		code: ErrorCode;
-		message: string;
-		request_id: string;
-		details?: Record<string, unknown>;
-	};
-}
+const errorCodes = Object.keys(ERROR_CODES) as [ErrorCode, ...ErrorCode[]];
+
+export const ErrorEnvelopeSchema = z.object({
+	error: z.object({
+		code: z.enum(errorCodes),
+		message: z.string().min(1),
+		request_id: z.string().min(1),
+		details: z.record(z.string(), z.unknown()).optional(),
+	}),
+});
+
+export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>;
 
 export class ApiError extends Error {
 	readonly code: ErrorCode;

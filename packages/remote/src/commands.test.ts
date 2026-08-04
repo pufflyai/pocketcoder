@@ -20,8 +20,37 @@ function workspaceResource(id: string, state = "ready", changeCursor = 0) {
 		agent_state: "stable",
 		change_cursor: changeCursor,
 		reason_code: state === "failed" ? "launch_failed" : null,
-		template: { name: "pi-harness", version: "1" },
-		failure: state === "failed" ? { reason_code: "launch_failed", log_tail: "boom" } : null,
+		template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+		provider_kind: "docker",
+		provisioning_mode: "cold",
+		network: { state: "ready" },
+		health: {},
+		created_at: "2026-01-01T00:00:00Z",
+		updated_at: "2026-01-01T00:00:00Z",
+		connected_at: "2026-01-01T00:00:00Z",
+		ready_at: state === "ready" ? "2026-01-01T00:00:00Z" : null,
+		deadline_at: "2026-01-01T01:00:00Z",
+		terminal_at: state === "failed" ? "2026-01-01T00:01:00Z" : null,
+		metadata: {},
+		origin_workspace_id: null,
+		restored_from_checkpoint_id: null,
+		source: null,
+		persistence: {
+			enabled: false,
+			conversation_restore: "filesystem_only",
+			conversation_resume: { status: "unsupported", reason: "filesystem_only" },
+			latest_checkpoint_id: null,
+		},
+		outputs: {},
+		failure:
+			state === "failed"
+				? {
+						reason_code: "launch_failed",
+						log_tail: "boom",
+						log_tail_truncated: false,
+						last_log_seq: 1,
+					}
+				: null,
 	};
 }
 
@@ -135,7 +164,10 @@ describe("workspace commands", () => {
 				const url = new URL(request.url);
 				if (url.pathname === "/v1/templates") {
 					return Response.json({
-						items: [{ name: "pi-harness", version: "1", status: "active" }],
+						items: [
+							{ name: "pi-harness", version: "1", digest: "sha256:template", status: "active" },
+						],
+						next_cursor: null,
 					});
 				}
 				if (request.method === "POST" && url.pathname === "/v1/workspaces") {
@@ -168,7 +200,10 @@ describe("workspace commands", () => {
 				const url = new URL(request.url);
 				if (url.pathname === "/v1/templates") {
 					return Response.json({
-						items: [{ name: "pi-harness", version: "1", status: "active" }],
+						items: [
+							{ name: "pi-harness", version: "1", digest: "sha256:template", status: "active" },
+						],
+						next_cursor: null,
 					});
 				}
 				if (request.method === "POST" && url.pathname === "/v1/workspaces") {
@@ -208,7 +243,7 @@ describe("workspace commands", () => {
 		const confirmed = commandHarness({
 			router: (request) => {
 				if (request.method === "POST" && new URL(request.url).pathname.endsWith("/cancel")) {
-					return new Response(null, { status: 202 });
+					return Response.json(workspaceResource(WS_A, "canceled"));
 				}
 				return undefined;
 			},
@@ -247,7 +282,9 @@ describe("status poller", () => {
 			if (!step || !new URL(request.url).pathname.endsWith("/changes")) {
 				return new Response("not found", { status: 404 });
 			}
-			if (step.fail) return new Response("boom", { status: 500 });
+			if (step.fail) {
+				return new Response("boom", { status: 500, headers: { "retry-after": "0" } });
+			}
 			return Response.json({
 				cursor: call,
 				changed: true,
@@ -297,6 +334,10 @@ describe("status poller", () => {
 
 	test("backs off and reports reconnecting on errors", async () => {
 		const { poller, delays, statuses, notifications } = pollerHarness([
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
+			{ fail: true, state: "ready" },
 			{ fail: true, state: "ready" },
 			{ fail: true, state: "ready" },
 			{ state: "canceled" },

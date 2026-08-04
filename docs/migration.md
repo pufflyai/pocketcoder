@@ -9,7 +9,7 @@ renamed or removed before that release.
 | `coder-lite` | `pocketcoder` |
 | `CODER_LITE_*` environment variables | `POCKETCODER_*` |
 | `coder-lite.dev/v1alpha1` | `pocketcoder.dev/v1alpha1` |
-| `X-Coder-Lite-Signature` | `X-Pocketcoder-Signature` |
+| `X-Coder-Lite-Signature` | `X-PocketCoder-Signature` |
 | `/run/coder-lite/input` | `/run/pocketcoder/input` |
 | `/opt/coder-lite/ctl.js` | `/opt/pocketcoder/pcd.js` |
 | `coder-lite-agent` binary | `pocketcoder-agent` |
@@ -25,7 +25,7 @@ After the replacement:
 2. Run database migrations with `pcd db migrate`.
 3. Validate every reviewed template.
 4. Run `pcd doctor --template <production-template>`.
-5. Confirm a signed event using `X-Pocketcoder-Signature`.
+5. Confirm a signed event using `X-PocketCoder-Signature`.
 
 `doctor: ok` now means a non-root workspace passed its declared in-memory path
 write checks and completed a correlated request/response turn through the

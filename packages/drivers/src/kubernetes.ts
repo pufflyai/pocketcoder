@@ -9,12 +9,13 @@ import type {
 	WorkspaceDriver,
 	WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
+import { type EgressDriverOptions, egressConfig, poolInput, workspaceInput } from "./egress";
 
 export const KUBERNETES_WORKSPACE_LABEL = "pocketcoder.workspace";
 export const KUBERNETES_DIGEST_ANNOTATION = "pocketcoder.dev/template-digest";
 export const KUBERNETES_POOL_LABEL = "pocketcoder.pool-runtime";
 
-export interface KubernetesDriverOptions {
+export interface KubernetesDriverOptions extends EgressDriverOptions {
 	namespace?: string;
 	kubectlBin?: string;
 	serviceAccountName?: string;
@@ -124,6 +125,8 @@ export class KubernetesDriver implements WorkspaceDriver {
 	private readonly kubectlBin: string;
 	private readonly serviceAccountName: string | undefined;
 	private readonly imagePullPolicy: "Always" | "IfNotPresent" | "Never";
+	private readonly egress: EgressDriverOptions;
+	private sidecarsSupported = false;
 
 	constructor(options: KubernetesDriverOptions = {}) {
 		this.namespace = options.namespace ?? "default";
@@ -136,6 +139,51 @@ export class KubernetesDriver implements WorkspaceDriver {
 			throw new Error("serviceAccountName must be a Kubernetes resource name");
 		}
 		this.imagePullPolicy = options.imagePullPolicy ?? "IfNotPresent";
+		this.egress = {
+			...(options.egressImage ? { egressImage: options.egressImage } : {}),
+			...(options.egressSigningKey ? { egressSigningKey: options.egressSigningKey } : {}),
+		};
+	}
+
+	private egressContainer() {
+		return {
+			name: "pocketcoder-egress",
+			image: this.egress.egressImage,
+			imagePullPolicy: this.imagePullPolicy,
+			restartPolicy: "Always",
+			securityContext: {
+				runAsUser: 0,
+				runAsGroup: 0,
+				allowPrivilegeEscalation: false,
+				readOnlyRootFilesystem: true,
+				capabilities: { drop: ["ALL"], add: ["NET_ADMIN", "SETUID", "SETGID"] },
+			},
+			startupProbe: {
+				httpGet: { host: "127.0.0.1", port: 18_082, path: "/readyz" },
+				periodSeconds: 1,
+				failureThreshold: 30,
+			},
+			volumeMounts: [
+				{
+					name: "egress-config",
+					mountPath: "/run/pocketcoder/egress.json",
+					subPath: "egress.json",
+					readOnly: true,
+				},
+			],
+		};
+	}
+
+	private async requireNativeSidecars() {
+		if (this.sidecarsSupported) return;
+		const output = await kubectl(this.kubectlBin, this.namespace, ["version", "-o", "json"]);
+		const version = JSON.parse(output) as { serverVersion?: { major?: string; minor?: string } };
+		const major = Number(version.serverVersion?.major ?? 0);
+		const minor = Number((version.serverVersion?.minor ?? "0").replace(/\D.*$/, ""));
+		if (major < 1 || (major === 1 && minor < 29)) {
+			throw new Error("restricted workspaces require Kubernetes 1.29+ with SidecarContainers");
+		}
+		this.sidecarsSupported = true;
 	}
 
 	async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
@@ -143,6 +191,9 @@ export class KubernetesDriver implements WorkspaceDriver {
 		const spec = workspace.templateSnapshot.spec;
 		const name = resourceName(workspace.id);
 		const inputSecret = `${name}-input`;
+		const restricted = spec.network.mode === "restricted";
+		if (restricted) await this.requireNativeSidecars();
+		const egressSecret = `${name}-egress`;
 		const inputManifest = {
 			apiVersion: "v1",
 			kind: "Secret",
@@ -151,7 +202,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 				labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
 			},
 			type: "Opaque",
-			stringData: { "input.json": JSON.stringify(input) },
+			stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
 		};
 		await kubectl(
 			this.kubectlBin,
@@ -159,6 +210,24 @@ export class KubernetesDriver implements WorkspaceDriver {
 			["apply", "-f", "-"],
 			JSON.stringify(inputManifest),
 		);
+		if (restricted) {
+			await kubectl(
+				this.kubectlBin,
+				this.namespace,
+				["apply", "-f", "-"],
+				JSON.stringify({
+					apiVersion: "v1",
+					kind: "Secret",
+					metadata: { name: egressSecret, labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id } },
+					type: "Opaque",
+					stringData: {
+						"egress.json": JSON.stringify(
+							egressConfig(this.egress, input, spec.network, workspace.deadlineAt),
+						),
+					},
+				}),
+			);
+		}
 
 		const persistent = launch.mounts.map(volumeForMount);
 		const secrets = launch.secrets.map(volumeForSecret);
@@ -189,13 +258,11 @@ export class KubernetesDriver implements WorkspaceDriver {
 						automountServiceAccountToken: false,
 						...(this.serviceAccountName ? { serviceAccountName: this.serviceAccountName } : {}),
 						securityContext: {
-							runAsUser: spec.security.uid,
-							runAsGroup: spec.security.gid,
-							runAsNonRoot: true,
 							fsGroup: spec.security.gid,
 							fsGroupChangePolicy: "OnRootMismatch",
 							seccompProfile: { type: spec.security.seccomp },
 						},
+						...(restricted ? { initContainers: [this.egressContainer()] } : {}),
 						containers: [
 							{
 								name: "workspace",
@@ -216,6 +283,9 @@ export class KubernetesDriver implements WorkspaceDriver {
 									},
 								},
 								securityContext: {
+									runAsUser: spec.security.uid,
+									runAsGroup: spec.security.gid,
+									runAsNonRoot: true,
 									readOnlyRootFilesystem: spec.security.readOnlyRoot,
 									allowPrivilegeEscalation: spec.security.allowPrivilegeEscalation,
 									capabilities: { drop: spec.security.dropCapabilities },
@@ -241,6 +311,17 @@ export class KubernetesDriver implements WorkspaceDriver {
 									items: [{ key: "input.json", path: "input.json" }],
 								},
 							},
+							...(restricted
+								? [
+										{
+											name: "egress-config",
+											secret: {
+												secretName: egressSecret,
+												items: [{ key: "egress.json", path: "egress.json" }],
+											},
+										},
+									]
+								: []),
 							...persistent.map((item) => item.volume),
 							...secrets.map((item) => item.volume),
 							...memory.map((item) => item.volume),
@@ -261,6 +342,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 				id: name,
 				name,
 				inputSecret,
+				...(restricted ? { egressSecret } : {}),
 				namespace: this.namespace,
 			};
 		} catch (error) {
@@ -270,6 +352,14 @@ export class KubernetesDriver implements WorkspaceDriver {
 				inputSecret,
 				"--ignore-not-found",
 			]).catch(() => {});
+			if (restricted) {
+				await kubectl(this.kubectlBin, this.namespace, [
+					"delete",
+					"secret",
+					egressSecret,
+					"--ignore-not-found",
+				]).catch(() => {});
+			}
 			throw error;
 		}
 	}
@@ -278,6 +368,9 @@ export class KubernetesDriver implements WorkspaceDriver {
 		const spec = launch.template.spec;
 		const name = `pocketcoder-pool-${launch.runtimeId}`;
 		const inputSecret = `${name}-input`;
+		const restricted = spec.network.mode === "restricted";
+		if (restricted) await this.requireNativeSidecars();
+		const egressSecret = `${name}-egress`;
 		await kubectl(
 			this.kubectlBin,
 			this.namespace,
@@ -287,9 +380,29 @@ export class KubernetesDriver implements WorkspaceDriver {
 				kind: "Secret",
 				metadata: { name: inputSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
 				type: "Opaque",
-				stringData: { "input.json": JSON.stringify(launch.input) },
+				stringData: {
+					"input.json": JSON.stringify(restricted ? poolInput(launch.input) : launch.input),
+				},
 			}),
 		);
+		if (restricted) {
+			await kubectl(
+				this.kubectlBin,
+				this.namespace,
+				["apply", "-f", "-"],
+				JSON.stringify({
+					apiVersion: "v1",
+					kind: "Secret",
+					metadata: { name: egressSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
+					type: "Opaque",
+					stringData: {
+						"egress.json": JSON.stringify(
+							egressConfig(this.egress, launch.input, spec.network, launch.expiresAt),
+						),
+					},
+				}),
+			);
+		}
 		const memory = spec.security.writableMemoryPaths.map((path, index) => ({
 			volume: { name: `memory-${index}`, emptyDir: { medium: "Memory", sizeLimit: "256Mi" } },
 			mount: { name: `memory-${index}`, mountPath: path },
@@ -310,13 +423,11 @@ export class KubernetesDriver implements WorkspaceDriver {
 						automountServiceAccountToken: false,
 						...(this.serviceAccountName ? { serviceAccountName: this.serviceAccountName } : {}),
 						securityContext: {
-							runAsUser: spec.security.uid,
-							runAsGroup: spec.security.gid,
-							runAsNonRoot: true,
 							fsGroup: spec.security.gid,
 							fsGroupChangePolicy: "OnRootMismatch",
 							seccompProfile: { type: spec.security.seccomp },
 						},
+						...(restricted ? { initContainers: [this.egressContainer()] } : {}),
 						containers: [
 							{
 								name: "workspace",
@@ -326,6 +437,9 @@ export class KubernetesDriver implements WorkspaceDriver {
 								env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
 								resources: { requests: spec.resources, limits: spec.resources },
 								securityContext: {
+									runAsUser: spec.security.uid,
+									runAsGroup: spec.security.gid,
+									runAsNonRoot: true,
 									readOnlyRootFilesystem: spec.security.readOnlyRoot,
 									allowPrivilegeEscalation: spec.security.allowPrivilegeEscalation,
 									capabilities: { drop: spec.security.dropCapabilities },
@@ -349,6 +463,17 @@ export class KubernetesDriver implements WorkspaceDriver {
 									items: [{ key: "input.json", path: "input.json" }],
 								},
 							},
+							...(restricted
+								? [
+										{
+											name: "egress-config",
+											secret: {
+												secretName: egressSecret,
+												items: [{ key: "egress.json", path: "egress.json" }],
+											},
+										},
+									]
+								: []),
 							...memory.map((item) => item.volume),
 						],
 					},
@@ -369,6 +494,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 				inputSecret,
 				namespace: this.namespace,
 				poolRuntimeId: launch.runtimeId,
+				...(restricted ? { egressSecret } : {}),
 			};
 		} catch (error) {
 			await kubectl(this.kubectlBin, this.namespace, [
@@ -377,6 +503,14 @@ export class KubernetesDriver implements WorkspaceDriver {
 				inputSecret,
 				"--ignore-not-found",
 			]).catch(() => {});
+			if (restricted) {
+				await kubectl(this.kubectlBin, this.namespace, [
+					"delete",
+					"secret",
+					egressSecret,
+					"--ignore-not-found",
+				]).catch(() => {});
+			}
 			throw error;
 		}
 	}
@@ -444,6 +578,14 @@ export class KubernetesDriver implements WorkspaceDriver {
 			inputSecret,
 			"--ignore-not-found",
 		]).catch(() => {});
+		if (typeof ref.egressSecret === "string") {
+			await kubectl(this.kubectlBin, this.namespace, [
+				"delete",
+				"secret",
+				ref.egressSecret,
+				"--ignore-not-found",
+			]).catch(() => {});
+		}
 	}
 
 	async cleanupInput(workspaceId: string): Promise<void> {
@@ -496,6 +638,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 						id: name,
 						name,
 						inputSecret: `${name}-input`,
+						egressSecret: `${name}-egress`,
 						namespace: this.namespace,
 					},
 				},
@@ -537,6 +680,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 						inputSecret: `${name}-input`,
 						namespace: this.namespace,
 						poolRuntimeId: runtimeId,
+						egressSecret: `${name}-egress`,
 					},
 				},
 			];

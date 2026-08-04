@@ -4,10 +4,13 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
-import { FakeDriver, fixtureTemplatePersistent, MemoryStore } from "@pstdio/pocketcoder-testkit";
+import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
+import { DEFAULT_PERSISTENCE_LIMITS } from "./persistence";
 
 const roots: string[] = [];
 const pepper = "persistence-test-pepper";
@@ -19,7 +22,7 @@ afterEach(async () => {
 	}
 });
 
-async function server() {
+async function server(options: { maxConcurrentOperations?: number } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "pocketcoder-persistence-api-"));
 	roots.push(root);
 	const store = new MemoryStore();
@@ -69,6 +72,12 @@ async function server() {
 		storageDriver,
 		pepper,
 		limits: DEFAULT_LIMITS,
+		persistenceLimits: {
+			...DEFAULT_PERSISTENCE_LIMITS,
+			...(options.maxConcurrentOperations === undefined
+				? {}
+				: { maxConcurrentOperations: options.maxConcurrentOperations }),
+		},
 		workspaceServerUrl: "http://127.0.0.1:0",
 	});
 	const request = (path: string, init: RequestInit = {}) =>
@@ -80,7 +89,7 @@ async function server() {
 				...(init.headers ?? {}),
 			},
 		});
-	return { ...built, store, driver, storageDriver, request };
+	return { ...built, store, driver, storageDriver, principal, parsed, request };
 }
 
 async function waitFor(condition: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
@@ -92,7 +101,104 @@ async function waitFor(condition: () => Promise<boolean>, timeoutMs = 5000): Pro
 	throw new Error("condition timed out");
 }
 
+async function insertReadyCheckpoint(testServer: Awaited<ReturnType<typeof server>>) {
+	const checkpointId = randomUUID();
+	const now = new Date();
+	await testServer.store.insertCheckpoint({
+		id: checkpointId,
+		workspaceId: randomUUID(),
+		principalId: testServer.principal.id,
+		storageId: randomUUID(),
+		parentCheckpointId: null,
+		state: "ready",
+		reasonCode: null,
+		providerKind: "filesystem",
+		providerRef: { kind: "filesystem", id: checkpointId },
+		templateSnapshot: snapshotOf(testServer.parsed),
+		templateDigest: testServer.parsed.digest,
+		sourceProvenance: null,
+		manifest: {
+			format: "pocketcoder-checkpoint/v1",
+			checkpoint_id: checkpointId,
+			template_digest: testServer.parsed.digest,
+			mounts: [],
+			logical_bytes: 0,
+			file_count: 0,
+		},
+		manifestDigest: "sha256:fixture",
+		logicalBytes: 0,
+		storedBytes: 0,
+		fileCount: 0,
+		conversationRestore: "filesystem_only",
+		label: null,
+		createdAt: now,
+		updatedAt: now,
+		readyAt: now,
+		expiresAt: null,
+		deletedAt: null,
+	});
+	return checkpointId;
+}
+
 describe("persistent workspace REST workflow", () => {
+	test("reserves persistence operation capacity across concurrent requests", async () => {
+		const testServer = await server({ maxConcurrentOperations: 1 });
+		const checkpointId = await insertReadyCheckpoint(testServer);
+		let releaseVerification = () => {};
+		const verificationGate = new Promise<void>((resolve) => {
+			releaseVerification = resolve;
+		});
+		let verificationCalls = 0;
+		testServer.storageDriver.verifyCheckpoint = async (_ref, manifest) => {
+			verificationCalls += 1;
+			await verificationGate;
+			return manifest;
+		};
+
+		const requests = Promise.allSettled(
+			["verify-capacity-a", "verify-capacity-b"].map((key) =>
+				testServer.persistence.verify(testServer.principal, checkpointId, key),
+			),
+		);
+		await waitFor(async () => verificationCalls > 0);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const observedCalls = verificationCalls;
+		const observedIncomplete = await testServer.store.countIncompleteOperations();
+		releaseVerification();
+		const results = await requests;
+
+		expect(observedCalls).toBe(1);
+		expect(observedIncomplete).toBe(1);
+		expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+	});
+
+	test("replays the original terminal error for a failed verification", async () => {
+		const testServer = await server();
+		const checkpointId = await insertReadyCheckpoint(testServer);
+		testServer.storageDriver.verifyCheckpoint = async () => {
+			throw new Error("corrupt fixture");
+		};
+
+		const verify = () =>
+			testServer.request(`/v1/checkpoints/${checkpointId}/verify`, {
+				method: "POST",
+				headers: { "idempotency-key": "verify-corrupt" },
+			});
+		const first = await verify();
+		const second = await verify();
+
+		expect(first.status).toBe(409);
+		expect(second.status).toBe(409);
+		expect((await first.json()) as unknown).toMatchObject({
+			error: { code: "checkpoint.corrupt" },
+		});
+		expect((await second.json()) as unknown).toMatchObject({
+			error: { code: "checkpoint.corrupt" },
+		});
+	});
+});
+
+describe("persistent workspace preservation", () => {
 	test("preserves, verifies, restores, and keeps forks independent", async () => {
 		const testServer = await server();
 		const createdResponse = await testServer.request("/v1/workspaces", {
@@ -273,7 +379,9 @@ describe("persistent workspace REST workflow", () => {
 		);
 		expect(testServer.driver.inputFor(restored.workspace.id)?.launch_mode).toBe("restore");
 	});
+});
 
+describe("persistent workspace outputs", () => {
 	test("persists only declared, bounded output metadata", async () => {
 		const testServer = await server();
 		const createdResponse = await testServer.request("/v1/workspaces", {

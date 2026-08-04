@@ -1,5 +1,11 @@
 {
 	"name": "@pstdio/pocketcoder-remote",
+	"nx": {
+		"tags": [
+			"scope:remote",
+			"type:app"
+		]
+	},
 	"version": "0.1.0",
 	"private": false,
 	"description": "Pi-based terminal UI for PocketCoder workspaces.",
@@ -33,6 +39,7 @@
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},
 	"dependencies": {
+		"@pstdio/pocketcoder-client": "workspace:*",
 		"@earendil-works/pi-ai": "0.83.0",
 		"@earendil-works/pi-coding-agent": "0.83.0",
 		"@earendil-works/pi-tui": "0.83.0"

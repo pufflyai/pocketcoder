@@ -6,7 +6,7 @@ import type {
 	WarmRuntimeLaunch,
 	WorkspaceDriver,
 	WorkspaceLaunch,
-} from "@pstdio/pocketcoder-runtime-core";
+} from "@pstdio/pocketcoder-runtime-contracts";
 
 // Deterministic in-memory driver for scheduler and server tests.
 

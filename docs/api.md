@@ -2,7 +2,8 @@
 
 Base path `/v1`, JSON only, UUIDv7-style identifiers, RFC 3339 UTC
 timestamps. The generated OpenAPI document is served unauthenticated at
-`GET /v1/openapi.json`; `GET /healthz` is the liveness probe.
+`GET /v1/openapi.json`; `GET /livez` is the process liveness probe and
+`GET /readyz` reports database, schema, reconciliation, and coordinator readiness.
 
 ## Authentication
 
@@ -83,7 +84,8 @@ GET  /v1/workspaces                    scope workspaces:read    filters: externa
 GET  /v1/workspaces/{id}               scope workspaces:read
 POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; returns the current resource
 GET  /v1/workspaces/{id}/changes       scope workspaces:read    query: after (change_cursor), wait (0..30 seconds)
-GET  /v1/workspaces/{id}/logs          scope logs:read          query: after (seq), limit
+GET  /v1/workspaces/{id}/logs          scope logs:read          query: cursor (opaque), limit
+GET  /v1/workspaces/{id}/network-events scope network:read      query: cursor (opaque), limit
 ```
 
 States: `queued → provisioning → connected → ready`, followed by
@@ -94,6 +96,11 @@ health failure, crash, provider loss, disconnect timeout, cancellation, and
 deadline/idle expiry.
 
 Workspace resources include `provisioning_mode`: `warm`, `cold`, or `null` before admission. This is informational; `POST /v1/workspaces` remains unchanged and callers cannot select pool behavior.
+
+Workspace resources also include `network.state`: `disabled`, `starting`, `ready`, or `degraded`.
+Network events contain the decision, transport, host, port, visible HTTP method/path (without the
+query), matched rule, and reason. They never contain headers, bodies, credentials, userinfo, or
+query strings. HTTPS records the CONNECT host and port only.
 
 Every workspace resource includes a durable, monotonically increasing
 `change_cursor` and an `agent_state` of `unknown`, `running`, or `stable`.
@@ -137,7 +144,7 @@ and `created_before` is exclusive.
 ## Durable conversation history
 
 ```text
-GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: after (seq), limit (max 200)
+GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: cursor (opaque), limit (max 200)
 DELETE /v1/workspaces/{id}/conversation   scope conversations:delete  idempotent
 ```
 
@@ -245,8 +252,8 @@ delivered at least once from a transactional outbox with bounded exponential
 backoff:
 
 ```text
-POST <sink>   headers: X-Pocketcoder-Event-ID, X-Pocketcoder-Timestamp,
-              X-Pocketcoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
+POST <sink>   headers: X-PocketCoder-Event-ID, X-PocketCoder-Timestamp,
+              X-PocketCoder-Signature: sha256=<HMAC(signing_key, timestamp + "." + body)>
 ```
 
 Workspace events use `{ id, type: "workspace.<state>", occurred_at, workspace:

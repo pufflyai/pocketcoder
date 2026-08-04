@@ -69,6 +69,32 @@ command, mount, network, privilege, or driver.
   writable paths, dropped capabilities, no privilege escalation. Values can
   only be stricter than the defaults, never weaker.
 
+## Restricted outbound networking
+
+Networking is unrestricted when `network` is omitted. A reviewed template can opt the whole
+workspace—including setup, AgentAPI, tools, hooks, and MCP children—into default-deny egress:
+
+```json
+{
+  "network": {
+    "mode": "restricted",
+    "allow": [
+      { "domain": "github.com" },
+      { "domain": "*.github.com", "ports": [443] },
+      { "domain": "agentgateway.internal", "ports": [8080], "allowPrivate": true }
+    ]
+  }
+}
+```
+
+Ports default to 80 and 443. Exact domains exclude subdomains; `*.example.com` includes
+subdomains but excludes the apex. Lowercase ASCII DNS names are required, and an empty list is
+deny-all. Private, loopback, link-local, and metadata resolutions require `allowPrivate: true` on
+the matching reviewed rule. Restricted templates cannot declare proxy environment variables.
+
+V1 supports HTTP and HTTPS CONNECT without TLS interception. It therefore cannot filter encrypted
+HTTPS methods or paths, and it blocks SSH and other non-HTTP protocols.
+
 ## Validation rules that will reject a template
 
 - image not digest-pinned (`repo@sha256:<64 hex>` required);
@@ -80,6 +106,8 @@ command, mount, network, privilege, or driver.
   `SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL` must use a
   `secretRef:` reference resolved by the deployment);
 - privileged security settings.
+- invalid domains, IP literals, arbitrary wildcards, ports outside 1–65535, or proxy variables in
+  a restricted template.
 
 Check any file offline with `pcd templates validate <file>`.
 

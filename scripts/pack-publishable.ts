@@ -23,7 +23,7 @@ for (const root of workspaceRoots) {
 
 		publishableCount += 1;
 		console.log(`Checking npm package contents for ${manifest.name ?? packageDir}`);
-		const child = Bun.spawn(["npm", "pack", "--dry-run", "--ignore-scripts", "--json"], {
+		const child = Bun.spawn(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
 			cwd: packageDir,
 			stdout: "inherit",
 			stderr: "pipe",

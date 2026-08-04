@@ -92,7 +92,7 @@ export POCKETCODER_KEY=pkt_...
 export PC12_WORKSPACE_ID=<workspace-uuid>
 
 curl --fail-with-body --silent --show-error \
-  "$POCKETCODER_URL/v1/workspaces/$PC12_WORKSPACE_ID/conversation?after=0&limit=100" \
+  "$POCKETCODER_URL/v1/workspaces/$PC12_WORKSPACE_ID/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY" | jq
 ```
 

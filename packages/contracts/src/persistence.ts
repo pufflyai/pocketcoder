@@ -100,6 +100,10 @@ export type OutputDeclaration = z.infer<typeof OutputDeclarationSchema>;
 export const CHECKPOINT_STATES = ["creating", "ready", "failed", "deleting", "deleted"] as const;
 export type CheckpointState = (typeof CHECKPOINT_STATES)[number];
 
+export function isCheckpointState(value: string): value is CheckpointState {
+	return CHECKPOINT_STATES.some((state) => state === value);
+}
+
 export const OPERATION_KINDS = ["preserve", "restore", "verify", "delete"] as const;
 export type OperationKind = (typeof OPERATION_KINDS)[number];
 

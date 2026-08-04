@@ -15,6 +15,7 @@ export const SCOPES = [
 	"conversations:delete",
 	"services:relay",
 	"logs:read",
+	"network:read",
 	"admin",
 ] as const;
 

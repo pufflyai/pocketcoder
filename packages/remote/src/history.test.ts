@@ -34,13 +34,15 @@ function conversationClient(messages: ConversationMessage[], status = 200): Cont
 				{ status },
 			);
 		}
-		const after = Number(url.searchParams.get("after"));
+		const cursor = url.searchParams.get("cursor");
+		const after = cursor ? Number(cursor.replace(/^seq:/, "")) : 0;
 		const limit = Number(url.searchParams.get("limit"));
-		const items = messages.filter((item) => item.seq > after).slice(0, limit);
+		const remaining = messages.filter((item) => item.seq > after);
+		const items = remaining.slice(0, limit);
 		const last = items.at(-1);
 		return Response.json({
 			items,
-			next_cursor: items.length === limit && last ? last.seq : null,
+			next_cursor: remaining.length > limit && last ? `seq:${last.seq}` : null,
 			retention: { status: "retained", expires_at: null },
 		});
 	}) as typeof fetch;

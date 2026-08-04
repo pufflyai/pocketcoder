@@ -55,7 +55,24 @@ describe("template manifest", () => {
 		expect(parsed.manifest.spec.security.uid).toBe(10001);
 		expect(parsed.manifest.spec.setup).toEqual([]);
 		expect(parsed.manifest.spec.command[0]).toContain("pocketcoder-agent");
+		expect(parsed.manifest.spec.network).toEqual({ mode: "unrestricted" });
 		expect(parsed.digest.startsWith("sha256:")).toBe(true);
+	});
+
+	test("accepts reviewed restricted networking and rejects proxy overrides", () => {
+		const restricted = baseManifest();
+		(restricted.spec as Record<string, unknown>).network = {
+			mode: "restricted",
+			allow: [{ domain: "github.com" }, { domain: "*.example.com", ports: [8443] }],
+		};
+		const parsed = parseTemplateManifest(restricted);
+		expect(parsed.manifest.spec.network.mode).toBe("restricted");
+
+		for (const key of ["HTTP_PROXY", "https_proxy", "No_Proxy", "all_proxy"]) {
+			const manifest = structuredClone(restricted);
+			(manifest.spec as { env?: Record<string, string> }).env = { [key]: "http://proxy" };
+			expect(() => parseTemplateManifest(manifest)).toThrow("reserved by restricted networking");
+		}
 	});
 
 	test("derives the fixed AgentAPI boundary from a coding-agent command", () => {

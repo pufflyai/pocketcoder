@@ -111,7 +111,7 @@ curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/agent/message" \
   -d '{"content":"fix the failing test"}'
 
 # Durable history remains available after the relay closes:
-curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?after=0&limit=100" \
+curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 

@@ -30,6 +30,7 @@ export async function checkLicenses({
 		start,
 		onlyAllow: ALLOWED_LICENSES.join(";"),
 		excludePackages,
+		excludePrivatePackages: true,
 		clarificationsFile,
 		clarificationsMatchAll: clarificationsFile ? true : undefined,
 	});

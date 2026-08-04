@@ -1,9 +1,24 @@
 import { createHash } from "node:crypto";
+import {
+	AGENT_STATES,
+	CHECKPOINT_STATES,
+	CONVERSATION_RESTORE_CAPABILITIES,
+	LAUNCH_MODES,
+	NETWORK_STATES,
+	OPERATION_KINDS,
+	OPERATION_STATES,
+	REASON_CODES,
+	STORAGE_STATES,
+	TERMINAL_STATES,
+	WORKSPACE_STATES,
+} from "@pstdio/pocketcoder-contracts";
+import { TEMPLATE_STATUSES, WARM_POOL_RUNTIME_STATES } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
 import {
 	bigint,
 	boolean,
 	bytea,
+	check,
 	index,
 	integer,
 	jsonb,
@@ -22,7 +37,12 @@ import {
 // while runtime queries continue to use fully qualified identifiers.
 
 const SCHEMA_RE = /^[a-z_][a-z0-9_]{0,62}$/;
-const terminalStates = sql`('succeeded', 'failed', 'canceled', 'expired', 'preserved')`;
+
+function sqlValues(values: readonly string[]) {
+	return sql.raw(`(${values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ")})`);
+}
+
+const terminalStates = sqlValues(TERMINAL_STATES);
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -39,7 +59,10 @@ export const templates = pgTable(
 		createdAt: timestamptz("created_at").notNull(),
 		retiredAt: timestamptz("retired_at"),
 	},
-	(table) => [unique().on(table.name, table.version)],
+	(table) => [
+		unique().on(table.name, table.version),
+		check("templates_status_check", sql`${table.status} IN ${sqlValues(TEMPLATE_STATUSES)}`),
+	],
 );
 
 export const principals = pgTable("principals", {
@@ -84,6 +107,8 @@ export const workspaces = pgTable(
 		state: text("state").notNull(),
 		reasonCode: text("reason_code"),
 		agentState: text("agent_state").notNull().default("unknown"),
+		networkState: text("network_state").notNull().default("disabled"),
+		networkEventSeq: bigint("network_event_seq", { mode: "number" }).notNull().default(0),
 		changeSeq: bigint("change_seq", { mode: "number" }).notNull().default(1),
 		failureLogTail: text("failure_log_tail"),
 		failureLogTailTruncated: boolean("failure_log_tail_truncated").notNull().default(false),
@@ -118,6 +143,25 @@ export const workspaces = pgTable(
 		outputs: jsonb("outputs").$type<Record<string, unknown>>().notNull().default({}),
 	},
 	(table) => [
+		check("workspaces_state_check", sql`${table.state} IN ${sqlValues(WORKSPACE_STATES)}`),
+		check(
+			"workspaces_reason_code_check",
+			sql`${table.reasonCode} IS NULL OR ${table.reasonCode} IN ${sqlValues(REASON_CODES)}`,
+		),
+		check("workspaces_agent_state_check", sql`${table.agentState} IN ${sqlValues(AGENT_STATES)}`),
+		check(
+			"workspaces_network_state_check",
+			sql`${table.networkState} IN ${sqlValues(NETWORK_STATES)}`,
+		),
+		check(
+			"workspaces_terminal_intent_check",
+			sql`${table.terminalIntent} IS NULL OR ${table.terminalIntent} IN ${sqlValues(WORKSPACE_STATES)}`,
+		),
+		check(
+			"workspaces_provisioning_mode_check",
+			sql`${table.provisioningMode} IS NULL OR ${table.provisioningMode} IN ('cold', 'warm')`,
+		),
+		check("workspaces_launch_mode_check", sql`${table.launchMode} IN ${sqlValues(LAUNCH_MODES)}`),
 		unique().on(table.principalId, table.idempotencyKey),
 		uniqueIndex("workspaces_principal_external_active")
 			.on(table.principalId, table.externalId)
@@ -126,6 +170,32 @@ export const workspaces = pgTable(
 		index("workspaces_deadline")
 			.on(table.deadlineAt)
 			.where(sql`${table.state} NOT IN ${terminalStates}`),
+	],
+);
+
+export const workspaceNetworkEvents = pgTable(
+	"workspace_network_events",
+	{
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		seq: bigint("seq", { mode: "number" }).notNull(),
+		sourceSessionId: uuid("source_session_id").notNull(),
+		sourceSeq: bigint("source_seq", { mode: "number" }).notNull(),
+		occurredAt: timestamptz("occurred_at").notNull(),
+		decision: text("decision").notNull(),
+		transport: text("transport").notNull(),
+		host: text("host").notNull(),
+		port: integer("port").notNull(),
+		method: text("method"),
+		path: text("path"),
+		matchedRule: text("matched_rule"),
+		reason: text("reason").notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.workspaceId, table.seq] }),
+		unique().on(table.workspaceId, table.sourceSessionId, table.sourceSeq),
+		index("workspace_network_events_page").on(table.workspaceId, table.seq),
 	],
 );
 
@@ -153,6 +223,10 @@ export const warmPoolRuntimes = pgTable(
 		failureCode: text("failure_code"),
 	},
 	(table) => [
+		check(
+			"warm_pool_runtimes_state_check",
+			sql`${table.state} IN ${sqlValues(WARM_POOL_RUNTIME_STATES)}`,
+		),
 		index("warm_pool_eligible").on(
 			table.templateDigest,
 			table.driverKind,
@@ -187,6 +261,7 @@ export const workspaceStorage = pgTable(
 		lastErrorCode: text("last_error_code"),
 	},
 	(table) => [
+		check("workspace_storage_state_check", sql`${table.state} IN ${sqlValues(STORAGE_STATES)}`),
 		uniqueIndex("workspace_storage_one_live")
 			.on(table.workspaceId)
 			.where(sql`${table.state} NOT IN ('deleted', 'lost', 'quarantined')`),
@@ -230,6 +305,14 @@ export const workspaceCheckpoints = pgTable(
 		deletedAt: timestamptz("deleted_at"),
 	},
 	(table) => [
+		check(
+			"workspace_checkpoints_state_check",
+			sql`${table.state} IN ${sqlValues(CHECKPOINT_STATES)}`,
+		),
+		check(
+			"workspace_checkpoints_conversation_restore_check",
+			sql`${table.conversationRestore} IN ${sqlValues(CONVERSATION_RESTORE_CAPABILITIES)}`,
+		),
 		index("workspace_checkpoints_principal_state").on(
 			table.principalId,
 			table.state,
@@ -260,6 +343,11 @@ export const workspaceOperations = pgTable(
 		completedAt: timestamptz("completed_at"),
 	},
 	(table) => [
+		check("workspace_operations_kind_check", sql`${table.kind} IN ${sqlValues(OPERATION_KINDS)}`),
+		check(
+			"workspace_operations_state_check",
+			sql`${table.state} IN ${sqlValues(OPERATION_STATES)}`,
+		),
 		unique().on(table.principalId, table.kind, table.idempotencyKey),
 		index("workspace_operations_due").on(table.state, table.updatedAt),
 	],
@@ -321,7 +409,21 @@ export const workspaceStateHistory = pgTable(
 		reasonCode: text("reason_code"),
 		occurredAt: timestamptz("occurred_at").notNull(),
 	},
-	(table) => [index("workspace_state_history_ws").on(table.workspaceId, table.occurredAt)],
+	(table) => [
+		check(
+			"workspace_state_history_from_check",
+			sql`${table.fromState} IS NULL OR ${table.fromState} IN ${sqlValues(WORKSPACE_STATES)}`,
+		),
+		check(
+			"workspace_state_history_to_check",
+			sql`${table.toState} IN ${sqlValues(WORKSPACE_STATES)}`,
+		),
+		check(
+			"workspace_state_history_reason_check",
+			sql`${table.reasonCode} IS NULL OR ${table.reasonCode} IN ${sqlValues(REASON_CODES)}`,
+		),
+		index("workspace_state_history_ws").on(table.workspaceId, table.occurredAt),
+	],
 );
 
 export const workspaceLogs = pgTable(

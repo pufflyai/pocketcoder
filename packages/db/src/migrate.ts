@@ -6,7 +6,7 @@ import { advisoryLockKey, assertValidSchema } from "./schema";
 
 // Drizzle migrations run on one reserved connection under a schema-scoped
 // advisory lock. search_path lets the generated, unqualified DDL target the
-// configurable Pocketcoder schema; all application queries remain qualified.
+// configurable PocketCoder schema; all application queries remain qualified.
 
 const MIGRATIONS_TABLE = "__drizzle_migrations";
 

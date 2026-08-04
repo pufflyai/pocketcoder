@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CursorPageSchema, CursorQuerySchema } from "./pagination";
 
 export const CONVERSATION_ROLES = ["user", "assistant", "system", "tool"] as const;
 export type ConversationRole = (typeof CONVERSATION_ROLES)[number];
@@ -21,9 +22,13 @@ export const ConversationMessageResourceSchema = ConversationMessageInputSchema.
 });
 export type ConversationMessageResource = z.infer<typeof ConversationMessageResourceSchema>;
 
-export const ConversationListQuerySchema = z.object({
-	after: z.coerce.number().int().nonnegative().default(0),
-	limit: z.coerce.number().int().positive().max(200).default(100),
+export const ConversationListQuerySchema = CursorQuerySchema(200, 100);
+
+export const ConversationPageSchema = CursorPageSchema(ConversationMessageResourceSchema).extend({
+	retention: z.object({
+		status: z.literal("retained"),
+		expires_at: z.iso.datetime().nullable(),
+	}),
 });
 
 export const CONVERSATION_RESUME_REASONS = ["filesystem_only", "capability_unknown"] as const;

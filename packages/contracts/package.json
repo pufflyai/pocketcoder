@@ -1,8 +1,14 @@
 {
 	"name": "@pstdio/pocketcoder-contracts",
+	"nx": {
+		"tags": [
+			"scope:contracts",
+			"type:library"
+		]
+	},
 	"version": "0.1.0",
-	"private": true,
-	"description": "Schemas and protocol contracts for Pocketcoder.",
+	"private": false,
+	"description": "Runtime schemas and protocol contracts for PocketCoder.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -11,16 +17,25 @@
 		"directory": "packages/contracts"
 	},
 	"files": [
+		"dist",
 		"src",
 		"!src/**/*.test.ts"
 	],
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./src/index.ts",
+			"bun": "./src/index.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"publishConfig": {
+		"access": "public"
 	},
 	"engines": {
 		"bun": ">=1.3.14"
 	},
 	"scripts": {
+		"build": "bun build ./src/index.ts --outdir ./dist --target node --packages external",
 		"test": "bun test",
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},

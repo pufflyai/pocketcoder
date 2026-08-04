@@ -3,6 +3,7 @@ import { parseMachineKey, verifySecret } from "@pstdio/pocketcoder-auth";
 import { ApiError, errorEnvelope, hasScope, type Scope } from "@pstdio/pocketcoder-contracts";
 import type { PrincipalRow, Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Context, MiddlewareHandler } from "hono";
+import type { StructuredLogger } from "./observability";
 
 export interface AppVariables {
 	requestId: string;
@@ -13,9 +14,35 @@ export interface AppVariables {
 export type AppEnv = { Variables: AppVariables };
 
 export const requestId: MiddlewareHandler<AppEnv> = async (c, next) => {
-	c.set("requestId", randomUUID());
+	const candidate = c.req.header("x-request-id");
+	const id = candidate && /^[A-Za-z0-9._-]{1,128}$/.test(candidate) ? candidate : randomUUID();
+	c.set("requestId", id);
+	c.header("x-request-id", id);
 	await next();
 };
+
+export function requestLogging(logger: StructuredLogger): MiddlewareHandler<AppEnv> {
+	return async (context, next) => {
+		const started = performance.now();
+		await next();
+		const segments = new URL(context.req.url).pathname.split("/");
+		const workspaceIndex = segments.indexOf("workspaces");
+		const operationIndex = segments.indexOf("operations");
+		logger.info("request.completed", {
+			request_id: context.get("requestId"),
+			method: context.req.method,
+			path: new URL(context.req.url).pathname,
+			status: context.res.status,
+			duration_ms: Math.round((performance.now() - started) * 1000) / 1000,
+			...(workspaceIndex >= 0 && segments[workspaceIndex + 1]
+				? { workspace_id: segments[workspaceIndex + 1] }
+				: {}),
+			...(operationIndex >= 0 && segments[operationIndex + 1]
+				? { operation_id: segments[operationIndex + 1] }
+				: {}),
+		});
+	};
+}
 
 export function machineAuth(store: Store, pepper: string): MiddlewareHandler<AppEnv> {
 	return async (c, next) => {
@@ -56,11 +83,16 @@ export function requireScope(scope: Scope): MiddlewareHandler<AppEnv> {
 	};
 }
 
-export function handleError(err: unknown, c: Context<AppEnv>): Response {
-	const id = c.get("requestId") ?? randomUUID();
-	if (err instanceof ApiError) {
-		return c.json(errorEnvelope(err.code, err.message, id, err.details), err.status as 400);
-	}
-	console.error(`[pocketcoder] request ${id} failed:`, err instanceof Error ? err.message : err);
-	return c.json(errorEnvelope("internal.error", "Internal error.", id), 500);
+export function errorHandler(logger: StructuredLogger) {
+	return (err: unknown, c: Context<AppEnv>): Response => {
+		const id = c.get("requestId") ?? randomUUID();
+		if (err instanceof ApiError) {
+			return c.json(errorEnvelope(err.code, err.message, id, err.details), err.status as 400);
+		}
+		logger.error("request.failed", {
+			request_id: id,
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return c.json(errorEnvelope("internal.error", "Internal error.", id), 500);
+	};
 }

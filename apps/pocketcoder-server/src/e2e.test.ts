@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
-import { FakeDriver, MemoryStore } from "@pstdio/pocketcoder-testkit";
+import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { supervise } from "../../pocketcoder-agent/src/supervisor";
 import { buildServer } from "./app";
 

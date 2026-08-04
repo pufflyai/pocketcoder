@@ -1,8 +1,14 @@
 {
 	"name": "@pstdio/pocketcoder-runtime-core",
+	"nx": {
+		"tags": [
+			"scope:runtime",
+			"type:application"
+		]
+	},
 	"version": "0.1.0",
 	"private": true,
-	"description": "Scheduler and runtime primitives for Pocketcoder.",
+	"description": "Scheduler and runtime primitives for PocketCoder.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -26,9 +32,11 @@
 	},
 	"dependencies": {
 		"@pstdio/pocketcoder-auth": "workspace:*",
-		"@pstdio/pocketcoder-contracts": "workspace:*"
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-runtime-contracts": "workspace:*"
 	},
 	"devDependencies": {
+		"@pstdio/pocketcoder-memory-store": "workspace:*",
 		"@pstdio/pocketcoder-testkit": "workspace:*"
 	}
 }

@@ -90,11 +90,11 @@ export class StatusPoller {
 			}
 			this.controller = new AbortController();
 			try {
-				const change = await this.controlPlane.readChange(
+				const change = await this.controlPlane.workspaces.change(
 					this.workspaceId,
 					this.cursor,
 					this.waitSeconds,
-					this.controller.signal,
+					{ signal: this.controller.signal },
 				);
 				backoffMs = 1_000;
 				this.cursor = change.cursor;

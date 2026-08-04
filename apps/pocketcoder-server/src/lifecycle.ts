@@ -8,21 +8,25 @@ import {
 	KubernetesPvcStorageDriver,
 	KubernetesSecretResolver,
 } from "@pstdio/pocketcoder-drivers";
+import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
 	loadTemplateDir,
 	OutboxDispatcher,
+	RuntimeMetrics,
 	reconcilePersistence,
 	reconcileProviders,
 	resolveWarmPools,
 	type Store,
 } from "@pstdio/pocketcoder-runtime-core";
-import { MemoryStore } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
-import { loadConfig, type ServerConfig } from "./config";
+import { configSummary, loadConfig, type ServerConfig } from "./config";
+import { Readiness } from "./health";
+import { createStructuredLogger } from "./observability";
+import { SERVER_IDLE_TIMEOUT_SECONDS } from "./server-timing";
 
 export type ServerLog = (message: string) => void;
 
-export interface RunningPocketcoderServer {
+export interface RunningPocketCoderServer {
 	config: ServerConfig;
 	url: string;
 	stop(): Promise<void>;
@@ -60,16 +64,32 @@ async function loadConfiguredTemplates(
 	}
 }
 
+async function requireEgressImageForRestrictedTemplates(store: Store, config: ServerConfig) {
+	const restricted = (await store.listTemplates(null)).some(
+		(template) => template.status === "active" && template.spec.network.mode === "restricted",
+	);
+	if (restricted && !config.egressImage) {
+		throw new Error(
+			"POCKETCODER_EGRESS_IMAGE is required when an active template uses restricted networking",
+		);
+	}
+}
+
 function createWorkspaceDriver(config: ServerConfig) {
+	const egress = {
+		...(config.egressImage ? { egressImage: config.egressImage } : {}),
+		egressSigningKey: config.eventSigningKey,
+	};
 	if (config.driverKind === "kubernetes") {
 		return new KubernetesDriver({
+			...egress,
 			namespace: config.kubernetesNamespace,
 			...(config.kubernetesServiceAccount
 				? { serviceAccountName: config.kubernetesServiceAccount }
 				: {}),
 		});
 	}
-	return new DockerDriver(config.inputDir ? { inputDir: config.inputDir } : {});
+	return new DockerDriver({ ...(config.inputDir ? { inputDir: config.inputDir } : {}), ...egress });
 }
 
 function createStorageDriver(config: ServerConfig) {
@@ -103,17 +123,21 @@ async function reconcileStartup(
 	driver: ReturnType<typeof createWorkspaceDriver>,
 	storageDriver: ReturnType<typeof createStorageDriver>,
 	log: ServerLog,
-): Promise<void> {
+	metrics: RuntimeMetrics,
+): Promise<boolean> {
 	try {
 		await reconcileProviders({
 			store,
 			driver,
 			...(storageDriver ? { storageDriver } : {}),
 			log,
+			metrics,
 		});
-		await reconcilePersistence({ store, driver, storageDriver, log });
+		await reconcilePersistence({ store, driver, storageDriver, log, metrics });
+		return true;
 	} catch (error) {
-		log(`startup reconciliation skipped: ${String(error)}`);
+		log(`startup reconciliation failed: ${String(error)}`);
+		return false;
 	}
 }
 
@@ -135,14 +159,20 @@ function startExclusiveTimer(
 	}, intervalMs);
 }
 
-export async function startPocketcoderServer(
+export async function startPocketCoderServer(
 	config: ServerConfig = loadConfig(),
 	options: { log?: ServerLog; instanceId?: string } = {},
-): Promise<RunningPocketcoderServer> {
+): Promise<RunningPocketCoderServer> {
 	const log = options.log ?? defaultLog;
+	const logger = createStructuredLogger((record) => log(JSON.stringify(record)));
+	const metrics = new RuntimeMetrics();
+	log(`config: ${JSON.stringify(configSummary(config))}`);
 	const store = await initializeStore(config, log);
 	try {
+		await store.acquireCoordinatorLease();
+		log("coordinator lease acquired");
 		await loadConfiguredTemplates(store, config.templateDir, log);
+		await requireEgressImageForRestrictedTemplates(store, config);
 		const driver = createWorkspaceDriver(config);
 		const warmPools = await resolveWarmPools(
 			store,
@@ -155,32 +185,48 @@ export async function startPocketcoderServer(
 			(await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
 		const storageDriver = createStorageDriver(config);
 		const secretResolver = createSecretResolver(config);
+		const readiness = new Readiness({ reconciliation: "pending" }, metrics);
 		const { app, websocket, scheduler, persistence, warmPool } = buildServer({
 			store,
 			driver,
 			...(storageDriver ? { storageDriver } : {}),
 			...(secretResolver ? { secretResolver } : {}),
 			pepper: config.pepper,
+			eventSigningKey: config.eventSigningKey,
 			limits: config.limits,
 			workspaceServerUrl: config.workspaceServerUrl,
 			persistenceLimits: config.persistenceLimits,
 			...(options.instanceId ? { instanceId: options.instanceId } : {}),
-			log,
+			logger,
+			metrics,
 			warmPools,
+			readiness,
 		});
 
-		await reconcileStartup(store, driver, storageDriver, log);
+		readiness.set(
+			"reconciliation",
+			(await reconcileStartup(store, driver, storageDriver, log, metrics)) ? "ok" : "failed",
+		);
 
 		const outbox = new OutboxDispatcher({
 			store,
 			sinkUrl: config.eventSinkUrl,
 			sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
 			onError: (context, error) => log(`${context}: ${String(error)}`),
+			metrics,
 		});
 
 		const schedulerTimer = startExclusiveTimer(
 			config.schedulerIntervalMs,
-			() => scheduler.tick(),
+			async () => {
+				try {
+					await scheduler.tick();
+					readiness.set("coordinator", "ok");
+				} catch (error) {
+					readiness.set("coordinator", "failed");
+					throw error;
+				}
+			},
 			"scheduler tick failed",
 			log,
 		);
@@ -216,6 +262,7 @@ export async function startPocketcoderServer(
 			server = Bun.serve({
 				hostname: config.listenHost,
 				port: config.listenPort,
+				idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
 				fetch: app.fetch,
 				websocket,
 			});
@@ -263,11 +310,11 @@ export async function startPocketcoderServer(
 	}
 }
 
-export async function runPocketcoderServerUntilSignal(
+export async function runPocketCoderServerUntilSignal(
 	config: ServerConfig = loadConfig(),
 	options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<void> {
-	const running = await startPocketcoderServer(config, options);
+	const running = await startPocketCoderServer(config, options);
 	await new Promise<void>((resolve, reject) => {
 		let stopping = false;
 		const shutdown = () => {

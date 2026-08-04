@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { canonicalJson, parseTemplateManifest } from "../../packages/contracts/src/index";
+import { canonicalJson, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 
 export interface LocalCommandResult {
 	stdout: string;

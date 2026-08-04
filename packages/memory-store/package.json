@@ -1,0 +1,28 @@
+{
+	"name": "@pstdio/pocketcoder-memory-store",
+	"nx": {
+		"tags": [
+			"scope:persistence",
+			"type:adapter"
+		]
+	},
+	"version": "0.1.0",
+	"private": true,
+	"description": "In-memory PocketCoder store adapter for development and tests.",
+	"type": "module",
+	"license": "MIT",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --project ./tsconfig.json --noEmit"
+	},
+	"dependencies": {
+		"@pstdio/pocketcoder-contracts": "workspace:*",
+		"@pstdio/pocketcoder-runtime-contracts": "workspace:*"
+	},
+	"devDependencies": {
+		"@pstdio/pocketcoder-testkit": "workspace:*"
+	}
+}

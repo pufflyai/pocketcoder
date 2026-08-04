@@ -12,8 +12,8 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { loadConfig, type ServerConfig } from "../../../apps/pocketcoder-server/src/config";
-import { runPocketcoderServerUntilSignal } from "../../../apps/pocketcoder-server/src/lifecycle";
+import { loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
+import { runPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/lifecycle";
 
 interface ServerState {
 	version: 1;
@@ -111,7 +111,7 @@ function processIdentityMatches(state: ServerState): boolean {
 
 async function healthIdentity(url: string): Promise<string | null> {
 	try {
-		const response = await fetch(`${url}/healthz`, {
+		const response = await fetch(`${url}/readyz`, {
 			signal: AbortSignal.timeout(2000),
 		});
 		if (!response.ok) return null;
@@ -183,7 +183,7 @@ function timeoutSeconds(value: number | undefined, fallback: number): number {
 
 export async function startManagedServer(options: ServerProcessOptions): Promise<void> {
 	if (options.foreground) {
-		await runPocketcoderServerUntilSignal(loadConfig());
+		await runPocketCoderServerUntilSignal(loadConfig());
 		return;
 	}
 
@@ -240,7 +240,7 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
 }
 
 export async function runManagedServer(instanceToken: string): Promise<void> {
-	await runPocketcoderServerUntilSignal(loadConfig(), { instanceId: instanceToken });
+	await runPocketCoderServerUntilSignal(loadConfig(), { instanceId: instanceToken });
 }
 
 export async function printManagedServerStatus(json: boolean): Promise<void> {

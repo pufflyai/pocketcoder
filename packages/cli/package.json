@@ -1,8 +1,14 @@
 {
 	"name": "@pstdio/pocketcoder-cli",
+	"nx": {
+		"tags": [
+			"scope:cli",
+			"type:app"
+		]
+	},
 	"version": "0.3.0",
 	"private": false,
-	"description": "Operator and diagnostics CLI for Pocketcoder.",
+	"description": "Operator and diagnostics CLI for PocketCoder.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -36,6 +42,8 @@
 		"yargs": "^17.7.2"
 	},
 	"devDependencies": {
+		"@pstdio/pocketcoder-client": "workspace:*",
+		"@pstdio/pocketcoder-server": "workspace:*",
 		"@pstdio/pocketcoder-auth": "workspace:*",
 		"@pstdio/pocketcoder-contracts": "workspace:*",
 		"@pstdio/pocketcoder-db": "workspace:*",
