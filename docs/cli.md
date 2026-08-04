@@ -66,6 +66,8 @@ pcd db status      # per-migration applied/pending/DRIFTED
 pcd principals create --name example-backend \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,logs:read \
   --templates echo-harness,pi-harness    # or '*' for all templates
+pcd principals update --name example-backend \
+  --scopes templates:read,workspaces:create,workspaces:read,services:relay,logs:read
 pcd principals list
 
 pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
@@ -75,10 +77,14 @@ pcd keys revoke --id <key-id>
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
 `workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
 `checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,
-`logs:read`, `admin`. A key's effective
-scopes are the intersection of its own scopes and its principal's. Keys are
-displayed once and stored as keyed digests; revocation applies on the next
-request.
+`logs:read`, `admin`. A key issued without `--scopes` inherits its principal's
+current scopes, including later changes made by `principals update`. Passing
+`--scopes` creates a permanently narrower key whose effective scopes are the
+intersection of that restriction and its principal's current scopes. Omitting
+`--templates` from `principals update` preserves the current allowlist. Keys are
+displayed once and stored as keyed digests; revocation applies on the next request.
+Keys issued by older releases retain their stored restriction; reissue them once
+without `--scopes` to opt into live inheritance.
 
 ## Templates
 

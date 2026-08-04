@@ -43,7 +43,8 @@ async function createTestServer(limits = {}): Promise<TestServer> {
 		id: key.id,
 		principalId: principal.id,
 		secretDigest: key.secretDigest,
-		scopes: principal.scopes,
+		// An empty key scope set means the key inherits the principal's live scopes.
+		scopes: [],
 		createdAt: new Date(),
 		expiresAt: null,
 		revokedAt: null,
@@ -133,6 +134,19 @@ describe("authentication", () => {
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as { error: { code: string } };
 		expect(body.error.code).toBe("auth.missing_scope");
+	});
+
+	test("default-issued keys inherit current principal scopes", async () => {
+		const { app, store, token } = await createTestServer();
+		expect((await app.request("/v1/templates", authed(token))).status).toBe(200);
+		const principal = await store.getPrincipalByName("test-backend");
+		if (!principal) throw new Error("expected test principal");
+		await store.updatePrincipal(
+			principal.id,
+			principal.scopes.filter((scope) => scope !== "templates:read"),
+			principal.templateNames,
+		);
+		expect((await app.request("/v1/templates", authed(token))).status).toBe(403);
 	});
 });
 
@@ -703,6 +717,29 @@ describe("service relay", () => {
 		);
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({ status: "stable" });
+	});
+
+	test("offers a direct AgentAPI alias without exposing the service abstraction", async () => {
+		const server = await createTestServer();
+		const id = await readyWorkspace(server);
+		const { sent } = fakeAgent(server, id, (frame) => {
+			server.hub.resolveRelay(server.hub.get(id) as never, {
+				request_id: frame.payload.request_id,
+				status: 200,
+				headers: { "content-type": "application/json" },
+				body_b64: Buffer.from(JSON.stringify({ status: "stable" })).toString("base64"),
+			});
+		});
+		const res = await server.app.request(`/v1/workspaces/${id}/agent/status`, authed(server.token));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toEqual({ status: "stable" });
+		expect(
+			sent.map((value) => JSON.parse(value) as { payload: { service: string; path: string } }),
+		).toContainEqual(
+			expect.objectContaining({
+				payload: expect.objectContaining({ service: "agent", path: "/status" }),
+			}),
+		);
 	});
 });
 

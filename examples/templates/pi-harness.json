@@ -16,8 +16,9 @@
 				"timeoutSeconds": 30
 			}
 		],
-		"harness": {
-			"command": ["/usr/local/bin/run-agentapi-pi"],
+		"agent": {
+			"type": "custom",
+			"command": ["/usr/local/bin/run-pi"],
 			"cwd": "/workspace",
 			"env": {
 				"PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
@@ -37,22 +38,6 @@
 			"idle": "20m",
 			"disconnectGrace": "5m",
 			"terminateGrace": "15s"
-		},
-		"services": {
-			"agent": {
-				"baseUrl": "http://127.0.0.1:3284",
-				"healthPath": "/status",
-				"routes": [
-					{ "method": "GET", "path": "/status", "maxResponseBytes": 65536 },
-					{ "method": "GET", "path": "/messages", "query": ["after"], "maxResponseBytes": 1048576 },
-					{
-						"method": "POST",
-						"path": "/message",
-						"maxRequestBytes": 65536,
-						"maxResponseBytes": 65536
-					}
-				]
-			}
 		},
 		"security": {
 			"uid": 10001,

@@ -410,6 +410,19 @@ export class PostgresStore implements Store {
 		return rows.map((r) => this.principalFromRow(r));
 	}
 
+	async updatePrincipal(
+		id: string,
+		scopes: string[],
+		templateNames: string[],
+	): Promise<PrincipalRow | null> {
+		const updated = (await this.sql.unsafe(
+			`UPDATE ${this.t("principals")} SET scopes = $2::text[], template_names = $3::text[]
+				 WHERE id = $1 RETURNING *`,
+			[id, pgTextArray(scopes), pgTextArray(templateNames)],
+		)) as Row[];
+		return updated[0] ? this.principalFromRow(updated[0]) : null;
+	}
+
 	async setPrincipalDisabled(id: string, disabled: boolean): Promise<void> {
 		await this.sql.unsafe(
 			`UPDATE ${this.t("principals")}

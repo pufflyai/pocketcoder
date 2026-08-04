@@ -2,17 +2,20 @@ import { digestOpaque, generateOpaqueSecret, verifyOpaque } from "@pstdio/pocket
 import {
 	type AgentFrame,
 	AgentFrameSchema,
+	agentApiHarness,
 	type ExecSpec,
 	errorEnvelope,
 	HEADER_PROTOCOL,
 	HEADER_RECONNECT,
 	HEADER_REGISTRATION,
 	HEADER_WORKSPACE,
+	isAgentApiNative,
 	isTerminal,
 	MAX_FRAME_BYTES,
 	type ProtocolVersion,
 	SUPPORTED_PROTOCOL_VERSIONS,
 	secretMountPath,
+	templateServices,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
@@ -138,16 +141,19 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 	const sourceMount =
 		sourceSpec &&
 		spec.persistence.mounts.find((mount) => mount.name === sourceSpec.destinationMount);
+	const harness = agentApiHarness(spec);
+	const native = isAgentApiNative(spec);
 	return {
+		agentapi_native: native,
 		setup: spec.setup
 			.filter((step) => step.runOn.includes(row.launchMode))
 			.map((step) => ({ ...step, env: materializeSecretEnv(step.env) })),
 		harness: {
-			...spec.harness,
-			env: materializeSecretEnv(spec.harness.env),
+			...harness,
+			env: materializeSecretEnv(harness.env),
 		},
 		env: materializeSecretEnv(spec.env),
-		services: spec.services,
+		services: templateServices(spec),
 		timeouts: spec.timeouts,
 		security: {
 			writable_memory_paths: spec.security.writableMemoryPaths,
@@ -175,14 +181,15 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 			mounts: spec.persistence.mounts.map(({ name, target }) => ({ name, target })),
 			conversation_restore: row.persistenceCapability,
 		},
-		checkpoint_hook: spec.checkpointHook
-			? {
-					command: spec.checkpointHook.command,
-					timeout_seconds: spec.checkpointHook.timeoutSeconds,
-					env: materializeSecretEnv(spec.checkpointHook.env),
-					...(spec.checkpointHook.cwd ? { cwd: spec.checkpointHook.cwd } : {}),
-				}
-			: null,
+		checkpoint_hook:
+			!native && spec.checkpointHook
+				? {
+						command: spec.checkpointHook.command,
+						timeout_seconds: spec.checkpointHook.timeoutSeconds,
+						env: materializeSecretEnv(spec.checkpointHook.env),
+						...(spec.checkpointHook.cwd ? { cwd: spec.checkpointHook.cwd } : {}),
+					}
+				: null,
 		outputs: spec.outputs,
 	};
 }
@@ -270,7 +277,7 @@ async function handleServiceHealth(deps: WsDeps, frame: ServiceHealthFrame): Pro
 	const health = { ...row.health, [frame.payload.service]: frame.payload.health };
 	await deps.store.updateWorkspace(row.id, { health }, new Date());
 	if (row.state !== "connected") return;
-	const allRequiredHealthy = Object.entries(row.templateSnapshot.spec.services)
+	const allRequiredHealthy = Object.entries(templateServices(row.templateSnapshot.spec))
 		.filter(([, service]) => service.required)
 		.every(([name]) => health[name] === "healthy");
 	if (!allRequiredHealthy) return;

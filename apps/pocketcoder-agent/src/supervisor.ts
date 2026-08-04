@@ -21,6 +21,7 @@ import {
 	parseDurationMs,
 	ServerFrameSchema,
 } from "@pstdio/pocketcoder-contracts";
+import { agentApiConversationMessages } from "./agentapi";
 
 // pocketcoder-agent supervise: PID 1 inside every workspace. It registers with
 // pocketcoder-server over one outbound WSS connection, runs the template's
@@ -185,7 +186,10 @@ class Supervisor {
 	private childPhase: ChildPhase = "starting";
 	private childExit: number | null = null;
 	private shuttingDown = false;
+	private quiescing = false;
 	private agentapi: AgentApiStatus = { state: "unknown" };
+	private lastAgentApiMessageId = -1;
+	private transcriptSync: Promise<void> | null = null;
 	private readonly health = new Map<string, string>();
 	private readonly done: Promise<number>;
 	private finish!: (code: number) => void;
@@ -209,6 +213,20 @@ class Supervisor {
 	}
 
 	async run(): Promise<number> {
+		const shutdown = () => {
+			void this.gracefulShutdown();
+		};
+		process.once("SIGINT", shutdown);
+		process.once("SIGTERM", shutdown);
+		try {
+			return await this.runWorkspace();
+		} finally {
+			process.off("SIGINT", shutdown);
+			process.off("SIGTERM", shutdown);
+		}
+	}
+
+	private async runWorkspace(): Promise<number> {
 		this.connect(true);
 		// Wait until the server delivered the exec spec, then run setup and
 		// start the harness exactly once. Registration failure resolves
@@ -305,8 +323,8 @@ class Supervisor {
 		};
 	}
 
-	private sendFrame(type: AgentFrame["type"], payload: unknown): void {
-		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+	private sendFrame(type: AgentFrame["type"], payload: unknown): boolean {
+		if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
 		this.seq += 1;
 		this.ws.send(
 			JSON.stringify({
@@ -319,6 +337,7 @@ class Supervisor {
 				payload,
 			}),
 		);
+		return true;
 	}
 
 	private async handleMessage(raw: string): Promise<void> {
@@ -439,6 +458,10 @@ class Supervisor {
 	}
 
 	private async prepareCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
+		if (this.exec?.agentapi_native) {
+			await this.prepareAgentApiCheckpoint(operationId, deadlineMs);
+			return;
+		}
 		const hook = this.exec?.checkpoint_hook;
 		this.sendFrame("checkpoint_status", {
 			operation_id: operationId,
@@ -489,6 +512,47 @@ class Supervisor {
 		}
 	}
 
+	private async prepareAgentApiCheckpoint(operationId: string, deadlineMs: number): Promise<void> {
+		this.quiescing = true;
+		this.sendFrame("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
+		const deadline = Date.now() + deadlineMs;
+		try {
+			let stable = false;
+			while (Date.now() < deadline) {
+				const state = await this.readAgentApiStatus(Math.min(3000, deadline - Date.now()));
+				if (state === "stable") {
+					stable = true;
+					break;
+				}
+				await Bun.sleep(100);
+			}
+			if (!stable) throw new Error("AgentAPI did not become stable");
+			await this.syncAgentApiMessages();
+			const child = this.child;
+			if (!child || this.childExit !== null) throw new Error("AgentAPI is not running");
+			child.kill("SIGTERM");
+			const remaining = deadline - Date.now();
+			if (remaining <= 0) throw new Error("AgentAPI shutdown deadline exceeded");
+			const code = await Promise.race([
+				child.exited,
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
+			]);
+			if (code === null) {
+				child.kill("SIGKILL");
+				throw new Error("AgentAPI shutdown deadline exceeded");
+			}
+			if (code !== 0 && code !== 143) throw new Error(`AgentAPI exited ${code}`);
+			this.sendFrame("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
+		} catch (error) {
+			if (this.childExit === null) this.quiescing = false;
+			this.sendFrame("checkpoint_status", {
+				operation_id: operationId,
+				phase: "failed",
+				detail: error instanceof Error ? error.message.slice(0, 512) : "quiesce failed",
+			});
+		}
+	}
+
 	// --- Harness ---
 
 	private startHarness(exec: ExecSpec): void {
@@ -523,6 +587,7 @@ class Supervisor {
 			this.childExit = code;
 			await Promise.all(pumps);
 			this.sendFrame("process_state", { phase: "exited", exit_code: code });
+			if (this.quiescing) return;
 			await this.flushAndClose();
 			this.exitWith(code);
 		});
@@ -576,6 +641,17 @@ class Supervisor {
 		}
 		const beginsAgentTurn =
 			request.service === "agent" && request.method === "POST" && request.path === "/message";
+		if (this.quiescing && beginsAgentTurn) {
+			this.sendFrame("proxy_response", {
+				request_id: request.request_id,
+				status: 409,
+				headers: { "content-type": "application/json" },
+				body_b64: Buffer.from(JSON.stringify({ error: "workspace is quiescing" })).toString(
+					"base64",
+				),
+			});
+			return;
+		}
 		if (beginsAgentTurn) this.setAgentState("running");
 		const url = new URL(request.path, service.baseUrl);
 		for (const [key, value] of Object.entries(request.query)) {
@@ -654,6 +730,9 @@ class Supervisor {
 				const body = (await res.json().catch(() => null)) as { status?: string } | null;
 				if (body?.status === "running" || body?.status === "stable") {
 					this.setAgentState(body.status);
+					if (body.status === "stable" && exec.agentapi_native) {
+						void this.syncAgentApiMessages().catch(() => {});
+					}
 				}
 			}
 		} catch {
@@ -662,6 +741,53 @@ class Supervisor {
 		if (force || this.health.get(name) !== health) {
 			this.health.set(name, health);
 			this.sendFrame("service_health", { service: name, health });
+		}
+	}
+
+	private async readAgentApiStatus(timeoutMs: number): Promise<"running" | "stable" | null> {
+		const service = this.exec?.services.agent;
+		if (!service || timeoutMs <= 0) return null;
+		try {
+			const response = await fetch(new URL(service.healthPath, service.baseUrl), {
+				signal: AbortSignal.timeout(timeoutMs),
+			});
+			if (!response.ok) return null;
+			const body = (await response.json()) as { status?: unknown };
+			if (body.status !== "running" && body.status !== "stable") return null;
+			this.setAgentState(body.status);
+			return body.status;
+		} catch {
+			return null;
+		}
+	}
+
+	private syncAgentApiMessages(): Promise<void> {
+		if (this.transcriptSync) return this.transcriptSync;
+		this.transcriptSync = this.performAgentApiMessageSync().finally(() => {
+			this.transcriptSync = null;
+		});
+		return this.transcriptSync;
+	}
+
+	private async performAgentApiMessageSync(): Promise<void> {
+		const service = this.exec?.services.agent;
+		if (!service || this.agentapi.state !== "stable") return;
+		try {
+			const response = await fetch(new URL("/messages", service.baseUrl), {
+				signal: AbortSignal.timeout(3000),
+			});
+			if (!response.ok) throw new Error(`AgentAPI messages returned ${response.status}`);
+			for (const message of agentApiConversationMessages(await response.json())) {
+				const id = Number(message.message_id.slice("agentapi:".length));
+				if (id <= this.lastAgentApiMessageId) continue;
+				if (!this.sendFrame("conversation_message", message)) return;
+				this.lastAgentApiMessageId = id;
+			}
+		} catch (error) {
+			this.log(
+				`AgentAPI transcript sync failed: ${error instanceof Error ? error.message : "unknown error"}`,
+			);
+			throw error;
 		}
 	}
 

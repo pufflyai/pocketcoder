@@ -15,10 +15,9 @@ import {
 // The execution surface a template owns:
 //   - `spec.command`  container entrypoint (the pocketcoder-agent supervisor);
 //   - `spec.setup`    ordered setup commands run before the harness starts;
-//   - `spec.harness`  the long-running conversation harness (e.g. AgentAPI
-//                     wrapping a coding-agent CLI) supervised as one process
-//                     group;
-//   - `spec.services` allowlisted loopback routes the control plane may relay.
+//   - `spec.agent`    the preferred coding-agent command PocketCoder wraps in
+//                     its fixed AgentAPI boundary;
+//   - `spec.harness` and `spec.services` remain a legacy compatibility profile.
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
@@ -60,6 +59,13 @@ export const HarnessSchema = z.object({
 	command: CommandSchema,
 	env: EnvSchema.default({}),
 	cwd: z.string().regex(ABS_PATH_RE).optional(),
+});
+
+export const AgentSchema = HarnessSchema.extend({
+	type: z
+		.string()
+		.regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
+		.default("custom"),
 });
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -150,35 +156,93 @@ export const CheckpointHookSchema = z.object({
 	cwd: z.string().regex(ABS_PATH_RE).optional(),
 });
 
-export const TemplateSpecSchema = z.object({
-	version: z.string().regex(SEMVER_RE),
-	image: z.string().regex(IMAGE_DIGEST_RE, {
-		message: "image must be digest-pinned (repo@sha256:<64 hex>)",
-	}),
-	command: CommandSchema.default([
-		"/usr/local/bin/pocketcoder-agent",
-		"supervise",
-		"--launch-input",
-		"/run/pocketcoder/input",
-	]),
-	setup: z.array(SetupStepSchema).max(32).default([]),
-	harness: HarnessSchema,
-	env: EnvSchema.default({}),
-	resources: ResourcesSchema,
-	timeouts: TimeoutsSchema.prefault({}),
-	services: z.record(z.string().regex(NAME_RE), ServiceSchema).default({}),
-	security: SecuritySchema.prefault({}),
-	maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
-	compat: z
-		.object({
-			agent: z.string().optional(),
-			agentapi: z.string().optional(),
-		})
-		.default({}),
-	persistence: PersistenceSpecSchema.prefault({}),
-	source: SourceSpecSchema.nullable().default(null),
-	checkpointHook: CheckpointHookSchema.optional(),
-	outputs: z.record(z.string().regex(NAME_RE), OutputDeclarationSchema).default({}),
+const TemplateSpecInputSchema = z
+	.object({
+		version: z.string().regex(SEMVER_RE),
+		image: z.string().regex(IMAGE_DIGEST_RE, {
+			message: "image must be digest-pinned (repo@sha256:<64 hex>)",
+		}),
+		command: CommandSchema.default([
+			"/usr/local/bin/pocketcoder-agent",
+			"supervise",
+			"--launch-input",
+			"/run/pocketcoder/input",
+		]),
+		setup: z.array(SetupStepSchema).max(32).default([]),
+		agent: AgentSchema.optional(),
+		harness: HarnessSchema.optional(),
+		env: EnvSchema.default({}),
+		resources: ResourcesSchema,
+		timeouts: TimeoutsSchema.prefault({}),
+		services: z.record(z.string().regex(NAME_RE), ServiceSchema).optional(),
+		security: SecuritySchema.prefault({}),
+		maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
+		compat: z
+			.object({
+				agent: z.string().optional(),
+				agentapi: z.string().optional(),
+			})
+			.default({}),
+		persistence: PersistenceSpecSchema.prefault({}),
+		source: SourceSpecSchema.nullable().default(null),
+		checkpointHook: CheckpointHookSchema.optional(),
+		outputs: z.record(z.string().regex(NAME_RE), OutputDeclarationSchema).default({}),
+	})
+	.superRefine((spec, ctx) => {
+		if (!spec.agent && !spec.harness) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["harness"],
+				message: "either agent or harness is required",
+			});
+		}
+		if (!spec.agent) return;
+		for (const field of ["harness", "services", "checkpointHook"] as const) {
+			if (spec[field] === undefined) continue;
+			ctx.addIssue({
+				code: "custom",
+				path: [field],
+				message: `agent cannot be combined with ${field}`,
+			});
+		}
+	});
+
+type TemplateSpecCommon = Omit<
+	z.infer<typeof TemplateSpecInputSchema>,
+	"agent" | "harness" | "services" | "checkpointHook"
+>;
+
+export type Agent = z.infer<typeof AgentSchema>;
+export type Harness = z.infer<typeof HarnessSchema>;
+export type CheckpointHook = z.infer<typeof CheckpointHookSchema>;
+export type TemplateService = z.infer<typeof ServiceSchema>;
+export type TemplateServiceRoute = z.infer<typeof ServiceRouteSchema>;
+
+export type TemplateSpec =
+	| (TemplateSpecCommon & {
+			agent: Agent;
+			harness?: never;
+			services?: never;
+			checkpointHook?: never;
+	  })
+	| (TemplateSpecCommon & {
+			agent?: never;
+			harness: Harness;
+			services: Record<string, TemplateService>;
+			checkpointHook?: CheckpointHook;
+	  });
+
+export const TemplateSpecSchema = TemplateSpecInputSchema.transform((spec): TemplateSpec => {
+	if (spec.agent) {
+		const { harness: _harness, services: _services, checkpointHook: _hook, ...native } = spec;
+		return { ...native, agent: spec.agent };
+	}
+	const { agent: _agent, ...legacy } = spec;
+	return {
+		...legacy,
+		harness: spec.harness as Harness,
+		services: spec.services ?? {},
+	};
 });
 
 export const TemplateManifestSchema = z
@@ -200,30 +264,65 @@ export const TemplateManifestSchema = z
 	});
 
 export type TemplateManifest = z.infer<typeof TemplateManifestSchema>;
-export type TemplateSpec = z.infer<typeof TemplateSpecSchema>;
-export type TemplateService = z.infer<typeof ServiceSchema>;
-export type TemplateServiceRoute = z.infer<typeof ServiceRouteSchema>;
 export type SetupStep = z.infer<typeof SetupStepSchema>;
-export type Harness = z.infer<typeof HarnessSchema>;
 export type SourceSpec = z.infer<typeof SourceSpecSchema>;
-export type CheckpointHook = z.infer<typeof CheckpointHookSchema>;
+
+const AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
+	baseUrl: "http://127.0.0.1:3284",
+	routes: [
+		{ method: "GET", path: "/status" },
+		{ method: "GET", path: "/messages", query: ["after"] },
+		{ method: "POST", path: "/message" },
+	],
+});
+
+export function isAgentApiNative(
+	spec: TemplateSpec,
+): spec is Extract<TemplateSpec, { agent: Agent }> {
+	return "agent" in spec && spec.agent !== undefined;
+}
+
+export function agentApiHarness(spec: TemplateSpec): Harness {
+	if (!isAgentApiNative(spec)) return spec.harness;
+	return {
+		command: [
+			"/usr/local/bin/agentapi",
+			"server",
+			"--type",
+			spec.agent.type,
+			"--port",
+			"3284",
+			"--",
+			...spec.agent.command,
+		],
+		env: spec.agent.env,
+		...(spec.agent.cwd ? { cwd: spec.agent.cwd } : {}),
+	};
+}
+
+export function templateServices(spec: TemplateSpec): Record<string, TemplateService> {
+	return isAgentApiNative(spec) ? { agent: AGENTAPI_SERVICE } : spec.services;
+}
 
 function envSources(spec: TemplateSpec): Array<[Array<string | number>, Record<string, string>]> {
 	const sources: Array<[Array<string | number>, Record<string, string>]> = [
 		[["spec", "env"], spec.env],
-		[["spec", "harness", "env"], spec.harness.env],
+		[
+			isAgentApiNative(spec) ? ["spec", "agent", "env"] : ["spec", "harness", "env"],
+			agentApiHarness(spec).env,
+		],
 	];
 	for (const [i, step] of spec.setup.entries()) {
 		sources.push([["spec", "setup", i, "env"], step.env]);
 	}
-	if (spec.checkpointHook) {
+	if (!isAgentApiNative(spec) && spec.checkpointHook) {
 		sources.push([["spec", "checkpointHook", "env"], spec.checkpointHook.env]);
 	}
 	return sources;
 }
 
 function validateServices(spec: TemplateSpec, ctx: z.RefinementCtx): void {
-	for (const [serviceName, service] of Object.entries(spec.services)) {
+	for (const [serviceName, service] of Object.entries(templateServices(spec))) {
 		if (!isLoopbackBaseUrl(service.baseUrl)) {
 			ctx.addIssue({
 				code: "custom",
@@ -534,7 +633,7 @@ export function findRoute(
 	method: string,
 	path: string,
 ): { service: TemplateService; route: TemplateServiceRoute } | null {
-	const svc = snapshot.spec.services[service];
+	const svc = templateServices(snapshot.spec)[service];
 	if (!svc) return null;
 	const route = svc.routes.find((r) => r.method === method && r.path === path);
 	if (!route) return null;

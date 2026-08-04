@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { findRoute, parseDurationMs, parseTemplateManifest, snapshotOf } from "./index";
+import {
+	agentApiHarness,
+	findRoute,
+	isAgentApiNative,
+	parseDurationMs,
+	parseTemplateManifest,
+	snapshotOf,
+	templateServices,
+} from "./index";
 
 const DIGEST = "a".repeat(64);
 
@@ -26,6 +34,20 @@ function baseManifest(): Record<string, unknown> {
 	};
 }
 
+function nativeManifest(): Record<string, unknown> {
+	const manifest = baseManifest();
+	const spec = manifest.spec as Record<string, unknown>;
+	delete spec.harness;
+	delete spec.services;
+	spec.agent = {
+		type: "codex",
+		command: ["codex", "--full-auto"],
+		cwd: "/workspace",
+		env: { CODEX_HOME: "/state/codex" },
+	};
+	return manifest;
+}
+
 describe("template manifest", () => {
 	test("parses with defaults applied", () => {
 		const parsed = parseTemplateManifest(baseManifest());
@@ -34,6 +56,40 @@ describe("template manifest", () => {
 		expect(parsed.manifest.spec.setup).toEqual([]);
 		expect(parsed.manifest.spec.command[0]).toContain("pocketcoder-agent");
 		expect(parsed.digest.startsWith("sha256:")).toBe(true);
+	});
+
+	test("derives the fixed AgentAPI boundary from a coding-agent command", () => {
+		const parsed = parseTemplateManifest(nativeManifest());
+		const spec = parsed.manifest.spec;
+		expect(isAgentApiNative(spec)).toBe(true);
+		expect(agentApiHarness(spec)).toEqual({
+			command: [
+				"/usr/local/bin/agentapi",
+				"server",
+				"--type",
+				"codex",
+				"--port",
+				"3284",
+				"--",
+				"codex",
+				"--full-auto",
+			],
+			cwd: "/workspace",
+			env: { CODEX_HOME: "/state/codex" },
+		});
+		expect(Object.keys(templateServices(spec))).toEqual(["agent"]);
+		expect(findRoute(snapshotOf(parsed), "agent", "GET", "/messages")).not.toBeNull();
+		expect(findRoute(snapshotOf(parsed), "agent", "GET", "/events")).toBeNull();
+	});
+
+	test("rejects ambiguous native and legacy ownership", () => {
+		const withHarness = nativeManifest();
+		(withHarness.spec as Record<string, unknown>).harness = { command: ["custom-wrapper"] };
+		expect(() => parseTemplateManifest(withHarness)).toThrow("cannot be combined");
+
+		const withServices = nativeManifest();
+		(withServices.spec as Record<string, unknown>).services = {};
+		expect(() => parseTemplateManifest(withServices)).toThrow("cannot be combined");
 	});
 
 	test("digest is independent of key order", () => {
@@ -112,7 +168,7 @@ describe("template manifest", () => {
 		];
 		const snapshot = snapshotOf(parseTemplateManifest(m));
 		expect(snapshot.spec.setup[0]?.command).toEqual(["bun", "install"]);
-		expect(snapshot.spec.harness.command[0]).toBe("agentapi");
+		expect(agentApiHarness(snapshot.spec).command[0]).toBe("agentapi");
 		expect(snapshot.spec.setup[0]?.runOn).toEqual(["create"]);
 	});
 

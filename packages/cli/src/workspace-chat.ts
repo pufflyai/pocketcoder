@@ -76,7 +76,7 @@ async function sendWorkspaceMessage(
 	{ api, fail }: WorkspaceChatDeps,
 ): Promise<void> {
 	if (typeof message !== "string") return;
-	const response = await api(`/v1/workspaces/${id}/services/agent/message`, {
+	const response = await api(`/v1/workspaces/${id}/agent/message`, {
 		method: "POST",
 		body: JSON.stringify({ content: message, type: "user" }),
 	});
@@ -97,7 +97,7 @@ export async function attachWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps)
 	const cursors = readCursors(file);
 	const after = typeof flags.after === "string" ? flags.after : String(cursors[id] ?? 0);
 	const response = await deps.api(
-		`/v1/workspaces/${id}/services/agent/messages?after=${encodeURIComponent(after)}`,
+		`/v1/workspaces/${id}/agent/messages?after=${encodeURIComponent(after)}`,
 	);
 	const body = (await response.json()) as { messages?: unknown[] };
 	if (!response.ok) deps.fail(`message polling failed (${response.status})`);
@@ -206,7 +206,7 @@ function advanceCursor(id: string, cursor: ChatCursor, messages: unknown[]): voi
 }
 
 async function readChatMessages(id: string, deps: WorkspaceChatDeps): Promise<unknown[]> {
-	const response = await deps.api(`/v1/workspaces/${id}/services/agent/messages`);
+	const response = await deps.api(`/v1/workspaces/${id}/agent/messages`);
 	const body = (await response.json()) as { messages?: unknown[] };
 	if (!response.ok) {
 		deps.fail(`message polling failed (${response.status}): ${JSON.stringify(body)}`);

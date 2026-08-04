@@ -212,7 +212,7 @@ describe("session target", () => {
 		});
 		expect(target).toEqual(relayTarget("http://localhost:7080", "pkt_example", "workspace id"));
 		expect(target.mode === "relay" && target.serviceUrl).toBe(
-			"http://localhost:7080/v1/workspaces/workspace%20id/services/agent",
+			"http://localhost:7080/v1/workspaces/workspace%20id/agent",
 		);
 	});
 

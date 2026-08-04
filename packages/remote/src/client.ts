@@ -71,7 +71,7 @@ function isAgentMessage(message: AgentApiMessage): boolean {
 
 function changesUrlFor(serviceUrl: string): string | undefined {
 	const url = new URL(serviceUrl);
-	const match = url.pathname.match(/^(.*\/v1\/workspaces\/[^/]+)\/services\/agent$/);
+	const match = url.pathname.match(/^(.*\/v1\/workspaces\/[^/]+)\/(?:agent|services\/agent)$/);
 	if (!match) return undefined;
 	url.pathname = `${match[1]}/changes`;
 	url.search = "";
@@ -216,7 +216,7 @@ export function serviceUrlFromEnvironment(env: NodeJS.ProcessEnv = process.env):
 		throw new Error("POCKETCODER_WORKSPACE_ID or POCKETCODER_AGENTAPI_URL is required");
 	}
 	return {
-		serviceUrl: `${baseUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}/services/agent`,
+		serviceUrl: `${baseUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}/agent`,
 		key,
 	};
 }

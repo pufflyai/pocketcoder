@@ -18,8 +18,7 @@ const SAFE_RESPONSE_HEADERS = ["content-type"];
 type RelayMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type RelayResponse = Awaited<ReturnType<Hub["relay"]>>;
 
-function requestPath(c: Context<AppEnv>, workspaceId: string, serviceName: string): string {
-	const prefix = `/v1/workspaces/${workspaceId}/services/${serviceName}`;
+function requestPath(c: Context<AppEnv>, prefix: string): string {
 	const rawPath = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
 	return rawPath === "" ? "/" : rawPath;
 }
@@ -78,11 +77,14 @@ function safeResponseHeaders(response: RelayResponse): Headers {
 	return headers;
 }
 
-export function relayHandler(deps: RelayDeps) {
+export function relayHandler(
+	deps: RelayDeps,
+	options?: { service?: string; pathPrefix?: (workspaceId: string) => string },
+) {
 	return async (c: Context<AppEnv>): Promise<Response> => {
 		const principal = c.get("principal");
 		const id = c.req.param("id") ?? "";
-		const serviceName = c.req.param("service") ?? "";
+		const serviceName = options?.service ?? c.req.param("service") ?? "";
 		const row = await deps.service.getOwned(principal, id);
 		if (isTerminal(row.state)) {
 			throw new ApiError("workspace.terminal", "This workspace has ended.");
@@ -91,7 +93,8 @@ export function relayHandler(deps: RelayDeps) {
 			throw new ApiError("workspace.not_ready", "Workspace is not ready.");
 		}
 
-		const path = requestPath(c, id, serviceName);
+		const prefix = options?.pathPrefix?.(id) ?? `/v1/workspaces/${id}/services/${serviceName}`;
+		const path = requestPath(c, prefix);
 		const method = c.req.method as RelayMethod;
 		const match = findRoute(row.templateSnapshot, serviceName, method, path);
 		if (!match) {

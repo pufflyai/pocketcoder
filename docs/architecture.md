@@ -8,7 +8,7 @@ caller (machine key)
   → one isolated runtime per workspace
   → storage driver (host data roots or a Kubernetes PVC)
   → pocketcoder-agent (PID 1 supervisor)
-  → harness (e.g. AgentAPI wrapping a coding-agent CLI)
+  → PocketCoder-owned AgentAPI → template-declared coding agent
 ```
 
 There is exactly one execution path. Capacity pressure queues workspaces; it
@@ -20,7 +20,7 @@ neither callers nor templates can select them.
 | Component | Package | Responsibility |
 |-----------|---------|----------------|
 | pocketcoder-server | `apps/pocketcoder-server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
-| pocketcoder-agent | `apps/pocketcoder-agent` | PID 1 in every workspace: registration, setup commands, harness supervision, health probes, log forwarding, relay execution, TERM/KILL |
+| pocketcoder-agent | `apps/pocketcoder-agent` | PID 1 in every workspace: registration, setup, AgentAPI launch, stable transcript capture, health, relay, checkpoint quiescing, TERM/KILL |
 | pcd | `packages/cli` | Public bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, doctor |
 | contracts | `packages/contracts` | zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
@@ -234,7 +234,8 @@ queued → provisioning → connected → ready ─┬→ terminating → succee
 The supervisor opens one outbound WSS connection to `/v1/agent/connect` —
 there is no inbound route into a workspace. First connection: one-time
 registration secret; the ack delivers a reconnect credential (memory-only)
-plus the exec spec (setup, harness, services, timeouts). Frames are JSON with
+plus the normalized exec spec (setup, derived AgentAPI harness/service, native
+ownership flag, timeouts). Frames are JSON with
 per-connection monotonic sequence numbers; the newest accepted connection
 (epoch) exclusively speaks for the workspace.
 
@@ -272,9 +273,10 @@ labeled provider objects and supervisors simply reconnect.
 - Git/model credentials are deployment-resolved read-only files under
   `/run/pocketcoder/secrets`; provider input and secrets are outside
   checkpointed paths.
-- Launch input reaches the harness in memory; registration secrets are
+- Launch input reaches the coding agent in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.
 - Conversation events are contract-bounded and principal-scoped, expire by
-  template policy, and support explicit content deletion. Harness adapters own
-  semantic redaction before emitting canonical messages.
+  template policy, and support explicit content deletion. Native workspaces
+  project only stable AgentAPI history; legacy adapters retain responsibility
+  for semantic redaction.

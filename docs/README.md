@@ -9,8 +9,8 @@ API drives the whole lifecycle.
 |-------|----------------|
 | [Getting started](getting-started.md) | Run the server, create a principal and key, launch your first workspace |
 | [CLI reference](cli.md) | Every `pcd` command with examples |
-| [Templates](templates.md) | The template contract: images, setup commands, harnesses, relay routes, security |
-| [HTTP API](api.md) | Machine auth, workspace lifecycle, the service relay, signed events |
+| [Templates](templates.md) | The template contract: images, setup commands, native coding agents, security |
+| [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, signed events |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
 | [Deployment](deployment.md) | Container images, docker compose, PostgreSQL placement, configuration reference |
 | [Migration guide](migration.md) | Frozen legacy rename map and a one-pass consumer migration checklist |
@@ -38,5 +38,5 @@ pcd workspaces cancel --id <uuid>
 
 Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
-`pocketcoder-agent` (PID 1) → your template's harness (typically AgentAPI
-wrapping a coding-agent CLI).
+`pocketcoder-agent` (PID 1) → PocketCoder-owned AgentAPI → your template's
+coding-agent command.

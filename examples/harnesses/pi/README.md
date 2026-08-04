@@ -6,9 +6,10 @@ This example exercises PocketCoder's intended coding-agent integration path:
 local client → PocketCoder → AgentAPI → remote Pi CLI → model gateway
 ```
 
-AgentAPI owns the loopback HTTP API (`GET /status`, `GET /messages`, and
-`POST /message`) and launches Pi as an interactive terminal process. There is
-no PocketCoder-specific Pi HTTP adapter.
+PocketCoder launches AgentAPI and owns its loopback HTTP lifecycle (`GET
+/status`, `GET /messages`, and `POST /message`). The template declares only
+`run-pi`, which configures and starts Pi as the interactive child. There is no
+consumer-owned AgentAPI wrapper or PocketCoder-specific Pi HTTP adapter.
 
 The image pins Pi to `0.83.0` and AgentAPI to `0.12.2`. The Dockerfile verifies
 AgentAPI's downloaded checksum for both supported Linux architectures.

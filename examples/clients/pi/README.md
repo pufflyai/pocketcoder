@@ -10,9 +10,9 @@ the routes the workspace template declares for its `agent` service — for the
 `pi-harness` template that is AgentAPI's conversation API:
 
 ```text
-GET  {POCKETCODER_URL}/v1/workspaces/{id}/services/agent/status
-GET  {POCKETCODER_URL}/v1/workspaces/{id}/services/agent/messages
-POST {POCKETCODER_URL}/v1/workspaces/{id}/services/agent/message   {"content": "...", "type": "user"}
+GET  {POCKETCODER_URL}/v1/workspaces/{id}/agent/status
+GET  {POCKETCODER_URL}/v1/workspaces/{id}/agent/messages
+POST {POCKETCODER_URL}/v1/workspaces/{id}/agent/message   {"content": "...", "type": "user"}
 ```
 
 All requests carry `authorization: Bearer <machine key>` (scope

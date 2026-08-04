@@ -25,25 +25,15 @@ command, mount, network, privilege, or driver.
 			{ "name": "clone-repo", "command": ["/usr/local/bin/clone-repo.sh"], "timeoutSeconds": 300 },
 			{ "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"], "timeoutSeconds": 600 }
 		],
-		"harness": {
-			"command": ["agentapi", "server", "--port", "3284", "--", "claude", "--dangerously-skip-permissions"],
+		"agent": {
+			"type": "claude",
+			"command": ["claude", "--dangerously-skip-permissions"],
 			"cwd": "/home/agent/workspace",
 			"env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
 		},
 		"env": { "HOME": "/home/agent" },
 		"resources": { "cpu": "2", "memory": "2Gi" },
 		"timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
-		"services": {
-			"agent": {
-				"baseUrl": "http://localhost:3284",
-				"healthPath": "/status",
-				"routes": [
-					{ "method": "GET", "path": "/status", "maxResponseBytes": 65536 },
-					{ "method": "GET", "path": "/messages", "query": ["after"], "maxResponseBytes": 1048576 },
-					{ "method": "POST", "path": "/message", "maxRequestBytes": 65536, "maxResponseBytes": 65536 }
-				]
-			}
-		},
 		"security": {
 			"uid": 10001, "gid": 10001, "readOnlyRoot": true,
 			"writableMemoryPaths": ["/tmp", "/home/agent"]
@@ -57,22 +47,21 @@ command, mount, network, privilege, or driver.
 - **`command`** — the container entrypoint: the `pocketcoder-agent` supervisor
   (PID 1, or a child of tini if your image sets one). It registers over
   outbound WSS and receives everything below at registration time, so setup
-  and harness changes need no image rebuild.
+  and agent changes need no image rebuild.
 - **`setup`** — ordered commands run once before the harness starts (clone a
   repo, install dependencies, prime configuration). Each step has a name,
   timeout, optional env and cwd; output lands in workspace logs; a failing
   step fails the workspace with reason `setup_failed`/`child_exit_failure`.
-- **`harness`** — the long-running conversation service supervised as one
-  process group. Typically AgentAPI wrapping a coding-agent CLI (Claude Code,
-  pi, aider, …), but anything that serves the declared loopback routes works.
-  The caller's opaque `launch_input` is delivered to the harness in memory as
+- **`agent`** — the coding-agent command, AgentAPI type, cwd, and environment.
+  PocketCoder launches `/usr/local/bin/agentapi server --type <type> --port
+  3284 -- <command...>`, waits for its fixed status endpoint, synchronizes
+  complete messages after `stable`, and terminates it safely for preserve. The
+  caller's opaque `launch_input` is delivered to the process in memory as
   `POCKETCODER_LAUNCH_INPUT`; the server erases its copy once the workspace is
   ready.
-- **`services`** — the exact relay allowlist. Only declared method+path
-  combinations (with declared query fields, size limits, and deadlines) are
-  reachable via `/v1/workspaces/{id}/services/{service}/…`. `baseUrl` must be
-  loopback. `required: true` services gate readiness on a healthy
-  `healthPath`.
+- **legacy `harness` + `services`** — compatibility-only generic process and
+  loopback relay declarations. They remain supported for one migration
+  release and cannot appear beside `agent`.
 - **`timeouts`** — `start` (registration + first health), `maxAge` (hard
   lifetime), `idle` (no relay activity and agent not running), `disconnectGrace`
   (supervisor reconnect window), `terminateGrace` (TERM→KILL).
@@ -83,6 +72,7 @@ command, mount, network, privilege, or driver.
 ## Validation rules that will reject a template
 
 - image not digest-pinned (`repo@sha256:<64 hex>` required);
+- both `agent` and any of `harness`, `services`, or `checkpointHook`;
 - non-loopback service `baseUrl`, unnormalized route paths (`..`, `//`,
   query strings, encoded traversal);
 - duplicate routes;
@@ -119,10 +109,6 @@ paths.
       "onFailure": "retain-for-recovery",
       "retention": "168h"
     }
-  },
-  "checkpointHook": {
-    "command": ["/usr/local/bin/agentapi-checkpoint"],
-    "timeoutSeconds": 30
   }
 }
 ```
@@ -131,16 +117,17 @@ Setup steps default to `runOn: ["create"]`. Mark validation or repair steps
 with `runOn: ["restore"]` when they are safe against restored content.
 `conversationRestore: supported` requires a separate harness-state mount and
 `sessionCompatibility`; otherwise use the honest `filesystem_only` default.
-The optional checkpoint hook flushes application state before the runtime is
-stopped.
+For native `agent` templates the supervisor blocks new messages, waits for
+AgentAPI to become stable, captures the final transcript, and terminates it
+before snapshotting. Legacy templates may still provide `checkpointHook`.
 
 `conversationRetention` controls how long the canonical display transcript is
 readable after terminal state (default `168h`). It is separate from checkpoint
 retention because callers may delete transcript content without deleting a
-filesystem checkpoint. A harness adapter contributes transcript items by
-writing bounded `POCKETCODER_CONVERSATION <json>` lines to stdout; use stable
-provider message ids and redact sensitive tool/attachment metadata before
-emission. Operational log text is never inferred into conversation history.
+filesystem checkpoint. Native workspaces project complete AgentAPI messages
+into the durable transcript using stable `agentapi:<id>` ids. Legacy harness
+adapters may still write bounded `POCKETCODER_CONVERSATION <json>` lines to
+stdout. Operational log text is never inferred into conversation history.
 
 A template may define repository aliases under `source.repositories`. The
 caller selects only an alias and validated revision:
@@ -183,8 +170,8 @@ version once.
 
 ## Writing workspace images
 
-An image needs: the harness toolchain (e.g. AgentAPI installed by checksum
-plus your agent CLI), the `pocketcoder-agent` binary or bundle, a passwd entry
+An image needs checksum-pinned AgentAPI at `/usr/local/bin/agentapi`, your agent
+CLI, the `pocketcoder-agent` binary or bundle, a passwd entry
 for the template uid, and a working directory readable by that uid. See
 [`deploy/image/Dockerfile`](../deploy/image/Dockerfile) for a minimal example
 and the [deployment guide](deployment.md) for building and pinning.

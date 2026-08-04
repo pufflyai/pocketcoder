@@ -243,6 +243,18 @@ export class MemoryStore implements Store {
 		return this.principals.map((p) => ({ ...p }));
 	}
 
+	async updatePrincipal(
+		id: string,
+		scopes: string[],
+		templateNames: string[],
+	): Promise<PrincipalRow | null> {
+		const row = this.principals.find((principal) => principal.id === id);
+		if (!row) return null;
+		row.scopes = [...scopes];
+		row.templateNames = [...templateNames];
+		return { ...row };
+	}
+
 	async setPrincipalDisabled(id: string, disabled: boolean): Promise<void> {
 		const row = this.principals.find((p) => p.id === id);
 		if (row) {
@@ -574,8 +586,18 @@ export class MemoryStore implements Store {
 				conflict: existing.requestDigest !== row.requestDigest,
 			};
 		}
+		this.assertOperationReferences(row);
 		this.operations.set(row.id, { ...row });
 		return { operation: { ...row }, created: true, conflict: false };
+	}
+
+	private assertOperationReferences(row: WorkspaceOperationRow): void {
+		if (row.checkpointId && !this.checkpoints.has(row.checkpointId)) {
+			throw new Error("operation checkpoint does not exist");
+		}
+		if (row.resultWorkspaceId && !this.workspaces.has(row.resultWorkspaceId)) {
+			throw new Error("operation result workspace does not exist");
+		}
 	}
 
 	async getOperation(id: string): Promise<WorkspaceOperationRow | null> {
@@ -606,6 +628,7 @@ export class MemoryStore implements Store {
 	async updateOperation(id: string, patch: WorkspaceOperationPatch, at: Date): Promise<void> {
 		const row = this.operations.get(id);
 		if (!row) return;
+		this.assertOperationReferences({ ...row, ...patch });
 		Object.assign(row, patch);
 		row.updatedAt = at;
 	}

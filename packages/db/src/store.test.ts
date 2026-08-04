@@ -75,6 +75,21 @@ describe.skipIf(!TEST_URL)("postgres store", () => {
 		const store = new PostgresStore(url, schema);
 		try {
 			const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
+			const inheritedKeyId = randomUUID();
+			await store.insertMachineKey({
+				id: inheritedKeyId,
+				principalId: principal.id,
+				secretDigest: new Uint8Array([1, 2, 3]),
+				scopes: [],
+				createdAt: new Date(),
+				expiresAt: null,
+				revokedAt: null,
+				lastUsedAt: null,
+			});
+			expect(
+				await store.updatePrincipal(principal.id, ["admin", "templates:read"], ["pg-fixture"]),
+			).toMatchObject({ scopes: ["admin", "templates:read"], templateNames: ["pg-fixture"] });
+			expect((await store.getMachineKeyWithPrincipal(inheritedKeyId))?.key.scopes).toEqual([]);
 			const parsed = fixture();
 			const { row: template, created } = await store.upsertTemplate({
 				name: "pg-fixture",

@@ -13,7 +13,9 @@ endpoint) requires a machine key:
 Authorization: Bearer pkt_<key-id>_<secret>
 ```
 
-Keys belong to principals, carry scopes, and can be revoked instantly.
+Keys belong to principals and can be revoked instantly. By default they inherit
+their principal's current scopes; an optional per-key scope set can narrow that
+authorization.
 Failures return the stable error envelope used everywhere:
 
 ```json
@@ -147,7 +149,10 @@ bounded redacted string metadata. Responses include `next_cursor` and the
 retention deadline. Each workspace is capped at 100,000 messages and 50 MiB
 of canonical content/metadata; each message is capped at 256 KiB.
 
-Participating harness adapters write one canonical line per complete message:
+AgentAPI-native workspaces capture complete `/messages` entries whenever the
+agent is stable. The numeric AgentAPI id becomes `agentapi:<id>`, and AgentAPI's
+`agent` role becomes `assistant`; replay is idempotent. Legacy harness adapters
+may still write one canonical line per complete message:
 
 ```text
 POCKETCODER_CONVERSATION {"message_id":"provider-7","role":"assistant","content":"Done","occurred_at":"2026-08-03T08:00:00.000Z","metadata":{"provider":"agentapi"}}
@@ -162,8 +167,12 @@ return `410 conversation.expired`; explicitly deleted transcripts return
 ## Service relay
 
 ```text
+GET/POST    /v1/workspaces/{id}/agent/{status|messages|message} scope services:relay
 GET/POST/… /v1/workspaces/{id}/services/{service}/{path}     scope services:relay
 ```
+
+Use `/agent/*` for AgentAPI-native workspaces. The generic service URL remains
+as a compatibility alias for existing clients and legacy templates.
 
 The template snapshot owns the allowlist: only declared method+path
 combinations with declared query fields pass; bodies are size-capped both
@@ -203,7 +212,8 @@ GET  /v1/workspaces/{id}/outputs        scope outputs:read
 ```
 
 All mutating checkpoint routes require `Idempotency-Key`. Preserve rejects new
-relay work, optionally asks the harness to flush, stops the runtime, snapshots
+relay work; native workspaces wait for stable AgentAPI, synchronize its final
+messages, and gracefully terminate it. PocketCoder then snapshots
 only template-declared mounts, verifies the manifest, and makes the source
 terminal `preserved`. Restore never reopens it: a new queued workspace gets
 the exact template snapshot, fresh provider and credentials, lineage fields,

@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { POOL_PROTOCOL_VERSION, type ProviderInput } from "@pstdio/pocketcoder-contracts";
+import { join, resolve } from "node:path";
+import {
+	POOL_PROTOCOL_VERSION,
+	PROTOCOL_VERSION,
+	type ProviderInput,
+} from "@pstdio/pocketcoder-contracts";
 import {
 	isConversationControlLine,
 	pumpLineFramedText,
@@ -68,6 +72,130 @@ describe("warm pool bootstrap", () => {
 			await server.stop(true);
 		}
 	});
+});
+
+describe("process signals", () => {
+	test("SIGTERM gracefully stops the harness before the supervisor exits", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pocketcoder-supervisor-signal-"));
+		const markerPath = join(root, "saved.txt");
+		const readyPath = join(root, "ready.txt");
+		const harnessPath = join(root, "harness.ts");
+		const inputPath = join(root, "input.json");
+		const workspaceId = randomUUID();
+		let markRunning!: () => void;
+		const running = new Promise<void>((resolveRunning) => {
+			markRunning = resolveRunning;
+		});
+		const server = Bun.serve({
+			port: 0,
+			fetch(request, server) {
+				if (server.upgrade(request)) return;
+				return new Response("upgrade required", { status: 426 });
+			},
+			websocket: {
+				message(ws, message) {
+					const frame = JSON.parse(String(message)) as {
+						type: string;
+						connection_id: string;
+						payload?: { phase?: string };
+					};
+					if (frame.type === "registered") {
+						ws.send(
+							JSON.stringify({
+								v: PROTOCOL_VERSION,
+								type: "registered_ack",
+								workspace_id: workspaceId,
+								connection_id: frame.connection_id,
+								seq: 1,
+								sent_at: new Date().toISOString(),
+								payload: {
+									epoch: 1,
+									reconnect_credential: "reconnect",
+									limits: {
+										max_frame_bytes: 1_048_576,
+										max_inflight_relay: 8,
+										log_chunk_bytes: 32_768,
+										heartbeat_seconds: 15,
+									},
+									exec: {
+										setup: [],
+										harness: { command: [process.execPath, harnessPath], env: {} },
+										env: {},
+										services: {},
+										timeouts: {
+											start: "2s",
+											maxAge: "1h",
+											idle: "1h",
+											disconnectGrace: "2s",
+											terminateGrace: "2s",
+										},
+										security: { writable_memory_paths: [] },
+										launch_mode: "create",
+										source: null,
+										restore: null,
+										persistence: { mounts: [], conversation_restore: "filesystem_only" },
+										checkpoint_hook: null,
+										outputs: {},
+									},
+								},
+							}),
+						);
+					}
+					if (frame.type === "process_state" && frame.payload?.phase === "running") {
+						markRunning();
+					}
+				},
+			},
+		});
+		await writeFile(
+			harnessPath,
+			`process.once("SIGTERM", async () => { await Bun.write(${JSON.stringify(markerPath)}, "saved"); process.exit(0); }); await Bun.write(${JSON.stringify(readyPath)}, "ready"); setInterval(() => {}, 1000);\n`,
+		);
+		await writeFile(
+			inputPath,
+			JSON.stringify({
+				workspace_id: workspaceId,
+				server_url: `http://127.0.0.1:${server.port}`,
+				registration_secret: "registration",
+				template_digest: "sha256:signal-test",
+				template_name: "signal-test",
+				template_version: "1.0.0",
+				launch_mode: "create",
+			}),
+		);
+		const supervisor = Bun.spawn(
+			[
+				process.execPath,
+				"--no-env-file",
+				resolve(import.meta.dir, "index.ts"),
+				"supervise",
+				"--launch-input",
+				inputPath,
+			],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
+		try {
+			await Promise.race([
+				running,
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("supervisor did not start harness")), 5000),
+				),
+			]);
+			const readyDeadline = Date.now() + 5000;
+			while (!(await Bun.file(readyPath).exists())) {
+				if (Date.now() >= readyDeadline) throw new Error("harness did not become ready");
+				await Bun.sleep(10);
+			}
+			process.kill(supervisor.pid, "SIGTERM");
+			const exitCode = await supervisor.exited;
+			expect(await Bun.file(markerPath).text()).toBe("saved");
+			expect(exitCode).toBe(0);
+		} finally {
+			if (supervisor.exitCode === null) supervisor.kill("SIGKILL");
+			await server.stop(true);
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 10_000);
 });
 
 describe("workspace preflight", () => {

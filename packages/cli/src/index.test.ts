@@ -90,6 +90,11 @@ describe("pcd help", () => {
 			error: "Missing required arguments: name, scopes",
 		},
 		{
+			args: ["principals", "update"],
+			usage: "pcd principals update",
+			error: "Missing required arguments: name, scopes",
+		},
+		{
 			args: ["keys", "issue"],
 			usage: "pcd keys issue",
 			error: "Missing required argument: principal",
@@ -337,14 +342,14 @@ describe("pcd workspace workflows", () => {
 						agent_state: status,
 					});
 				}
-				if (route === "POST /v1/workspaces/workspace-chat/services/agent/message") {
+				if (route === "POST /v1/workspaces/workspace-chat/agent/message") {
 					const body = (await request.json()) as { content: string };
 					prompt = body.content;
 					status = "running";
 					messages.push({ id: 3, role: "user", content: prompt });
 					return Response.json({ ok: true });
 				}
-				if (route === "GET /v1/workspaces/workspace-chat/services/agent/messages") {
+				if (route === "GET /v1/workspaces/workspace-chat/agent/messages") {
 					return Response.json({ messages });
 				}
 				return new Response("not found", { status: 404 });
@@ -413,13 +418,13 @@ describe("pcd commands", () => {
 				}
 				if (
 					request.method === "GET" &&
-					url.pathname === "/v1/workspaces/workspace-1/services/agent/status"
+					url.pathname === "/v1/workspaces/workspace-1/agent/status"
 				) {
 					return Response.json({ status: "stable" });
 				}
 				if (
 					request.method === "POST" &&
-					url.pathname === "/v1/workspaces/workspace-1/services/agent/message"
+					url.pathname === "/v1/workspaces/workspace-1/agent/message"
 				) {
 					const body = (await request.json()) as { content: string };
 					diagnosticPrompt = body.content;
@@ -427,7 +432,7 @@ describe("pcd commands", () => {
 				}
 				if (
 					request.method === "GET" &&
-					url.pathname === "/v1/workspaces/workspace-1/services/agent/messages"
+					url.pathname === "/v1/workspaces/workspace-1/agent/messages"
 				) {
 					return Response.json({
 						messages: [{ id: 1, role: "assistant", content: diagnosticPrompt }],
@@ -471,7 +476,7 @@ describe("pcd commands", () => {
 				}
 				if (
 					request.method === "GET" &&
-					url.pathname === "/v1/workspaces/workspace-2/services/agent/status"
+					url.pathname === "/v1/workspaces/workspace-2/agent/status"
 				) {
 					return Response.json({ status: "stable" });
 				}
