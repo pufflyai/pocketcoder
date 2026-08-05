@@ -21,10 +21,16 @@ neither callers nor templates can select them.
 |-----------|---------|----------------|
 | pocketcoder-server | `apps/pocketcoder-server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
 | pocketcoder-agent | `apps/pocketcoder-agent` | PID 1 in every workspace: registration, setup, AgentAPI launch, stable transcript capture, health, relay, checkpoint quiescing, TERM/KILL |
-| pcd | `packages/cli` | Public bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, doctor |
-| contracts | `packages/contracts` | zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
+| pocketcoder-egress | `apps/pocketcoder-egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
+| pcd | `packages/cli` | Published bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, chat, doctor |
+| remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
+| client | `packages/client` | Published runtime-validated TypeScript client for the control-plane API |
+| contracts | `packages/contracts` | Published zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
+| runtime-contracts | `packages/runtime-contracts` | Driver-neutral runtime ports and durable row contracts |
 | db | `packages/db` | PostgreSQL store, Drizzle schema and generated migrations under an advisory lock |
+| memory-store | `packages/memory-store` | In-memory store adapter for `POCKETCODER_STORE=memory` |
+| auth | `packages/auth` | Machine-key digests, registration secrets, event signing |
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
 | testkit | `packages/testkit` | In-memory store, fake driver, fake AgentAPI, template fixtures |
 
@@ -53,7 +59,7 @@ erDiagram
     WORKSPACES o|--o{ WORKSPACE_OPERATIONS : produces
     WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
 	WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
-	WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
+    WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
     WORKSPACES ||--o{ WORKSPACE_TERMINAL_SESSIONS : audits
     MACHINE_KEYS ||--o{ WORKSPACE_TERMINAL_SESSIONS : opens
     WORKSPACES ||--o{ WORKSPACE_STATE_HISTORY : transitions
@@ -254,7 +260,7 @@ per-connection monotonic sequence numbers; the newest accepted connection
 (epoch) exclusively speaks for the workspace.
 
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
-`log_chunk`, `proxy_response`, `proxy_stream_start`, `proxy_stream_chunk`,
+`agent_state`, `network_state`, `log_chunk`, `proxy_response`, `proxy_stream_start`, `proxy_stream_chunk`,
 `proxy_stream_end`, `termination_ack`, `source_resolved`,
 `checkpoint_status`, `restore_status`, `output_published`,
 `conversation_message`, `attachment_ack`, `attachment_result`,
@@ -295,7 +301,8 @@ A separate, narrowly scoped pool-enrollment socket (its own version axis)
 serves optional task-agnostic warm runtimes. Its only server message is a
 one-shot workspace assignment after an atomic durable claim; the runtime then
 uses the existing workspace registration protocol. There is no reusable
-worker lease, caller-supplied command execution, or tunnel. Interactive PTYs
+worker lease, caller-supplied command execution, tunnel, or inbound workspace
+path. Interactive PTYs
 run only the immutable template-declared command over typed v4 frames. File
 transfer exists only as the bounded attachment upload into supervisor-owned
 storage — there is no general file API. The relay forwards only

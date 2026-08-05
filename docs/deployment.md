@@ -2,8 +2,8 @@
 
 ## Container images
 
-CI publishes two images to the GitHub Container Registry on every push to
-`main` and on version tags (see `.github/workflows/ci.yml`):
+CI publishes three images to the GitHub Container Registry on every push to
+`main` and on version tags (see `.github/workflows/images.yml`):
 
 - `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pcd`
   (`/usr/local/bin/pcd`, backed by `/opt/pocketcoder/pcd.js`), Docker CLI, and
@@ -13,6 +13,10 @@ CI publishes two images to the GitHub Container Registry on every push to
   `pocketcoder-agent` supervisor, checksum-pinned AgentAPI, and a loopback echo harness, useful for probe
   templates and as a starting point for real agent images. Built from
   [`deploy/image/Dockerfile`](../deploy/image/Dockerfile).
+- `ghcr.io/<owner>/<repo>/egress` — the sidecar proxy that enforces
+  `network.mode: restricted` templates. Set `POCKETCODER_EGRESS_IMAGE` to its
+  digest; without it, restricted templates cannot start. Built from
+  [`apps/pocketcoder-egress/Dockerfile`](../apps/pocketcoder-egress/Dockerfile).
 
 Real coding-agent images extend the workspace base and install only their agent
 CLI and application environment. If they use another base, they must provide
@@ -124,9 +128,9 @@ Restricted templates require Kubernetes 1.29 or newer with the `SidecarContainer
 enabled; 1.33 or newer is recommended because native sidecars are stable there. PocketCoder adds a
 restartable init sidecar and startup probe. Only that trusted sidecar receives `NET_ADMIN` plus the
 transient `SETUID`/`SETGID` capabilities needed to drop to UID 999 after installing the rules; the
-UID transition clears all three before the proxy begins serving. The
-firewall/audit Secret; the workspace container remains non-root, capability-free, read-only, and
-unable to mount those credentials.
+UID transition clears all three before the proxy begins serving. The sidecar alone mounts the
+per-workspace egress Secret holding the compiled allow rules and the audit callback credential; the
+workspace container remains non-root, capability-free, read-only, and unable to mount it.
 
 [`deploy/kubernetes/pocketcoder.yaml`](../deploy/kubernetes/pocketcoder.yaml)
 contains separate controller/workspace service accounts, least-privilege
