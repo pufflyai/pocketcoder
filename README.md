@@ -41,7 +41,8 @@ readiness, relay routes, durable transcript capture, and checkpoint shutdown:
 
 `setup` steps run sequentially before PocketCoder launches its pinned
 `/usr/local/bin/agentapi` around `agent.command`. The fixed, bounded
-conversation API is `/v1/workspaces/{id}/agent/{status|messages|message}`.
+conversation API is `/v1/workspaces/{id}/agent/{status|messages|message}`, plus
+a streamed `events` route on snapshots created under workspace protocol v5.
 Legacy `harness` and `services` templates remain readable for one migration
 release, but cannot be mixed with `agent`.
 
@@ -142,6 +143,9 @@ bun run local:gateway -- --openai  # host gateway only
 bun run local:up -- --template pi-harness --openai  # persistent local Pi deployment convenience
 bun run example:e2e:local  # disposable full-stack E2E with the echo harness
 bun run example:e2e:pi     # remote Pi reads a workspace fixture through AgentAPI
+bun run example:e2e:codex  # real Codex CLI through AgentAPI and the live relay
+bun run example:e2e:opencode # real OpenCode ACP harness through AgentAPI
+bun run example:e2e:oss    # combined Codex and OpenCode full-stack matrix
 bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses OpenAI)
 ```
 

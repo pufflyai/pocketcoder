@@ -6,6 +6,7 @@ import {
 	isTerminal,
 	parseDurationMs,
 	type TemplateSnapshot,
+	templateServices,
 	type WorkspaceCreateRequest,
 	type WorkspaceResource,
 } from "@pstdio/pocketcoder-contracts";
@@ -172,6 +173,7 @@ export class WorkspaceService {
 			version: template.version,
 			digest: template.digest,
 			spec: template.spec,
+			services: templateServices(template.spec),
 		};
 		this.validateCreateInput(template, body);
 		const now = this.now();

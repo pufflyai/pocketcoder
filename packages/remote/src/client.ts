@@ -1,3 +1,5 @@
+import { type AgentApiEvent, readAgentApiEvents } from "./agentapi-events";
+
 export interface AgentApiMessage {
 	id: number;
 	content: string;
@@ -27,6 +29,7 @@ interface WorkspaceChange {
 }
 
 type FetchLike = typeof fetch;
+type SnapshotCallback = (snapshot: string) => void;
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -132,6 +135,19 @@ export class RemoteAgentClient {
 		return body.status;
 	}
 
+	private async eventStream(signal: AbortSignal): Promise<Response | null> {
+		const response = await this.request("/events", {
+			headers: { accept: "text/event-stream" },
+			signal,
+		});
+		if ([404, 409, 422].includes(response.status)) return null;
+		if (!response.ok) {
+			throw new Error(`AgentAPI events request failed: ${await responseError(response)}`);
+		}
+		if (!response.body) throw new Error("AgentAPI events response had no body");
+		return response;
+	}
+
 	private async workspaceChange(
 		after: number,
 		waitSeconds: number,
@@ -165,11 +181,11 @@ export class RemoteAgentClient {
 		return { cursor: body.cursor, agentState: body.workspace.agent_state };
 	}
 
-	async send(prompt: string, signal?: AbortSignal, attachmentIds: string[] = []): Promise<string> {
-		const before = await this.messages(signal);
-		const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
-		const baselineChange = await this.workspaceChange(0, 0, signal);
-		let changeCursor = baselineChange?.cursor ?? 0;
+	private async submit(
+		prompt: string,
+		attachmentIds: string[],
+		signal: AbortSignal,
+	): Promise<void> {
 		const response = await this.request("/message", {
 			method: "POST",
 			body: JSON.stringify({
@@ -182,8 +198,14 @@ export class RemoteAgentClient {
 		if (!response.ok) {
 			throw new Error(`AgentAPI message request failed: ${await responseError(response)}`);
 		}
+	}
 
-		const deadline = Date.now() + this.timeoutMs;
+	private async pollForReply(
+		baselineId: number,
+		changeCursor: number,
+		deadline: number,
+		signal: AbortSignal,
+	): Promise<string> {
 		while (Date.now() < deadline) {
 			const remainingMs = deadline - Date.now();
 			const change = await this.workspaceChange(
@@ -203,24 +225,120 @@ export class RemoteAgentClient {
 		}
 		throw new Error(`remote agent did not finish within ${this.timeoutMs}ms`);
 	}
-}
 
-export function serviceUrlFromEnvironment(env: NodeJS.ProcessEnv = process.env): {
-	serviceUrl: string;
-	key: string;
-} {
-	const directUrl = env.POCKETCODER_AGENTAPI_URL;
-	const key = env.POCKETCODER_KEY;
-	if (!key) throw new Error("POCKETCODER_KEY is required");
-	if (directUrl) return { serviceUrl: directUrl, key };
-
-	const baseUrl = (env.POCKETCODER_URL ?? "http://127.0.0.1:7080").replace(/\/$/, "");
-	const workspaceId = env.POCKETCODER_WORKSPACE_ID;
-	if (!workspaceId) {
-		throw new Error("POCKETCODER_WORKSPACE_ID or POCKETCODER_AGENTAPI_URL is required");
+	private async consumeEvents(
+		initial: Response,
+		onEvent: (event: AgentApiEvent) => Promise<void>,
+		signal: AbortSignal,
+	): Promise<"fallback" | "aborted"> {
+		let response = initial;
+		while (!signal.aborted) {
+			try {
+				if (!response.body) throw new Error("AgentAPI events response had no body");
+				for await (const event of readAgentApiEvents(response.body, signal)) {
+					await onEvent(event);
+				}
+			} catch {
+				if (signal.aborted) return "aborted";
+			}
+			if (signal.aborted) return "aborted";
+			await delay(this.pollIntervalMs, signal);
+			try {
+				const reconnected = await this.eventStream(signal);
+				if (!reconnected) return "fallback";
+				response = reconnected;
+			} catch {
+				if (signal.aborted) return "aborted";
+			}
+		}
+		return "aborted";
 	}
-	return {
-		serviceUrl: `${baseUrl}/v1/workspaces/${encodeURIComponent(workspaceId)}/agent`,
-		key,
-	};
+
+	async send(
+		prompt: string,
+		signal?: AbortSignal,
+		attachmentIds: string[] = [],
+		onSnapshot?: SnapshotCallback,
+	): Promise<string> {
+		const timeout = new AbortController();
+		const timer = setTimeout(
+			() => timeout.abort(new Error(`remote agent did not finish within ${this.timeoutMs}ms`)),
+			this.timeoutMs,
+		);
+		const turnSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
+		const stopEvents = new AbortController();
+		const eventSignal = AbortSignal.any([turnSignal, stopEvents.signal]);
+		try {
+			const before = await this.messages(turnSignal);
+			const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
+			const baselineChange = await this.workspaceChange(0, 0, turnSignal);
+			const deadline = Date.now() + this.timeoutMs;
+			const initialEvents = await this.eventStream(eventSignal);
+			if (!initialEvents) {
+				await this.submit(prompt, attachmentIds, turnSignal);
+				return await this.pollForReply(
+					baselineId,
+					baselineChange?.cursor ?? 0,
+					deadline,
+					turnSignal,
+				);
+			}
+
+			let submitted = false;
+			let lastSnapshot = "";
+			let complete!: (value: string) => void;
+			const completed = new Promise<string>((resolve) => {
+				complete = resolve;
+			});
+			const consume = this.consumeEvents(
+				initialEvents,
+				async (event) => {
+					if (
+						event.event === "message_update" &&
+						event.data.id > baselineId &&
+						(event.data.role === "agent" || event.data.role === "assistant") &&
+						event.data.message.trim() &&
+						event.data.message !== lastSnapshot
+					) {
+						lastSnapshot = event.data.message;
+						onSnapshot?.(lastSnapshot);
+					}
+					if (event.event !== "status_change" || event.data.status !== "stable" || !submitted) {
+						return;
+					}
+					const final = (await this.messages(turnSignal))
+						.filter((message) => message.id > baselineId && isAgentMessage(message))
+						.at(-1);
+					if (!final?.content.trim()) return;
+					if (final.content !== lastSnapshot) onSnapshot?.(final.content);
+					complete(final.content);
+				},
+				eventSignal,
+			);
+			submitted = true;
+			await this.submit(prompt, attachmentIds, turnSignal);
+			const outcome = await Promise.race([
+				completed.then((value) => ({ kind: "complete" as const, value })),
+				consume.then((result) => ({ kind: result })),
+			]);
+			if (outcome.kind === "complete") return outcome.value;
+			if (outcome.kind === "fallback") {
+				return await this.pollForReply(
+					baselineId,
+					baselineChange?.cursor ?? 0,
+					deadline,
+					turnSignal,
+				);
+			}
+			throw turnSignal.reason ?? new Error("remote request aborted");
+		} catch (error) {
+			if (timeout.signal.aborted) throw timeout.signal.reason;
+			throw error;
+		} finally {
+			clearTimeout(timer);
+			stopEvents.abort("turn ended");
+		}
+	}
 }
+
+export { serviceUrlFromEnvironment } from "./environment";

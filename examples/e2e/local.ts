@@ -2,81 +2,24 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { OSS_FIXTURE_CONTENT, startFakeOssGateway } from "../harnesses/oss/fake-gateway";
 import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
+import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
 import { serverOutput } from "./process-output";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
-interface CommandResult {
-	stdout: string;
-	stderr: string;
-}
-
-async function command(
-	args: string[],
-	options: { cwd?: string; env?: Record<string, string | undefined>; quiet?: boolean } = {},
-): Promise<CommandResult> {
-	const processHandle = Bun.spawn(args, {
-		cwd: options.cwd ?? ROOT,
-		env: { ...process.env, ...options.env },
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const [stdout, stderr, code] = await Promise.all([
-		new Response(processHandle.stdout).text(),
-		new Response(processHandle.stderr).text(),
-		processHandle.exited,
-	]);
-	if (!options.quiet && stdout.trim()) console.log(stdout.trim());
-	if (code !== 0) {
-		throw new Error(`${args.join(" ")} failed (${code}): ${stderr.trim().slice(0, 2000)}`);
-	}
-	return { stdout: stdout.trim(), stderr: stderr.trim() };
-}
-
-async function bestEffort(args: string[]): Promise<void> {
-	await command(args, { quiet: true }).catch(() => {});
-}
-
-function freePort(): number {
-	const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
-	const port = Number(probe.port);
-	probe.stop(true);
-	return port;
-}
-
-async function waitFor(
-	check: () => Promise<boolean>,
-	timeoutMs: number,
-	description: string,
-): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		if (await check()) return;
-		await Bun.sleep(250);
-	}
-	throw new Error(`timed out waiting for ${description}`);
-}
-
-function flag(name: string): string | undefined {
-	const index = process.argv.indexOf(name);
-	return index >= 0 ? process.argv[index + 1] : undefined;
-}
-
-function hasFlag(name: string): boolean {
-	return process.argv.includes(name);
-}
-
 const harness = flag("--harness") ?? "echo";
-if (!["echo", "pi"].includes(harness)) {
-	throw new Error("--harness must be echo or pi");
+if (!["echo", "pi", "codex", "opencode"].includes(harness)) {
+	throw new Error("--harness must be echo, pi, codex, or opencode");
 }
-const localPiUi = hasFlag("--ui");
-const useOpenAI = hasFlag("--openai");
+const ossHarness = harness === "codex" || harness === "opencode";
+const localPiUi = process.argv.includes("--ui");
+const useOpenAI = process.argv.includes("--openai");
 const openAIApiKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL;
 if ((localPiUi || useOpenAI) && harness !== "pi") {
@@ -193,17 +136,20 @@ try {
 		imageTag: localImage,
 		context: harness === "echo" ? "deploy/image" : ".",
 		...(harness === "pi" ? { dockerfile: "examples/harnesses/pi/Dockerfile" } : {}),
+		...(harness === "codex" || harness === "opencode"
+			? { dockerfile: "examples/harnesses/oss/Dockerfile" }
+			: {}),
 		command,
 	});
 
 	const templatePath =
-		harness === "pi"
-			? resolve(ROOT, "examples/templates/pi-harness.json")
-			: resolve(ROOT, `examples/harnesses/${harness}/template.json`);
+		harness === "echo"
+			? resolve(ROOT, "examples/harnesses/echo/template.json")
+			: resolve(ROOT, `examples/templates/${harness}-harness.json`);
 	const template = JSON.parse(await readFile(templatePath, "utf8")) as {
 		spec: {
 			image: string;
-			agent?: { env?: Record<string, string> };
+			agent?: { command: string[]; env?: Record<string, string> };
 			harness?: { env?: Record<string, string> };
 		};
 	};
@@ -237,6 +183,20 @@ try {
 			PI_GATEWAY_API:
 				process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
 			PI_GATEWAY_BEARER: gatewayBearer,
+		};
+	}
+	if (ossHarness) {
+		// The bearer is scoped to this disposable gateway, which stops before
+		// cleanup removes the workspace.
+		const gatewayBearer = randomBytes(24).toString("base64url");
+		modelGateway = startFakeOssGateway(gatewayBearer);
+		usesFakeGateway = true;
+		if (!template.spec.agent) throw new Error(`${harness} template must use spec.agent`);
+		template.spec.agent.env = {
+			...template.spec.agent.env,
+			OSS_GATEWAY_URL: `http://host.docker.internal:${modelGateway.port}/v1`,
+			OSS_GATEWAY_MODEL: "pocketcoder-test",
+			OSS_GATEWAY_BEARER: gatewayBearer,
 		};
 	}
 	const templateDir = resolve(tempDir, "templates");
@@ -322,11 +282,13 @@ try {
 		"pocketcoder-server",
 	);
 
-	const prompt =
-		process.env.POCKETCODER_EXAMPLE_PROMPT ??
-		(harness === "echo"
-			? "hello from the local E2E"
-			: "Read /workspace/test.txt with the read tool. Reply with exactly the file contents and nothing else.");
+	let defaultPrompt = `Reply with exactly: ${OSS_FIXTURE_CONTENT}`;
+	if (harness === "echo") defaultPrompt = "hello from the local E2E";
+	if (harness === "pi") {
+		defaultPrompt =
+			"Read /workspace/test.txt with the read tool. Reply with exactly the file contents and nothing else.";
+	}
+	const prompt = process.env.POCKETCODER_EXAMPLE_PROMPT ?? defaultPrompt;
 	if (localPiUi) {
 		uiWorkspace = await createHarnessWorkspace({
 			baseUrl,
@@ -359,18 +321,15 @@ try {
 			throw new Error(`expected canceled workspace, got ${terminalState}`);
 		}
 	} else {
+		let expectedResponse = OSS_FIXTURE_CONTENT;
+		if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
+		if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
 		const report = await runHarnessE2E({
 			baseUrl,
 			key,
 			template: `${harness}-harness`,
 			prompt,
-			expectedResponse:
-				process.env.POCKETCODER_EXAMPLE_EXPECT ??
-				(harness === "echo"
-					? "echo: hello from the local E2E"
-					: usesFakeGateway
-						? PI_FIXTURE_CONTENT
-						: undefined),
+			expectedResponse: process.env.POCKETCODER_EXAMPLE_EXPECT ?? (expectedResponse || undefined),
 			expectedConversation:
 				harness === "echo"
 					? [
@@ -380,6 +339,7 @@ try {
 					: undefined,
 			readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
 			messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
+			expectedLiveUpdates: usesFakeGateway ? 2 : undefined,
 		});
 		console.log("PocketCoder local harness E2E passed:");
 		console.log(JSON.stringify(report, null, 2));

@@ -46,6 +46,7 @@ export const ERROR_CODES = {
 	"storage.capacity_exhausted": 507,
 	"relay.body_too_large": 413,
 	"relay.route_not_allowed": 422,
+	"relay.streaming_unsupported": 409,
 	"relay.deadline_exceeded": 504,
 	"relay.upstream_error": 502,
 	"attachment.invalid": 400,

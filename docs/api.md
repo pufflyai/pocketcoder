@@ -175,7 +175,7 @@ return `410 conversation.expired`; explicitly deleted transcripts return
 ## Service relay
 
 ```text
-GET/POST    /v1/workspaces/{id}/agent/{status|messages|message} scope services:relay
+GET/POST    /v1/workspaces/{id}/agent/{status|messages|message|events} scope services:relay
 GET/POST/… /v1/workspaces/{id}/services/{service}/{path}     scope services:relay
 ```
 
@@ -188,10 +188,20 @@ ways; each route has a deadline. Requests are forwarded over the workspace's
 outbound WSS connection to the loopback service (e.g. AgentAPI) — there is no
 inbound network path to a workspace and no generic forwarding.
 
+New AgentAPI-native workspace snapshots declare `GET /agent/events` as a
+streamed `text/event-stream` response. SSE bytes remain unchanged through the
+relay. Protocol v5 transports bounded chunks with one outstanding
+acknowledgement; HTTP cancellation, workspace disconnect, deadlines, and the
+declared cumulative byte cap cancel the supervisor's loopback fetch. Existing
+snapshots and protocol v1–v4 supervisors keep the buffered routes, so remote
+clients should treat `relay.route_not_allowed` and
+`relay.streaming_unsupported` as signals to use `/status` and `/messages`.
+
 | Status | Code | Meaning |
 |--------|------|---------|
 | 404 | `workspace.not_found` | Unknown or unauthorized workspace |
 | 409 | `workspace.not_ready` | Lifecycle does not allow relay yet |
+| 409 | `relay.streaming_unsupported` | Declared stream route requires a protocol-v5 supervisor |
 | 410 | `workspace.terminal` | Workspace has ended |
 | 413 | `relay.body_too_large` | Request or response exceeded the template limit |
 | 422 | `relay.route_not_allowed` | Route/method/query not declared |

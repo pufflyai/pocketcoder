@@ -47,6 +47,14 @@ jobs:
           bun test
       - name: Run Pi through AgentAPI full-stack E2E
         run: bun run example:e2e:pi
+      - name: Validate the Codex and OpenCode AgentAPI fixtures
+        working-directory: examples/harnesses/oss
+        run: |
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun test
+      - name: Run Codex and OpenCode through AgentAPI full-stack E2E
+        run: bun run example:e2e:oss
       - name: Unit, route, e2e, and PostgreSQL integration tests
         run: bun run test
         env:

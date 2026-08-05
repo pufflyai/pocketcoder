@@ -1,8 +1,9 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { canonicalJson, digestOf } from "./canonical";
 import { parseDurationMs } from "./duration";
-import { templateServices } from "./template-runtime";
+import { legacyTemplateServices, templateServices } from "./template-runtime";
 import {
+	ServiceSchema,
 	type TemplateManifest,
 	TemplateManifestBaseSchema,
 	type TemplateService,
@@ -13,7 +14,11 @@ import {
 } from "./template-schema";
 import { validateTemplateSpec } from "./template-validation";
 
-export { agentApiHarness, isAgentApiNative, templateServices } from "./template-runtime";
+export {
+	agentApiHarness,
+	isAgentApiNative,
+	templateServices,
+} from "./template-runtime";
 export {
 	type Agent,
 	AgentSchema,
@@ -67,10 +72,17 @@ export interface TemplateSnapshot {
 	version: string;
 	digest: string;
 	spec: TemplateSpec;
+	services?: Record<string, TemplateService>;
 }
 
 export function normalizeTemplateSnapshot(snapshot: TemplateSnapshot): TemplateSnapshot {
-	return { ...snapshot, spec: TemplateSpecSchema.parse(snapshot.spec) };
+	return {
+		...snapshot,
+		spec: TemplateSpecSchema.parse(snapshot.spec),
+		...(snapshot.services
+			? { services: z.record(z.string(), ServiceSchema).parse(snapshot.services) }
+			: {}),
+	};
 }
 
 export function snapshotOf(parsed: ParsedTemplate): TemplateSnapshot {
@@ -79,7 +91,12 @@ export function snapshotOf(parsed: ParsedTemplate): TemplateSnapshot {
 		version: parsed.manifest.spec.version,
 		digest: parsed.digest,
 		spec: parsed.manifest.spec,
+		services: templateServices(parsed.manifest.spec),
 	};
+}
+
+export function snapshotServices(snapshot: TemplateSnapshot): Record<string, TemplateService> {
+	return snapshot.services ?? legacyTemplateServices(snapshot.spec);
 }
 
 export function timeoutMs(snapshot: TemplateSnapshot, key: keyof z.infer<typeof TimeoutsSchema>) {
@@ -93,7 +110,7 @@ export function findRoute(
 	method: string,
 	path: string,
 ): { service: TemplateService; route: TemplateServiceRoute } | null {
-	const foundService = templateServices(snapshot.spec)[service];
+	const foundService = snapshotServices(snapshot)[service];
 	if (!foundService) return null;
 	const route = foundService.routes.find(
 		(candidate) => candidate.method === method && candidate.path === path,

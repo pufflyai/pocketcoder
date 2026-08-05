@@ -16,6 +16,7 @@ import {
 	ATTACHMENTS_MIN_PROTOCOL_VERSION,
 	PROTOCOL_VERSION,
 	ServerFrameSchema,
+	STREAMING_MIN_PROTOCOL_VERSION,
 	SUPPORTED_PROTOCOL_VERSIONS,
 } from "./protocol";
 import { SCOPES } from "./scopes";
@@ -122,7 +123,7 @@ describe("attachment manifest", () => {
 	});
 });
 
-describe("protocol v4", () => {
+describe("protocol v5", () => {
 	const envelope = {
 		v: PROTOCOL_VERSION,
 		workspace_id: randomUUID(),
@@ -131,10 +132,11 @@ describe("protocol v4", () => {
 		sent_at: new Date().toISOString(),
 	};
 
-	test("supports versions 1 through 4 and keeps attachments gated on 3", () => {
-		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4]);
-		expect(PROTOCOL_VERSION).toBe(4);
+	test("supports versions 1 through 5 and keeps capability gates distinct", () => {
+		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5]);
+		expect(PROTOCOL_VERSION).toBe(5);
 		expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
+		expect(STREAMING_MIN_PROTOCOL_VERSION).toBe(5);
 	});
 
 	test("validates the server-to-agent attachment frames", () => {

@@ -19,6 +19,9 @@ real harnesses.
 - [`harnesses/pi/`](harnesses/pi/) runs the Pi CLI behind AgentAPI, which owns
   PocketCoder's three-route conversation contract. It uses the same E2E runner
   with an OpenAI-compatible model gateway.
+- [`harnesses/oss/`](harnesses/oss/) runs the real Codex and OpenCode CLIs
+  through AgentAPI. A deterministic local model gateway makes both full-stack
+  tests credential-free and verifies incremental response events.
 - [`clients/pi/`](clients/pi/) documents the relay conversation contract for
   building your own workspace UI. The maintained local Pi client lives in the
   published package [`@pstdio/pocketcoder-remote`](../packages/remote/); local Pi has
@@ -106,6 +109,18 @@ bun run example:e2e:pi
 
 That test loads `harnesses/pi/workspace/test.txt` into `/workspace`, asks the
 remote Pi agent to read it with Pi's real `read` tool, and verifies the result.
+
+The OSS harness matrix exercises both native AgentAPI adapters:
+
+```sh
+bun run example:e2e:oss
+```
+
+Run one harness while troubleshooting with `bun run example:e2e:codex` or
+`bun run example:e2e:opencode`. These commands build the real CLIs into the
+workspace image, stream a deterministic response through PocketCoder, require
+multiple live updates, and verify the final AgentAPI message. CI runs the
+combined matrix.
 
 ## Use local Pi as the remote agent UI
 

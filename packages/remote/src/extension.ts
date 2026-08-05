@@ -19,6 +19,7 @@ import { registerWorkspaceCommands } from "./commands";
 import { ControlPlaneClient } from "./control-plane";
 import { replayHistory } from "./history";
 import { registerConversationRenderers } from "./renderers";
+import { emitRemoteResponse } from "./response-stream";
 import { relayTarget, TargetRef, targetFromEnvironment } from "./session-target";
 import { STATUS_KEY, StatusPoller } from "./status";
 
@@ -43,6 +44,7 @@ function remoteStream(
 	model: Model<Api>,
 	context: Context,
 	signal?: AbortSignal,
+	onOutputStart?: () => void,
 ): AssistantMessageEventStream {
 	const stream = createAssistantMessageEventStream();
 	const output: AssistantMessage = {
@@ -73,13 +75,13 @@ function remoteStream(
 				attachmentQueue.length = 0;
 			}
 			const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key });
-			const reply = await client.send(userTextOf(context), signal, attachmentIds);
-			output.content.push({ type: "text", text: reply });
-			stream.push({ type: "text_start", contentIndex: 0, partial: output });
-			stream.push({ type: "text_delta", contentIndex: 0, delta: reply, partial: output });
-			stream.push({ type: "text_end", contentIndex: 0, content: reply, partial: output });
-			output.stopReason = "stop";
-			stream.push({ type: "done", reason: "stop", message: output });
+			await emitRemoteResponse(
+				stream,
+				output,
+				async (onSnapshot) =>
+					await client.send(userTextOf(context), signal, attachmentIds, onSnapshot),
+				onOutputStart,
+			);
 		} catch (error) {
 			output.stopReason = signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : String(error);
@@ -126,6 +128,7 @@ export default function (pi: ExtensionAPI): void {
 			: new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
 	const attachmentQueue: string[] = [];
 	let poller: StatusPoller | undefined;
+	let activeContext: ExtensionContext | undefined;
 
 	pi.registerProvider(PROVIDER, {
 		name: "PocketCoder remote agent",
@@ -144,7 +147,9 @@ export default function (pi: ExtensionAPI): void {
 			},
 		],
 		streamSimple: (model, context, options) =>
-			remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal),
+			remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal, () =>
+				activeContext?.ui.setWorkingVisible(false),
+			),
 	});
 
 	registerConversationRenderers(pi);
@@ -152,6 +157,7 @@ export default function (pi: ExtensionAPI): void {
 	if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
 
 	pi.on("session_start", async (_event, context) => {
+		activeContext = context;
 		pi.setActiveTools([]);
 		await poller?.stop();
 		poller = undefined;
@@ -182,9 +188,13 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("turn_start", async () => poller?.pause());
-	pi.on("turn_end", async () => poller?.resume());
+	pi.on("turn_end", async (_event, context) => {
+		context.ui.setWorkingVisible(true);
+		poller?.resume();
+	});
 	pi.on("session_shutdown", async () => {
 		await poller?.stop();
 		poller = undefined;
+		activeContext = undefined;
 	});
 }

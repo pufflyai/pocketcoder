@@ -96,7 +96,10 @@ describe("template manifest", () => {
 		});
 		expect(Object.keys(templateServices(spec))).toEqual(["agent"]);
 		expect(findRoute(snapshotOf(parsed), "agent", "GET", "/messages")).not.toBeNull();
-		expect(findRoute(snapshotOf(parsed), "agent", "GET", "/events")).toBeNull();
+		expect(findRoute(snapshotOf(parsed), "agent", "GET", "/events")).not.toBeNull();
+		const legacySnapshot = snapshotOf(parsed);
+		delete legacySnapshot.services;
+		expect(findRoute(legacySnapshot, "agent", "GET", "/events")).toBeNull();
 	});
 
 	test("rejects ambiguous native and legacy ownership", () => {
@@ -306,6 +309,32 @@ describe("template persistence and routing", () => {
 		expect(findRoute(snapshot, "agent", "DELETE", "/status")).toBeNull();
 		expect(findRoute(snapshot, "agent", "GET", "/statusx")).toBeNull();
 		expect(findRoute(snapshot, "other", "GET", "/status")).toBeNull();
+	});
+});
+
+describe("AgentAPI transport", () => {
+	test("derives ACP transport for a native coding agent", () => {
+		const manifest = nativeManifest();
+		(manifest.spec as { agent: Record<string, unknown> }).agent = {
+			type: "opencode",
+			transport: "acp",
+			command: ["opencode", "acp"],
+			cwd: "/workspace",
+		};
+		const spec = parseTemplateManifest(manifest).manifest.spec;
+
+		expect(agentApiHarness(spec).command).toEqual([
+			"/usr/local/bin/agentapi",
+			"server",
+			"--type",
+			"opencode",
+			"--experimental-acp",
+			"--port",
+			"3284",
+			"--",
+			"opencode",
+			"acp",
+		]);
 	});
 });
 

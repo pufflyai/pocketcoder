@@ -214,7 +214,7 @@ describe("workspace network audits", () => {
 
 describe("workspace creation", () => {
 	test("creates queued workspace and is idempotent on the same key and body", async () => {
-		const { app, token } = await createTestServer();
+		const { app, store, token } = await createTestServer();
 		const body = createBody("task-1");
 		const first = await app.request(
 			"/v1/workspaces",
@@ -231,6 +231,8 @@ describe("workspace creation", () => {
 		expect((created as { change_cursor?: number }).change_cursor).toBe(1);
 		expect((created as { agent_state?: string }).agent_state).toBe("unknown");
 		expect((created as { failure?: unknown }).failure).toBeNull();
+		expect((await store.getWorkspace(created.id))?.templateSnapshot.services).toBeDefined();
+
 		const repeat = await app.request(
 			"/v1/workspaces",
 			authed(token, { method: "POST", headers: { "idempotency-key": "idem-1" }, body }),
@@ -731,6 +733,7 @@ describe("service relay", () => {
 		server: TestServer,
 		workspaceId: string,
 		respond: (frame: { payload: { request_id: string; path: string } }) => void,
+		protocolVersion: 4 | 5 = 5,
 	) {
 		const sent: string[] = [];
 		const ws = {
@@ -744,7 +747,7 @@ describe("service relay", () => {
 			},
 			close: () => {},
 		} as unknown as WSContext;
-		const conn = server.hub.attach(workspaceId, randomUUID(), 1, ws);
+		const conn = server.hub.attach(workspaceId, randomUUID(), 1, ws, protocolVersion);
 		conn.registered = true;
 		return { conn, sent };
 	}
@@ -866,6 +869,60 @@ describe("service relay", () => {
 			expect.objectContaining({
 				payload: expect.objectContaining({ service: "agent", path: "/status" }),
 			}),
+		);
+	});
+
+	test("streams a declared AgentAPI event response before upstream EOF", async () => {
+		const server = await createTestServer();
+		const id = await readyWorkspace(server);
+		let requestId = "";
+		const { conn } = fakeAgent(server, id, (frame) => {
+			requestId = frame.payload.request_id;
+			server.hub.startRelayStream(conn, {
+				request_id: requestId,
+				status: 200,
+				headers: {
+					"content-type": "text/event-stream",
+					"cache-control": "no-cache",
+				},
+			});
+		});
+		const response = await server.app.request(
+			`/v1/workspaces/${id}/agent/events`,
+			authed(server.token, { headers: { accept: "text/event-stream" } }),
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("no-cache");
+		if (!response.body) throw new Error("expected streamed body");
+		const reader = response.body.getReader();
+
+		server.hub.pushRelayStreamChunk(conn, {
+			request_id: requestId,
+			seq: 0,
+			content_b64: Buffer.from("data: first\n\n").toString("base64"),
+		});
+		expect(Buffer.from((await reader.read()).value ?? []).toString()).toBe("data: first\n\n");
+		server.hub.pushRelayStreamChunk(conn, {
+			request_id: requestId,
+			seq: 1,
+			content_b64: Buffer.from("data: second\n\n").toString("base64"),
+		});
+		expect(Buffer.from((await reader.read()).value ?? []).toString()).toBe("data: second\n\n");
+		server.hub.endRelayStream(conn, { request_id: requestId });
+		expect((await reader.read()).done).toBe(true);
+	});
+
+	test("returns a compatibility error for streaming through a protocol-v4 supervisor", async () => {
+		const server = await createTestServer();
+		const id = await readyWorkspace(server);
+		fakeAgent(server, id, () => {}, 4);
+		const response = await server.app.request(
+			`/v1/workspaces/${id}/agent/events`,
+			authed(server.token),
+		);
+		expect(response.status).toBe(409);
+		expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+			"relay.streaming_unsupported",
 		);
 	});
 });

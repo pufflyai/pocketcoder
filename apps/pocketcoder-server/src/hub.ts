@@ -1,20 +1,31 @@
 import { randomUUID } from "node:crypto";
 import {
-	type AttachmentAck,
-	type AttachmentResolved,
-	type AttachmentResult,
 	type ClientTerminalMessage,
 	PROTOCOL_VERSION,
 	type ProtocolVersion,
 	type ProxyRequest,
 	type ProxyResponse,
+	type ProxyStreamChunk,
+	type ProxyStreamEnd,
+	type ProxyStreamStart,
 	type ServerFrame,
+	STREAMING_MIN_PROTOCOL_VERSION,
 	type TerminalClosed,
 	type TerminalOpened,
 	type TerminalOutput,
 } from "@pstdio/pocketcoder-contracts";
 import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
+import {
+	type AttachmentChannel,
+	type AttachmentEvent,
+	AttachmentRegistry,
+} from "./hub-attachments";
+import {
+	type RelayStreamChannel,
+	RelayStreamRegistry,
+	type RelayStreamResponse,
+} from "./relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "./terminal-bridge";
 
 // In-memory registry of live supervisor connections. Exactly one connection
@@ -29,6 +40,7 @@ export interface LiveConnection {
 	lastSeqIn: number;
 	seqOut: number;
 	inflight: Map<string, PendingRelay>;
+	streams: Map<string, RelayStreamChannel>;
 	registered: boolean;
 	protocolVersion: ProtocolVersion;
 	checkpoints: Map<string, PendingCheckpoint>;
@@ -45,24 +57,18 @@ interface PendingCheckpoint {
 	timer: ReturnType<typeof setTimeout>;
 }
 
-export type AttachmentEvent =
-	| { kind: "ack"; payload: AttachmentAck }
-	| { kind: "result"; payload: AttachmentResult }
-	| { kind: "resolved"; payload: AttachmentResolved };
-
-// One channel per attachment operation: events queue until the single
-// in-flight awaiter consumes them, so a supervisor reply can never race a
-// not-yet-registered waiter.
-interface AttachmentChannel {
-	queue: AttachmentEvent[];
-	waiter: ((event: AttachmentEvent | null) => void) | null;
-}
-
 export const MAX_INFLIGHT_RELAY = 16;
 
 export class Hub implements ConnectionHub {
 	private readonly byWorkspace = new Map<string, LiveConnection>();
+	private readonly attachments = new AttachmentRegistry<LiveConnection>(
+		(connection) => this.byWorkspace.get(connection.workspaceId) === connection,
+	);
 	private readonly terminals: TerminalBridgeRegistry;
+	private readonly relayStreams = new RelayStreamRegistry<LiveConnection>(
+		(connection) => this.byWorkspace.get(connection.workspaceId) === connection,
+		(connection, type, payload) => this.send(connection, type, payload),
+	);
 
 	constructor(callbacks: TerminalBridgeCallbacks = {}) {
 		this.terminals = new TerminalBridgeRegistry(callbacks);
@@ -93,6 +99,7 @@ export class Hub implements ConnectionHub {
 			lastSeqIn: -1,
 			seqOut: 0,
 			inflight: new Map(),
+			streams: new Map(),
 			registered: false,
 			protocolVersion,
 			checkpoints: new Map(),
@@ -202,7 +209,7 @@ export class Hub implements ConnectionHub {
 		if (!conn?.registered) {
 			return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "unreachable" });
 		}
-		if (conn.inflight.size >= MAX_INFLIGHT_RELAY) {
+		if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
 			return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "deadline" });
 		}
 		const requestId = randomUUID();
@@ -214,6 +221,58 @@ export class Hub implements ConnectionHub {
 			conn.inflight.set(requestId, { resolve, timer });
 			this.send(conn, "proxy_request", { ...request, request_id: requestId });
 		});
+	}
+
+	relayStream(
+		workspaceId: string,
+		request: Omit<ProxyRequest, "request_id">,
+		maxResponseBytes: number,
+	): Promise<RelayStreamResponse> {
+		const conn = this.byWorkspace.get(workspaceId);
+		const requestId = randomUUID();
+		if (!conn?.registered) {
+			return Promise.resolve({ request_id: requestId, headers: {}, error_code: "unreachable" });
+		}
+		if (conn.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
+			return Promise.resolve({
+				request_id: requestId,
+				headers: {},
+				error_code: "streaming_unsupported",
+			});
+		}
+		if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
+			return Promise.resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
+		}
+		const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms);
+		this.send(conn, "proxy_request", { ...request, request_id: requestId });
+		return response;
+	}
+
+	startRelayStream(conn: LiveConnection, payload: ProxyStreamStart): void {
+		this.relayStreams.start(conn, payload);
+	}
+
+	pushRelayStreamChunk(conn: LiveConnection, payload: ProxyStreamChunk): void {
+		this.relayStreams.push(conn, payload);
+	}
+
+	endRelayStream(conn: LiveConnection, payload: ProxyStreamEnd): void {
+		this.relayStreams.end(conn, payload);
+	}
+
+	cancelRelayStream(
+		workspaceId: string,
+		requestId: string,
+		reason: "downstream_closed" | "deadline" | "too_large" | "workspace_disconnected",
+	): void {
+		const conn = this.byWorkspace.get(workspaceId);
+		if (conn) {
+			this.relayStreams.cancel(conn, requestId, reason, reason !== "downstream_closed");
+		}
+	}
+
+	activeStreamCount(workspaceId: string): number {
+		return this.byWorkspace.get(workspaceId)?.streams.size ?? 0;
 	}
 
 	openTerminal(
@@ -277,29 +336,17 @@ export class Hub implements ConnectionHub {
 	}
 
 	openAttachment(conn: LiveConnection, operationId: string): void {
-		conn.attachments.set(operationId, { queue: [], waiter: null });
+		this.attachments.open(conn, operationId);
 	}
 
 	closeAttachment(conn: LiveConnection, operationId: string): void {
-		const channel = conn.attachments.get(operationId);
-		if (!channel) return;
-		conn.attachments.delete(operationId);
-		channel.waiter?.(null);
+		this.attachments.close(conn, operationId);
 	}
 
 	// Delivers a supervisor attachment reply; ignores stale epochs and
 	// operations the server is no longer waiting on.
 	pushAttachment(conn: LiveConnection, event: AttachmentEvent): void {
-		if (this.byWorkspace.get(conn.workspaceId) !== conn) return;
-		const channel = conn.attachments.get(event.payload.operation_id);
-		if (!channel) return;
-		if (channel.waiter) {
-			const waiter = channel.waiter;
-			channel.waiter = null;
-			waiter(event);
-			return;
-		}
-		channel.queue.push(event);
+		this.attachments.push(conn, event);
 	}
 
 	nextAttachment(
@@ -307,21 +354,7 @@ export class Hub implements ConnectionHub {
 		operationId: string,
 		timeoutMs: number,
 	): Promise<AttachmentEvent | null> {
-		const channel = conn.attachments.get(operationId);
-		if (!channel) return Promise.resolve(null);
-		const queued = channel.queue.shift();
-		if (queued) return Promise.resolve(queued);
-		return new Promise((resolve) => {
-			const timer = setTimeout(() => {
-				if (channel.waiter === waiter) channel.waiter = null;
-				resolve(null);
-			}, timeoutMs);
-			const waiter = (event: AttachmentEvent | null) => {
-				clearTimeout(timer);
-				resolve(event);
-			};
-			channel.waiter = waiter;
-		});
+		return this.attachments.next(conn, operationId, timeoutMs);
 	}
 
 	// Resolves a pending relay; ignores responses from stale epochs or after
@@ -342,15 +375,13 @@ export class Hub implements ConnectionHub {
 			pending.resolve({ request_id: id, headers: {}, error_code: errorCode });
 		}
 		conn.inflight.clear();
+		this.relayStreams.drop(conn);
 		this.terminals.disconnect(conn.workspaceId);
 		for (const pending of conn.checkpoints.values()) {
 			clearTimeout(pending.timer);
 			pending.resolve(false);
 		}
 		conn.checkpoints.clear();
-		for (const channel of conn.attachments.values()) {
-			channel.waiter?.(null);
-		}
-		conn.attachments.clear();
+		this.attachments.drop(conn);
 	}
 }

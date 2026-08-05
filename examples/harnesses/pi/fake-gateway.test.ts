@@ -47,7 +47,17 @@ describe("Pi E2E fake model gateway", () => {
 			}),
 		});
 		const secondBody = await second.text();
-		expect(secondBody).toContain(`"content":"${PI_FIXTURE_CONTENT}"`);
+		const streamedText = secondBody
+			.split("\n")
+			.filter((line) => line.startsWith("data: {") && line.includes('"content"'))
+			.map((line) => {
+				const chunk = JSON.parse(line.slice(6)) as {
+					choices: Array<{ delta: { content?: string } }>;
+				};
+				return chunk.choices[0]?.delta.content ?? "";
+			})
+			.join("");
+		expect(streamedText).toBe(PI_FIXTURE_CONTENT);
 		expect(secondBody).toContain('"finish_reason":"stop"');
 		expect(secondBody).toEndWith("data: [DONE]\n\n");
 	});

@@ -11,6 +11,7 @@ import { AttachmentManager } from "./attachments";
 import { prepareCheckpoint } from "./checkpoint-coordinator";
 import { waitForPoolLease } from "./pool-lease";
 import { relayProxyRequest } from "./proxy-relay";
+import { ProxyStreamCoordinator } from "./proxy-stream";
 import {
 	EXIT_NETWORK_POLICY_FAILED,
 	EXIT_PROTOCOL_ERROR,
@@ -61,6 +62,7 @@ class Supervisor {
 	private readonly logs: SupervisorLogs;
 	private readonly healthMonitor: AgentHealthMonitor;
 	private readonly attachments: AttachmentManager;
+	private readonly proxyStreams: ProxyStreamCoordinator;
 	private readonly terminals: TerminalManager;
 	private exec: ExecSpec | null = null;
 	private child: ReturnType<typeof Bun.spawn> | null = null;
@@ -80,9 +82,11 @@ class Supervisor {
 			services: () => (this.exec ? Object.keys(this.exec.services) : []),
 			onMessage: (raw) => void this.handleMessage(raw),
 			onRegistrationFailure: () => this.exitWith(EXIT_REGISTRATION_FAILED),
+			onDisconnect: () => void this.proxyStreams.cancelAll(),
 			isStopped: () => this.shuttingDown || this.childExit !== null,
 		});
 		this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+		this.proxyStreams = new ProxyStreamCoordinator(this.sendFrame.bind(this));
 		this.terminals = new TerminalManager(() => this.exec, this.sendFrame.bind(this));
 		this.attachments = new AttachmentManager(this.sendFrame.bind(this));
 		this.healthMonitor = new AgentHealthMonitor({
@@ -210,7 +214,15 @@ class Supervisor {
 					send: this.sendFrame.bind(this),
 					onAgentTurn: () => this.healthMonitor.setAgentState("running"),
 					probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
+					relayStream: (request, service, route) =>
+						this.proxyStreams.relay(request, service, route),
 				});
+				return;
+			case "proxy_stream_ack":
+				this.proxyStreams.handleAck(frame.payload);
+				return;
+			case "proxy_stream_cancel":
+				await this.proxyStreams.handleCancel(frame.payload);
 				return;
 			case "terminal_open":
 				this.terminals.open(frame.payload);
@@ -325,6 +337,7 @@ class Supervisor {
 	private async gracefulShutdown(): Promise<void> {
 		if (this.shuttingDown) return;
 		this.shuttingDown = true;
+		await this.proxyStreams.cancelAll();
 		await this.terminals.closeAll("workspace_ended");
 		const exec = this.exec;
 		const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
@@ -345,6 +358,7 @@ class Supervisor {
 	// --- Exit ---
 
 	private async flushAndClose(): Promise<void> {
+		await this.proxyStreams.cancelAll();
 		await this.terminals.closeAll("workspace_ended");
 		// Give queued frames a moment to flush before closing.
 		await new Promise((resolve) => setTimeout(resolve, 250));

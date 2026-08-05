@@ -15,6 +15,13 @@ import {
 	LAUNCH_MODES,
 	SourceDescriptorSchema,
 } from "./persistence";
+import {
+	ProxyStreamAckPayload,
+	ProxyStreamCancelPayload,
+	ProxyStreamChunkPayload,
+	ProxyStreamEndPayload,
+	ProxyStreamStartPayload,
+} from "./protocol-stream";
 import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "./template";
 import {
 	TerminalClosedPayload,
@@ -26,21 +33,35 @@ import {
 	TerminalResizePayload,
 } from "./terminal";
 
+export {
+	PROXY_STREAM_CHUNK_BYTES,
+	STREAMING_MIN_PROTOCOL_VERSION,
+} from "./protocol-stream";
+export {
+	LeaseAssignmentFrameSchema,
+	POOL_PROTOCOL_VERSION,
+	type PoolProviderInput,
+	PoolProviderInputSchema,
+	PoolRegisteredFrameSchema,
+	type ProviderBootstrapInput,
+	ProviderBootstrapInputSchema,
+	type ProviderInput,
+	ProviderInputSchema,
+} from "./provider-protocol";
+
 // The pocketcoder-agent supervisor protocol: JSON text frames over one
 // outbound WSS connection per workspace. There is no worker lease, caller-
 // supplied command execution, tunnel, or general file API. Interactive PTYs
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 4;
-// Pool enrollment is a separate header/connection contract; its version
-// number coinciding with a workspace protocol version carries no meaning.
-export const POOL_PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 5;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SUPPORTED_PROTOCOL_VERSIONS = [
 	LEGACY_PROTOCOL_VERSION,
 	2,
 	3,
+	4,
 	PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -60,6 +81,7 @@ const EnvelopeBase = z.object({
 		z.literal(LEGACY_PROTOCOL_VERSION),
 		z.literal(2),
 		z.literal(3),
+		z.literal(4),
 		z.literal(PROTOCOL_VERSION),
 	]),
 	workspace_id: z.uuid(),
@@ -161,6 +183,9 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("network_state"), payload: NetworkStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("log_chunk"), payload: LogChunkPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_response"), payload: ProxyResponsePayload }),
+	EnvelopeBase.extend({ type: z.literal("proxy_stream_start"), payload: ProxyStreamStartPayload }),
+	EnvelopeBase.extend({ type: z.literal("proxy_stream_chunk"), payload: ProxyStreamChunkPayload }),
+	EnvelopeBase.extend({ type: z.literal("proxy_stream_end"), payload: ProxyStreamEndPayload }),
 	EnvelopeBase.extend({ type: z.literal("terminal_opened"), payload: TerminalOpenedPayload }),
 	EnvelopeBase.extend({ type: z.literal("terminal_output"), payload: TerminalOutputPayload }),
 	EnvelopeBase.extend({ type: z.literal("terminal_closed"), payload: TerminalClosedPayload }),
@@ -296,6 +321,11 @@ export const PrepareCheckpointPayload = z.object({
 export const ServerFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),
+	EnvelopeBase.extend({ type: z.literal("proxy_stream_ack"), payload: ProxyStreamAckPayload }),
+	EnvelopeBase.extend({
+		type: z.literal("proxy_stream_cancel"),
+		payload: ProxyStreamCancelPayload,
+	}),
 	EnvelopeBase.extend({ type: z.literal("terminal_open"), payload: TerminalOpenPayload }),
 	EnvelopeBase.extend({ type: z.literal("terminal_input"), payload: TerminalInputPayload }),
 	EnvelopeBase.extend({ type: z.literal("terminal_resize"), payload: TerminalResizePayload }),
@@ -321,56 +351,3 @@ export type ServerFrame = z.infer<typeof ServerFrameSchema>;
 
 export type ProxyRequest = z.infer<typeof ProxyRequestPayload>;
 export type ProxyResponse = z.infer<typeof ProxyResponsePayload>;
-
-// The provider input file mounted read-only into each workspace. It contains
-// no machine key, provider credential, or LLM credential.
-export const ProviderInputSchema = z.object({
-	workspace_id: z.uuid(),
-	server_url: z.string(),
-	registration_secret: z.string(),
-	template_digest: z.string(),
-	template_name: z.string().default("unknown"),
-	template_version: z.string().default("unknown"),
-	launch_mode: z.enum(LAUNCH_MODES).default("create"),
-	source: SourceDescriptorSchema.optional(),
-	restore: z
-		.object({
-			checkpoint_id: z.uuid(),
-			origin_workspace_id: z.uuid(),
-		})
-		.optional(),
-	launch_input: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type ProviderInput = z.infer<typeof ProviderInputSchema>;
-
-// Bootstrap input for an unbound warm runtime. It deliberately excludes every
-// workspace/caller field; the one-shot workspace input arrives in memory only
-// after the control plane has durably committed a lease.
-export const PoolProviderInputSchema = z.object({
-	pool_runtime_id: z.uuid(),
-	server_url: z.string(),
-	enrollment_secret: z.string().min(1),
-	template_digest: z.string(),
-	template_name: z.string(),
-	template_version: z.string(),
-});
-
-export type PoolProviderInput = z.infer<typeof PoolProviderInputSchema>;
-
-export const ProviderBootstrapInputSchema = z.union([ProviderInputSchema, PoolProviderInputSchema]);
-export type ProviderBootstrapInput = z.infer<typeof ProviderBootstrapInputSchema>;
-
-export const PoolRegisteredFrameSchema = z.object({
-	v: z.literal(POOL_PROTOCOL_VERSION),
-	type: z.literal("pool_registered"),
-	pool_runtime_id: z.uuid(),
-	template: z.object({ name: z.string(), version: z.string(), digest: z.string() }),
-	agent_version: z.string(),
-});
-
-export const LeaseAssignmentFrameSchema = z.object({
-	v: z.literal(POOL_PROTOCOL_VERSION),
-	type: z.literal("lease_assignment"),
-	input: ProviderInputSchema,
-});

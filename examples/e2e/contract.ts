@@ -13,6 +13,7 @@ export interface HarnessE2EConfig {
 	readyTimeoutMs?: number;
 	messageTimeoutMs?: number;
 	pollIntervalMs?: number;
+	expectedLiveUpdates?: number;
 }
 
 export interface HarnessWorkspaceConfig {
@@ -40,6 +41,7 @@ export interface HarnessE2EReport {
 	terminalState: string;
 	responseText: string;
 	durableConversationMessages: number | null;
+	liveUpdates: number | null;
 }
 
 interface WorkspaceResource {
@@ -101,6 +103,74 @@ function responseText(messages: unknown[], baselineLength: number): string {
 		.join("\n");
 }
 
+function messageId(value: unknown): number {
+	if (typeof value !== "object" || value === null || !("id" in value)) return -1;
+	return typeof value.id === "number" ? value.id : -1;
+}
+
+function sseEvent(block: string): { event: string; data: Record<string, unknown> } | null {
+	let event = "message";
+	const data: string[] = [];
+	for (const line of block.split("\n")) {
+		if (line.startsWith("event:")) event = line.slice(6).trim();
+		if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+	}
+	try {
+		const parsed = JSON.parse(data.join("\n")) as unknown;
+		return typeof parsed === "object" && parsed !== null
+			? { event, data: parsed as Record<string, unknown> }
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+async function observeLiveUpdates(response: Response, baselineId: number): Promise<string[]> {
+	if (!response.ok || !response.body) {
+		throw new Error(
+			`event stream failed (${response.status}): ${errorBody(await readBody(response))}`,
+		);
+	}
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder();
+	const updates: string[] = [];
+	let buffer = "";
+	let turnStarted = false;
+	try {
+		while (true) {
+			const next = await reader.read();
+			if (next.done) throw new Error("event stream ended before AgentAPI became stable");
+			buffer = `${buffer}${decoder.decode(next.value, { stream: true })}`.replaceAll("\r\n", "\n");
+			let boundary = buffer.indexOf("\n\n");
+			while (boundary >= 0) {
+				const event = sseEvent(buffer.slice(0, boundary));
+				buffer = buffer.slice(boundary + 2);
+				boundary = buffer.indexOf("\n\n");
+				if (
+					event?.event === "message_update" &&
+					typeof event.data.id === "number" &&
+					event.data.id > baselineId &&
+					event.data.role === "agent" &&
+					typeof event.data.message === "string" &&
+					event.data.message !== updates.at(-1)
+				) {
+					turnStarted = true;
+					updates.push(event.data.message);
+				}
+				if (event?.event === "status_change" && event.data.status === "running") {
+					turnStarted = true;
+				}
+				if (turnStarted && event?.event === "status_change" && event.data.status === "stable") {
+					await reader.cancel("turn stable");
+					return updates;
+				}
+			}
+		}
+	} finally {
+		reader.releaseLock();
+	}
+}
+
 function messageError(value: unknown): string | null {
 	if (typeof value !== "object" || value === null || !("error" in value)) return null;
 	return typeof value.error === "string" ? value.error : JSON.stringify(value.error);
@@ -133,6 +203,25 @@ async function waitFor<T>(
 		await delay(pollIntervalMs);
 	}
 	throw new Error(`timed out waiting for ${description} after ${timeoutMs}ms`);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, description: string): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(
+			() => reject(new Error(`timed out waiting for ${description}`)),
+			timeoutMs,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
 }
 
 export async function createHarnessWorkspace(
@@ -264,6 +353,20 @@ export async function runHarnessE2E(
 
 		const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
 		const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
+		const baselineId = before.reduce(
+			(maximum, message) => Math.max(maximum, messageId(message)),
+			-1,
+		);
+		let liveUpdatesPromise: Promise<string[]> | null = null;
+		let liveUpdatesController: AbortController | null = null;
+		if (config.expectedLiveUpdates) {
+			liveUpdatesController = new AbortController();
+			const events = await request(`/v1/workspaces/${workspaceId}/agent/events`, {
+				headers: { accept: "text/event-stream" },
+				signal: liveUpdatesController.signal,
+			});
+			liveUpdatesPromise = observeLiveUpdates(events, baselineId);
+		}
 
 		const messageStartedAt = Date.now();
 		const sendResponse = await request(`/v1/workspaces/${workspaceId}/agent/message`, {
@@ -294,6 +397,21 @@ export async function runHarnessE2E(
 			"harness response",
 		);
 		const responseInMs = Date.now() - messageStartedAt;
+		let liveUpdates: number | null = null;
+		if (liveUpdatesPromise) {
+			let updates: string[];
+			try {
+				updates = await withTimeout(liveUpdatesPromise, messageTimeoutMs, "live AgentAPI updates");
+			} finally {
+				liveUpdatesController?.abort("turn stable");
+			}
+			liveUpdates = updates.length;
+			if (updates.length < (config.expectedLiveUpdates ?? 0)) {
+				throw new Error(
+					`expected ${config.expectedLiveUpdates} live updates, observed ${updates.length}`,
+				);
+			}
+		}
 
 		let durableConversationMessages: number | null = null;
 		if (config.expectedConversation) {
@@ -332,6 +450,7 @@ export async function runHarnessE2E(
 			terminalState,
 			responseText: observedText,
 			durableConversationMessages,
+			liveUpdates,
 		};
 	} finally {
 		if (workspace && !completed) {

@@ -14,11 +14,12 @@ import {
 	MAX_FRAME_BYTES,
 	type ProtocolVersion,
 	parseDurationMs,
+	STREAMING_MIN_PROTOCOL_VERSION,
 	SUPPORTED_PROTOCOL_VERSIONS,
 	secretMountPath,
+	snapshotServices,
 	TERMINAL_MIN_PROTOCOL_VERSION,
 	TERMINAL_REPLAY_BUFFER_BYTES,
-	templateServices,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
@@ -156,7 +157,7 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 			env: materializeSecretEnv(harness.env),
 		},
 		env: materializeSecretEnv(spec.env),
-		services: templateServices(spec),
+		services: snapshotServices(row.templateSnapshot),
 		terminal: spec.terminal
 			? {
 					command: spec.terminal.command,
@@ -309,7 +310,7 @@ async function maybeMarkReady(
 	networkState: WorkspaceRow["networkState"],
 ) {
 	if (row.state !== "connected") return;
-	const allRequiredHealthy = Object.entries(templateServices(row.templateSnapshot.spec))
+	const allRequiredHealthy = Object.entries(snapshotServices(row.templateSnapshot))
 		.filter(([, service]) => service.required)
 		.every(([name]) => health[name] === "healthy");
 	if (!allRequiredHealthy) return;
@@ -416,6 +417,27 @@ async function handleConnectedFrame(
 		case "proxy_response":
 			deps.hub.resolveRelay(connection, frame.payload);
 			return;
+		case "proxy_stream_start":
+			if (connection.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "stream frame requires protocol v5");
+				return;
+			}
+			deps.hub.startRelayStream(connection, frame.payload);
+			return;
+		case "proxy_stream_chunk":
+			if (connection.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "stream frame requires protocol v5");
+				return;
+			}
+			deps.hub.pushRelayStreamChunk(connection, frame.payload);
+			return;
+		case "proxy_stream_end":
+			if (connection.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "stream frame requires protocol v5");
+				return;
+			}
+			deps.hub.endRelayStream(connection, frame.payload);
+			return;
 		case "terminal_opened":
 			if (connection.protocolVersion < TERMINAL_MIN_PROTOCOL_VERSION) {
 				closeProtocol(ws, "terminal frame requires protocol v4");
@@ -505,6 +527,10 @@ function parseFrame(
 		return null;
 	}
 	const frame = parsed.data;
+	if (frame.v !== auth.protocolVersion) {
+		closeProtocol(ws, "wrong protocol version");
+		return null;
+	}
 	if (frame.workspace_id !== auth.workspaceId) {
 		closeProtocol(ws, "wrong workspace");
 		return null;

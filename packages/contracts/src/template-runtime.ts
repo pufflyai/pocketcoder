@@ -6,12 +6,26 @@ import {
 	type TemplateSpec,
 } from "./template-schema";
 
-const AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
+const LEGACY_AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
 	baseUrl: "http://127.0.0.1:3284",
 	routes: [
 		{ method: "GET", path: "/status" },
 		{ method: "GET", path: "/messages", query: ["after"] },
 		{ method: "POST", path: "/message" },
+	],
+});
+
+const AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
+	...LEGACY_AGENTAPI_SERVICE,
+	routes: [
+		...LEGACY_AGENTAPI_SERVICE.routes,
+		{
+			method: "GET",
+			path: "/events",
+			responseMode: "stream",
+			maxResponseBytes: 4 * 1024 * 1024,
+			deadlineSeconds: 300,
+		},
 	],
 });
 
@@ -29,6 +43,7 @@ export function agentApiHarness(spec: TemplateSpec): Harness {
 			"server",
 			"--type",
 			spec.agent.type,
+			...(spec.agent.transport === "acp" ? ["--experimental-acp"] : []),
 			"--port",
 			"3284",
 			"--",
@@ -41,4 +56,8 @@ export function agentApiHarness(spec: TemplateSpec): Harness {
 
 export function templateServices(spec: TemplateSpec): Record<string, TemplateService> {
 	return isAgentApiNative(spec) ? { agent: AGENTAPI_SERVICE } : spec.services;
+}
+
+export function legacyTemplateServices(spec: TemplateSpec): Record<string, TemplateService> {
+	return isAgentApiNative(spec) ? { agent: LEGACY_AGENTAPI_SERVICE } : spec.services;
 }

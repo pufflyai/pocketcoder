@@ -14,6 +14,7 @@ export interface AgentConnectionCallbacks {
 	services(): string[];
 	onMessage(raw: string): void;
 	onRegistrationFailure(): void;
+	onDisconnect(): void;
 	isStopped(): boolean;
 }
 
@@ -59,6 +60,7 @@ export class AgentConnection {
 			// onclose owns retry behavior.
 		};
 		socket.onclose = () => {
+			this.callbacks.onDisconnect();
 			if (this.callbacks.isStopped()) return;
 			if (!this.reconnectCredential) {
 				this.callbacks.onRegistrationFailure();
