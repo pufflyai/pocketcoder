@@ -199,6 +199,43 @@ export const workspaceNetworkEvents = pgTable(
 	],
 );
 
+export const workspaceTerminalSessions = pgTable(
+	"workspace_terminal_sessions",
+	{
+		sessionId: uuid("session_id").primaryKey(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		keyId: uuid("key_id")
+			.notNull()
+			.references(() => machineKeys.id),
+		openedAt: timestamptz("opened_at").notNull(),
+		closedAt: timestamptz("closed_at"),
+		closeReason: text("close_reason"),
+		exitCode: integer("exit_code"),
+		bytesIn: bigint("bytes_in", { mode: "number" }).notNull().default(0),
+		bytesOut: bigint("bytes_out", { mode: "number" }).notNull().default(0),
+	},
+	(table) => [
+		check(
+			"workspace_terminal_sessions_close_reason_check",
+			sql`${table.closeReason} IS NULL OR ${table.closeReason} IN ${sqlValues([
+				"exit",
+				"idle",
+				"checkpoint",
+				"workspace_ended",
+				"agent_detached",
+				"client_closed",
+			])}`,
+		),
+		index("workspace_terminal_sessions_page").on(
+			table.workspaceId,
+			table.openedAt,
+			table.sessionId,
+		),
+	],
+);
+
 export const warmPoolRuntimes = pgTable(
 	"warm_pool_runtimes",
 	{

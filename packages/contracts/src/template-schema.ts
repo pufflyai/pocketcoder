@@ -13,6 +13,7 @@ import { isAbsolutePath, SECRET_REFERENCE_PREFIX } from "./template-constants";
 //   - `spec.setup`    ordered setup commands run before the harness starts;
 //   - `spec.agent`    the preferred coding-agent command PocketCoder wraps in
 //                     its fixed AgentAPI boundary;
+//   - `spec.terminal` optional interactive access to one fixed command;
 //   - `spec.harness` and `spec.services` remain a legacy compatibility profile.
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -58,6 +59,14 @@ export const AgentSchema = HarnessSchema.extend({
 		.string()
 		.regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 		.default("custom"),
+});
+
+export const TerminalSchema = z.object({
+	command: CommandSchema,
+	env: EnvSchema.default({}),
+	cwd: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
+	maxSessions: z.number().int().min(1).max(8).default(2),
+	idleTimeout: DurationSchema.default("10m"),
 });
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -165,6 +174,7 @@ const TemplateSpecInputSchema = z
 		setup: z.array(SetupStepSchema).max(32).default([]),
 		agent: AgentSchema.optional(),
 		harness: HarnessSchema.optional(),
+		terminal: TerminalSchema.optional(),
 		env: EnvSchema.default({}),
 		resources: ResourcesSchema,
 		timeouts: TimeoutsSchema.prefault({}),
@@ -209,6 +219,7 @@ type TemplateSpecCommon = Omit<
 
 export type Agent = z.infer<typeof AgentSchema>;
 export type Harness = z.infer<typeof HarnessSchema>;
+export type Terminal = z.infer<typeof TerminalSchema>;
 export type CheckpointHook = z.infer<typeof CheckpointHookSchema>;
 export type TemplateService = z.infer<typeof ServiceSchema>;
 export type TemplateServiceRoute = z.infer<typeof ServiceRouteSchema>;

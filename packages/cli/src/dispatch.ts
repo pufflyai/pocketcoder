@@ -14,6 +14,7 @@ import {
 	handleWorkspaceChat,
 	handleWorkspaceCore,
 	handleWorkspacePersistence,
+	handleWorkspaceTerminal,
 } from "./handlers-workspaces";
 
 const handlers: CommandHandler[] = [
@@ -27,6 +28,7 @@ const handlers: CommandHandler[] = [
 	handleWorkspacePersistence,
 	handleWorkspaceAttach,
 	handleWorkspaceChat,
+	handleWorkspaceTerminal,
 	handleCheckpoints,
 	handleStorage,
 	handleDoctor,

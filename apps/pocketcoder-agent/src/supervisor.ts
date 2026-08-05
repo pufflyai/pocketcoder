@@ -27,6 +27,7 @@ import {
 	startNetworkMonitor,
 } from "./supervisor-setup";
 import { enforcedEnvironment } from "./supervisor-utils";
+import { TerminalManager } from "./terminal-manager";
 
 export { waitForPoolLease } from "./pool-lease";
 export { EXIT_NETWORK_POLICY_FAILED } from "./supervisor-constants";
@@ -60,6 +61,7 @@ class Supervisor {
 	private readonly logs: SupervisorLogs;
 	private readonly healthMonitor: AgentHealthMonitor;
 	private readonly attachments: AttachmentManager;
+	private readonly terminals: TerminalManager;
 	private exec: ExecSpec | null = null;
 	private child: ReturnType<typeof Bun.spawn> | null = null;
 	private childPhase: ChildPhase = "starting";
@@ -81,6 +83,7 @@ class Supervisor {
 			isStopped: () => this.shuttingDown || this.childExit !== null,
 		});
 		this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+		this.terminals = new TerminalManager(() => this.exec, this.sendFrame.bind(this));
 		this.attachments = new AttachmentManager(this.sendFrame.bind(this));
 		this.healthMonitor = new AgentHealthMonitor({
 			exec: () => this.exec,
@@ -209,6 +212,18 @@ class Supervisor {
 					probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
 				});
 				return;
+			case "terminal_open":
+				this.terminals.open(frame.payload);
+				return;
+			case "terminal_input":
+				this.terminals.input(frame.payload);
+				return;
+			case "terminal_resize":
+				this.terminals.resize(frame.payload);
+				return;
+			case "terminal_close":
+				await this.terminals.close(frame.payload);
+				return;
 			case "signal": {
 				this.forwardSignal(frame.payload.signal === "KILL" ? "SIGKILL" : "SIGTERM");
 				this.sendFrame("termination_ack", { phase: "term_sent" });
@@ -247,6 +262,7 @@ class Supervisor {
 					syncAgentApiMessages: this.healthMonitor.syncMessages.bind(this.healthMonitor),
 					child: () => this.child,
 					childExited: () => this.childExit !== null,
+					closeTerminals: () => this.terminals.closeAll("checkpoint"),
 					setQuiescing: (value) => {
 						this.quiescing = value;
 					},
@@ -309,6 +325,7 @@ class Supervisor {
 	private async gracefulShutdown(): Promise<void> {
 		if (this.shuttingDown) return;
 		this.shuttingDown = true;
+		await this.terminals.closeAll("workspace_ended");
 		const exec = this.exec;
 		const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
 		this.forwardSignal("SIGTERM");
@@ -328,6 +345,7 @@ class Supervisor {
 	// --- Exit ---
 
 	private async flushAndClose(): Promise<void> {
+		await this.terminals.closeAll("workspace_ended");
 		// Give queued frames a moment to flush before closing.
 		await new Promise((resolve) => setTimeout(resolve, 250));
 		this.shuttingDown = true;

@@ -80,7 +80,8 @@ operational choices ([security model](security.md)).
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
 `workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
 `checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,
-`attachments:write`, `logs:read`, `network:read`, `admin`. A key issued without
+`attachments:write`, `logs:read`, `network:read`, `terminal:attach`,
+`terminal:read`, `admin`. A key issued without
 `--scopes` inherits its principal's
 current scopes, including later changes made by `principals update`. Passing
 `--scopes` creates a permanently narrower key whose effective scopes are the
@@ -113,6 +114,8 @@ pcd workspaces create --template <name> [--version <v>] \
 pcd workspaces get --id <uuid>
 pcd workspaces logs --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces network-events --id <uuid> [--cursor <opaque>] [--limit <n>]
+pcd workspaces terminal --id <uuid> [--session <uuid>]
+pcd workspaces terminal-sessions --id <uuid> [--cursor <opaque>] [--limit <n>]
 pcd workspaces cancel --id <uuid>
 pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] \
   [--file <path>]... [--json]
@@ -147,6 +150,12 @@ pcd workspaces outputs --id <uuid>
   the queue, and `/detach <index|all>` removes entries. Queued files upload
   with the next non-command message; if an upload fails the message is not
   sent and the queue is kept.
+- `terminal` requires a template `terminal` block and `terminal:attach`. It
+  runs only the template-declared command, mirrors remote exit status, sends
+  terminal resize events, and detaches without stopping the PTY on Ctrl-]
+  followed by `d`. Reattach with the printed session id; recent output replays.
+- `terminal-sessions` requires `terminal:read` and prints the metadata-only
+  audit trail. Keystrokes and output content are never recorded.
 - `preserve` ends the source execution. `restore` and `recreate` always create
   a new execution and accept a caller-chosen external ID.
 

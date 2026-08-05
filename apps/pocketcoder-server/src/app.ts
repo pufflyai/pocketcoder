@@ -4,7 +4,12 @@ import {
 	generateOpaqueSecret,
 	verifyEgressAuditToken,
 } from "@pstdio/pocketcoder-auth";
-import { ApiError, NetworkEventBatchSchema } from "@pstdio/pocketcoder-contracts";
+import {
+	ApiError,
+	NetworkEventBatchSchema,
+	type TerminalClosed,
+	type TerminalCloseReason,
+} from "@pstdio/pocketcoder-contracts";
 import {
 	type AdmissionLimits,
 	type MetricSink,
@@ -42,6 +47,8 @@ import { registerDiagnosticRoutes } from "./routes/diagnostics";
 import { registerRecoveryRoutes } from "./routes/recovery";
 import { registerWorkspaceRoutes } from "./routes/workspaces";
 import { WorkspaceService } from "./service";
+import type { TerminalBridgeCallbacks } from "./terminal-bridge";
+import { terminalConnectValidator, terminalWsEvents } from "./terminal-ws";
 import { agentConnectValidator, agentWsEvents } from "./ws";
 
 export interface BuildDeps {
@@ -72,17 +79,61 @@ export interface BuiltServer {
 	metrics: MetricSink;
 }
 
+function terminalAuditReason(reason: TerminalClosed["reason"]): TerminalCloseReason {
+	if (reason === "error") return "agent_detached";
+	if (reason === "closed") return "client_closed";
+	return reason;
+}
+
+function terminalCallbacks(store: Store): TerminalBridgeCallbacks {
+	return {
+		onTerminalInput: (workspaceId) => {
+			const now = new Date();
+			return store.updateWorkspace(workspaceId, { lastActivityAt: now }, now);
+		},
+		onTerminalClosed: async (event) => {
+			const closedAt = new Date();
+			const closeReason = terminalAuditReason(event.reason);
+			const session = await store.closeTerminalSession(event.session_id, {
+				closedAt,
+				closeReason,
+				exitCode: event.exit_code ?? null,
+				bytesIn: event.bytesIn,
+				bytesOut: event.bytesOut,
+			});
+			if (!session) return;
+			await store.appendEvent(
+				event.workspaceId,
+				"workspace.terminal_closed",
+				{
+					session_id: session.sessionId,
+					close_reason: session.closeReason,
+					exit_code: session.exitCode,
+					duration_ms: closedAt.getTime() - session.openedAt.getTime(),
+					bytes_in: session.bytesIn,
+					bytes_out: session.bytesOut,
+				},
+				closedAt,
+			);
+		},
+	};
+}
+
+function workspaceSecretFactory(pepper: string) {
+	return {
+		generate: generateOpaqueSecret,
+		digest: (secret: string) => digestOpaque(pepper, secret),
+	};
+}
+
 export function buildServer(deps: BuildDeps): BuiltServer {
 	const { store, driver, pepper, limits } = deps;
 	const logger = deps.logger ?? createStructuredLogger(() => {});
 	const metrics = deps.metrics ?? new RuntimeMetrics();
 	const log = (message: string) => logger.info("runtime.message", { message });
-	const hub = new Hub();
+	const hub = new Hub(terminalCallbacks(store));
 	const poolHub = new PoolConnectionHub();
-	const secretFactory = {
-		generate: generateOpaqueSecret,
-		digest: (secret: string) => digestOpaque(pepper, secret),
-	};
+	const secretFactory = workspaceSecretFactory(pepper);
 	const warmPool = deps.warmPools
 		? new WarmPoolManager({
 				store,
@@ -233,6 +284,13 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 	registerConversationRoutes({ app, store, service });
 	registerWorkspaceRoutes({ app, store, service });
 	registerDiagnosticRoutes({ app, store, service });
+	const terminalDeps = { store, hub, service };
+	app.get(
+		"/v1/workspaces/:id/terminal",
+		requireScope("terminal:attach"),
+		terminalConnectValidator(terminalDeps),
+		upgradeWebSocket(terminalWsEvents(terminalDeps)),
+	);
 
 	// --- Templates ---
 

@@ -20,7 +20,16 @@ export {
 	WorkspaceTerminalError,
 } from "./errors";
 export { type TemplateSummary, TemplatesApi } from "./templates";
-export type { PocketCoderClientConfig, RequestOptions } from "./transport";
+export {
+	TerminalConnection,
+	type TerminalConnectOptions,
+	TerminalsApi,
+} from "./terminals";
+export type {
+	PocketCoderClientConfig,
+	RequestOptions,
+	WebSocketFactory,
+} from "./transport";
 export {
 	TERMINAL_WORKSPACE_STATES,
 	type WorkspaceCreateInput,

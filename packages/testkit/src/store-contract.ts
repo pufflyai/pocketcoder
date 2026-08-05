@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import type {
+	MachineKeyRow,
 	PrincipalRow,
 	Store,
 	TemplateRow,
@@ -21,6 +22,7 @@ export interface StoreContractHarness {
 
 interface PreparedStore extends StoreContractInstance {
 	principal: PrincipalRow;
+	machineKey: MachineKeyRow;
 	template: TemplateRow;
 	workspace(overrides?: Partial<WorkspaceInsert>): WorkspaceInsert;
 }
@@ -40,10 +42,22 @@ async function prepared(harness: StoreContractHarness): Promise<PreparedStore> {
 		["admin"],
 		[template.name],
 	);
+	const machineKey: MachineKeyRow = {
+		id: randomUUID(),
+		principalId: principal.id,
+		secretDigest: new Uint8Array([1]),
+		scopes: [],
+		createdAt: new Date(),
+		expiresAt: null,
+		revokedAt: null,
+		lastUsedAt: null,
+	};
+	await instance.store.insertMachineKey(machineKey);
 	let sequence = 0;
 	return {
 		...instance,
 		principal,
+		machineKey,
 		template,
 		workspace(overrides = {}) {
 			sequence += 1;
@@ -79,6 +93,12 @@ async function withStore(
 }
 
 export function registerStoreContract(name: string, harness: StoreContractHarness): void {
+	registerCoreStoreContract(name, harness);
+	registerPersistenceStoreContract(name, harness);
+	registerTerminalStoreContract(name, harness);
+}
+
+function registerCoreStoreContract(name: string, harness: StoreContractHarness): void {
 	describe.skipIf(harness.enabled === false)(`${name} store contract`, () => {
 		test("reserves queue capacity and idempotency atomically", async () => {
 			await withStore(harness, async ({ store, workspace }) => {
@@ -203,7 +223,11 @@ export function registerStoreContract(name: string, harness: StoreContractHarnes
 				expect(new Set([...first, ...second].map((row) => row.id)).size).toBe(3);
 			});
 		});
+	});
+}
 
+function registerPersistenceStoreContract(name: string, harness: StoreContractHarness): void {
+	describe.skipIf(harness.enabled === false)(`${name} persistence store contract`, () => {
 		test("replays operations before capacity and preserves ready checkpoint immutability", async () => {
 			await withStore(harness, async ({ store, principal, template, workspace }) => {
 				const inserted = await store.insertWorkspace(workspace());
@@ -281,6 +305,61 @@ export function registerStoreContract(name: string, harness: StoreContractHarnes
 					store.updateCheckpoint(checkpointId, { providerKind: "changed" }, new Date()),
 				).rejects.toThrow("immutable");
 				expect(await store.checkpointUsage(principal.id)).toEqual({ count: 1, logicalBytes: 7 });
+			});
+		});
+	});
+}
+
+function registerTerminalStoreContract(name: string, harness: StoreContractHarness): void {
+	describe.skipIf(harness.enabled === false)(`${name} terminal store contract`, () => {
+		test("audits sessions and enforces the open-session limit", async () => {
+			await withStore(harness, async ({ store, machineKey, workspace }) => {
+				const inserted = await store.insertWorkspace(workspace());
+				if (inserted.kind !== "created") throw new Error("expected workspace");
+				const openedAt = new Date("2026-01-01T00:03:00Z");
+				const first = await store.openTerminalSession(
+					{
+						sessionId: randomUUID(),
+						workspaceId: inserted.workspace.id,
+						keyId: machineKey.id,
+						openedAt,
+					},
+					1,
+				);
+				expect(first?.closeReason).toBeNull();
+				expect(
+					await store.openTerminalSession(
+						{
+							sessionId: randomUUID(),
+							workspaceId: inserted.workspace.id,
+							keyId: machineKey.id,
+							openedAt: new Date(openedAt.getTime() + 1),
+						},
+						1,
+					),
+				).toBeNull();
+				if (!first) throw new Error("expected terminal session");
+				const closed = await store.closeTerminalSession(first.sessionId, {
+					closedAt: new Date(openedAt.getTime() + 1000),
+					closeReason: "exit",
+					exitCode: 7,
+					bytesIn: 4,
+					bytesOut: 8,
+				});
+				if (!closed) throw new Error("expected closed terminal session");
+				expect(closed).toMatchObject({ closeReason: "exit", exitCode: 7, bytesIn: 4, bytesOut: 8 });
+				expect(
+					await store.closeTerminalSession(first.sessionId, {
+						closedAt: new Date(),
+						closeReason: "client_closed",
+						exitCode: null,
+						bytesIn: 0,
+						bytesOut: 0,
+					}),
+				).toBeNull();
+				expect(await store.listTerminalSessions(inserted.workspace.id, undefined, 10)).toEqual([
+					closed,
+				]);
 			});
 		});
 	});

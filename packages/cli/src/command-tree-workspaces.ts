@@ -8,6 +8,13 @@ export function addWorkspaceCommands(parser: Argv) {
 			.command("get", "Get a workspace", idOption)
 			.command("logs", "Read workspace logs", paginationOptions)
 			.command("network-events", "Read durable workspace egress decisions", paginationOptions)
+			.command("terminal-sessions", "Read audited terminal sessions", paginationOptions)
+			.command("terminal", "Open or reattach to an interactive terminal", (command) =>
+				idOption(command).option("session", {
+					type: "string",
+					description: "Existing terminal session ID to reattach",
+				}),
+			)
 			.command("cancel", "Cancel a workspace", idOption)
 			.command("preserve", "Stop and checkpoint a persistence-enabled workspace", (command) =>
 				command

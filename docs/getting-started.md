@@ -89,7 +89,7 @@ holding **machine keys** with explicit scopes and a template allowlist:
 
 ```sh
 bun run pcd principals create --name my-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,attachments:write,logs:read \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,attachments:write,logs:read,terminal:attach,terminal:read \
   --templates '*'
 bun run pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z
 ```
@@ -118,6 +118,7 @@ pcd templates list                       # what you may launch
 pcd workspaces create --template <name> --wait  # waits through ready or failure
 pcd workspaces list --active             # queued/provisioning/connected/ready/terminating
 pcd workspaces logs --id <uuid>          # bounded operational logs
+pcd workspaces terminal --id <uuid>      # template-declared interactive PTY
 ```
 
 A workspace goes `queued → provisioning → connected → ready`. Once `ready`,

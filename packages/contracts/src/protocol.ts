@@ -16,20 +16,33 @@ import {
 	SourceDescriptorSchema,
 } from "./persistence";
 import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "./template";
+import {
+	TerminalClosedPayload,
+	TerminalClosePayload,
+	TerminalInputPayload,
+	TerminalOpenedPayload,
+	TerminalOpenPayload,
+	TerminalOutputPayload,
+	TerminalResizePayload,
+} from "./terminal";
 
 // The pocketcoder-agent supervisor protocol: JSON text frames over one
-// outbound WSS connection per workspace. There is no worker lease, arbitrary
-// command execution, shell stream, or tunnel in this protocol. File transfer
-// exists only as the bounded v3 attachment upload into supervisor-owned
-// storage; there is no general file API.
+// outbound WSS connection per workspace. There is no worker lease, caller-
+// supplied command execution, tunnel, or general file API. Interactive PTYs
+// exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 // Pool enrollment is a separate header/connection contract; its version
 // number coinciding with a workspace protocol version carries no meaning.
 export const POOL_PROTOCOL_VERSION = 3;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, PROTOCOL_VERSION] as const;
+export const SUPPORTED_PROTOCOL_VERSIONS = [
+	LEGACY_PROTOCOL_VERSION,
+	2,
+	3,
+	PROTOCOL_VERSION,
+] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -43,7 +56,12 @@ export const HEADER_POOL_RUNTIME = "x-pocketcoder-pool-runtime";
 export const HEADER_POOL_ENROLLMENT = "x-pocketcoder-pool-enrollment";
 
 const EnvelopeBase = z.object({
-	v: z.union([z.literal(LEGACY_PROTOCOL_VERSION), z.literal(2), z.literal(PROTOCOL_VERSION)]),
+	v: z.union([
+		z.literal(LEGACY_PROTOCOL_VERSION),
+		z.literal(2),
+		z.literal(3),
+		z.literal(PROTOCOL_VERSION),
+	]),
 	workspace_id: z.uuid(),
 	connection_id: z.uuid(),
 	seq: z.number().int().nonnegative(),
@@ -143,6 +161,9 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("network_state"), payload: NetworkStatePayload }),
 	EnvelopeBase.extend({ type: z.literal("log_chunk"), payload: LogChunkPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_response"), payload: ProxyResponsePayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_opened"), payload: TerminalOpenedPayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_output"), payload: TerminalOutputPayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_closed"), payload: TerminalClosedPayload }),
 	EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
 	EnvelopeBase.extend({ type: z.literal("source_resolved"), payload: SourceResolvedPayload }),
 	EnvelopeBase.extend({ type: z.literal("checkpoint_status"), payload: CheckpointStatusPayload }),
@@ -173,6 +194,17 @@ export const ExecSpecSchema = z.object({
 	harness: HarnessSchema,
 	env: z.record(z.string(), z.string()),
 	services: z.record(z.string(), ServiceSchema),
+	terminal: z
+		.object({
+			command: z.array(z.string().min(1)).min(1),
+			cwd: z.string().optional(),
+			env: z.record(z.string(), z.string()),
+			max_sessions: z.number().int().min(1).max(8),
+			idle_timeout_seconds: z.number().int().positive(),
+			replay_buffer_bytes: z.number().int().positive(),
+		})
+		.nullable()
+		.default(null),
 	timeouts: TimeoutsSchema,
 	security: z
 		.object({
@@ -264,6 +296,10 @@ export const PrepareCheckpointPayload = z.object({
 export const ServerFrameSchema = z.discriminatedUnion("type", [
 	EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
 	EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_open"), payload: TerminalOpenPayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_input"), payload: TerminalInputPayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_resize"), payload: TerminalResizePayload }),
+	EnvelopeBase.extend({ type: z.literal("terminal_close"), payload: TerminalClosePayload }),
 	EnvelopeBase.extend({ type: z.literal("signal"), payload: SignalPayload }),
 	EnvelopeBase.extend({ type: z.literal("health_probe"), payload: HealthProbePayload }),
 	EnvelopeBase.extend({ type: z.literal("shutdown"), payload: ShutdownPayload }),

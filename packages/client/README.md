@@ -18,7 +18,16 @@ const client = new PocketCoderClient({
 for await (const workspace of client.workspaces.all({ state: "ready" })) {
   console.log(workspace.id, workspace.agent_state);
 }
+
+const terminal = client.terminals.connect("workspace-id");
+terminal.onMessage((message) => {
+  if (message.type === "output") process.stdout.write(Buffer.from(message.data_b64, "base64"));
+});
 ```
+
+`client.terminals.connect(id, { sessionId })` opens or reattaches an
+authenticated terminal WebSocket. `client.terminals.list(id)` reads the
+metadata-only terminal audit history.
 
 Use `client.raw(path, init)` for endpoints not yet represented by a typed
 resource client. API failures throw `PocketCoderError`; expired or deleted

@@ -177,7 +177,47 @@ describe("template manifest", () => {
 		};
 		expect(() => parseTemplateManifest(output)).toThrow();
 	});
+});
 
+describe("template terminal", () => {
+	test("normalizes an opt-in terminal for native and legacy templates", () => {
+		for (const manifest of [baseManifest(), nativeManifest()]) {
+			(manifest.spec as Record<string, unknown>).terminal = {
+				command: ["/bin/bash", "-l"],
+				cwd: "/workspace",
+				env: { TERMINAL_TOKEN: "secretRef:terminal/token" },
+			};
+			const terminal = parseTemplateManifest(manifest).manifest.spec.terminal;
+			expect(terminal).toMatchObject({
+				command: ["/bin/bash", "-l"],
+				cwd: "/workspace",
+				maxSessions: 2,
+				idleTimeout: "10m",
+			});
+		}
+		const rootCwd = baseManifest();
+		(rootCwd.spec as Record<string, unknown>).terminal = {
+			command: ["/bin/sh"],
+			cwd: "/",
+		};
+		expect(() => parseTemplateManifest(rootCwd)).not.toThrow();
+	});
+
+	test("rejects terminal path traversal, limits, and secret literals", () => {
+		const invalid = [
+			{ command: ["/bin/sh"], cwd: "/workspace/../escape" },
+			{ command: ["/bin/sh"], maxSessions: 9 },
+			{ command: ["/bin/sh"], env: { API_TOKEN: "literal-secret" } },
+		];
+		for (const terminal of invalid) {
+			const manifest = baseManifest();
+			(manifest.spec as Record<string, unknown>).terminal = terminal;
+			expect(() => parseTemplateManifest(manifest)).toThrow();
+		}
+	});
+});
+
+describe("template persistence and routing", () => {
 	test("custom setup commands and harness survive the snapshot", () => {
 		const m = baseManifest();
 		(m.spec as { setup?: unknown }).setup = [

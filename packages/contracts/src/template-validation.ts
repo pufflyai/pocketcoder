@@ -18,6 +18,7 @@ function envSources(spec: TemplateSpec): Array<[Array<string | number>, Record<s
 	if (!isAgentApiNative(spec) && spec.checkpointHook) {
 		sources.push([["spec", "checkpointHook", "env"], spec.checkpointHook.env]);
 	}
+	if (spec.terminal) sources.push([["spec", "terminal", "env"], spec.terminal.env]);
 	return sources;
 }
 
@@ -104,6 +105,20 @@ function validateEnvironment(spec: TemplateSpec, ctx: z.RefinementCtx): void {
 			}
 		}
 	}
+}
+
+function validateTerminal(spec: TemplateSpec, ctx: z.RefinementCtx): void {
+	if (
+		!spec.terminal?.cwd ||
+		spec.terminal.cwd === "/" ||
+		isNormalizedFilesystemPath(spec.terminal.cwd)
+	)
+		return;
+	ctx.addIssue({
+		code: "custom",
+		path: ["spec", "terminal", "cwd"],
+		message: "cwd must be a normalized absolute filesystem path",
+	});
 }
 
 function validSecretReference(value: string): boolean {
@@ -306,4 +321,5 @@ export function validateTemplateSpec(spec: TemplateSpec, ctx: z.RefinementCtx): 
 	validateWritableMemoryPaths(spec, ctx);
 	validatePersistence(spec, ctx);
 	validateNetworkEnvironment(spec, ctx);
+	validateTerminal(spec, ctx);
 }

@@ -4,6 +4,7 @@ import { CheckpointsApi, OperationsApi } from "./checkpoints";
 import { ConversationsApi } from "./conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
 import { TemplatesApi } from "./templates";
+import { TerminalsApi } from "./terminals";
 import { type PocketCoderClientConfig, PocketCoderTransport } from "./transport";
 import { WorkspacesApi } from "./workspaces";
 
@@ -20,6 +21,7 @@ export class PocketCoderClient {
 	readonly networkEvents: NetworkEventsApi;
 	readonly outputs: OutputsApi;
 	readonly administration: AdministrationApi;
+	readonly terminals: TerminalsApi;
 
 	constructor(config: PocketCoderClientConfig, fetchImpl: typeof fetch = fetch) {
 		this.transport = new PocketCoderTransport(config, fetchImpl);
@@ -34,6 +36,7 @@ export class PocketCoderClient {
 		this.networkEvents = new NetworkEventsApi(this.transport);
 		this.outputs = new OutputsApi(this.transport);
 		this.administration = new AdministrationApi(this.transport);
+		this.terminals = new TerminalsApi(this.transport);
 	}
 
 	raw(path: string, init: RequestInit = {}) {

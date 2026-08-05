@@ -11,6 +11,8 @@ export type EventType =
 	| `workspace.${WorkspaceState}`
 	| "workspace.output_published"
 	| "workspace.conversation_deleted"
+	| "workspace.terminal_opened"
+	| "workspace.terminal_closed"
 	| "workspace.restore_queued"
 	| "checkpoint.creating"
 	| "checkpoint.ready"

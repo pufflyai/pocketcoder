@@ -122,7 +122,7 @@ describe("attachment manifest", () => {
 	});
 });
 
-describe("protocol v3", () => {
+describe("protocol v4", () => {
 	const envelope = {
 		v: PROTOCOL_VERSION,
 		workspace_id: randomUUID(),
@@ -131,9 +131,9 @@ describe("protocol v3", () => {
 		sent_at: new Date().toISOString(),
 	};
 
-	test("supports versions 1 through 3 and gates attachments on 3", () => {
-		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3]);
-		expect(PROTOCOL_VERSION).toBe(3);
+	test("supports versions 1 through 4 and keeps attachments gated on 3", () => {
+		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4]);
+		expect(PROTOCOL_VERSION).toBe(4);
 		expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
 	});
 

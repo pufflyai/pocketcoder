@@ -28,6 +28,12 @@
 				"PI_WORKSPACE_DIR": "/workspace"
 			}
 		},
+		"terminal": {
+			"command": ["/bin/sh"],
+			"cwd": "/workspace",
+			"maxSessions": 2,
+			"idleTimeout": "10m"
+		},
 		"env": {
 			"HOME": "/home/agent"
 		},

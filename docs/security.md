@@ -16,6 +16,15 @@ harness-vs-tools split would not hold. Treat the whole workspace as a single
 zone with the agent's authority, and place controls at its edges: the control
 channel, the egress firewall, and the deployment's model gateway.
 
+## Terminal access is template-owned
+
+Interactive terminal access does not add caller-supplied command execution.
+The immutable template selects one command, cwd, and environment; callers with
+`terminal:attach` can only exchange PTY input, output, and resize messages
+with that command. Use a separate `terminal:read` scope for session audit
+metadata. PocketCoder records who opened a session, timestamps, exit status,
+and byte counts, but never persists terminal content.
+
 ## Long-lived tokens are the failure mode
 
 A leaked credential is an incident only if it outlives or out-scopes the place
