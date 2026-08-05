@@ -6,6 +6,7 @@
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
 		"apps/*",
+		"examples/harnesses/*",
 		"packages/*"
 	],
 	"scripts": {
@@ -41,7 +42,7 @@
 		"release": "bun run build && changeset publish",
 		"start": "bun run --filter '@pstdio/pocketcoder-server' start",
 		"test": "bun run test:all",
-		"test:all": "bun run test:unit && bun run test:integration && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run --cwd examples/harnesses/pi typecheck && bun run --cwd examples/harnesses/pi test && bun run --cwd examples/harnesses/oss typecheck && bun run --cwd examples/harnesses/oss test",
+		"test:all": "bun run test:unit && bun run test:integration && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test",
 		"test:integration": "bun test packages/db/src/store.test.ts packages/drivers/src/kubernetes.test.ts apps/pocketcoder-egress/src/docker-conformance.test.ts apps/pocketcoder-egress/src/kubernetes-conformance.test.ts",
 		"test:unit": "lerna run test",
 		"typecheck": "lerna run typecheck",

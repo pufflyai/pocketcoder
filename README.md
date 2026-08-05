@@ -150,7 +150,8 @@ bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses O
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
-Lerna coordinates tasks across `apps/*` and `packages/*`; its Nx integration
+Lerna coordinates tasks across `apps/*`, `packages/*`, and the private
+`examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
 
 Two suites need external services and skip themselves otherwise:
