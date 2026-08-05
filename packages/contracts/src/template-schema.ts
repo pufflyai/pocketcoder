@@ -59,6 +59,7 @@ export const AgentSchema = HarnessSchema.extend({
 		.string()
 		.regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 		.default("custom"),
+	transport: z.enum(["pty", "acp"]).default("pty"),
 });
 
 export const TerminalSchema = z.object({
@@ -75,6 +76,7 @@ export const ServiceRouteSchema = z.object({
 	method: z.enum(HTTP_METHODS),
 	path: z.string(),
 	query: z.array(z.string().min(1)).default([]),
+	responseMode: z.enum(["buffered", "stream"]).default("buffered"),
 	maxRequestBytes: z
 		.number()
 		.int()

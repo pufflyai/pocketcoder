@@ -6,6 +6,12 @@ A terminal UI for PocketCoder workspaces, built on the [Pi coding agent](https:/
 local Pi TUI → PocketCoder service relay → AgentAPI → remote coding agent
 ```
 
+AgentAPI message snapshots stream into Pi while a turn is running. Each
+snapshot replaces Pi's mutable partial message, so terminal rewrites render
+without duplicated text; the completed message still comes from AgentAPI's
+stable history. Older servers and workspace snapshots automatically use the
+final-response polling path.
+
 ## Install
 
 ```sh
@@ -99,5 +105,6 @@ gestures fail with an explanation while plain text keeps working.
 ## Behavior notes
 
 - The server's durable conversation is the source of truth: every attach replays history from `GET /v1/workspaces/{id}/conversation`. Pi's local session persistence is disabled.
+- Live text uses AgentAPI's `GET /events` stream when the workspace snapshot and protocol support it. Intermediate snapshots are never persisted.
 - Local Pi coding tools are disabled; the remote agent does all the work.
 - The status bar shows the workspace id, workspace state, and agent state, updated via the durable change cursor.

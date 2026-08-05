@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+: "${OSS_GATEWAY_URL:?OSS_GATEWAY_URL is required}"
+: "${OSS_GATEWAY_MODEL:?OSS_GATEWAY_MODEL is required}"
+: "${OSS_GATEWAY_BEARER:?OSS_GATEWAY_BEARER is required}"
+
+CODEX_DIR="${CODEX_HOME:-/home/agent/.codex}"
+mkdir -p "$CODEX_DIR"
+export OPENAI_API_KEY="$OSS_GATEWAY_BEARER"
+bun -e '
+const [path, baseURL] = process.argv.slice(1);
+const config = `model_provider = "pocketcoder"
+
+[model_providers.pocketcoder]
+name = "PocketCoder E2E gateway"
+base_url = ${JSON.stringify(baseURL)}
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+supports_websockets = false
+
+[projects."/workspace"]
+trust_level = "trusted"
+`;
+await Bun.write(path, config);
+' "$CODEX_DIR/config.toml" "$OSS_GATEWAY_URL"
+chmod 0600 "$CODEX_DIR/config.toml"
+
+exec /opt/oss/node_modules/.bin/codex \
+	--no-alt-screen \
+	--dangerously-bypass-approvals-and-sandbox \
+	--disable responses_websockets \
+	--disable responses_websockets_v2 \
+	--cd /workspace \
+	--model "$OSS_GATEWAY_MODEL"

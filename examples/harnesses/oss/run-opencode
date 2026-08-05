@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+: "${OSS_GATEWAY_URL:?OSS_GATEWAY_URL is required}"
+: "${OSS_GATEWAY_MODEL:?OSS_GATEWAY_MODEL is required}"
+: "${OSS_GATEWAY_BEARER:?OSS_GATEWAY_BEARER is required}"
+
+export OPENCODE_CONFIG_CONTENT="$(bun -e '
+const [baseURL, apiKey, model] = process.argv.slice(1);
+const config = {
+  $schema: "https://opencode.ai/config.json",
+  autoupdate: false,
+  model: `pocketcoder/${model}`,
+  permission: "allow",
+  provider: {
+    pocketcoder: {
+      npm: "@ai-sdk/openai-compatible",
+      name: "PocketCoder E2E gateway",
+      options: { baseURL, apiKey },
+      models: {
+        [model]: {
+          name: model,
+          limit: { context: 128000, output: 4096 },
+        },
+      },
+    },
+  },
+};
+process.stdout.write(JSON.stringify(config));
+' "$OSS_GATEWAY_URL" "$OSS_GATEWAY_BEARER" "$OSS_GATEWAY_MODEL")"
+
+export OPENCODE_DISABLE_AUTOUPDATE=1
+export OPENCODE_DISABLE_DEFAULT_PLUGINS=1
+export OPENCODE_DISABLE_LSP_DOWNLOAD=1
+export OPENCODE_DISABLE_MODELS_FETCH=1
+export OPENCODE_DISABLE_TERMINAL_TITLE=1
+
+cd /workspace
+exec /opt/oss/node_modules/.bin/opencode acp

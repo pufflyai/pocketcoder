@@ -18,6 +18,11 @@
 		},
 		"examples/harnesses/*": {
 			"entry": ["agentapi-compat.ts", "*.test.ts"]
+		},
+		"examples/harnesses/oss": {
+			"entry": ["*.test.ts"],
+			// Loaded dynamically by OpenCode from OPENCODE_CONFIG_CONTENT.
+			"ignoreDependencies": ["@ai-sdk/openai-compatible", "@openai/codex", "opencode-ai"]
 		}
 	}
 }

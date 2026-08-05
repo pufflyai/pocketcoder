@@ -183,6 +183,21 @@ export {
 	SUPPORTED_PROTOCOL_VERSIONS,
 	TerminationAckPayload,
 } from "./protocol";
+export {
+	PROXY_STREAM_CANCEL_REASONS,
+	PROXY_STREAM_CHUNK_BYTES,
+	type ProxyStreamAck,
+	ProxyStreamAckPayload,
+	type ProxyStreamCancel,
+	ProxyStreamCancelPayload,
+	type ProxyStreamChunk,
+	ProxyStreamChunkPayload,
+	type ProxyStreamEnd,
+	ProxyStreamEndPayload,
+	type ProxyStreamStart,
+	ProxyStreamStartPayload,
+	STREAMING_MIN_PROTOCOL_VERSION,
+} from "./protocol-stream";
 export { hasScope, isScope, SCOPES, type Scope } from "./scopes";
 export {
 	type Agent,
@@ -209,6 +224,7 @@ export {
 	SourceSpecSchema,
 	secretMountPath,
 	snapshotOf,
+	snapshotServices,
 	type TemplateManifest,
 	TemplateManifestSchema,
 	type TemplateService,

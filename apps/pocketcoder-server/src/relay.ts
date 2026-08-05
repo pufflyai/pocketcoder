@@ -14,9 +14,10 @@ export interface RelayDeps {
 	service: WorkspaceService;
 }
 
-const SAFE_RESPONSE_HEADERS = ["content-type"];
+const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control"];
 type RelayMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-type RelayResponse = Awaited<ReturnType<Hub["relay"]>>;
+type BufferedRelayResponse = Awaited<ReturnType<Hub["relay"]>>;
+type RelayResponseHeaders = { headers: Record<string, string> };
 
 function requestPath(c: Context<AppEnv>, prefix: string): string {
 	const rawPath = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
@@ -47,7 +48,7 @@ async function requestBody(
 	return body.byteLength > 0 ? Buffer.from(body).toString("base64") : undefined;
 }
 
-function validateRelayResponse(response: RelayResponse, maxBytes: number): Buffer {
+function validateRelayResponse(response: BufferedRelayResponse, maxBytes: number): Buffer {
 	switch (response.error_code) {
 		case "unreachable":
 			throw new ApiError("workspace.disconnected", "The workspace agent is unreachable.");
@@ -68,13 +69,73 @@ function validateRelayResponse(response: RelayResponse, maxBytes: number): Buffe
 	return body;
 }
 
-function safeResponseHeaders(response: RelayResponse): Headers {
+function safeResponseHeaders(response: RelayResponseHeaders): Headers {
 	const headers = new Headers();
 	for (const name of SAFE_RESPONSE_HEADERS) {
 		const value = response.headers[name];
 		if (value) headers.set(name, value);
 	}
 	return headers;
+}
+
+function validateStreamResponse(
+	response: Awaited<ReturnType<Hub["relayStream"]>>,
+	maxBytes: number,
+): ReadableStream<Uint8Array> {
+	switch (response.error_code) {
+		case "streaming_unsupported":
+			throw new ApiError(
+				"relay.streaming_unsupported",
+				"The workspace supervisor does not support streamed responses.",
+			);
+		case "unreachable":
+			throw new ApiError("workspace.disconnected", "The workspace agent is unreachable.");
+		case "deadline":
+			throw new ApiError(
+				"relay.deadline_exceeded",
+				"The workspace service did not respond in time.",
+			);
+		case "too_large":
+			throw new ApiError("relay.body_too_large", `Response body exceeds ${maxBytes} bytes.`);
+		case undefined:
+			break;
+	}
+	if (!response.body) {
+		throw new ApiError("relay.upstream_error", "The workspace service stream did not start.");
+	}
+	return response.body;
+}
+
+function relayRequestHeaders(c: Context<AppEnv>): Record<string, string> {
+	const headers: Record<string, string> = {};
+	for (const name of ["content-type", "accept"]) {
+		const value = c.req.header(name);
+		if (value) headers[name] = value;
+	}
+	return headers;
+}
+
+async function streamedRelayResponse(
+	deps: RelayDeps,
+	workspaceId: string,
+	request: Parameters<Hub["relayStream"]>[1],
+	maxResponseBytes: number,
+	signal: AbortSignal,
+): Promise<Response> {
+	const response = await deps.hub.relayStream(workspaceId, request, maxResponseBytes);
+	const body = validateStreamResponse(response, maxResponseBytes);
+	const abort = () => {
+		deps.hub.cancelRelayStream(workspaceId, response.request_id, "downstream_closed");
+	};
+	if (signal.aborted) abort();
+	else signal.addEventListener("abort", abort, { once: true });
+	void deps.store
+		.updateWorkspace(workspaceId, { lastActivityAt: new Date() }, new Date())
+		.catch(() => {});
+	return new Response(body, {
+		status: response.status ?? 200,
+		headers: safeResponseHeaders(response),
+	});
 }
 
 export function relayHandler(
@@ -123,16 +184,25 @@ export function relayHandler(
 			);
 		}
 
-		const contentType = c.req.header("content-type");
-		const response = await deps.hub.relay(id, {
+		const request = {
 			service: serviceName,
 			method,
 			path,
 			query,
-			headers: contentType ? { "content-type": contentType } : {},
+			headers: relayRequestHeaders(c),
 			...(bodyB64 ? { body_b64: bodyB64 } : {}),
 			deadline_ms: match.route.deadlineSeconds * 1000,
-		});
+		};
+		if (match.route.responseMode === "stream") {
+			return await streamedRelayResponse(
+				deps,
+				id,
+				request,
+				match.route.maxResponseBytes,
+				c.req.raw.signal,
+			);
+		}
+		const response = await deps.hub.relay(id, request);
 		const bodyBytes = validateRelayResponse(response, match.route.maxResponseBytes);
 		// Relay activity keeps the workspace from idling out.
 		void deps.store.updateWorkspace(id, { lastActivityAt: new Date() }, new Date()).catch(() => {});

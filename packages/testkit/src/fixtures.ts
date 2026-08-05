@@ -29,6 +29,7 @@ export function fixtureTemplateEcho(overrides?: { version?: string }): ParsedTem
 						{ method: "GET", path: "/status" },
 						{ method: "GET", path: "/messages", query: ["after"] },
 						{ method: "POST", path: "/message" },
+						{ method: "GET", path: "/events", responseMode: "stream" },
 					],
 				},
 			},

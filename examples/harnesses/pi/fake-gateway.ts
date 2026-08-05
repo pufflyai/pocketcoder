@@ -48,6 +48,16 @@ function completion(body: ChatRequest): {
 	};
 }
 
+function streamingDeltas(delta: Record<string, unknown>): Record<string, unknown>[] {
+	if (typeof delta.content !== "string" || delta.content.length < 2) return [delta];
+	const midpoint = Math.ceil(delta.content.length / 2);
+	const { content, ...metadata } = delta;
+	return [
+		{ ...metadata, content: content.slice(0, midpoint) },
+		{ content: content.slice(midpoint) },
+	];
+}
+
 export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof Bun.serve> {
 	return Bun.serve({
 		hostname: "0.0.0.0",
@@ -83,8 +93,9 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
 					usage: { prompt_tokens: 1, completion_tokens: 4, total_tokens: 5 },
 				});
 			}
+			const deltas = streamingDeltas(next.delta);
 			const chunks = [
-				{
+				...deltas.map((delta) => ({
 					id: "chatcmpl-pocketcoder",
 					object: "chat.completion.chunk",
 					created,
@@ -92,11 +103,11 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
 					choices: [
 						{
 							index: 0,
-							delta: next.delta,
+							delta,
 							finish_reason: null,
 						},
 					],
-				},
+				})),
 				{
 					id: "chatcmpl-pocketcoder",
 					object: "chat.completion.chunk",
@@ -106,8 +117,27 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
 					usage: { prompt_tokens: 1, completion_tokens: 4, total_tokens: 5 },
 				},
 			];
-			const payload = `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`;
-			return new Response(payload, {
+			const payloads = [
+				...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`),
+				"data: [DONE]\n\n",
+			];
+			let canceled = false;
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					void (async () => {
+						for (const [index, payload] of payloads.entries()) {
+							if (index > 0) await Bun.sleep(350);
+							if (canceled) return;
+							controller.enqueue(new TextEncoder().encode(payload));
+						}
+						if (!canceled) controller.close();
+					})();
+				},
+				cancel() {
+					canceled = true;
+				},
+			});
+			return new Response(stream, {
 				headers: {
 					"content-type": "text/event-stream",
 					"cache-control": "no-cache",

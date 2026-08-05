@@ -254,15 +254,16 @@ per-connection monotonic sequence numbers; the newest accepted connection
 (epoch) exclusively speaks for the workspace.
 
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
-`log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
+`log_chunk`, `proxy_response`, `proxy_stream_start`, `proxy_stream_chunk`,
+`proxy_stream_end`, `termination_ack`, `source_resolved`,
 `checkpoint_status`, `restore_status`, `output_published`,
 `conversation_message`, `attachment_ack`, `attachment_result`,
-`attachment_resolved`, `terminal_opened`, `terminal_output`,
-`terminal_closed`.
-Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
+`attachment_resolved`, `terminal_opened`, `terminal_output`, `terminal_closed`.
+Server → agent: `registered_ack`, `proxy_request`, `proxy_stream_ack`,
+`proxy_stream_cancel`, `signal`, `health_probe`,
 `shutdown`, `prepare_checkpoint`, `attachment_start`, `attachment_chunk`,
-`attachment_finish`, `attachment_abort`, `attachment_resolve`,
-`terminal_open`, `terminal_input`, `terminal_resize`, `terminal_close`.
+`attachment_finish`, `attachment_abort`, `attachment_resolve`, `terminal_open`,
+`terminal_input`, `terminal_resize`, `terminal_close`.
 
 Workspace protocol v3 adds the attachment frames: caller files stream to the
 supervisor one acknowledged, bounded chunk at a time and land under
@@ -276,10 +277,19 @@ when the immutable template declares its command and a caller with
 disconnects do not stop them. Input refreshes workspace activity; output does
 not. Session metadata is audited, but input and output content are not.
 
-Servers accept v1–v4 supervisors, so rollout is server-first — connected v1/v2 supervisors
+Workspace protocol v5 adds template-declared streamed HTTP responses. The
+supervisor forwards one response chunk, waits for the matching server
+acknowledgement, and cancels its upstream fetch when the HTTP reader closes, a
+limit or deadline fires, or the workspace connection ends. AgentAPI-native
+snapshots created under v5 declare `GET /events`; older snapshots remain
+buffered.
+
+Servers accept v1–v5 supervisors, so rollout is server-first — connected v1/v2 supervisors
 keep text-only relay and attachment requests fail with
 `attachment.unsupported` until the workspace image updates. Terminal requests
-on v1–v3 supervisors return `terminal.protocol_unsupported`.
+on v1–v3 supervisors return `terminal.protocol_unsupported`. Stream routes on
+v1–v4 supervisors return `relay.streaming_unsupported`, allowing clients to
+fall back to stable history polling.
 
 A separate, narrowly scoped pool-enrollment socket (its own version axis)
 serves optional task-agnostic warm runtimes. Its only server message is a

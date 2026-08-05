@@ -27,6 +27,7 @@ command, mount, network, privilege, or driver.
 		],
 		"agent": {
 			"type": "claude",
+			"transport": "pty",
 			"command": ["claude", "--dangerously-skip-permissions"],
 			"cwd": "/home/agent/workspace",
 			"env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
@@ -58,16 +59,21 @@ command, mount, network, privilege, or driver.
   repo, install dependencies, prime configuration). Each step has a name,
   timeout, optional env and cwd; output lands in workspace logs; a failing
   step fails the workspace with reason `setup_failed`/`child_exit_failure`.
-- **`agent`** — the coding-agent command, AgentAPI type, cwd, and environment.
-  PocketCoder launches `/usr/local/bin/agentapi server --type <type> --port
-  3284 -- <command...>`, waits for its fixed status endpoint, synchronizes
-  complete messages after `stable`, and terminates it safely for preserve. The
-  caller's opaque `launch_input` is delivered to the process in memory as
+- **`agent`** — the coding-agent command, AgentAPI type, transport, cwd, and
+  environment. `transport` defaults to `"pty"`; `"acp"` adds AgentAPI's
+  `--experimental-acp` adapter for agents whose command speaks ACP. PocketCoder
+  waits for AgentAPI's fixed status endpoint, synchronizes complete messages
+  after `stable`, and terminates it safely for preserve. The caller's opaque
+  `launch_input` is delivered to the process in memory as
   `POCKETCODER_LAUNCH_INPUT`; the server erases its copy once the workspace is
   ready.
 - **legacy `harness` + `services`** — compatibility-only generic process and
   loopback relay declarations. They remain supported for one migration
-  release and cannot appear beside `agent`.
+  release and cannot appear beside `agent`. Each declared route may set
+  `responseMode: "stream"` (default `"buffered"`) to relay a long-lived
+  response such as SSE; `maxResponseBytes` then caps the cumulative stream and
+  `deadlineSeconds` bounds its total lifetime. Streamed routes require a
+  protocol-v5 supervisor.
 - **`terminal`** — optional interactive PTY capability for native and legacy
   templates. `command` is the only command a caller can run; `cwd` and `env`
   are reviewed template values. `maxSessions` defaults to 2 (range 1–8) and

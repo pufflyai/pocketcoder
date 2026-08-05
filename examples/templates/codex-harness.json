@@ -1,0 +1,40 @@
+{
+	"apiVersion": "pocketcoder.dev/v1alpha1",
+	"kind": "Template",
+	"metadata": {
+		"name": "codex-harness",
+		"description": "Codex OSS CLI integrated through AgentAPI"
+	},
+	"spec": {
+		"version": "1.0.0",
+		"image": "example.invalid/pocketcoder-oss@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		"agent": {
+			"type": "codex",
+			"command": ["/usr/local/bin/run-codex"],
+			"cwd": "/workspace",
+			"env": {
+				"CODEX_HOME": "/home/agent/.codex",
+				"OSS_GATEWAY_URL": "http://host.docker.internal:8080/v1",
+				"OSS_GATEWAY_MODEL": "pocketcoder-test",
+				"OSS_GATEWAY_BEARER": ""
+			}
+		},
+		"env": {
+			"HOME": "/home/agent"
+		},
+		"resources": { "cpu": "2", "memory": "2Gi" },
+		"timeouts": {
+			"start": "5m",
+			"maxAge": "2h",
+			"idle": "20m",
+			"disconnectGrace": "5m",
+			"terminateGrace": "15s"
+		},
+		"security": {
+			"uid": 10001,
+			"gid": 10001,
+			"readOnlyRoot": true,
+			"writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"]
+		}
+	}
+}

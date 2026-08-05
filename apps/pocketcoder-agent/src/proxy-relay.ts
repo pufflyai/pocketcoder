@@ -1,4 +1,10 @@
-import type { AgentFrame, ExecSpec, ProxyRequest } from "@pstdio/pocketcoder-contracts";
+import type {
+	AgentFrame,
+	ExecSpec,
+	ProxyRequest,
+	TemplateService,
+	TemplateServiceRoute,
+} from "@pstdio/pocketcoder-contracts";
 
 type SendFrame = (type: AgentFrame["type"], payload: unknown) => boolean;
 
@@ -10,6 +16,11 @@ export async function relayProxyRequest(
 		send: SendFrame;
 		onAgentTurn(): void;
 		probeAgent(exec: ExecSpec): void;
+		relayStream(
+			request: ProxyRequest,
+			service: TemplateService,
+			route: TemplateServiceRoute,
+		): Promise<void>;
 	},
 ) {
 	const exec = callbacks.exec();
@@ -23,6 +34,10 @@ export async function relayProxyRequest(
 			headers: {},
 			error_code: "unreachable",
 		});
+		return;
+	}
+	if (route.responseMode === "stream") {
+		await callbacks.relayStream(request, service, route);
 		return;
 	}
 	const beginsAgentTurn =
