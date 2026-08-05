@@ -10,6 +10,7 @@ import {
 } from "./cli-context";
 import { attachWorkspace, chatWorkspace } from "./workspace-chat";
 import { createWorkspace } from "./workspace-create";
+import { attachTerminal } from "./workspace-terminal";
 
 export async function handleWorkspaceCore(context: CommandContext) {
 	if (context.group !== "workspaces") return false;
@@ -27,6 +28,7 @@ export async function handleWorkspaceCore(context: CommandContext) {
 		},
 		logs: () => readLogs(context.flags),
 		"network-events": () => readNetworkEvents(context.flags),
+		"terminal-sessions": () => readTerminalSessions(context.flags),
 		cancel: async () => {
 			console.log(
 				JSON.stringify(
@@ -91,6 +93,13 @@ async function readNetworkEvents(flags: Flags) {
 	if (result.nextCursor) console.log(`next cursor: ${result.nextCursor}`);
 }
 
+async function readTerminalSessions(flags: Flags) {
+	const result = await controlPlaneClient().terminals.list(need(flags, "id"), pagination(flags));
+	for (const session of result.items) console.log(JSON.stringify(session));
+	if (result.items.length === 0) console.log("(no terminal sessions)");
+	if (result.nextCursor) console.log(`next cursor: ${result.nextCursor}`);
+}
+
 function pagination(flags: Flags) {
 	return {
 		...(typeof flags.cursor === "string" ? { cursor: flags.cursor } : {}),
@@ -144,5 +153,11 @@ export async function handleWorkspaceAttach({ group, action, flags }: CommandCon
 export async function handleWorkspaceChat({ group, action, flags }: CommandContext) {
 	if (group !== "workspaces" || action !== "chat") return false;
 	await chatWorkspace(flags, { api, fail });
+	return true;
+}
+
+export async function handleWorkspaceTerminal({ group, action, flags }: CommandContext) {
+	if (group !== "workspaces" || action !== "terminal") return false;
+	process.exitCode = await attachTerminal(flags, controlPlaneClient());
 	return true;
 }

@@ -16,6 +16,7 @@ import type {
 	StorageState,
 	TemplateSnapshot,
 	TemplateSpec,
+	TerminalCloseReason,
 	WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 
@@ -187,6 +188,31 @@ export interface NetworkEventRow extends NetworkEventInput {
 	workspaceId: string;
 	seq: number;
 	sourceSessionId: string;
+}
+
+export interface TerminalSessionRow {
+	sessionId: string;
+	workspaceId: string;
+	keyId: string;
+	openedAt: Date;
+	closedAt: Date | null;
+	closeReason: TerminalCloseReason | null;
+	exitCode: number | null;
+	bytesIn: number;
+	bytesOut: number;
+}
+
+export type TerminalSessionOpen = Pick<
+	TerminalSessionRow,
+	"sessionId" | "workspaceId" | "keyId" | "openedAt"
+>;
+
+export interface TerminalSessionClose {
+	closedAt: Date;
+	closeReason: TerminalCloseReason;
+	exitCode: number | null;
+	bytesIn: number;
+	bytesOut: number;
 }
 
 export const WARM_POOL_RUNTIME_STATES = [
@@ -593,6 +619,23 @@ export interface ConversationStore {
 	pruneExpiredConversations(at: Date): Promise<number>;
 }
 
+export interface TerminalAuditStore {
+	openTerminalSession(
+		row: TerminalSessionOpen,
+		maxOpenSessions: number,
+	): Promise<TerminalSessionRow | null>;
+	getTerminalSession(sessionId: string): Promise<TerminalSessionRow | null>;
+	closeTerminalSession(
+		sessionId: string,
+		close: TerminalSessionClose,
+	): Promise<TerminalSessionRow | null>;
+	listTerminalSessions(
+		workspaceId: string,
+		cursor: string | undefined,
+		limit: number,
+	): Promise<TerminalSessionRow[]>;
+}
+
 export interface OutboxStore {
 	claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]>;
 	markEventDelivered(id: string, at: Date): Promise<void>;
@@ -613,4 +656,5 @@ export interface Store
 		LogStore,
 		NetworkAuditStore,
 		ConversationStore,
+		TerminalAuditStore,
 		OutboxStore {}

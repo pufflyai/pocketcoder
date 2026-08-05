@@ -86,6 +86,7 @@ POST /v1/workspaces/{id}/cancel        scope workspaces:cancel  idempotent; retu
 GET  /v1/workspaces/{id}/changes       scope workspaces:read    query: after (change_cursor), wait (0..30 seconds)
 GET  /v1/workspaces/{id}/logs          scope logs:read          query: cursor (opaque), limit
 GET  /v1/workspaces/{id}/network-events scope network:read      query: cursor (opaque), limit
+GET  /v1/workspaces/{id}/terminal-sessions scope terminal:read  query: cursor (opaque), limit
 ```
 
 States: `queued → provisioning → connected → ready`, followed by
@@ -198,6 +199,39 @@ inbound network path to a workspace and no generic forwarding.
 | 504 | `relay.deadline_exceeded` | Loopback service missed the deadline |
 
 Relay activity counts as workspace activity for the idle timeout.
+
+## Interactive terminal
+
+```text
+GET /v1/workspaces/{id}/terminal                 scope terminal:attach  WebSocket upgrade
+GET /v1/workspaces/{id}/terminal-sessions        scope terminal:read    query: cursor (opaque), limit
+```
+
+The WebSocket route is available only for an owned, `ready` workspace whose
+template snapshot declares `terminal` and whose supervisor speaks workspace
+protocol v4. The client sends JSON text messages containing either bounded
+base64 input or terminal dimensions; the server sends `opened`, `output`,
+`closed`, and reconnect `status` messages. No request carries a command or
+argv: the supervisor starts exactly the template-declared command under a PTY.
+
+Disconnecting the client detaches without ending the process. Reconnect with
+`?session=<uuid>` to reuse the same PTY and replay its bounded recent output,
+including after supervisor-socket churn. Input refreshes workspace activity;
+output alone does not. Idle terminals and lifecycle transitions close the PTY.
+
+The history response contains `session_id`, `workspace_id`, `key_id`, open
+and close timestamps, `duration_ms`, close reason, exit code, and byte counts.
+Terminal content is never persisted. Matching `workspace.terminal_opened` and
+`workspace.terminal_closed` events are emitted through the signed outbox.
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 409 | `workspace.not_ready` | Workspace is not ready |
+| 409 | `terminal.session_limit` | The template's live-session limit is reached |
+| 410 | `workspace.terminal` | Workspace has ended |
+| 422 | `terminal.not_declared` | Template did not opt into terminal access |
+| 426 | `terminal.protocol_unsupported` | Supervisor predates protocol v4 |
+| 503 | `workspace.disconnected` | No live supervisor connection |
 
 ## Workspace attachments
 

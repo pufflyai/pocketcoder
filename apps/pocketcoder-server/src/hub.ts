@@ -3,14 +3,19 @@ import {
 	type AttachmentAck,
 	type AttachmentResolved,
 	type AttachmentResult,
+	type ClientTerminalMessage,
 	PROTOCOL_VERSION,
 	type ProtocolVersion,
 	type ProxyRequest,
 	type ProxyResponse,
 	type ServerFrame,
+	type TerminalClosed,
+	type TerminalOpened,
+	type TerminalOutput,
 } from "@pstdio/pocketcoder-contracts";
 import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
+import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "./terminal-bridge";
 
 // In-memory registry of live supervisor connections. Exactly one connection
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
@@ -57,6 +62,11 @@ export const MAX_INFLIGHT_RELAY = 16;
 
 export class Hub implements ConnectionHub {
 	private readonly byWorkspace = new Map<string, LiveConnection>();
+	private readonly terminals: TerminalBridgeRegistry;
+
+	constructor(callbacks: TerminalBridgeCallbacks = {}) {
+		this.terminals = new TerminalBridgeRegistry(callbacks);
+	}
 
 	attach(
 		workspaceId: string,
@@ -139,8 +149,12 @@ export class Hub implements ConnectionHub {
 
 	close(workspaceId: string): void {
 		const conn = this.byWorkspace.get(workspaceId);
-		if (!conn) return;
+		if (!conn) {
+			this.terminals.closeWorkspace(workspaceId);
+			return;
+		}
 		this.dropPending(conn, "unreachable");
+		this.terminals.closeWorkspace(workspaceId);
 		this.byWorkspace.delete(workspaceId);
 		try {
 			conn.ws.close(1000, "workspace ended");
@@ -200,6 +214,66 @@ export class Hub implements ConnectionHub {
 			conn.inflight.set(requestId, { resolve, timer });
 			this.send(conn, "proxy_request", { ...request, request_id: requestId });
 		});
+	}
+
+	openTerminal(
+		workspaceId: string,
+		sessionId: string,
+		client: WSContext,
+		reattach: boolean,
+		rows: number,
+		cols: number,
+	): void {
+		const conn = this.byWorkspace.get(workspaceId);
+		this.terminals.open(
+			workspaceId,
+			sessionId,
+			client,
+			reattach,
+			rows,
+			cols,
+			conn?.registered ? (type, payload) => this.send(conn, type, payload) : null,
+		);
+	}
+
+	terminalClientMessage(
+		workspaceId: string,
+		sessionId: string,
+		client: WSContext,
+		message: ClientTerminalMessage,
+	): void {
+		const conn = this.byWorkspace.get(workspaceId);
+		const bridge = this.terminals.client(workspaceId, sessionId, client);
+		if (!conn?.registered || !bridge) return;
+		this.terminals.clientMessage(bridge, message, (type, payload) =>
+			this.send(conn, type, payload),
+		);
+	}
+
+	detachTerminalClient(workspaceId: string, sessionId: string, client: WSContext): void {
+		this.terminals.detachClient(workspaceId, sessionId, client);
+	}
+
+	terminalOpened(conn: LiveConnection, payload: TerminalOpened): void {
+		if (this.byWorkspace.get(conn.workspaceId) === conn) {
+			this.terminals.opened(conn.workspaceId, payload);
+		}
+	}
+
+	terminalOutput(conn: LiveConnection, payload: TerminalOutput): void {
+		if (this.byWorkspace.get(conn.workspaceId) === conn) {
+			this.terminals.output(conn.workspaceId, payload);
+		}
+	}
+
+	terminalClosed(conn: LiveConnection, payload: TerminalClosed): void {
+		if (this.byWorkspace.get(conn.workspaceId) === conn) {
+			this.terminals.closed(conn.workspaceId, payload);
+		}
+	}
+
+	resumeTerminals(conn: LiveConnection): void {
+		this.terminals.resume(conn.workspaceId, (type, payload) => this.send(conn, type, payload));
 	}
 
 	openAttachment(conn: LiveConnection, operationId: string): void {
@@ -268,6 +342,7 @@ export class Hub implements ConnectionHub {
 			pending.resolve({ request_id: id, headers: {}, error_code: errorCode });
 		}
 		conn.inflight.clear();
+		this.terminals.disconnect(conn.workspaceId);
 		for (const pending of conn.checkpoints.values()) {
 			clearTimeout(pending.timer);
 			pending.resolve(false);

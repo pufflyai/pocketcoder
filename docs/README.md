@@ -9,8 +9,8 @@ API drives the whole lifecycle.
 |-------|----------------|
 | [Getting started](getting-started.md) | Run the server, create a principal and key, launch your first workspace |
 | [CLI reference](cli.md) | Every `pcd` command with examples |
-| [Templates](templates.md) | The template contract: images, setup commands, native coding agents, security |
-| [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, signed events |
+| [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, security |
+| [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, signed events |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
 | [Deployment](deployment.md) | Container images, docker compose, PostgreSQL placement, configuration reference |
 | [Security model](security.md) | Trust zones, credential lifetime rules, what the deployment's model gateway must enforce |
@@ -26,7 +26,7 @@ API drives the whole lifecycle.
 POCKETCODER_STORE=memory bun run pcd -- server start --foreground
 
 # 2. Operators manage principals/keys/templates with pcd
-pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,attachments:write,templates:read,logs:read --templates '*'
+pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,services:relay,attachments:write,templates:read,logs:read,terminal:attach,terminal:read --templates '*'
 pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z   # shown once; bounded — rotate, don't reissue forever
 
 # 3. Callers (your backend, or the CLI) drive workspaces
@@ -34,6 +34,7 @@ export POCKETCODER_URL=http://127.0.0.1:7080 POCKETCODER_KEY=pkt_…
 pcd workspaces create --template claude-code-agent
 pcd workspaces list --active
 pcd workspaces logs --id <uuid>
+pcd workspaces terminal --id <uuid>
 pcd workspaces cancel --id <uuid>
 ```
 

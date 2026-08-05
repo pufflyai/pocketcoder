@@ -60,6 +60,24 @@ export function fixtureTemplateSleep(): ParsedTemplate {
 	});
 }
 
+export function fixtureTemplateTerminal(): ParsedTemplate {
+	const manifest = fixtureTemplateEcho().manifest;
+	return parseTemplateManifest({
+		...manifest,
+		metadata: { name: "fixture-terminal", description: "Terminal-enabled fixture" },
+		spec: {
+			...manifest.spec,
+			version: "1.0.0",
+			terminal: {
+				command: ["/bin/sh"],
+				cwd: "/tmp",
+				maxSessions: 2,
+				idleTimeout: "10m",
+			},
+		},
+	});
+}
+
 export function fixtureTemplatePersistent(): ParsedTemplate {
 	return parseTemplateManifest({
 		apiVersion: "pocketcoder.dev/v1alpha1",

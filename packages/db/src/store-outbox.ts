@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { OutboxRow } from "@pstdio/pocketcoder-runtime-core";
 
 import { asDate, asDateOrNull, asJson, CLAIM_LEASE_MS, type Row } from "./store-base";
-import { PostgresConversationStore } from "./store-conversations";
+import { PostgresTerminalStore } from "./store-terminals";
 
-export class PostgresOutboxStore extends PostgresConversationStore {
+export class PostgresOutboxStore extends PostgresTerminalStore {
 	protected outboxFromRow(r: Row): OutboxRow {
 		return {
 			id: String(r.id),

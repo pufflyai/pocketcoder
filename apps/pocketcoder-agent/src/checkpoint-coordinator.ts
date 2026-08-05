@@ -14,9 +14,11 @@ export async function prepareCheckpoint(
 		syncAgentApiMessages(): Promise<void>;
 		child(): { kill(signal: "SIGTERM" | "SIGKILL"): void; exited: Promise<number> } | null;
 		childExited(): boolean;
+		closeTerminals(): Promise<void>;
 		setQuiescing(value: boolean): void;
 	},
 ) {
+	await callbacks.closeTerminals();
 	const exec = callbacks.exec();
 	if (exec?.agentapi_native) {
 		await prepareAgentApiCheckpoint(operationId, deadlineMs, callbacks);

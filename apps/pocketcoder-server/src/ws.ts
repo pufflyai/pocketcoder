@@ -13,8 +13,11 @@ import {
 	isTerminal,
 	MAX_FRAME_BYTES,
 	type ProtocolVersion,
+	parseDurationMs,
 	SUPPORTED_PROTOCOL_VERSIONS,
 	secretMountPath,
+	TERMINAL_MIN_PROTOCOL_VERSION,
+	TERMINAL_REPLAY_BUFFER_BYTES,
 	templateServices,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
@@ -154,6 +157,16 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 		},
 		env: materializeSecretEnv(spec.env),
 		services: templateServices(spec),
+		terminal: spec.terminal
+			? {
+					command: spec.terminal.command,
+					env: materializeSecretEnv(spec.terminal.env),
+					...(spec.terminal.cwd ? { cwd: spec.terminal.cwd } : {}),
+					max_sessions: spec.terminal.maxSessions,
+					idle_timeout_seconds: Math.ceil(parseDurationMs(spec.terminal.idleTimeout) / 1000),
+					replay_buffer_bytes: TERMINAL_REPLAY_BUFFER_BYTES,
+				}
+			: null,
 		timeouts: spec.timeouts,
 		security: {
 			writable_memory_paths: spec.security.writableMemoryPaths,
@@ -277,6 +290,7 @@ async function registerConnection(
 		},
 		exec: execSpecOf(row),
 	});
+	deps.hub.resumeTerminals(connection);
 	return connection;
 }
 
@@ -401,6 +415,27 @@ async function handleConnectedFrame(
 			return;
 		case "proxy_response":
 			deps.hub.resolveRelay(connection, frame.payload);
+			return;
+		case "terminal_opened":
+			if (connection.protocolVersion < TERMINAL_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "terminal frame requires protocol v4");
+				return;
+			}
+			deps.hub.terminalOpened(connection, frame.payload);
+			return;
+		case "terminal_output":
+			if (connection.protocolVersion < TERMINAL_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "terminal frame requires protocol v4");
+				return;
+			}
+			deps.hub.terminalOutput(connection, frame.payload);
+			return;
+		case "terminal_closed":
+			if (connection.protocolVersion < TERMINAL_MIN_PROTOCOL_VERSION) {
+				closeProtocol(ws, "terminal frame requires protocol v4");
+				return;
+			}
+			deps.hub.terminalClosed(connection, frame.payload);
 			return;
 		case "termination_ack":
 			return;

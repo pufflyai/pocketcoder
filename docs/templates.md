@@ -31,6 +31,12 @@ command, mount, network, privilege, or driver.
 			"cwd": "/home/agent/workspace",
 			"env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
 		},
+		"terminal": {
+			"command": ["/bin/sh"],
+			"cwd": "/home/agent/workspace",
+			"maxSessions": 2,
+			"idleTimeout": "10m"
+		},
 		"env": { "HOME": "/home/agent" },
 		"resources": { "cpu": "2", "memory": "2Gi" },
 		"timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
@@ -62,6 +68,11 @@ command, mount, network, privilege, or driver.
 - **legacy `harness` + `services`** — compatibility-only generic process and
   loopback relay declarations. They remain supported for one migration
   release and cannot appear beside `agent`.
+- **`terminal`** — optional interactive PTY capability for native and legacy
+  templates. `command` is the only command a caller can run; `cwd` and `env`
+  are reviewed template values. `maxSessions` defaults to 2 (range 1–8) and
+  `idleTimeout` defaults to `10m`. Sessions close before checkpoints and do
+  not survive preserve/restore.
 - **`timeouts`** — `start` (registration + first health), `maxAge` (hard
   lifetime), `idle` (no relay activity and agent not running), `disconnectGrace`
   (supervisor reconnect window), `terminateGrace` (TERM→KILL).
@@ -102,6 +113,7 @@ HTTPS methods or paths, and it blocks SSH and other non-HTTP protocols.
 - non-loopback service `baseUrl`, unnormalized route paths (`..`, `//`,
   query strings, encoded traversal);
 - duplicate routes;
+- terminal cwd traversal, invalid limits, or an empty command;
 - env values that look like secret literals (names matching
   `SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL` must use a
   `secretRef:` reference resolved by the deployment);

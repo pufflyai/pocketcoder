@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { OutboxRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { MemoryConversationStore } from "./memory-store-conversations";
+import { MemoryTerminalStore } from "./memory-store-terminals";
 
-export class MemoryOutboxStore extends MemoryConversationStore {
+export class MemoryOutboxStore extends MemoryTerminalStore {
 	async claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]> {
 		const due = this.outbox
 			.filter((e) => !e.deliveredAt && e.nextAttemptAt <= now && !this.claimedEvents.has(e.id))

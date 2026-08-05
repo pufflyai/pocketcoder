@@ -11,6 +11,7 @@ import {
 	type PrincipalRow,
 	type StateHistoryRow,
 	type TemplateRow,
+	type TerminalSessionRow,
 	type WarmPoolRuntimeRow,
 	type WorkspaceCheckpointRow,
 	type WorkspaceOperationRow,
@@ -56,6 +57,7 @@ export class MemoryStoreBase {
 	protected outbox: OutboxRow[] = [];
 	protected logs = new Map<string, LogRow[]>();
 	protected networkEvents = new Map<string, NetworkEventRow[]>();
+	protected terminalSessions = new Map<string, TerminalSessionRow>();
 	protected logBytes = new Map<string, number>();
 	protected claimedEvents = new Set<string>();
 	protected storage = new Map<string, WorkspaceStorageRow>();

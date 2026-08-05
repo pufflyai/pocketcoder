@@ -17,6 +17,8 @@ export const SCOPES = [
 	"attachments:write",
 	"logs:read",
 	"network:read",
+	"terminal:attach",
+	"terminal:read",
 	"admin",
 ] as const;
 

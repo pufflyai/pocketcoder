@@ -36,6 +36,8 @@ export {
 	type TemplateServiceRoute,
 	type TemplateSpec,
 	TemplateSpecSchema,
+	type Terminal,
+	TerminalSchema,
 	TimeoutsSchema,
 } from "./template-schema";
 export { isNormalizedPath } from "./template-validation";

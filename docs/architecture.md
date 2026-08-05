@@ -54,6 +54,8 @@ erDiagram
     WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
 	WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
 	WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
+    WORKSPACES ||--o{ WORKSPACE_TERMINAL_SESSIONS : audits
+    MACHINE_KEYS ||--o{ WORKSPACE_TERMINAL_SESSIONS : opens
     WORKSPACES ||--o{ WORKSPACE_STATE_HISTORY : transitions
     WORKSPACES ||--o{ WORKSPACE_LOGS : emits
     WORKSPACES ||--o{ EVENT_OUTBOX : records
@@ -172,6 +174,18 @@ erDiagram
         timestamptz occurred_at
     }
 
+    WORKSPACE_TERMINAL_SESSIONS {
+        uuid session_id PK
+        uuid workspace_id FK
+        uuid key_id FK
+        timestamptz opened_at
+        timestamptz closed_at
+        text close_reason
+        integer exit_code
+        bigint bytes_in
+        bigint bytes_out
+    }
+
     WORKSPACE_STATE_HISTORY {
         uuid id PK
         uuid workspace_id FK
@@ -243,24 +257,36 @@ Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 `log_chunk`, `proxy_response`, `termination_ack`, `source_resolved`,
 `checkpoint_status`, `restore_status`, `output_published`,
 `conversation_message`, `attachment_ack`, `attachment_result`,
-`attachment_resolved`.
+`attachment_resolved`, `terminal_opened`, `terminal_output`,
+`terminal_closed`.
 Server → agent: `registered_ack`, `proxy_request`, `signal`, `health_probe`,
 `shutdown`, `prepare_checkpoint`, `attachment_start`, `attachment_chunk`,
-`attachment_finish`, `attachment_abort`, `attachment_resolve`.
+`attachment_finish`, `attachment_abort`, `attachment_resolve`,
+`terminal_open`, `terminal_input`, `terminal_resize`, `terminal_close`.
 
 Workspace protocol v3 adds the attachment frames: caller files stream to the
 supervisor one acknowledged, bounded chunk at a time and land under
 `$HOME/.pcd/attachments` via same-directory temporary files and atomic
-renames; ID resolution feeds the generated message manifest. Servers accept
-v1–v3 supervisors, so rollout is server-first — connected v1/v2 supervisors
+renames; ID resolution feeds the generated message manifest.
+
+Workspace protocol v4 adds interactive PTY frames. A terminal exists only
+when the immutable template declares its command and a caller with
+`terminal:attach` opens the separate client WebSocket. PTY processes and a
+64-KiB replay ring live in the supervisor, so client and supervisor-socket
+disconnects do not stop them. Input refreshes workspace activity; output does
+not. Session metadata is audited, but input and output content are not.
+
+Servers accept v1–v4 supervisors, so rollout is server-first — connected v1/v2 supervisors
 keep text-only relay and attachment requests fail with
-`attachment.unsupported` until the workspace image updates.
+`attachment.unsupported` until the workspace image updates. Terminal requests
+on v1–v3 supervisors return `terminal.protocol_unsupported`.
 
 A separate, narrowly scoped pool-enrollment socket (its own version axis)
 serves optional task-agnostic warm runtimes. Its only server message is a
 one-shot workspace assignment after an atomic durable claim; the runtime then
 uses the existing workspace registration protocol. There is no reusable
-worker lease, arbitrary command execution, shell stream, or tunnel; file
+worker lease, caller-supplied command execution, or tunnel. Interactive PTYs
+run only the immutable template-declared command over typed v4 frames. File
 transfer exists only as the bounded attachment upload into supervisor-owned
 storage — there is no general file API. The relay forwards only
 template-declared loopback routes with exact method/path/query/size/deadline
@@ -276,6 +302,8 @@ labeled provider objects and supervisors simply reconnect.
   from logs. No human accounts, sessions, or browser login.
 - Templates are the only execution surface, and they are operator-deployed
   files — the API cannot introduce new images or commands.
+- Interactive terminals require separate attach/read scopes, run only the
+  template command, and retain metadata rather than session content.
 - Workspaces: digest-pinned image, non-root uid, read-only root, tmpfs
   writes, dropped capabilities, no privilege escalation, no inbound network.
 - Persistent paths are reviewed logical template declarations. Physical host

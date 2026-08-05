@@ -5,6 +5,7 @@ export {
 	fixtureTemplateEcho,
 	fixtureTemplatePersistent,
 	fixtureTemplateSleep,
+	fixtureTemplateTerminal,
 } from "./fixtures";
 export {
 	registerStoreContract,

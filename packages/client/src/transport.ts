@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PocketCoderError, responseError } from "./errors";
 
 type FetchLike = typeof fetch;
+export type WebSocketFactory = (url: string, headers: Record<string, string>) => WebSocket;
 
 export interface PocketCoderClientConfig {
 	baseUrl: string;
@@ -9,6 +10,7 @@ export interface PocketCoderClientConfig {
 	timeoutMs?: number;
 	maxRetries?: number;
 	fetch?: FetchLike;
+	webSocket?: WebSocketFactory;
 }
 
 export interface RequestOptions {
@@ -37,6 +39,7 @@ export class PocketCoderTransport {
 	private readonly timeoutMs: number;
 	private readonly maxRetries: number;
 	private readonly fetchImpl: FetchLike;
+	private readonly webSocketFactory: WebSocketFactory;
 
 	constructor(config: PocketCoderClientConfig, fetchImpl: FetchLike = fetch) {
 		this.baseUrl = baseUrlOf(config.baseUrl);
@@ -44,6 +47,17 @@ export class PocketCoderTransport {
 		this.timeoutMs = config.timeoutMs ?? 60_000;
 		this.maxRetries = config.maxRetries ?? 2;
 		this.fetchImpl = config.fetch ?? fetchImpl;
+		this.webSocketFactory =
+			config.webSocket ??
+			((url, headers) => new WebSocket(url, { headers } as unknown as string[]));
+	}
+
+	webSocket(path: string): WebSocket {
+		const url = new URL(`${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`);
+		url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+		return this.webSocketFactory(url.toString(), {
+			authorization: `Bearer ${this.apiKey}`,
+		});
 	}
 
 	async raw(path: string, init: RequestInit = {}) {
