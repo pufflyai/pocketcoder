@@ -74,6 +74,9 @@ pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8
 pcd keys revoke --id <key-id>
 ```
 
+Prefer a bounded `--expires` plus rotation; reserve `never` for deliberate
+operational choices ([security model](security.md)).
+
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
 `workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
 `checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,

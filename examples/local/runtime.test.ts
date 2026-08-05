@@ -33,7 +33,7 @@ describe("local Pi operator options", () => {
 });
 
 describe("local Pi runtime materialization", () => {
-	test("renders an idempotent digest-pinned template without embedding the bearer", async () => {
+	test("renders an idempotent digest-pinned template and rotates the bearer per prepare", async () => {
 		const directory = await mkdtemp(resolve(tmpdir(), "pocketcoder-local-runtime-"));
 		const commands: string[][] = [];
 		const command: LocalCommandRunner = async (args) => {
@@ -57,7 +57,10 @@ describe("local Pi runtime materialization", () => {
 			expect(first.templateVersion).toBe(second.templateVersion);
 			expect(first.templateVersion).toMatch(/^1\.0\.0-local\.[0-9a-f]{12}$/);
 			expect(first.image).toBe(`pocketcoder-pi:local@sha256:${"a".repeat(64)}`);
-			expect(first.bearer).toBe(second.bearer);
+			// A bearer that survives re-prepare is a standing credential — the
+			// antipattern docs/security.md exists to prevent. Every prepare mints
+			// a fresh one; stale workspaces lose gateway access, which is correct.
+			expect(first.bearer).not.toBe(second.bearer);
 
 			const template = await readFile(first.templatePath, "utf8");
 			expect(template).toContain('"PI_GATEWAY_BEARER_REF": "secretRef:pi-gateway/bearer"');

@@ -91,9 +91,11 @@ holding **machine keys** with explicit scopes and a template allowlist:
 bun run pcd principals create --name my-backend \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,attachments:write,logs:read \
   --templates '*'
-bun run pcd keys issue --principal my-backend --expires never
+bun run pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z
 ```
 
+Give keys a bounded expiry and rotate them; `--expires never` exists for
+deliberate operational choices, not defaults ([security model](security.md)).
 The key (`pkt_…`) is printed once. Store it; the database keeps only a keyed
 digest. Because it was issued without `--scopes`, it follows later scope changes
 made with `principals update`. Pass `keys issue --scopes ...` only when one key

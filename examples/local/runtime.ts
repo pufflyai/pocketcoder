@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { canonicalJson, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 
@@ -92,21 +92,16 @@ export async function buildLocalImage(
 	return { imageId, image: `${options.imageTag}@${imageId}` };
 }
 
-async function ensureBearer(path: string): Promise<string> {
-	try {
-		const existing = (await readFile(path, "utf8")).trim();
-		if (existing) {
-			await chmod(path, 0o444);
-			return existing;
-		}
-	} catch {
-		// Create it below.
-	}
+async function rotateBearer(path: string): Promise<string> {
+	// A bearer that survives re-prepare would be a standing credential
+	// (docs/security.md); mint a fresh one every prepare and let workspaces
+	// from earlier runs lose gateway access.
 	const bearer = randomBytes(32).toString("base64url");
 	await mkdir(resolve(path, ".."), { recursive: true, mode: 0o700 });
 	// The containing secret root is 0700 on the host. The bind-mounted file is
 	// read-only but world-readable inside the isolated workspace so its
 	// non-root runtime uid can consume it.
+	await rm(path, { force: true });
 	await writeFile(path, `${bearer}\n`, { mode: 0o444 });
 	await chmod(path, 0o444);
 	return bearer;
@@ -162,7 +157,7 @@ export async function preparePiRuntime(
 	const parsed = parseTemplateManifest(source);
 
 	const bearerPath = resolve(secretRoot, "pi-gateway/bearer");
-	const bearer = await ensureBearer(bearerPath);
+	const bearer = await rotateBearer(bearerPath);
 	const templatePath = resolve(outputDir, "pi-harness.json");
 	await writeAtomic(templatePath, `${JSON.stringify(parsed.manifest, null, 2)}\n`);
 
