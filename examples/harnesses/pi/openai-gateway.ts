@@ -1,3 +1,8 @@
+// Example-grade gateway: it authenticates one ephemeral bearer and forwards
+// bodies unchanged. A real deployment's gateway is the only credential
+// boundary and must do more — per-workspace short-lived credentials, model
+// and modality policy, size/rate limits, budgets, and audit. See
+// docs/security.md before modeling production on this file.
 export interface OpenAIGatewayConfig {
 	apiKey: string;
 	clientBearer: string;

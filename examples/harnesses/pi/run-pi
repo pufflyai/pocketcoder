@@ -8,11 +8,12 @@ PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/home/agent/.pi/agent}"
 PI_PROVIDER="${PI_GATEWAY_PROVIDER:-pocketcoder-gateway}"
 PI_API="${PI_GATEWAY_API:-openai-completions}"
 PI_GATEWAY_BEARER_FILE="${PI_GATEWAY_BEARER_FILE:-/run/pocketcoder/secrets/pi-gateway%2Fbearer}"
+# No default: a baked-in bearer would be a shared standing credential
+# (docs/security.md). The deployment must provide a per-workspace one.
 if [ -f "$PI_GATEWAY_BEARER_FILE" ]; then
 	PI_GATEWAY_BEARER="$(sed -n '1p' "$PI_GATEWAY_BEARER_FILE")"
-else
-	PI_GATEWAY_BEARER="${PI_GATEWAY_BEARER:-pocketcoder-local-gateway}"
 fi
+: "${PI_GATEWAY_BEARER:?PI_GATEWAY_BEARER or PI_GATEWAY_BEARER_FILE is required}"
 PI_CONTEXT_WINDOW="${PI_GATEWAY_CONTEXT_WINDOW:-128000}"
 PI_MAX_TOKENS="${PI_GATEWAY_MAX_TOKENS:-16384}"
 

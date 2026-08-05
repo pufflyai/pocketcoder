@@ -253,7 +253,9 @@ Unbound providers contain only template identity and a single-use pool enrollmen
 - **Secrets**: never put provider/LLM credentials in templates or launch
   input. An LLM gateway (e.g. agentgateway) should remain the only credential
   boundary; env names that look like secrets are rejected unless they are
-  `secretRef:` references.
+  `secretRef:` references. Any credential a workspace *can* read must be
+  per-workspace and expire with it — never a shared or standing bearer
+  ([security model](security.md)).
 - **Backups**: filesystem/PVC checkpoints survive runtime removal but are not
   disaster recovery unless the checkpoint root and PostgreSQL are backed up
   together.

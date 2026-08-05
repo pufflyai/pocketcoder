@@ -209,6 +209,9 @@ try {
 	};
 	template.spec.image = `${localImage}@${imageId}`;
 	if (harness === "pi") {
+		// Fresh per run and only honored by the gateway process started below,
+		// which dies with this script — the workspace never holds a credential
+		// that outlives the run (docs/security.md).
 		const gatewayBearer = process.env.PI_GATEWAY_BEARER ?? randomBytes(24).toString("base64url");
 		if (useOpenAI) {
 			modelGateway = startOpenAIGateway({
@@ -272,8 +275,10 @@ try {
 			"issue",
 			"--principal",
 			`example-${runId}`,
+			// Bounded to the template's maxAge: an ephemeral run must not
+			// mint credentials that outlive it (docs/security.md).
 			"--expires",
-			"never",
+			new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
 		],
 		{ env: adminEnv, quiet: true },
 	);

@@ -3,6 +3,7 @@
 - **Lerna + Bun-managed monorepo** with **Nx caching**. **TypeScript only**.
 - Use **bun**, never `npm`, `yarn`, or `pnpm`.
 - Your work is not done until all tests are passing.
+- **No long-lived credentials where a workspace can read them** — anything a workspace can read must be workspace-scoped and expire with it, in product code, examples, and docs alike. See `docs/security.md`.
 
 # Coding Rules
 

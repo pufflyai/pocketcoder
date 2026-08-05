@@ -287,6 +287,9 @@ labeled provider objects and supervisors simply reconnect.
   checkpointed paths.
 - Launch input reaches the coding agent in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
+- Workspace-readable credentials are workspace-scoped and expire with the
+  workspace; model policy is enforced at the deployment's gateway, not by
+  hiding tokens inside the sandbox ([security model](security.md)).
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.
 - Conversation events are contract-bounded and principal-scoped, expire by
   template policy, and support explicit content deletion. Native workspaces
