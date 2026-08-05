@@ -42,7 +42,6 @@ jobs:
       - name: Validate the Pi and AgentAPI E2E fixture
         working-directory: examples/harnesses/pi
         run: |
-          bun install --frozen-lockfile
           bun run typecheck
           bun test
       - name: Run Pi through AgentAPI full-stack E2E
@@ -50,7 +49,6 @@ jobs:
       - name: Validate the Codex and OpenCode AgentAPI fixtures
         working-directory: examples/harnesses/oss
         run: |
-          bun install --frozen-lockfile
           bun run typecheck
           bun test
       - name: Run Codex and OpenCode through AgentAPI full-stack E2E

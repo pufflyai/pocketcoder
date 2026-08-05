@@ -33,7 +33,7 @@ Readability and structure matter most — we're happy to make bigger changes to 
 
 ## Changesets
 
-- Only **`@pstdio/pocketcoder-cli`** and **`@pstdio/pocketcoder-remote`** are published — add a changeset (`bun changeset`, one-line summary) when a change affects one of them. Not for test/refactor-only changes.
+- Four packages are published: **`@pstdio/pocketcoder-cli`**, **`@pstdio/pocketcoder-remote`**, **`@pstdio/pocketcoder-client`**, and **`@pstdio/pocketcoder-contracts`** — add a changeset (`bun changeset`, one-line summary) when a change affects one of them. Not for test/refactor-only changes.
 - Never edit `package.json` versions manually.
 - `packages/remote` intentionally ships `src/` in the tarball: Pi loads the extension entry (`src/extension.ts`) with jiti at runtime, so only the launcher (`src/bin.ts`) is bundled. Its `@earendil-works/*` dependencies are exact-pinned; treat Pi upgrades as deliberate changes.
 

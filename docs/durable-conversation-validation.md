@@ -62,24 +62,24 @@ This optional focused check proves the generated migration and transcript
 deduplication against PostgreSQL without building a workspace image.
 
 ```sh
-docker run --detach --name pocketcoder-pc12-postgres \
+docker run --detach --name pocketcoder-validation-postgres \
   --env POSTGRES_USER=pocketcoder \
   --env POSTGRES_PASSWORD=pocketcoder \
   --env POSTGRES_DB=pocketcoder \
   --publish 127.0.0.1:55432:5432 \
   postgres:16-alpine
 
-until docker exec pocketcoder-pc12-postgres pg_isready -U pocketcoder; do sleep 1; done
+until docker exec pocketcoder-validation-postgres pg_isready -U pocketcoder; do sleep 1; done
 
 POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
   bun test packages/db/src/store.test.ts
 
-docker rm --force pocketcoder-pc12-postgres
+docker rm --force pocketcoder-validation-postgres
 ```
 
-Expected result: the PostgreSQL suite runs rather than skips, applies the
-five-migration chain without drift, appends one message, treats a replayed
-`message_id` as idempotent, and reads sequence `1` back.
+Expected result: the PostgreSQL suite runs rather than skips, applies the full
+migration chain in `packages/db/drizzle` without drift, appends one message,
+treats a replayed `message_id` as idempotent, and reads sequence `1` back.
 
 ## 5. Inspect a running workspace manually
 
@@ -89,10 +89,10 @@ workspace id, then read the first page:
 ```sh
 export POCKETCODER_URL=http://127.0.0.1:7080
 export POCKETCODER_KEY=pkt_...
-export PC12_WORKSPACE_ID=<workspace-uuid>
+export WORKSPACE_ID=<workspace-uuid>
 
 curl --fail-with-body --silent --show-error \
-  "$POCKETCODER_URL/v1/workspaces/$PC12_WORKSPACE_ID/conversation?limit=100" \
+  "$POCKETCODER_URL/v1/workspaces/$WORKSPACE_ID/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY" | jq
 ```
 
@@ -105,11 +105,11 @@ To validate explicit deletion with a key holding `conversations:delete`:
 
 ```sh
 curl --fail-with-body --silent --show-error -X DELETE \
-  "$POCKETCODER_URL/v1/workspaces/$PC12_WORKSPACE_ID/conversation" \
+  "$POCKETCODER_URL/v1/workspaces/$WORKSPACE_ID/conversation" \
   -H "Authorization: Bearer $POCKETCODER_KEY" -o /dev/null
 
 curl --silent --show-error \
-  "$POCKETCODER_URL/v1/workspaces/$PC12_WORKSPACE_ID/conversation" \
+  "$POCKETCODER_URL/v1/workspaces/$WORKSPACE_ID/conversation" \
   -H "Authorization: Bearer $POCKETCODER_KEY" | jq
 ```
 

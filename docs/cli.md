@@ -9,11 +9,13 @@ the server container.
 
 Commands use one of two access paths:
 
-- **Database commands** (migrations, principals, keys, template listing) need
-  `POCKETCODER_DATABASE_URL`, `POCKETCODER_DATABASE_SCHEMA` (default
-  `pocketcoder`), and for key issuance `POCKETCODER_AUTH_PEPPER`.
-- **REST commands** (workspaces, pools, doctor) need `POCKETCODER_URL` (default
-  `http://127.0.0.1:7080`) and `POCKETCODER_KEY` (a machine key).
+- **Database commands** (migrations, principals, keys, `templates
+  list-database`) need `POCKETCODER_DATABASE_URL`,
+  `POCKETCODER_DATABASE_SCHEMA` (default `pocketcoder`), and for key issuance
+  `POCKETCODER_AUTH_PEPPER`.
+- **REST commands** (workspaces, checkpoints, storage, pools, `templates list`,
+  doctor) need `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and
+  `POCKETCODER_KEY` (a machine key).
 
 ## Environment files
 
@@ -79,10 +81,10 @@ operational choices ([security model](security.md)).
 
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
 `workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
-`checkpoints:read`, `checkpoints:delete`, `outputs:read`, `services:relay`,
-`attachments:write`, `logs:read`, `network:read`, `terminal:attach`,
-`terminal:read`, `admin`. A key issued without
-`--scopes` inherits its principal's
+`checkpoints:read`, `checkpoints:delete`, `outputs:read`, `conversations:read`,
+`conversations:delete`, `services:relay`, `attachments:write`, `logs:read`,
+`network:read`, `terminal:attach`, `terminal:read`, `admin`. A key issued
+without `--scopes` inherits its principal's
 current scopes, including later changes made by `principals update`. Passing
 `--scopes` creates a permanently narrower key whose effective scopes are the
 intersection of that restriction and its principal's current scopes. Omitting
@@ -94,8 +96,9 @@ without `--scopes` to opt into live inheritance.
 ## Templates
 
 ```sh
-pcd templates validate examples/templates/*.json # validate checked-in examples offline
-pcd templates list                               # versions + status from the database
+pcd templates validate examples/templates/*.json # validate manifests offline, no server needed
+pcd templates list [--json]                      # versions the key may launch, through the REST API
+pcd templates list-database                      # every loaded version, straight from PostgreSQL
 ```
 
 There is deliberately no `templates create/push`: templates are reviewed

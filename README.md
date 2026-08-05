@@ -1,18 +1,16 @@
 # pocketcoder
 
-A lightweight control plane for coding agents in isolated
-workspaces. **Documentation lives in [docs/](docs/README.md)**: [getting
-started](docs/getting-started.md), [CLI reference](docs/cli.md),
-[templates](docs/templates.md), [HTTP API](docs/api.md),
-[deployment](docs/deployment.md), [migration guide](docs/migration.md), and
-[architecture](docs/architecture.md). The durable history change has a
-[validation playbook](docs/durable-conversation-validation.md). It replaces a full Coder deployment for the machine-to-machine
-coding-agent use case while keeping the two concepts that matter:
+A lightweight control plane for coding agents in isolated workspaces.
 
 - a **template** is a reviewed, versioned definition of a coding-agent
   environment;
 - a **workspace** is one isolated instance of a template and the lifecycle
   record for a single coding-agent session.
+
+**Documentation lives in [docs/](docs/README.md)** — start with [getting
+started](docs/getting-started.md), then the [CLI reference](docs/cli.md),
+[templates](docs/templates.md), [HTTP API](docs/api.md),
+[deployment](docs/deployment.md), and [architecture](docs/architecture.md).
 
 ## AgentAPI-native workspaces
 
@@ -70,7 +68,7 @@ export POCKETCODER_DATABASE_SCHEMA=pocketcoder
 export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
 
 bun run pcd db migrate
-bun run pcd principals create --name my-backend --scopes workspaces:create,workspaces:read,workspaces:cancel,workspaces:restore,conversations:read,conversations:delete,services:relay,attachments:write,templates:read,logs:read,terminal:attach,terminal:read --templates '*'
+bun run pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read --templates '*'
 bun run pcd keys issue --principal my-backend --expires never   # shown once
 
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
@@ -121,18 +119,20 @@ curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 
-The OpenAPI document is served at `/v1/openapi.json`. CI publishes
-`ghcr.io/<owner>/<repo>/server` and `ghcr.io/<owner>/<repo>/workspace` images
-on pushes to `main` and version tags (see `.github/workflows/ci.yml`).
+The OpenAPI document is served at `/v1/openapi.json`. CI publishes the
+`server`, `workspace`, and `egress` images under `ghcr.io/<owner>/<repo>/` on
+pushes to `main` and version tags (see `.github/workflows/images.yml`).
 
 ## Commands
 
 ```sh
-bun run check       # Biome formatting and lint checks
+bun run check       # Biome, knip, and package-boundary checks
 bun run format      # format supported files with Biome
-bun run test        # all package test suites through Lerna
+bun run test        # unit + integration + example + policy suites
+bun run test:unit   # package test suites through Lerna only
 bun run typecheck   # strict TypeScript across the Lerna workspace
 bun run build       # bundle packages through Lerna with Nx caching
+bun run pack:check  # pack the published packages and inspect their tarballs
 bun run db:generate -- --name=<change>  # generate + embed a Drizzle migration
 bun run packages    # list packages managed by Lerna
 bun run start       # pocketcoder-server
@@ -150,22 +150,44 @@ bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses O
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
-Lerna coordinates tasks across `apps/*` and `packages/*`; its Nx integration
+Lerna coordinates tasks across `apps/*`, `packages/*`, and the private
+`examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
+
+Two suites need external services and skip themselves otherwise:
+`POCKETCODER_TEST_DATABASE_URL=postgres://…` runs the PostgreSQL store suite
+(migrations, schema isolation, store behavior), and
+`POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
+
+Harness and client integrations live under [`examples/`](examples/). The
+deterministic Pi E2E runs the remote Pi CLI through AgentAPI and proves a real
+workspace file read. The interactive variant runs Pi on the host as the UI,
+while the coding agent and tools remain inside the workspace. Consumer
+applications remain separate projects and integrate through the machine API.
 
 ## Releasing packages
 
-`@pstdio/pocketcoder-cli` is the only public npm package. It bundles the private
-implementation packages into the `pcd` executable. Every other
-workspace remains private, is linked by Bun with `workspace:*`, and is imported
-through its `@pstdio/pocketcoder-*` package boundary. The server and agent are
-distributed as binaries or container images.
+Four npm packages are public:
+
+| Package | What it is |
+|---------|------------|
+| `@pstdio/pocketcoder-cli` | the `pcd` operator and diagnostics CLI |
+| `@pstdio/pocketcoder-remote` | Pi-based terminal UI for workspaces |
+| `@pstdio/pocketcoder-client` | runtime-validated TypeScript control-plane client |
+| `@pstdio/pocketcoder-contracts` | zod schemas for templates, protocol frames, and events |
+
+The CLI bundles the private implementation packages into the `pcd` executable.
+Every other workspace remains private, is linked by Bun with `workspace:*`, and
+is imported through its `@pstdio/pocketcoder-*` package boundary. The server,
+agent, and egress proxy are distributed as container images.
+
+`packages/remote` intentionally ships `src/` in its tarball: Pi loads the
+extension entry with jiti at runtime, so only its launcher is bundled.
 
 The `Release Packages` workflow and Changesets configuration version and
-publish only non-private packages. Add a changeset for user-visible CLI changes;
-do not add changesets for changes that affect only private packages.
-
-Add a changeset with every user-visible CLI change:
+publish only non-private packages. Add a changeset whenever a change affects a
+published package's behavior, API, contracts, or packaged output; do not add
+changesets for private-package-only tests or refactors:
 
 ```sh
 bun run changeset
@@ -174,23 +196,13 @@ bun run changeset
 After changes land on `main`, `Release Packages` opens or updates a version pull
 request for non-private packages only. Merging that pull request publishes
 those packages, creates GitHub releases, and pushes the matching `v<version>`
-tag. The tag build publishes multi-architecture server/workspace images and
-records their immutable digests on that release.
+tag. The tag build publishes multi-architecture server, workspace, and egress
+images and records their immutable digests on that release.
 
-For tokenless publishing, configure an npm trusted publisher for
-`@pstdio/pocketcoder-cli`, using organization `pufflyai`, repository
-`pocketcoder`, and
-workflow filename `release-packages.yml`. An `NPM_TOKEN` repository secret can
-bootstrap the package before trusted publishing is configured.
-
-`POCKETCODER_TEST_DATABASE_URL=postgres://…` additionally runs the PostgreSQL
-integration suite (migrations, schema isolation, store behavior).
-
-Harness and client integrations live under [`examples/`](examples/). The
-deterministic Pi E2E runs the remote Pi CLI through AgentAPI and proves a real
-workspace file read. The interactive variant runs Pi on the host as the UI,
-while the coding agent and tools remain inside the workspace. Consumer
-applications remain separate projects and integrate through the machine API.
+For tokenless publishing, configure an npm trusted publisher for each published
+package, using organization `pufflyai`, repository `pocketcoder`, and workflow
+filename `release-packages.yml`. An `NPM_TOKEN` repository secret can bootstrap
+a package before trusted publishing is configured.
 
 ## Configuration
 

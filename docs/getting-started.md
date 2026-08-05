@@ -9,7 +9,8 @@
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun test          # everything runs against the in-memory store, no services needed
+bun run test      # unit suites use the in-memory store; suites needing
+                  # PostgreSQL, Docker, or a cluster skip themselves
 ```
 
 ## 1. Run the server
@@ -89,7 +90,7 @@ holding **machine keys** with explicit scopes and a template allowlist:
 
 ```sh
 bun run pcd principals create --name my-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,services:relay,attachments:write,logs:read,terminal:attach,terminal:read \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
   --templates '*'
 bun run pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z
 ```
@@ -174,5 +175,8 @@ running setup. A status-only `cat` harness cannot make doctor pass.
 ## Next steps
 
 - Write your own environment: [Templates](templates.md)
-- Wire up your backend: [HTTP API](api.md)
+- Wire up your backend: [HTTP API](api.md) or the typed
+  [`@pstdio/pocketcoder-client`](../packages/client/README.md)
+- Use a local coding-agent UI against a workspace:
+  [`@pstdio/pocketcoder-remote`](../packages/remote/README.md)
 - Run it for real: [Deployment](deployment.md)
