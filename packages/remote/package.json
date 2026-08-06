@@ -6,7 +6,7 @@
 			"type:app"
 		]
 	},
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"private": false,
 	"description": "Pi-based terminal UI for PocketCoder workspaces.",
 	"type": "module",
