@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.5.0
+
+### Minor Changes
+
+- [#17](https://github.com/pufflyai/pocketcoder/pull/17) [`822218a`](https://github.com/pufflyai/pocketcoder/commit/822218ab11bfd11fe7f463dd9e0de6bc4b58d8ee) Thanks [@au-re](https://github.com/au-re)! - Add `pcd --version`, which prints the installed CLI version.
+
 ## 0.4.0
 
 ### Minor Changes

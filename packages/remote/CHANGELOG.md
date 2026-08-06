@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-remote
 
+## 0.2.1
+
+### Patch Changes
+
+- [#19](https://github.com/pufflyai/pocketcoder/pull/19) [`4401c01`](https://github.com/pufflyai/pocketcoder/commit/4401c01b6851b8d26454850df249daf30e8ccb85) Thanks [@au-re](https://github.com/au-re)! - Bundle the workspace-only packages into the shipped extension so the tarball declares no unpublished dependencies.
+
 ## 0.2.0
 
 ### Minor Changes
