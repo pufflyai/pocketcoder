@@ -1,4 +1,6 @@
 import yargs, { type Argv } from "yargs";
+// Bundled into dist at build time so the binary reports its own version without reading the filesystem.
+import { version } from "../package.json" with { type: "json" };
 import { addAdministrativeCommands } from "./command-tree-admin";
 import { addWorkspaceCommands } from "./command-tree-workspaces";
 
@@ -17,7 +19,7 @@ export function createCli(argv: string[]): Argv {
 		})
 		.help()
 		.alias("help", "h")
-		.version(false)
+		.version(version)
 		.recommendCommands()
 		.showHelpOnFail(true)
 		.epilogue(

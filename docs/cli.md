@@ -17,6 +17,9 @@ Commands use one of two access paths:
   doctor) need `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and
   `POCKETCODER_KEY` (a machine key).
 
+`pcd --version` prints the installed `@pstdio/pocketcoder-cli` version, and
+`pcd --help` lists the command tree. Neither needs credentials.
+
 ## Environment files
 
 `pcd` uses project-scoped environment discovery. It finds the
