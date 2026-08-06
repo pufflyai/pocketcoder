@@ -57,6 +57,24 @@ async function runCli(args: readonly string[], options: RunCliOptions = {}): Pro
 	return { exitCode, output: `${stdout}${stderr}` };
 }
 
+describe("pcd version", () => {
+	test("prints the published package version", async () => {
+		const { version } = await Bun.file(resolve(import.meta.dir, "../package.json")).json();
+		const result = await runCli(["--version"]);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.output.trim()).toBe(version);
+	});
+
+	test("leaves --version to the template version on workspaces create", async () => {
+		const result = await runCli(["workspaces", "create", "--help"]);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.output).toContain("Template version");
+		expect(result.output).not.toContain("Show version number");
+	});
+});
+
 describe("pcd help", () => {
 	test("prints root help successfully", async () => {
 		const result = await runCli(["--help"]);

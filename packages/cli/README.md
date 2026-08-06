@@ -8,6 +8,7 @@ pcd requires Bun 1.3.14 or newer:
 
 ```sh
 bun add --global @pstdio/pocketcoder-cli
+pcd --version
 pcd --help
 ```
 

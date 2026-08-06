@@ -50,8 +50,10 @@ function listOptions(command: Argv) {
 		.option("json", { type: "boolean", description: "Print JSON" });
 }
 
+// `version(false)` because here `--version` names the template version, not the root version flag.
 function createOptions(command: Argv) {
 	return command
+		.version(false)
 		.option("template", { type: "string", demandOption: true, description: "Template name" })
 		.option("version", { type: "string", description: "Template version" })
 		.option("external-id", { type: "string", description: "Caller identity and idempotency key" })
