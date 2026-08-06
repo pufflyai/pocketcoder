@@ -7,7 +7,7 @@
 		]
 	},
 	"version": "0.2.0",
-	"private": false,
+	"private": true,
 	"description": "Runtime-validated TypeScript client for the PocketCoder control plane.",
 	"type": "module",
 	"license": "MIT",
@@ -17,27 +17,17 @@
 		"directory": "packages/client"
 	},
 	"files": [
-		"dist",
 		"src",
 		"!src/**/*.test.ts",
-		"README.md",
-		"LICENSE"
+		"README.md"
 	],
 	"exports": {
-		".": {
-			"types": "./src/index.ts",
-			"bun": "./src/index.ts",
-			"default": "./dist/index.js"
-		}
-	},
-	"publishConfig": {
-		"access": "public"
+		".": "./src/index.ts"
 	},
 	"engines": {
 		"node": ">=22.19.0"
 	},
 	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target node --packages external",
 		"test": "bun test",
 		"typecheck": "tsc --project ./tsconfig.json --noEmit"
 	},

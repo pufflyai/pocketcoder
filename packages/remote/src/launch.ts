@@ -49,11 +49,11 @@ function piBinPath(resolvePath: (specifier: string) => string): string {
 	return resolve(packageRoot, bin);
 }
 
-function extensionPath(): string {
-	// Works from both src/bin.ts (dev) and dist/bin.js (published): the
-	// package root is one directory up in both layouts.
-	const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-	return resolve(packageRoot, "src/extension.ts");
+export function extensionPath(moduleDir: string): string {
+	// The extension sits beside the launcher in both layouts: pi loads the
+	// TypeScript entry through jiti in dev, and the published tarball ships only
+	// the bundle, which inlines the workspace-only packages it depends on.
+	return resolve(moduleDir, moduleDir.endsWith(`${sep}src`) ? "extension.ts" : "extension.js");
 }
 
 export function resolvePiInvocation(options: ResolveOptions = {}): PiInvocation {
@@ -77,7 +77,7 @@ export function resolvePiInvocation(options: ResolveOptions = {}): PiInvocation 
 			piBinPath(resolvePath),
 			...PI_FLAGS,
 			"--extension",
-			extensionPath(),
+			extensionPath(dirname(fileURLToPath(import.meta.url))),
 			...(options.argv ?? []),
 		],
 		env: childEnv,

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { boundaryViolations, projectBoundaryViolations } from "./check-boundaries";
+import {
+	boundaryViolations,
+	projectBoundaryViolations,
+	publishedDependencyViolations,
+} from "./check-boundaries";
 
 test("runs without external file discovery tools", async () => {
 	const child = Bun.spawn([process.execPath, join(import.meta.dir, "check-boundaries.ts")], {
@@ -45,18 +49,21 @@ test("requires Nx tags and rejects inward layers depending on adapters", () => {
 				path: "packages/core/package.json",
 				name: "@example/core",
 				tags: ["type:application"],
+				private: true,
 				dependencies: ["@example/db"],
 			},
 			{
 				path: "packages/db/package.json",
 				name: "@example/db",
 				tags: ["type:adapter"],
+				private: true,
 				dependencies: [],
 			},
 			{
 				path: "packages/untagged/package.json",
 				name: "@example/untagged",
 				tags: [],
+				private: true,
 				dependencies: [],
 			},
 		]),
@@ -64,6 +71,57 @@ test("requires Nx tags and rejects inward layers depending on adapters", () => {
 		"packages/core/package.json: type:application cannot depend on type:adapter (@example/db)",
 		"packages/untagged/package.json: project requires an Nx type tag",
 	]);
+});
+
+test("rejects published packages that depend on unpublished ones at runtime", () => {
+	expect(
+		publishedDependencyViolations([
+			{
+				path: "packages/remote/package.json",
+				name: "@example/remote",
+				tags: ["type:app"],
+				private: false,
+				dependencies: ["@example/client", "zod"],
+			},
+			{
+				path: "packages/client/package.json",
+				name: "@example/client",
+				tags: ["type:library"],
+				private: true,
+				dependencies: [],
+			},
+		]),
+	).toEqual([
+		"packages/remote/package.json: published package cannot depend on unpublished @example/client",
+	]);
+});
+
+test("allows published packages to depend on published ones and bundled dev dependencies", () => {
+	expect(
+		publishedDependencyViolations([
+			{
+				path: "packages/remote/package.json",
+				name: "@example/remote",
+				tags: ["type:app"],
+				private: false,
+				dependencies: ["@example/contracts"],
+			},
+			{
+				path: "packages/contracts/package.json",
+				name: "@example/contracts",
+				tags: ["type:library"],
+				private: false,
+				dependencies: [],
+			},
+			{
+				path: "packages/internal/package.json",
+				name: "@example/internal",
+				tags: ["type:library"],
+				private: true,
+				dependencies: ["@example/other-private"],
+			},
+		]),
+	).toEqual([]);
 });
 
 test("allows package exports and test-only fixtures", () => {

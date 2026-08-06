@@ -10,6 +10,7 @@ export interface ProjectBoundary {
 	path: string;
 	name: string;
 	tags: string[];
+	private: boolean;
 	dependencies: string[];
 }
 
@@ -36,6 +37,25 @@ export function projectBoundaryViolations(projects: ProjectBoundary[]): string[]
 			if (dependencyType && DISALLOWED_DEPENDENCY_TYPES[type]?.has(dependencyType)) {
 				violations.push(
 					`${project.path}: ${type} cannot depend on ${dependencyType} (${dependencyName})`,
+				);
+			}
+		}
+	}
+	return violations;
+}
+
+// A published package resolves its runtime dependencies from npm, so anything a
+// workspace keeps private has to be bundled at build time and declared as a dev
+// dependency instead.
+export function publishedDependencyViolations(projects: ProjectBoundary[]): string[] {
+	const byName = new Map(projects.map((project) => [project.name, project]));
+	const violations: string[] = [];
+	for (const project of projects) {
+		if (project.private) continue;
+		for (const dependencyName of project.dependencies) {
+			if (byName.get(dependencyName)?.private) {
+				violations.push(
+					`${project.path}: published package cannot depend on unpublished ${dependencyName}`,
 				);
 			}
 		}
@@ -92,6 +112,7 @@ async function projectBoundaries(): Promise<ProjectBoundary[]> {
 		paths.map(async (path) => {
 			const manifest = (await Bun.file(path).json()) as {
 				name: string;
+				private?: boolean;
 				nx?: { tags?: string[] };
 				dependencies?: Record<string, string>;
 			};
@@ -99,6 +120,7 @@ async function projectBoundaries(): Promise<ProjectBoundary[]> {
 				path,
 				name: manifest.name,
 				tags: manifest.nx?.tags ?? [],
+				private: manifest.private === true,
 				dependencies: Object.keys(manifest.dependencies ?? {}),
 			};
 		}),
@@ -106,9 +128,11 @@ async function projectBoundaries(): Promise<ProjectBoundary[]> {
 }
 
 if (import.meta.main) {
+	const projects = await projectBoundaries();
 	const violations = [
 		...boundaryViolations(await sourceFiles()),
-		...projectBoundaryViolations(await projectBoundaries()),
+		...projectBoundaryViolations(projects),
+		...publishedDependencyViolations(projects),
 	];
 	if (violations.length > 0) {
 		for (const violation of violations) console.error(violation);

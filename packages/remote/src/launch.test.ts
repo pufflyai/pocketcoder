@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolvePiInvocation } from "./launch";
+import { extensionPath, resolvePiInvocation } from "./launch";
 
 describe("pi launcher", () => {
 	test("requires a machine key with actionable guidance", () => {
@@ -41,5 +41,21 @@ describe("pi launcher", () => {
 		]);
 		expect(invocation.env.OPENAI_API_KEY).toBeUndefined();
 		expect(invocation.env.POCKETCODER_KEY).toBe("pkt_example");
+	});
+});
+
+describe("extension resolution", () => {
+	test("loads the TypeScript entry when running from source", () => {
+		expect(extensionPath("/repo/packages/remote/src")).toBe(
+			"/repo/packages/remote/src/extension.ts",
+		);
+	});
+
+	// The published tarball ships no src/, so the launcher must point pi at the
+	// bundled extension that carries the workspace-only dependencies inline.
+	test("loads the bundled entry when running from the published tarball", () => {
+		expect(extensionPath("/app/node_modules/@pstdio/pocketcoder-remote/dist")).toBe(
+			"/app/node_modules/@pstdio/pocketcoder-remote/dist/extension.js",
+		);
 	});
 });

@@ -1,5 +1,9 @@
 # `@pstdio/pocketcoder-client`
 
+An internal workspace package, not published to npm. `pcd` and
+`@pstdio/pocketcoder-remote` bundle it at build time; to talk to the control
+plane from your own code, use the [HTTP API](../../docs/api.md) directly.
+
 Runtime-validated TypeScript client for the PocketCoder control-plane API. It
 uses platform `fetch`, composes timeouts with caller abort signals, validates
 successful and error responses, and exposes typed pagination. Retryable
