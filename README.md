@@ -167,22 +167,22 @@ applications remain separate projects and integrate through the machine API.
 
 ## Releasing packages
 
-Four npm packages are public:
+Two npm packages are public — the two things a consumer runs directly:
 
 | Package | What it is |
 |---------|------------|
 | `@pstdio/pocketcoder-cli` | the `pcd` operator and diagnostics CLI |
 | `@pstdio/pocketcoder-remote` | Pi-based terminal UI for workspaces |
-| `@pstdio/pocketcoder-client` | runtime-validated TypeScript control-plane client |
-| `@pstdio/pocketcoder-contracts` | zod schemas for templates, protocol frames, and events |
 
-The CLI bundles the private implementation packages into the `pcd` executable.
 Every other workspace remains private, is linked by Bun with `workspace:*`, and
-is imported through its `@pstdio/pocketcoder-*` package boundary. The server,
-agent, and egress proxy are distributed as container images.
+is imported through its `@pstdio/pocketcoder-*` package boundary. Both published
+packages bundle the private packages they use at build time, so neither declares
+a workspace dependency at runtime — `bun run check` fails if one ever does. The
+server, agent, and egress proxy are distributed as container images.
 
-`packages/remote` intentionally ships `src/` in its tarball: Pi loads the
-extension entry with jiti at runtime, so only its launcher is bundled.
+`packages/remote` ships two bundles: the launcher and the extension entry that
+Pi loads with jiti at runtime. Only `@earendil-works/*` stays external, because
+the extension shares those modules with the Pi process hosting it.
 
 The `Release Packages` workflow and Changesets configuration version and
 publish only non-private packages. Add a changeset whenever a change affects a
@@ -201,8 +201,13 @@ images and records their immutable digests on that release.
 
 For tokenless publishing, configure an npm trusted publisher for each published
 package, using organization `pufflyai`, repository `pocketcoder`, and workflow
-filename `release-packages.yml`. An `NPM_TOKEN` repository secret can bootstrap
-a package before trusted publishing is configured.
+filename `release-packages.yml`.
+
+A package that has never been published cannot use trusted publishing for its
+first release: npm requires the package to exist before a trusted publisher can
+be attached to it, and OIDC-only runs fail with `ENEEDAUTH`. Bootstrap a new
+package once with an `NPM_TOKEN` repository secret, then configure its trusted
+publisher and remove the secret.
 
 ## Configuration
 

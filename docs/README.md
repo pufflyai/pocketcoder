@@ -18,12 +18,12 @@ API drives the whole lifecycle.
 | [Migration guide](migration.md) | Frozen legacy rename map and a one-pass consumer migration checklist |
 | [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |
 
-Two published client packages sit on top of the same machine API:
+Two clients sit on top of the same machine API:
 
 | Package | What it is |
 |---------|------------|
-| [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi as a thin terminal client for a workspace, with history replay, attachments, and workspace commands |
-| [`@pstdio/pocketcoder-client`](../packages/client/README.md) | Runtime-validated TypeScript client for the control plane |
+| [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi as a thin terminal client for a workspace, with history replay, attachments, and workspace commands — published to npm |
+| [`@pstdio/pocketcoder-client`](../packages/client/README.md) | Runtime-validated TypeScript client for the control plane — an internal workspace package, bundled into the published clients rather than published itself |
 
 ## The short version
 
