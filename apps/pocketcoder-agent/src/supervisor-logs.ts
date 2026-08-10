@@ -5,25 +5,32 @@ type SendFrame = (type: AgentFrame["type"], payload: unknown) => boolean;
 
 export class SupervisorLogs {
 	private outputBuffer = "";
+	private readonly secrets = new Set<string>();
 
 	constructor(private readonly send: SendFrame) {}
 
+	addSecret(secret: string) {
+		if (secret) this.secrets.add(secret);
+	}
+
+	removeSecret(secret: string) {
+		this.secrets.delete(secret);
+	}
+
 	async pump(stream: ReadableStream<Uint8Array> | null, name: "stdout" | "stderr") {
 		if (!stream) return;
-		await pumpLineFramedText(
-			stream,
-			(text) => {
-				if (name === "stdout" && isConversationControlLine(text)) return;
-				this.emit(name, text);
-			},
-			name === "stdout" ? (value) => this.captureOutputs(value) : undefined,
-		);
+		await pumpLineFramedText(stream, (text) => {
+			const redacted = this.redact(text);
+			if (name === "stdout") this.captureOutputs(redacted);
+			if (name === "stdout" && isConversationControlLine(redacted)) return;
+			this.emit(name, redacted);
+		});
 	}
 
 	log(message: string) {
 		this.send("log_chunk", {
 			stream: "runtime",
-			content_b64: Buffer.from(`${message}\n`).toString("base64"),
+			content_b64: Buffer.from(`${this.redact(message)}\n`).toString("base64"),
 			occurred_at: new Date().toISOString(),
 		});
 	}
@@ -38,8 +45,14 @@ export class SupervisorLogs {
 		}
 	}
 
-	private captureOutputs(value: Uint8Array) {
-		this.outputBuffer += Buffer.from(value).toString("utf8");
+	private redact(text: string) {
+		let result = text;
+		for (const secret of this.secrets) result = result.replaceAll(secret, "[redacted]");
+		return result;
+	}
+
+	private captureOutputs(text: string) {
+		this.outputBuffer += text;
 		const lines = this.outputBuffer.split("\n");
 		this.outputBuffer = lines.pop() ?? "";
 		for (const line of lines) this.captureControlLine(line);

@@ -327,9 +327,10 @@ labeled provider objects and supervisors simply reconnect.
   paths, PVC subpaths, checkpoint locations, and mount flags never enter the
   public API. Checkpoints reject traversal, unsafe links, devices, sockets,
   FIFOs, setuid/setgid modes, integrity mismatch, and quota expansion.
-- Git/model credentials are deployment-resolved read-only files under
-  `/run/pocketcoder/secrets`; provider input and secrets are outside
-  checkpointed paths.
+- Git credentials are delivered in memory only to create-time setup and cleared
+  before the harness starts. Agent-readable runtime credentials are
+  deployment-resolved read-only files under `/run/pocketcoder/secrets`;
+  provider input and secrets are outside checkpointed paths.
 - Launch input reaches the coding agent in memory; registration secrets are
   single-use; reconnect credentials never touch the workspace filesystem.
 - Workspace-readable credentials are workspace-scoped and expire with the

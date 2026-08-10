@@ -111,7 +111,9 @@ function createStorageDriver(config: ServerConfig) {
 }
 
 function createSecretResolver(config: ServerConfig) {
-	if (config.secretProvider === "kubernetes") return new KubernetesSecretResolver();
+	if (config.secretProvider === "kubernetes") {
+		return new KubernetesSecretResolver({ namespace: config.kubernetesNamespace });
+	}
 	if (config.secretProvider === "file") {
 		return new FileSecretResolver({ root: config.secretRoot as string });
 	}

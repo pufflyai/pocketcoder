@@ -127,6 +127,7 @@ class Supervisor {
 		const exec = this.exec;
 		if (!exec) return EXIT_PROTOCOL_ERROR;
 		if (!(await preflightNetwork(exec, this.sendFrame.bind(this), this.flushAndClose.bind(this)))) {
+			this.clearSourceCredential(exec);
 			return EXIT_NETWORK_POLICY_FAILED;
 		}
 
@@ -138,6 +139,7 @@ class Supervisor {
 		}
 		const memoryOk = await probeWritableMemory(exec, this.logs.log.bind(this.logs));
 		if (!memoryOk) {
+			this.clearSourceCredential(exec);
 			this.failedSetupStep = "writable-memory-preflight";
 			this.sendFrame("process_state", {
 				phase: "exited",
@@ -147,14 +149,7 @@ class Supervisor {
 			await this.flushAndClose();
 			return EXIT_WRITABLE_MEMORY_FAILED;
 		}
-		this.failedSetupStep = await runSetupSteps(exec, {
-			send: this.sendFrame.bind(this),
-			log: this.logs.log.bind(this.logs),
-			pump: this.logs.pump.bind(this.logs),
-			setSetupPhase: () => {
-				this.childPhase = "setup";
-			},
-		});
+		this.failedSetupStep = await this.runSetup(exec);
 		if (this.failedSetupStep) {
 			this.sendFrame("process_state", {
 				phase: "exited",
@@ -287,6 +282,28 @@ class Supervisor {
 	// --- Setup commands ---
 
 	private failedSetupStep: string | null = null;
+
+	private async runSetup(exec: ExecSpec): Promise<string | null> {
+		const credential = exec.source?.credential ?? null;
+		if (credential) this.logs.addSecret(credential);
+		try {
+			return await runSetupSteps(exec, {
+				send: this.sendFrame.bind(this),
+				log: this.logs.log.bind(this.logs),
+				pump: this.logs.pump.bind(this.logs),
+				setSetupPhase: () => {
+					this.childPhase = "setup";
+				},
+			});
+		} finally {
+			if (credential) this.logs.removeSecret(credential);
+			this.clearSourceCredential(exec);
+		}
+	}
+
+	private clearSourceCredential(exec: ExecSpec): void {
+		if (exec.source) exec.source.credential = null;
+	}
 
 	// --- Harness ---
 

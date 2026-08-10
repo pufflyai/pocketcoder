@@ -25,7 +25,10 @@ export {
 	KubernetesDriver,
 	type KubernetesDriverOptions,
 } from "./kubernetes";
-export { KubernetesSecretResolver } from "./kubernetes-secrets";
+export {
+	KubernetesSecretResolver,
+	type KubernetesSecretResolverOptions,
+} from "./kubernetes-secrets";
 export {
 	KubernetesPvcStorageDriver,
 	type KubernetesPvcStorageDriverOptions,

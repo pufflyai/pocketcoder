@@ -89,7 +89,10 @@ export interface RuntimeSecretRef {
 }
 
 export interface WorkspaceSecretResolver {
+	// Runtime credentials remain workspace-readable files. Source credentials
+	// use the separate setup-only value contract and are never mounted.
 	resolve(workspace: WorkspaceRow): Promise<RuntimeSecretRef[]>;
+	resolveSourceCredential(workspace: WorkspaceRow): Promise<string | null>;
 }
 
 export interface StorageRef {

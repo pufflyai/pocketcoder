@@ -55,13 +55,16 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
+export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 6;
+export const SOURCE_CREDENTIAL_MAX_BYTES = 65_536;
 export const SUPPORTED_PROTOCOL_VERSIONS = [
 	LEGACY_PROTOCOL_VERSION,
 	2,
 	3,
 	4,
+	5,
 	PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -82,6 +85,7 @@ const EnvelopeBase = z.object({
 		z.literal(2),
 		z.literal(3),
 		z.literal(4),
+		z.literal(5),
 		z.literal(PROTOCOL_VERSION),
 	]),
 	workspace_id: z.uuid(),
@@ -250,7 +254,13 @@ export const ExecSpecSchema = z.object({
 	source: SourceDescriptorSchema.extend({
 		url: z.url(),
 		destination: z.string(),
-		credential_path: z.string().nullable().default(null),
+		credential: z
+			.string()
+			.min(1)
+			.max(SOURCE_CREDENTIAL_MAX_BYTES)
+			.refine((value) => !value.includes("\0"), "credential must not contain NUL bytes")
+			.nullable()
+			.default(null),
 	})
 		.nullable()
 		.default(null),

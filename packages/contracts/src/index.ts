@@ -179,6 +179,8 @@ export {
 	ServiceHealthPayload,
 	ShutdownPayload,
 	SignalPayload,
+	SOURCE_CREDENTIAL_MAX_BYTES,
+	SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
 	SourceResolvedPayload,
 	SUPPORTED_PROTOCOL_VERSIONS,
 	TerminationAckPayload,

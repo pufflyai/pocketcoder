@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
@@ -31,6 +32,12 @@ const HARNESS_PORT = freePort();
 
 const HARNESS_SCRIPT = `
 import { randomUUID } from "node:crypto";
+if (process.env.HARNESS_ENV_PATH) {
+  await Bun.write(process.env.HARNESS_ENV_PATH, JSON.stringify({
+    source: process.env.POCKETCODER_SOURCE ?? null,
+    environment: process.env,
+  }));
+}
 const messages = [];
 let status = "stable";
 function emitConversation(role, content) {
@@ -151,6 +158,103 @@ async function waitFor<T>(
 	throw new Error(`timed out waiting for ${what}`);
 }
 
+async function createSourceFixture(directory: string) {
+	const setupPath = join(directory, "setup.ts");
+	const setupMarker = join(directory, "setup-ran");
+	const harnessEnvironment = join(directory, "harness-environment.json");
+	const worktree = join(directory, "worktree");
+	await writeFile(
+		setupPath,
+		`import { mkdir } from "node:fs/promises";
+const source = JSON.parse(process.env.POCKETCODER_SOURCE ?? "null");
+if (!source || typeof source.credential !== "string") throw new Error("missing source credential");
+console.error("clone credential: " + source.credential);
+await mkdir(source.destination, { recursive: true });
+await Bun.write(source.destination + "/README.md", "fixture\\n");
+const commands = [
+  ["git", "init", "-q", source.destination],
+  ["git", "-C", source.destination, "add", "README.md"],
+  ["git", "-C", source.destination, "-c", "user.name=PocketCoder", "-c", "user.email=test@example.com", "commit", "-qm", "fixture"],
+];
+for (const command of commands) {
+  const result = Bun.spawnSync(command, { stdout: "ignore", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(new TextDecoder().decode(result.stderr));
+}
+await Bun.write(${JSON.stringify(setupMarker)}, JSON.stringify({
+  credential_received: true,
+  credential_path: source.credential_path ?? null,
+}));
+`,
+	);
+	return { setupPath, setupMarker, harnessEnvironment, worktree };
+}
+
+async function verifySourceSecretBoundary(
+	store: MemoryStore,
+	workspaceId: string,
+	setupMarker: string,
+	harnessEnvironment: string,
+	sourceCredential: string,
+) {
+	expect(JSON.parse(await Bun.file(setupMarker).text())).toEqual({
+		credential_received: true,
+		credential_path: null,
+	});
+	expect(await Bun.file(harnessEnvironment).text()).not.toContain(sourceCredential);
+	const logs = await store.readLogs(workspaceId, 0, 100);
+	const logText = logs.map((entry) => new TextDecoder().decode(entry.content)).join("");
+	expect(logText).toContain("clone credential: [redacted]");
+	expect(logText).not.toContain(sourceCredential);
+}
+
+function e2eTemplate(input: {
+	setupPath: string;
+	harnessPath: string;
+	harnessEnvironment: string;
+	worktree: string;
+}) {
+	return parseTemplateManifest({
+		apiVersion: "pocketcoder.dev/v1alpha1",
+		kind: "Template",
+		metadata: { name: "e2e-echo", description: "e2e" },
+		spec: {
+			version: "1.0.0",
+			image: `example.test/e2e@sha256:${"c".repeat(64)}`,
+			setup: [{ name: "clone-source", command: ["bun", input.setupPath], timeoutSeconds: 30 }],
+			harness: {
+				command: ["bun", input.harnessPath],
+				env: { HARNESS_ENV_PATH: input.harnessEnvironment },
+			},
+			resources: { cpu: "1", memory: "256Mi" },
+			timeouts: { start: "1m", maxAge: "10m", idle: "5m", terminateGrace: "5s" },
+			persistence: {
+				mounts: [{ name: "worktree", target: input.worktree, maxBytes: 1_048_576, maxFiles: 100 }],
+			},
+			source: {
+				kind: "git",
+				destinationMount: "worktree",
+				repositories: {
+					app: {
+						url: "https://github.com/example/app.git",
+						credential: "secretRef:git/token",
+					},
+				},
+			},
+			services: {
+				agent: {
+					baseUrl: `http://127.0.0.1:${HARNESS_PORT}`,
+					healthPath: "/status",
+					routes: [
+						{ method: "GET", path: "/status" },
+						{ method: "GET", path: "/messages", query: ["after"] },
+						{ method: "POST", path: "/message" },
+					],
+				},
+			},
+		},
+	});
+}
+
 describe("end-to-end workspace lifecycle", () => {
 	const cleanups: Array<() => void> = [];
 	// Ensures the supervisor and its harness child are stopped even when an
@@ -166,33 +270,12 @@ describe("end-to-end workspace lifecycle", () => {
 		async () => {
 			const dir = await mkdtemp(join(tmpdir(), "pocketcoder-e2e-"));
 			const harnessPath = join(dir, "harness.ts");
-			const setupMarker = join(dir, "setup-ran");
+			const sourceCredential = "short-lived-git-token";
+			const { setupPath, setupMarker, harnessEnvironment, worktree } =
+				await createSourceFixture(dir);
 			await writeFile(harnessPath, HARNESS_SCRIPT);
 
-			const template = parseTemplateManifest({
-				apiVersion: "pocketcoder.dev/v1alpha1",
-				kind: "Template",
-				metadata: { name: "e2e-echo", description: "e2e" },
-				spec: {
-					version: "1.0.0",
-					image: `example.test/e2e@sha256:${"c".repeat(64)}`,
-					setup: [{ name: "touch-marker", command: ["touch", setupMarker], timeoutSeconds: 30 }],
-					harness: { command: ["bun", harnessPath] },
-					resources: { cpu: "1", memory: "256Mi" },
-					timeouts: { start: "1m", maxAge: "10m", idle: "5m", terminateGrace: "5s" },
-					services: {
-						agent: {
-							baseUrl: `http://127.0.0.1:${HARNESS_PORT}`,
-							healthPath: "/status",
-							routes: [
-								{ method: "GET", path: "/status" },
-								{ method: "GET", path: "/messages", query: ["after"] },
-								{ method: "POST", path: "/message" },
-							],
-						},
-					},
-				},
-			});
+			const template = e2eTemplate({ setupPath, harnessPath, harnessEnvironment, worktree });
 
 			const store = new MemoryStore();
 			const driver = new FakeDriver();
@@ -216,9 +299,19 @@ describe("end-to-end workspace lifecycle", () => {
 				spec: template.manifest.spec,
 			});
 
+			const storageDriver = new FilesystemStorageDriver({
+				workspaceRoot: join(dir, "storage"),
+				checkpointRoot: join(dir, "checkpoints"),
+			});
+			const secretResolver = {
+				resolve: async () => [],
+				resolveSourceCredential: async () => sourceCredential,
+			};
 			const { app, websocket, scheduler } = buildServer({
 				store,
 				driver,
+				storageDriver,
+				secretResolver,
 				pepper: PEPPER,
 				limits: DEFAULT_LIMITS,
 				workspaceServerUrl: "placeholder",
@@ -240,7 +333,11 @@ describe("end-to-end workspace lifecycle", () => {
 			const createRes = await fetch(`${baseUrl}/v1/workspaces`, {
 				method: "POST",
 				headers: { ...authHeaders, "idempotency-key": "e2e-1" },
-				body: JSON.stringify({ external_id: "e2e-task", template: { name: "e2e-echo" } }),
+				body: JSON.stringify({
+					external_id: "e2e-task",
+					template: { name: "e2e-echo" },
+					source: { kind: "git", repository: "app", revision: "main" },
+				}),
 			});
 			expect(createRes.status).toBe(201);
 			const ws = (await createRes.json()) as { id: string; state: string };
@@ -250,6 +347,7 @@ describe("end-to-end workspace lifecycle", () => {
 			await scheduler.tick();
 			const input = driver.inputFor(ws.id);
 			expect(input).toBeDefined();
+			expect(driver.created[0]?.secrets).toEqual([]);
 
 			// 3. Start the real supervisor with the provider input, pointed
 			// at the real WSS endpoint. HOME points at the test directory so
@@ -276,7 +374,13 @@ describe("end-to-end workspace lifecycle", () => {
 				15_000,
 				"workspace ready",
 			);
-			expect(await Bun.file(setupMarker).exists()).toBe(true);
+			await verifySourceSecretBoundary(
+				store,
+				ws.id,
+				setupMarker,
+				harnessEnvironment,
+				sourceCredential,
+			);
 
 			// 5. Converse through the relay.
 			const post = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/message`, {
@@ -343,6 +447,7 @@ describe("end-to-end workspace lifecycle", () => {
 				"workspace canceled",
 			);
 			const exitCode = await supervisorDone;
+			teardown = null;
 			expect(typeof exitCode).toBe("number");
 
 			// Terminal workspaces retain transcript history for the configured

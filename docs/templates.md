@@ -198,11 +198,16 @@ caller selects only an alias and validated revision:
 ```
 
 The non-secret alias, revision, and resolved commit are durable provenance.
-`secretRef:` values resolve to read-only files under
-`/run/pocketcoder/secrets`; local deployments read files beneath
-`POCKETCODER_SECRET_ROOT`, while Kubernetes interprets
-`secretRef:<secret>/<key>`. Secret values and opaque launch input are never
-checkpointed.
+The repository credential is resolved when the supervisor registers, delivered
+inside `POCKETCODER_SOURCE` only to create-time setup steps, and removed from
+supervisor memory before the harness starts. It is never mounted in the
+workspace or checkpointed. Local deployments read the referenced value beneath
+`POCKETCODER_SECRET_ROOT`; Kubernetes interprets
+`secretRef:<secret>/<key>`.
+
+Other `secretRef:` environment values still resolve to read-only files under
+`/run/pocketcoder/secrets` for agent code that needs a runtime credential. Such
+credentials must be workspace-scoped and expire with the workspace.
 
 Template-declared outputs accept only bounded strings, Git SHAs, or HTTPS
 URLs. A harness publishes one by writing a line such as
