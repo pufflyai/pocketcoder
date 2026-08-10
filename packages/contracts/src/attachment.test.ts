@@ -16,6 +16,8 @@ import {
 	ATTACHMENTS_MIN_PROTOCOL_VERSION,
 	PROTOCOL_VERSION,
 	ServerFrameSchema,
+	SOURCE_CREDENTIAL_MAX_BYTES,
+	SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
 	STREAMING_MIN_PROTOCOL_VERSION,
 	SUPPORTED_PROTOCOL_VERSIONS,
 } from "./protocol";
@@ -123,7 +125,7 @@ describe("attachment manifest", () => {
 	});
 });
 
-describe("protocol v5", () => {
+describe("protocol v6", () => {
 	const envelope = {
 		v: PROTOCOL_VERSION,
 		workspace_id: randomUUID(),
@@ -132,11 +134,13 @@ describe("protocol v5", () => {
 		sent_at: new Date().toISOString(),
 	};
 
-	test("supports versions 1 through 5 and keeps capability gates distinct", () => {
-		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5]);
-		expect(PROTOCOL_VERSION).toBe(5);
+	test("supports versions 1 through 6 and keeps capability gates distinct", () => {
+		expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6]);
+		expect(PROTOCOL_VERSION).toBe(6);
 		expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
 		expect(STREAMING_MIN_PROTOCOL_VERSION).toBe(5);
+		expect(SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION).toBe(6);
+		expect(SOURCE_CREDENTIAL_MAX_BYTES).toBe(65_536);
 	});
 
 	test("validates the server-to-agent attachment frames", () => {

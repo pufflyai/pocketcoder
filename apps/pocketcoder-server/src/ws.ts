@@ -14,6 +14,8 @@ import {
 	MAX_FRAME_BYTES,
 	type ProtocolVersion,
 	parseDurationMs,
+	SOURCE_CREDENTIAL_MAX_BYTES,
+	SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
 	STREAMING_MIN_PROTOCOL_VERSION,
 	SUPPORTED_PROTOCOL_VERSIONS,
 	secretMountPath,
@@ -22,7 +24,12 @@ import {
 	TERMINAL_REPLAY_BUFFER_BYTES,
 	type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
-import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import type {
+	Scheduler,
+	Store,
+	WorkspaceRow,
+	WorkspaceSecretResolver,
+} from "@pstdio/pocketcoder-runtime-core";
 import type { MiddlewareHandler } from "hono";
 import type { WSContext, WSEvents } from "hono/ws";
 import { type Hub, type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";
@@ -38,6 +45,7 @@ export interface WsDeps {
 	hub: Hub;
 	scheduler: Scheduler;
 	pepper: string;
+	secretResolver?: WorkspaceSecretResolver;
 	cleanupInput?: (workspaceId: string) => Promise<void>;
 	log?: (msg: string) => void;
 	persistence?: PersistenceService;
@@ -62,6 +70,14 @@ interface WsCredentials {
 }
 
 type WsAuthResult = { auth: WsAuth } | { error: string };
+
+function sourceCredentialReference(row: WorkspaceRow): string | null {
+	if (row.launchMode !== "create" || !row.sourceDescriptor) return null;
+	return (
+		row.templateSnapshot.spec.source?.repositories[row.sourceDescriptor.repository]?.credential ??
+		null
+	);
+}
 
 function validRegistration(deps: WsDeps, row: WorkspaceRow, secret: string): boolean {
 	return (
@@ -93,6 +109,12 @@ async function authenticateConnection(
 	}
 	const row = await deps.store.getWorkspace(credentials.workspaceId);
 	if (!row || isTerminal(row.state)) return { error: "Unknown workspace." };
+	if (
+		sourceCredentialReference(row) &&
+		credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION
+	) {
+		return { error: "Source credentials require agent protocol version 6." };
+	}
 	if (credentials.registration) {
 		if (!validRegistration(deps, row, credentials.registration)) {
 			return { error: "Invalid or expired registration secret." };
@@ -135,7 +157,7 @@ export function agentConnectValidator(deps: WsDeps): MiddlewareHandler<AppEnv> {
 	};
 }
 
-function execSpecOf(row: WorkspaceRow): ExecSpec {
+function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): ExecSpec {
 	const spec = row.templateSnapshot.spec;
 	const sourceSpec = spec.source;
 	const sourceRepository =
@@ -187,9 +209,7 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 						...row.sourceDescriptor,
 						url: sourceRepository.url,
 						destination: sourceMount.target,
-						credential_path: sourceRepository.credential
-							? secretMountPath(sourceRepository.credential)
-							: null,
+						credential: sourceCredential,
 					}
 				: null,
 		restore:
@@ -214,6 +234,20 @@ function execSpecOf(row: WorkspaceRow): ExecSpec {
 				: null,
 		outputs: spec.outputs,
 	};
+}
+
+async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow): Promise<string | null> {
+	const reference = sourceCredentialReference(row);
+	if (!reference) return null;
+	if (!deps.secretResolver) {
+		throw new Error("no deployment secret resolver configured");
+	}
+	const credential = await deps.secretResolver.resolveSourceCredential(row);
+	if (!credential) throw new Error("source credential resolved to an empty value");
+	if (credential.includes("\0") || Buffer.byteLength(credential) > SOURCE_CREDENTIAL_MAX_BYTES) {
+		throw new Error("source credential is not a bounded environment value");
+	}
+	return credential;
 }
 
 function materializeSecretEnv(env: Record<string, string>): Record<string, string> {
@@ -250,7 +284,16 @@ async function registerConnection(
 	}
 	const epoch = row.connectionEpoch + 1;
 	let reconnectCredential: string | undefined;
+	let sourceCredential: string | null = null;
 	if (auth.mode === "register") {
+		try {
+			sourceCredential = await sourceCredentialFor(deps, row);
+		} catch {
+			deps.log?.(`workspace ${row.id}: source credential resolution failed`);
+			await deps.scheduler.finalize(row, "failed", "secret_resolution_failed", new Date());
+			closeProtocol(ws, "source credential unavailable");
+			return null;
+		}
 		reconnectCredential = generateOpaqueSecret();
 		const updated = await deps.store.transition(row.id, {
 			from: ["provisioning"],
@@ -289,7 +332,7 @@ async function registerConnection(
 			log_chunk_bytes: LOG_CHUNK_BYTES,
 			heartbeat_seconds: HEARTBEAT_SECONDS,
 		},
-		exec: execSpecOf(row),
+		exec: execSpecOf(row, sourceCredential),
 	});
 	deps.hub.resumeTerminals(connection);
 	return connection;

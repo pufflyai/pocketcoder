@@ -113,9 +113,11 @@ export POCKETCODER_CHECKPOINT_DIR=/var/lib/pocketcoder/checkpoints
 ```
 
 Use `POCKETCODER_SECRET_PROVIDER=file` plus an absolute
-`POCKETCODER_SECRET_ROOT` for local `secretRef:` values. Only regular files
-beneath that root are projected read-only and they must be outside the
-workspace/checkpoint roots.
+`POCKETCODER_SECRET_ROOT` for local `secretRef:` values. Only bounded regular
+files beneath that root are accepted and they must be outside the
+workspace/checkpoint roots. Runtime environment secrets are projected
+read-only; repository credentials are read by the server and delivered only to
+create-time setup over the authenticated supervisor connection.
 
 ## Kubernetes
 
@@ -171,8 +173,10 @@ bun test packages/drivers/src/kubernetes.test.ts
 ```
 
 With `POCKETCODER_SECRET_PROVIDER=kubernetes`, a template value
-`secretRef:git-credentials/token` projects key `token` from Secret
-`git-credentials` as a read-only file. Secret names/values are not stored in
+`secretRef:git-credentials/token` resolves key `token` from Secret
+`git-credentials`. Repository credentials travel only in the authenticated
+setup contract and are cleared before the harness starts; runtime environment
+secrets remain read-only projected files. Secret names/values are not stored in
 checkpoint manifests.
 
 ## PostgreSQL placement

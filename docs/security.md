@@ -57,7 +57,7 @@ workspace.
 | Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Prefer `--expires <ISO8601>` plus rotation; `--expires never` is for deliberate operational choices, not examples or ephemeral runs |
 | Workspace registration secret | Supervisor | Single-use, spent at connect |
 | Reconnect credential | Supervisor | Memory-only, never touches the workspace filesystem |
-| Git/source credentials (`secretRef:`) | Workspace (read-only file) | Needed only during setup; keep the backing credential narrowly scoped and short-lived |
+| Git/source credentials (`secretRef:`) | Setup process (memory-only) | Delivered at registration, consumed during create-time setup, cleared before the harness starts |
 | Model gateway credential | Workspace | Per-workspace, minted at launch, dead at teardown — never a shared or standing bearer |
 
 ## Model access is a gateway concern

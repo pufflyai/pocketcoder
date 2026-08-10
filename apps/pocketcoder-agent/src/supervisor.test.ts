@@ -16,6 +16,7 @@ import {
 	verifyWritableMemoryPaths,
 	waitForPoolLease,
 } from "./supervisor";
+import { SupervisorLogs } from "./supervisor-logs";
 
 test("restricted child environments cannot replace enforced proxy variables", () => {
 	const exec = {
@@ -34,6 +35,25 @@ test("restricted child environments cannot replace enforced proxy variables", ()
 	expect(environment.https_proxy).toBe("http://127.0.0.1:18080");
 	expect(environment.ALL_PROXY).toBe("");
 	expect(environment.NO_PROXY).toBe("127.0.0.1,localhost,::1");
+});
+
+test("setup credentials are redacted from child output", async () => {
+	const frames: Array<{ type: string; payload: unknown }> = [];
+	const logs = new SupervisorLogs((type, payload) => {
+		frames.push({ type, payload });
+		return true;
+	});
+	logs.addSecret("short-lived-git-token");
+	await logs.pump(new Response("clone failed for short-lived-git-token\n").body, "stderr");
+	const content = frames
+		.map((frame) =>
+			frame.type === "log_chunk" ? (frame.payload as { content_b64: string }) : null,
+		)
+		.filter((payload): payload is { content_b64: string } => payload !== null)
+		.map((payload) => Buffer.from(payload.content_b64, "base64").toString("utf8"))
+		.join("");
+	expect(content).toContain("[redacted]");
+	expect(content).not.toContain("short-lived-git-token");
 });
 
 describe("warm pool bootstrap", () => {

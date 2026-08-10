@@ -220,6 +220,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 		hub,
 		scheduler,
 		pepper,
+		...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
 		...(driver.cleanupInput
 			? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() }
 			: {}),

@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { ConversationMessageInputSchema } from "./conversation";
-import { AgentFrameSchema, ExecSpecSchema, PROTOCOL_VERSION } from "./protocol";
+import {
+	AgentFrameSchema,
+	ExecSpecSchema,
+	PROTOCOL_VERSION,
+	SOURCE_CREDENTIAL_MAX_BYTES,
+} from "./protocol";
 
 test("restricted exec specs carry only local firewall endpoints", () => {
 	const network = ExecSpecSchema.shape.network.parse({
@@ -10,6 +15,25 @@ test("restricted exec specs carry only local firewall endpoints", () => {
 		health_url: "http://127.0.0.1:18082/healthz",
 	});
 	expect(network.mode).toBe("restricted");
+});
+
+test("source credentials are values for setup rather than mounted paths", () => {
+	const source = ExecSpecSchema.shape.source.parse({
+		kind: "git",
+		repository: "app",
+		revision: "main",
+		url: "https://github.com/example/app.git",
+		destination: "/workspace",
+		credential: "short-lived-git-token",
+	});
+	expect(source).toMatchObject({ credential: "short-lived-git-token" });
+	expect(source).not.toHaveProperty("credential_path");
+	expect(
+		ExecSpecSchema.shape.source.safeParse({
+			...source,
+			credential: "x".repeat(SOURCE_CREDENTIAL_MAX_BYTES + 1),
+		}).success,
+	).toBe(false);
 });
 
 describe("conversation contracts", () => {
