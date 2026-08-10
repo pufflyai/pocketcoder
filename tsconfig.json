@@ -4,6 +4,9 @@
 		"target": "ESNext",
 		"module": "Preserve",
 		"moduleDetection": "force",
+		"paths": {
+			"@pstdio/pocketcoder-sdk": ["./packages/sdk/src/index.ts"]
+		},
 		"types": ["bun"],
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
