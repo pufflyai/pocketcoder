@@ -5,6 +5,14 @@
 - Your work is not done until all tests are passing.
 - **No long-lived credentials where a workspace can read them** — anything a workspace can read must be workspace-scoped and expire with it, in product code, examples, and docs alike. See `docs/security.md`.
 
+# Language
+
+Use simple English in plans, explanations, documentation, tickets, comments, and messages.
+
+- Write short, direct sentences.
+- Use plain words instead of jargon.
+- Explain technical terms that readers may not know.
+
 # Coding Rules
 
 Readability and structure matter most — we're happy to make bigger changes to achieve them:
