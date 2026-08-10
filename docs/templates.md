@@ -11,48 +11,48 @@ command, mount, network, privilege, or driver.
 
 ```json
 {
-	"apiVersion": "pocketcoder.dev/v1alpha1",
-	"kind": "Template",
-	"metadata": {
-		"name": "claude-code-agent",
-		"description": "Claude Code behind AgentAPI with repository setup"
-	},
-	"spec": {
-		"version": "1.0.0",
-		"image": "registry.example/coding-agent@sha256:…",
-		"command": ["/usr/local/bin/pocketcoder-agent", "supervise", "--launch-input", "/run/pocketcoder/input"],
-		"setup": [
-			{ "name": "clone-repo", "command": ["/usr/local/bin/clone-repo.sh"], "timeoutSeconds": 300 },
-			{ "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"], "timeoutSeconds": 600 }
-		],
-		"agent": {
-			"type": "claude",
-			"transport": "pty",
-			"termWidth": 120,
-			"command": ["claude", "--dangerously-skip-permissions"],
-			"cwd": "/home/agent/workspace",
-			"env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
-		},
-		"terminal": {
-			"command": ["/bin/sh"],
-			"cwd": "/home/agent/workspace",
-			"maxSessions": 2,
-			"idleTimeout": "10m"
-		},
-		"env": { "HOME": "/home/agent" },
-		"resources": { "cpu": "2", "memory": "2Gi" },
-		"timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
-		"security": {
-			"uid": 10001, "gid": 10001, "readOnlyRoot": true,
-			"writableMemoryPaths": ["/tmp", "/home/agent"]
-		}
-	}
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": {
+    "name": "claude-code-agent",
+    "description": "Claude Code behind AgentAPI with repository setup"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "registry.example/coding-agent@sha256:…",
+    "command": ["/usr/local/bin/pocketcoder-supervisor", "supervise", "--launch-input", "/run/pocketcoder/input"],
+    "setup": [
+      { "name": "clone-repo", "command": ["/usr/local/bin/clone-repo.sh"], "timeoutSeconds": 300 },
+      { "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"], "timeoutSeconds": 600 }
+    ],
+    "agent": {
+      "type": "claude",
+      "transport": "pty",
+      "termWidth": 120,
+      "command": ["claude", "--dangerously-skip-permissions"],
+      "cwd": "/home/agent/workspace",
+      "env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
+    },
+    "terminal": {
+      "command": ["/bin/sh"],
+      "cwd": "/home/agent/workspace",
+      "maxSessions": 2,
+      "idleTimeout": "10m"
+    },
+    "env": { "HOME": "/home/agent" },
+    "resources": { "cpu": "2", "memory": "2Gi" },
+    "timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
+    "security": {
+      "uid": 10001, "gid": 10001, "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp", "/home/agent"]
+    }
+  }
 }
 ```
 
 ## The execution surface
 
-- **`command`** — the container entrypoint: the `pocketcoder-agent` supervisor
+- **`command`** — the container entrypoint: `pocketcoder-supervisor`
   (PID 1, or a child of tini if your image sets one). It registers over
   outbound WSS and receives everything below at registration time, so setup
   and agent changes need no image rebuild.
@@ -248,7 +248,7 @@ JSON without modifying its source.
 ## Writing workspace images
 
 An image needs checksum-pinned AgentAPI at `/usr/local/bin/agentapi`, your agent
-CLI, the `pocketcoder-agent` binary or bundle, a passwd entry
+CLI, the `pocketcoder-supervisor` binary or bundle, a passwd entry
 for the template uid, and a working directory readable by that uid. See
 [`deploy/image/Dockerfile`](../deploy/image/Dockerfile) for a minimal example
 and the [deployment guide](deployment.md) for building and pinning.

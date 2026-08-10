@@ -91,7 +91,7 @@ REST create
   → PostgreSQL queue
   → Docker driver
   → workspace container
-  → pocketcoder-agent over WSS
+  → pocketcoder-supervisor over WSS
   → echo harness
   → relayed message
   → cancellation and container cleanup

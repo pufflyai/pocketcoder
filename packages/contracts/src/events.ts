@@ -8,48 +8,48 @@ import { AGENT_STATES, REASON_CODES, WORKSPACE_STATES, type WorkspaceState } fro
 export const EVENT_TYPES = WORKSPACE_STATES.map((s) => `workspace.${s}` as const);
 
 export type EventType =
-	| `workspace.${WorkspaceState}`
-	| "workspace.output_published"
-	| "workspace.conversation_deleted"
-	| "workspace.terminal_opened"
-	| "workspace.terminal_closed"
-	| "workspace.restore_queued"
-	| "checkpoint.creating"
-	| "checkpoint.ready"
-	| "checkpoint.failed"
-	| "checkpoint.deleting"
-	| "checkpoint.deleted";
+  | `workspace.${WorkspaceState}`
+  | "workspace.output_published"
+  | "workspace.conversation_deleted"
+  | "workspace.terminal_opened"
+  | "workspace.terminal_closed"
+  | "workspace.restore_queued"
+  | "checkpoint.creating"
+  | "checkpoint.ready"
+  | "checkpoint.failed"
+  | "checkpoint.deleting"
+  | "checkpoint.deleted";
 
 export const EventEnvelopeSchema = z.object({
-	id: z.uuid(),
-	type: z.string(),
-	occurred_at: z.iso.datetime(),
-	workspace: z.object({
-		id: z.uuid(),
-		external_id: z.string(),
-		state: z.enum(WORKSPACE_STATES),
-		reason_code: z.string().nullable(),
-		agent_state: z.enum(AGENT_STATES),
-		provisioning_mode: z.enum(["cold", "warm"]).nullable().default(null),
-		change_cursor: z.number().int().nonnegative(),
-		failure: z
-			.object({
-				reason_code: z.enum(REASON_CODES),
-				log_tail: z.string(),
-				log_tail_truncated: z.boolean(),
-				last_log_seq: z.number().int().nonnegative().nullable(),
-			})
-			.nullable(),
-		template: z.object({
-			name: z.string(),
-			version: z.string(),
-			digest: z.string(),
-		}),
-		origin_workspace_id: z.uuid().nullable(),
-		restored_from_checkpoint_id: z.uuid().nullable(),
-		latest_checkpoint_id: z.uuid().nullable(),
-		outputs: z.record(z.string(), z.unknown()),
-	}),
+  id: z.uuid(),
+  type: z.string(),
+  occurred_at: z.iso.datetime(),
+  workspace: z.object({
+    id: z.uuid(),
+    external_id: z.string(),
+    state: z.enum(WORKSPACE_STATES),
+    reason_code: z.string().nullable(),
+    agent_state: z.enum(AGENT_STATES),
+    provisioning_mode: z.enum(["cold", "warm"]).nullable().default(null),
+    change_cursor: z.number().int().nonnegative(),
+    failure: z
+      .object({
+        reason_code: z.enum(REASON_CODES),
+        log_tail: z.string(),
+        log_tail_truncated: z.boolean(),
+        last_log_seq: z.number().int().nonnegative().nullable(),
+      })
+      .nullable(),
+    template: z.object({
+      name: z.string(),
+      version: z.string(),
+      digest: z.string(),
+    }),
+    origin_workspace_id: z.uuid().nullable(),
+    restored_from_checkpoint_id: z.uuid().nullable(),
+    latest_checkpoint_id: z.uuid().nullable(),
+    outputs: z.record(z.string(), z.unknown()),
+  }),
 });
 
 export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;

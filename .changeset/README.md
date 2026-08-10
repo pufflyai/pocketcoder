@@ -1,10 +1,10 @@
 # Changesets
 
-PocketCoder publishes two npm packages: `@pstdio/pocketcoder-cli` and
-`@pstdio/pocketcoder-remote`. Add a changeset whenever a change affects a
-published package's behavior, API, contracts, or packaged output — including
-changes to the private packages they bundle. Do not add changesets for
-private-package-only tests or refactors.
+PocketCoder publishes three npm packages: `@pstdio/pocketcoder-cli`,
+`@pstdio/pocketcoder-remote`, and `@pstdio/pocketcoder-sdk`. Add a changeset
+whenever a change affects a published package's behavior, API, contracts, or
+packaged output — including changes to the private packages they bundle. Do not
+add changesets for private-package-only tests or refactors.
 
 ```sh
 bun run changeset

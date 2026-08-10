@@ -1,27 +1,27 @@
 {
-	"name": "pocketcoder-monitor",
-	"version": "0.1.0",
-	"displayName": "PocketCoder Monitor",
-	"description": "Monitor active PocketCoder workspaces and available templates from Prompt Studio.",
-	"publisher": "pocketcoder",
-	"main": "./extension.ts",
-	"engines": {
-		"pstdio": "^1.0.0"
-	},
-	"pstdio": {
-		"scope": "repo"
-	},
-	"private": true,
-	"type": "module",
-	"scripts": {
-		"test": "bun test",
-		"typecheck": "tsc --noEmit"
-	},
-	"dependencies": {
-		"@pstdio/sdk": "^0.16.0"
-	},
-	"devDependencies": {
-		"@types/bun": "^1.3.14",
-		"typescript": "^5.9.3"
-	}
+  "name": "pocketcoder-monitor",
+  "version": "0.1.0",
+  "displayName": "PocketCoder Monitor",
+  "description": "Monitor active PocketCoder workspaces and available templates from Prompt Studio.",
+  "publisher": "pocketcoder",
+  "main": "./extension.ts",
+  "engines": {
+    "pstdio": "^1.0.0"
+  },
+  "pstdio": {
+    "scope": "repo"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/sdk": "^0.16.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.3"
+  }
 }

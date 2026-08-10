@@ -2,81 +2,81 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { registerStoreContract } from "@pstdio/pocketcoder-testkit";
 import { SQL } from "bun";
-import { migrate, migrationStatus } from "./migrate";
-import { advisoryLockKey, assertValidSchema } from "./schema";
+import { advisoryLockKey, assertValidSchema } from "./database-schema";
+import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
 import { PostgresStore } from "./store";
-import { TEST_DATABASE_URL } from "./store-test-fixtures";
+import { TEST_DATABASE_URL } from "./test-fixtures";
 
 registerStoreContract("PostgreSQL", {
-	enabled: Boolean(TEST_DATABASE_URL),
-	async create() {
-		const url = TEST_DATABASE_URL as string;
-		const schema = `pkt_contract_${randomUUID().slice(0, 8)}`;
-		const sql = new SQL(url);
-		await migrate(sql, schema);
-		const store = new PostgresStore(url, schema);
-		await store.init();
-		return {
-			store,
-			async dispose() {
-				await store.close();
-				await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-				await sql.end();
-			},
-		};
-	},
+  enabled: Boolean(TEST_DATABASE_URL),
+  async create() {
+    const url = TEST_DATABASE_URL as string;
+    const schema = `pkt_contract_${randomUUID().slice(0, 8)}`;
+    const sql = new SQL(url);
+    await migrateDatabase(sql, schema);
+    const store = new PostgresStore(url, schema);
+    await store.init();
+    return {
+      store,
+      async dispose() {
+        await store.close();
+        await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+        await sql.end();
+      },
+    };
+  },
 });
 
 describe("schema helpers", () => {
-	test("schema names are validated before qualification", () => {
-		expect(assertValidSchema("pocketcoder")).toBe("pocketcoder");
-		expect(() => assertValidSchema('bad"; DROP SCHEMA public;')).toThrow();
-		expect(() => assertValidSchema("Capitals")).toThrow();
-	});
+  test("schema names are validated before qualification", () => {
+    expect(assertValidSchema("pocketcoder")).toBe("pocketcoder");
+    expect(() => assertValidSchema('bad"; DROP SCHEMA public;')).toThrow();
+    expect(() => assertValidSchema("Capitals")).toThrow();
+  });
 
-	test("advisory lock keys are stable per schema and distinct across schemas", () => {
-		expect(advisoryLockKey("pocketcoder")).toBe(advisoryLockKey("pocketcoder"));
-		expect(advisoryLockKey("pocketcoder")).not.toBe(advisoryLockKey("other_schema"));
-	});
+  test("advisory lock keys are stable per schema and distinct across schemas", () => {
+    expect(advisoryLockKey("pocketcoder")).toBe(advisoryLockKey("pocketcoder"));
+    expect(advisoryLockKey("pocketcoder")).not.toBe(advisoryLockKey("other_schema"));
+  });
 });
 
 describe.skipIf(!TEST_DATABASE_URL)("postgres store lifecycle", () => {
-	test("store startup checks migrations without applying them", async () => {
-		const url = TEST_DATABASE_URL as string;
-		const schema = `pkt_init_${randomUUID().slice(0, 8)}`;
-		const sql = new SQL(url);
-		const store = new PostgresStore(url, schema);
-		try {
-			await expect(store.init()).rejects.toThrow("pending migrations");
-			expect(
-				(await migrationStatus(sql, schema)).every((migration) => migration.appliedAt === null),
-			).toBe(true);
-			await migrate(sql, schema);
-			await store.init();
-		} finally {
-			await store.close();
-			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-			await sql.end();
-		}
-	});
+  test("store startup checks migrations without applying them", async () => {
+    const url = TEST_DATABASE_URL as string;
+    const schema = `pkt_init_${randomUUID().slice(0, 8)}`;
+    const sql = new SQL(url);
+    const store = new PostgresStore(url, schema);
+    try {
+      await expect(store.init()).rejects.toThrow("pending migrations");
+      expect(
+        (await getMigrationStatus(sql, schema)).every((migration) => migration.appliedAt === null),
+      ).toBe(true);
+      await migrateDatabase(sql, schema);
+      await store.init();
+    } finally {
+      await store.close();
+      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await sql.end();
+    }
+  });
 
-	test("allows only one PostgreSQL coordinator per schema", async () => {
-		const url = TEST_DATABASE_URL as string;
-		const schema = `pkt_lease_${randomUUID().slice(0, 8)}`;
-		const sql = new SQL(url);
-		const first = new PostgresStore(url, schema);
-		const second = new PostgresStore(url, schema);
-		try {
-			await migrate(sql, schema);
-			await Promise.all([first.init(), second.init()]);
-			const release = await first.acquireCoordinatorLease();
-			await expect(second.acquireCoordinatorLease()).rejects.toThrow("already active");
-			await release();
-			await expect(second.acquireCoordinatorLease()).resolves.toBeFunction();
-		} finally {
-			await Promise.all([first.close(), second.close()]);
-			await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-			await sql.end();
-		}
-	});
+  test("allows only one PostgreSQL coordinator per schema", async () => {
+    const url = TEST_DATABASE_URL as string;
+    const schema = `pkt_lease_${randomUUID().slice(0, 8)}`;
+    const sql = new SQL(url);
+    const first = new PostgresStore(url, schema);
+    const second = new PostgresStore(url, schema);
+    try {
+      await migrateDatabase(sql, schema);
+      await Promise.all([first.init(), second.init()]);
+      const release = await first.acquireCoordinatorLease();
+      await expect(second.acquireCoordinatorLease()).rejects.toThrow("already active");
+      await release();
+      await expect(second.acquireCoordinatorLease()).resolves.toBeFunction();
+    } finally {
+      await Promise.all([first.close(), second.close()]);
+      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await sql.end();
+    }
+  });
 });

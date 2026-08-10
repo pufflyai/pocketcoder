@@ -3,371 +3,371 @@ import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
-	FakeDriver,
-	fixtureTemplateEcho,
-	fixtureTemplatePersistent,
-	fixtureTemplateSleep,
+  FakeDriver,
+  fixtureTemplateEcho,
+  fixtureTemplatePersistent,
+  fixtureTemplateSleep,
 } from "@pstdio/pocketcoder-testkit";
 import {
-	type ConnectionHub,
-	DEFAULT_LIMITS,
-	decodeFailureLogTail,
-	RuntimeMetrics,
-	Scheduler,
-	type Store,
+  type ConnectionHub,
+  DEFAULT_LIMITS,
+  decodeFailureLogTail,
+  RuntimeMetrics,
+  Scheduler,
+  type Store,
 } from "./index";
 
 const noHub: ConnectionHub = {
-	isConnected: () => false,
-	shutdown: () => false,
-	signal: () => false,
-	close: () => {},
+  isConnected: () => false,
+  shutdown: () => false,
+  signal: () => false,
+  close: () => {},
 };
 
 const secrets = {
-	generate: () => `secret-${randomUUID()}`,
-	digest: (s: string) => new TextEncoder().encode(s),
+  generate: () => `secret-${randomUUID()}`,
+  digest: (s: string) => new TextEncoder().encode(s),
 };
 
 async function seed(store: Store) {
-	const principal = await store.createPrincipal("test-backend", ["admin"], ["*"]);
-	const echo = fixtureTemplateEcho();
-	const sleep = fixtureTemplateSleep();
-	const echoRow = (
-		await store.upsertTemplate({
-			name: echo.manifest.metadata.name,
-			version: echo.manifest.spec.version,
-			digest: echo.digest,
-			description: null,
-			spec: echo.manifest.spec,
-		})
-	).row;
-	const sleepRow = (
-		await store.upsertTemplate({
-			name: sleep.manifest.metadata.name,
-			version: sleep.manifest.spec.version,
-			digest: sleep.digest,
-			description: null,
-			spec: sleep.manifest.spec,
-		})
-	).row;
-	return { principal, echo, sleep, echoRow, sleepRow };
+  const principal = await store.createPrincipal("test-backend", ["admin"], ["*"]);
+  const echo = fixtureTemplateEcho();
+  const sleep = fixtureTemplateSleep();
+  const echoRow = (
+    await store.upsertTemplate({
+      name: echo.manifest.metadata.name,
+      version: echo.manifest.spec.version,
+      digest: echo.digest,
+      description: null,
+      spec: echo.manifest.spec,
+    })
+  ).row;
+  const sleepRow = (
+    await store.upsertTemplate({
+      name: sleep.manifest.metadata.name,
+      version: sleep.manifest.spec.version,
+      digest: sleep.digest,
+      description: null,
+      spec: sleep.manifest.spec,
+    })
+  ).row;
+  return { principal, echo, sleep, echoRow, sleepRow };
 }
 
 async function queueWorkspace(
-	store: Store,
-	principalId: string,
-	templateId: string,
-	parsed: ReturnType<typeof fixtureTemplateEcho>,
-	externalId: string = randomUUID(),
-	createdAt = new Date(),
+  store: Store,
+  principalId: string,
+  templateId: string,
+  parsed: ReturnType<typeof fixtureTemplateEcho>,
+  externalId: string = randomUUID(),
+  createdAt = new Date(),
 ) {
-	const body = { external_id: externalId };
-	const result = await store.insertWorkspace({
-		id: randomUUID(),
-		principalId,
-		externalId,
-		idempotencyKey: externalId,
-		requestDigest: digestOf(body),
-		templateId,
-		templateSnapshot: snapshotOf(parsed),
-		launchInput: { bootstrap_code: "opaque" },
-		metadata: {},
-		deadlineAt: new Date(createdAt.getTime() + 2 * 60 * 60_000),
-		createdAt,
-	});
-	if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
-	return result.workspace;
+  const body = { external_id: externalId };
+  const result = await store.insertWorkspace({
+    id: randomUUID(),
+    principalId,
+    externalId,
+    idempotencyKey: externalId,
+    requestDigest: digestOf(body),
+    templateId,
+    templateSnapshot: snapshotOf(parsed),
+    launchInput: { bootstrap_code: "opaque" },
+    metadata: {},
+    deadlineAt: new Date(createdAt.getTime() + 2 * 60 * 60_000),
+    createdAt,
+  });
+  if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
+  return result.workspace;
 }
 
 function makeScheduler(store: Store, driver: FakeDriver, overrides = {}, metrics?: RuntimeMetrics) {
-	return new Scheduler({
-		store,
-		driver,
-		connections: noHub,
-		secrets,
-		limits: { ...DEFAULT_LIMITS, ...overrides },
-		workspaceServerUrl: "http://127.0.0.1:0",
-		...(metrics ? { metrics } : {}),
-	});
+  return new Scheduler({
+    store,
+    driver,
+    connections: noHub,
+    secrets,
+    limits: { ...DEFAULT_LIMITS, ...overrides },
+    workspaceServerUrl: "http://127.0.0.1:0",
+    ...(metrics ? { metrics } : {}),
+  });
 }
 
 describe("failure log summary", () => {
-	test("drops partial UTF-8 and line prefixes and redacts credentials", () => {
-		const encoded = new TextEncoder().encode(
-			"épartial line\nAuthorization: Bearer secret-value\nPermissionError: /home/onefin/.pi\n",
-		);
-		expect(decodeFailureLogTail(encoded.subarray(1), true)).toBe(
-			"[redacted]\nPermissionError: /home/onefin/.pi\n",
-		);
-	});
+  test("drops partial UTF-8 and line prefixes and redacts credentials", () => {
+    const encoded = new TextEncoder().encode(
+      "épartial line\nAuthorization: Bearer secret-value\nPermissionError: /home/onefin/.pi\n",
+    );
+    expect(decodeFailureLogTail(encoded.subarray(1), true)).toBe(
+      "[redacted]\nPermissionError: /home/onefin/.pi\n",
+    );
+  });
 });
 
 describe("scheduler admission", () => {
-	test("launches queued workspaces through the driver with provider input", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { principal, echo, echoRow } = await seed(store);
-		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
-		const metrics = new RuntimeMetrics();
-		await makeScheduler(store, driver, {}, metrics).tick();
+  test("launches queued workspaces through the driver with provider input", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { principal, echo, echoRow } = await seed(store);
+    const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
+    const metrics = new RuntimeMetrics();
+    await makeScheduler(store, driver, {}, metrics).tick();
 
-		const after = await store.getWorkspace(ws.id);
-		expect(after?.state).toBe("provisioning");
-		expect(after?.providerKind).toBe("fake");
-		expect(after?.registrationDigest).not.toBeNull();
-		const input = driver.inputFor(ws.id);
-		expect(input?.workspace_id).toBe(ws.id);
-		expect(input?.template_digest).toBe(echo.digest);
-		expect(input?.launch_input).toEqual({ bootstrap_code: "opaque" });
-		expect(input?.registration_secret.startsWith("secret-")).toBe(true);
-		expect(metrics.snapshot()).toMatchObject({
-			counters: { 'admission.total{result="accepted"}': 1 },
-		});
-	});
+    const after = await store.getWorkspace(ws.id);
+    expect(after?.state).toBe("provisioning");
+    expect(after?.providerKind).toBe("fake");
+    expect(after?.registrationDigest).not.toBeNull();
+    const input = driver.inputFor(ws.id);
+    expect(input?.workspace_id).toBe(ws.id);
+    expect(input?.template_digest).toBe(echo.digest);
+    expect(input?.launch_input).toEqual({ bootstrap_code: "opaque" });
+    expect(input?.registration_secret.startsWith("secret-")).toBe(true);
+    expect(metrics.snapshot()).toMatchObject({
+      counters: { 'admission.total{result="accepted"}': 1 },
+    });
+  });
 
-	test("respects the global active limit and preserves FIFO", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { principal, echo, echoRow } = await seed(store);
-		const t0 = Date.now();
-		const rows = [];
-		for (let i = 0; i < 4; i += 1) {
-			rows.push(
-				await queueWorkspace(store, principal.id, echoRow.id, echo, `task-${i}`, new Date(t0 + i)),
-			);
-		}
-		await makeScheduler(store, driver, { globalActiveWorkspaces: 2 }).tick();
-		const states = await Promise.all(rows.map((r) => store.getWorkspace(r.id)));
-		expect(states.map((s) => s?.state)).toEqual([
-			"provisioning",
-			"provisioning",
-			"queued",
-			"queued",
-		]);
-	});
+  test("respects the global active limit and preserves FIFO", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { principal, echo, echoRow } = await seed(store);
+    const t0 = Date.now();
+    const rows = [];
+    for (let i = 0; i < 4; i += 1) {
+      rows.push(
+        await queueWorkspace(store, principal.id, echoRow.id, echo, `task-${i}`, new Date(t0 + i)),
+      );
+    }
+    await makeScheduler(store, driver, { globalActiveWorkspaces: 2 }).tick();
+    const states = await Promise.all(rows.map((r) => store.getWorkspace(r.id)));
+    expect(states.map((s) => s?.state)).toEqual([
+      "provisioning",
+      "provisioning",
+      "queued",
+      "queued",
+    ]);
+  });
 
-	test("rotates admission fairly across principals", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { echo, echoRow } = await seed(store);
-		const a = await store.createPrincipal("a", ["admin"], ["*"]);
-		const b = await store.createPrincipal("b", ["admin"], ["*"]);
-		const t0 = Date.now();
-		// Principal a queues three before b's first.
-		for (let i = 0; i < 3; i += 1) {
-			await queueWorkspace(store, a.id, echoRow.id, echo, `a-${i}`, new Date(t0 + i));
-		}
-		await queueWorkspace(store, b.id, echoRow.id, echo, "b-0", new Date(t0 + 10));
-		await makeScheduler(store, driver, { globalActiveWorkspaces: 2 }).tick();
-		const admitted = driver.created.map((l) => l.workspace.externalId).sort();
-		expect(admitted).toEqual(["a-0", "b-0"]);
-	});
+  test("rotates admission fairly across principals", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { echo, echoRow } = await seed(store);
+    const a = await store.createPrincipal("a", ["admin"], ["*"]);
+    const b = await store.createPrincipal("b", ["admin"], ["*"]);
+    const t0 = Date.now();
+    // Principal a queues three before b's first.
+    for (let i = 0; i < 3; i += 1) {
+      await queueWorkspace(store, a.id, echoRow.id, echo, `a-${i}`, new Date(t0 + i));
+    }
+    await queueWorkspace(store, b.id, echoRow.id, echo, "b-0", new Date(t0 + 10));
+    await makeScheduler(store, driver, { globalActiveWorkspaces: 2 }).tick();
+    const admitted = driver.created.map((l) => l.workspace.externalId).sort();
+    expect(admitted).toEqual(["a-0", "b-0"]);
+  });
 
-	test("does not exceed active limits when ticks overlap", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		driver.createDelayMs = 25;
-		const { echo, echoRow } = await seed(store);
-		const a = await store.createPrincipal("concurrent-a", ["admin"], ["*"]);
-		const b = await store.createPrincipal("concurrent-b", ["admin"], ["*"]);
-		const now = Date.now();
-		await queueWorkspace(store, a.id, echoRow.id, echo, "concurrent-a", new Date(now));
-		await queueWorkspace(store, b.id, echoRow.id, echo, "concurrent-b", new Date(now + 1));
-		const scheduler = makeScheduler(store, driver, {
-			globalActiveWorkspaces: 1,
-			perPrincipalActiveWorkspaces: 1,
-		});
+  test("does not exceed active limits when ticks overlap", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    driver.createDelayMs = 25;
+    const { echo, echoRow } = await seed(store);
+    const a = await store.createPrincipal("concurrent-a", ["admin"], ["*"]);
+    const b = await store.createPrincipal("concurrent-b", ["admin"], ["*"]);
+    const now = Date.now();
+    await queueWorkspace(store, a.id, echoRow.id, echo, "concurrent-a", new Date(now));
+    await queueWorkspace(store, b.id, echoRow.id, echo, "concurrent-b", new Date(now + 1));
+    const scheduler = makeScheduler(store, driver, {
+      globalActiveWorkspaces: 1,
+      perPrincipalActiveWorkspaces: 1,
+    });
 
-		await Promise.all([scheduler.tick(), scheduler.tick()]);
+    await Promise.all([scheduler.tick(), scheduler.tick()]);
 
-		expect(driver.created).toHaveLength(1);
-		expect((await store.countActive()).global).toBe(1);
-	});
+    expect(driver.created).toHaveLength(1);
+    expect((await store.countActive()).global).toBe(1);
+  });
 
-	test("does not exceed active limits across scheduler coordinators", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		driver.createDelayMs = 25;
-		const { echo, echoRow } = await seed(store);
-		const a = await store.createPrincipal("coordinator-a", ["admin"], ["*"]);
-		const b = await store.createPrincipal("coordinator-b", ["admin"], ["*"]);
-		const now = Date.now();
-		await queueWorkspace(store, a.id, echoRow.id, echo, "coordinator-a", new Date(now));
-		await queueWorkspace(store, b.id, echoRow.id, echo, "coordinator-b", new Date(now + 1));
-		const limits = { globalActiveWorkspaces: 1, perPrincipalActiveWorkspaces: 1 };
+  test("does not exceed active limits across scheduler coordinators", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    driver.createDelayMs = 25;
+    const { echo, echoRow } = await seed(store);
+    const a = await store.createPrincipal("coordinator-a", ["admin"], ["*"]);
+    const b = await store.createPrincipal("coordinator-b", ["admin"], ["*"]);
+    const now = Date.now();
+    await queueWorkspace(store, a.id, echoRow.id, echo, "coordinator-a", new Date(now));
+    await queueWorkspace(store, b.id, echoRow.id, echo, "coordinator-b", new Date(now + 1));
+    const limits = { globalActiveWorkspaces: 1, perPrincipalActiveWorkspaces: 1 };
 
-		await Promise.all([
-			makeScheduler(store, driver, limits).tick(),
-			makeScheduler(store, driver, limits).tick(),
-		]);
+    await Promise.all([
+      makeScheduler(store, driver, limits).tick(),
+      makeScheduler(store, driver, limits).tick(),
+    ]);
 
-		expect(driver.created).toHaveLength(1);
-		expect((await store.countActive()).global).toBe(1);
-	});
+    expect(driver.created).toHaveLength(1);
+    expect((await store.countActive()).global).toBe(1);
+  });
 
-	test("admits an eligible principal beyond a blocked global queue prefix", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { echo, echoRow } = await seed(store);
-		const a = await store.createPrincipal("backlogged", ["admin"], ["*"]);
-		const b = await store.createPrincipal("eligible", ["admin"], ["*"]);
-		const now = Date.now();
-		for (let i = 0; i < 201; i += 1) {
-			await queueWorkspace(store, a.id, echoRow.id, echo, `backlogged-${i}`, new Date(now + i));
-		}
-		const eligible = await queueWorkspace(
-			store,
-			b.id,
-			echoRow.id,
-			echo,
-			"eligible-0",
-			new Date(now + 1_000),
-		);
+  test("admits an eligible principal beyond a blocked global queue prefix", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { echo, echoRow } = await seed(store);
+    const a = await store.createPrincipal("backlogged", ["admin"], ["*"]);
+    const b = await store.createPrincipal("eligible", ["admin"], ["*"]);
+    const now = Date.now();
+    for (let i = 0; i < 201; i += 1) {
+      await queueWorkspace(store, a.id, echoRow.id, echo, `backlogged-${i}`, new Date(now + i));
+    }
+    const eligible = await queueWorkspace(
+      store,
+      b.id,
+      echoRow.id,
+      echo,
+      "eligible-0",
+      new Date(now + 1_000),
+    );
 
-		await makeScheduler(store, driver, {
-			globalActiveWorkspaces: 2,
-			perPrincipalActiveWorkspaces: 1,
-		}).tick();
+    await makeScheduler(store, driver, {
+      globalActiveWorkspaces: 2,
+      perPrincipalActiveWorkspaces: 1,
+    }).tick();
 
-		expect((await store.getWorkspace(eligible.id))?.state).toBe("provisioning");
-		expect((await store.countActive()).global).toBe(2);
-	});
+    expect((await store.getWorkspace(eligible.id))?.state).toBe("provisioning");
+    expect((await store.countActive()).global).toBe(2);
+  });
 
-	test("bounded launch retry, then failed", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { principal, echo, echoRow } = await seed(store);
-		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
-		const scheduler = makeScheduler(store, driver, { maxLaunchAttempts: 2 });
+  test("bounded launch retry, then failed", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { principal, echo, echoRow } = await seed(store);
+    const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
+    const scheduler = makeScheduler(store, driver, { maxLaunchAttempts: 2 });
 
-		driver.failNextCreate = true;
-		await scheduler.tick();
-		expect((await store.getWorkspace(ws.id))?.state).toBe("queued");
+    driver.failNextCreate = true;
+    await scheduler.tick();
+    expect((await store.getWorkspace(ws.id))?.state).toBe("queued");
 
-		driver.failNextCreate = true;
-		await scheduler.tick();
-		const after = await store.getWorkspace(ws.id);
-		expect(after?.state).toBe("failed");
-		expect(after?.reasonCode).toBe("launch_failed");
-		expect(after?.launchInput).toBeNull();
-		expect(after?.failureLogTail).toContain("fake driver create failure");
-		expect(after?.failureLastLogSeq).toBe(1);
-		const logs = await store.readLogs(ws.id, 0, 10);
-		expect(new TextDecoder().decode(logs[0]?.content)).toContain(
-			"workspace launch failed: fake driver create failure",
-		);
-	});
+    driver.failNextCreate = true;
+    await scheduler.tick();
+    const after = await store.getWorkspace(ws.id);
+    expect(after?.state).toBe("failed");
+    expect(after?.reasonCode).toBe("launch_failed");
+    expect(after?.launchInput).toBeNull();
+    expect(after?.failureLogTail).toContain("fake driver create failure");
+    expect(after?.failureLastLogSeq).toBe(1);
+    const logs = await store.readLogs(ws.id, 0, 10);
+    expect(new TextDecoder().decode(logs[0]?.content)).toContain(
+      "workspace launch failed: fake driver create failure",
+    );
+  });
 });
 
 describe("scheduler sweeps", () => {
-	test("delegates deadline preservation to the durable policy path", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const principal = await store.createPrincipal("persistent", ["admin"], ["*"]);
-		const parsed = fixtureTemplatePersistent();
-		parsed.manifest.spec.persistence.checkpoint.onDeadline = "preserve";
-		const template = (
-			await store.upsertTemplate({
-				name: parsed.manifest.metadata.name,
-				version: parsed.manifest.spec.version,
-				digest: parsed.digest,
-				description: null,
-				spec: parsed.manifest.spec,
-			})
-		).row;
-		const workspace = await queueWorkspace(
-			store,
-			principal.id,
-			template.id,
-			parsed,
-			"policy-deadline",
-			new Date(Date.now() - 3 * 60 * 60_000),
-		);
-		const at = new Date();
-		await store.transition(workspace.id, {
-			from: ["queued"],
-			to: "provisioning",
-			at,
-		});
-		await store.transition(workspace.id, {
-			from: ["provisioning"],
-			to: "connected",
-			at,
-		});
-		await store.transition(workspace.id, {
-			from: ["connected"],
-			to: "ready",
-			at,
-		});
-		const calls: string[] = [];
-		const scheduler = new Scheduler({
-			store,
-			driver,
-			connections: noHub,
-			secrets,
-			limits: DEFAULT_LIMITS,
-			workspaceServerUrl: "http://127.0.0.1:0",
-			preserveByPolicy: async (_row, trigger) => {
-				calls.push(trigger);
-				return true;
-			},
-		});
-		await scheduler.sweep();
-		expect(calls).toEqual(["deadline"]);
-		expect((await store.getWorkspace(workspace.id))?.state).toBe("ready");
-	});
+  test("delegates deadline preservation to the durable policy path", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const principal = await store.createPrincipal("persistent", ["admin"], ["*"]);
+    const parsed = fixtureTemplatePersistent();
+    parsed.manifest.spec.persistence.checkpoint.onDeadline = "preserve";
+    const template = (
+      await store.upsertTemplate({
+        name: parsed.manifest.metadata.name,
+        version: parsed.manifest.spec.version,
+        digest: parsed.digest,
+        description: null,
+        spec: parsed.manifest.spec,
+      })
+    ).row;
+    const workspace = await queueWorkspace(
+      store,
+      principal.id,
+      template.id,
+      parsed,
+      "policy-deadline",
+      new Date(Date.now() - 3 * 60 * 60_000),
+    );
+    const at = new Date();
+    await store.transition(workspace.id, {
+      from: ["queued"],
+      to: "provisioning",
+      at,
+    });
+    await store.transition(workspace.id, {
+      from: ["provisioning"],
+      to: "connected",
+      at,
+    });
+    await store.transition(workspace.id, {
+      from: ["connected"],
+      to: "ready",
+      at,
+    });
+    const calls: string[] = [];
+    const scheduler = new Scheduler({
+      store,
+      driver,
+      connections: noHub,
+      secrets,
+      limits: DEFAULT_LIMITS,
+      workspaceServerUrl: "http://127.0.0.1:0",
+      preserveByPolicy: async (_row, trigger) => {
+        calls.push(trigger);
+        return true;
+      },
+    });
+    await scheduler.sweep();
+    expect(calls).toEqual(["deadline"]);
+    expect((await store.getWorkspace(workspace.id))?.state).toBe("ready");
+  });
 
-	test("queue age expiry", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { principal, echo, echoRow } = await seed(store);
-		const old = new Date(Date.now() - 60 * 60_000);
-		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo, "old-task", old);
-		const scheduler = makeScheduler(store, driver);
-		await scheduler.sweep();
-		const after = await store.getWorkspace(ws.id);
-		expect(after?.state).toBe("expired");
-		expect(after?.reasonCode).toBe("queue_timeout");
-	});
+  test("queue age expiry", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { principal, echo, echoRow } = await seed(store);
+    const old = new Date(Date.now() - 60 * 60_000);
+    const ws = await queueWorkspace(store, principal.id, echoRow.id, echo, "old-task", old);
+    const scheduler = makeScheduler(store, driver);
+    await scheduler.sweep();
+    const after = await store.getWorkspace(ws.id);
+    expect(after?.state).toBe("expired");
+    expect(after?.reasonCode).toBe("queue_timeout");
+  });
 
-	test("registration timeout fails a provisioning workspace and cleans the provider", async () => {
-		const store = new MemoryStore();
-		const driver = new FakeDriver();
-		const { principal, echo, echoRow } = await seed(store);
-		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
-		const scheduler = makeScheduler(store, driver);
-		await scheduler.tick();
-		// Force the registration deadline into the past.
-		await store.updateWorkspace(
-			ws.id,
-			{ registrationExpiresAt: new Date(Date.now() - 1000) },
-			new Date(),
-		);
-		await scheduler.sweep();
-		const after = await store.getWorkspace(ws.id);
-		expect(after?.state).toBe("failed");
-		expect(after?.reasonCode).toBe("registration_timeout");
-		expect(driver.terminated.length).toBe(1);
-	});
+  test("registration timeout fails a provisioning workspace and cleans the provider", async () => {
+    const store = new MemoryStore();
+    const driver = new FakeDriver();
+    const { principal, echo, echoRow } = await seed(store);
+    const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
+    const scheduler = makeScheduler(store, driver);
+    await scheduler.tick();
+    // Force the registration deadline into the past.
+    await store.updateWorkspace(
+      ws.id,
+      { registrationExpiresAt: new Date(Date.now() - 1000) },
+      new Date(),
+    );
+    await scheduler.sweep();
+    const after = await store.getWorkspace(ws.id);
+    expect(after?.state).toBe("failed");
+    expect(after?.reasonCode).toBe("registration_timeout");
+    expect(driver.terminated.length).toBe(1);
+  });
 
-	test("cancellation without a provider goes straight to canceled", async () => {
-		const store = new MemoryStore();
-		const { principal, echo, echoRow } = await seed(store);
-		const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
-		const queued = await store.transition(ws.id, {
-			from: ["queued"],
-			to: "canceled",
-			reason: "canceled_by_caller",
-			at: new Date(),
-		});
-		expect(queued?.state).toBe("canceled");
-		// Terminal workspaces cannot transition again.
-		const again = await store.transition(ws.id, {
-			from: ["canceled"],
-			to: "queued",
-			at: new Date(),
-		});
-		expect(again).toBeNull();
-	});
+  test("cancellation without a provider goes straight to canceled", async () => {
+    const store = new MemoryStore();
+    const { principal, echo, echoRow } = await seed(store);
+    const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
+    const queued = await store.transition(ws.id, {
+      from: ["queued"],
+      to: "canceled",
+      reason: "canceled_by_caller",
+      at: new Date(),
+    });
+    expect(queued?.state).toBe("canceled");
+    // Terminal workspaces cannot transition again.
+    const again = await store.transition(ws.id, {
+      from: ["canceled"],
+      to: "queued",
+      at: new Date(),
+    });
+    expect(again).toBeNull();
+  });
 });

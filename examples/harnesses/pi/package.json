@@ -1,17 +1,17 @@
 {
-	"name": "@pstdio/pocketcoder-example-pi-agentapi",
-	"version": "0.0.0",
-	"private": true,
-	"type": "module",
-	"scripts": {
-		"test": "bun test",
-		"typecheck": "tsc --project tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"@earendil-works/pi-coding-agent": "0.83.0"
-	},
-	"devDependencies": {
-		"@types/bun": "1.3.14",
-		"typescript": "5.9.3"
-	}
+  "name": "@pstdio/pocketcoder-example-pi-agentapi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.83.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
 }

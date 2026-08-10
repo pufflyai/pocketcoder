@@ -18,40 +18,6 @@
         "typescript": "5.9.3",
       },
     },
-    "apps/pocketcoder-agent": {
-      "name": "@pstdio/pocketcoder-agent",
-      "version": "0.1.0",
-      "dependencies": {
-        "@pstdio/pocketcoder-contracts": "workspace:*",
-      },
-    },
-    "apps/pocketcoder-egress": {
-      "name": "@pstdio/pocketcoder-egress",
-      "version": "0.1.0",
-      "dependencies": {
-        "@pstdio/pocketcoder-contracts": "workspace:*",
-        "zod": "^4.3.6",
-      },
-    },
-    "apps/pocketcoder-server": {
-      "name": "@pstdio/pocketcoder-server",
-      "version": "0.1.0",
-      "dependencies": {
-        "@hono/zod-openapi": "^1.1.0",
-        "@pstdio/pocketcoder-auth": "workspace:*",
-        "@pstdio/pocketcoder-contracts": "workspace:*",
-        "@pstdio/pocketcoder-db": "workspace:*",
-        "@pstdio/pocketcoder-drivers": "workspace:*",
-        "@pstdio/pocketcoder-memory-store": "workspace:*",
-        "@pstdio/pocketcoder-runtime-core": "workspace:*",
-        "hono": "^4.8.0",
-        "zod": "^4.0.0",
-      },
-      "devDependencies": {
-        "@pstdio/pocketcoder-sdk": "workspace:*",
-        "@pstdio/pocketcoder-testkit": "workspace:*",
-      },
-    },
     "examples/harnesses/oss": {
       "name": "@pstdio/pocketcoder-example-oss-agentapi",
       "version": "0.0.0",
@@ -82,7 +48,7 @@
     },
     "packages/cli": {
       "name": "@pstdio/pocketcoder-cli",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "bin": {
         "pcd": "dist/index.js",
       },
@@ -128,6 +94,14 @@
         "@pstdio/pocketcoder-auth": "workspace:*",
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
+      },
+    },
+    "packages/egress": {
+      "name": "@pstdio/pocketcoder-egress",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "zod": "^4.3.6",
       },
     },
     "packages/memory-store": {
@@ -180,7 +154,7 @@
     },
     "packages/sdk": {
       "name": "@pstdio/pocketcoder-sdk",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "zod": "^4.0.0",
       },
@@ -190,6 +164,33 @@
         "@types/node": "26.1.2",
         "tsdown": "0.22.14",
         "typescript": "5.9.3",
+      },
+    },
+    "packages/server": {
+      "name": "@pstdio/pocketcoder-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hono/zod-openapi": "^1.1.0",
+        "@pstdio/pocketcoder-auth": "workspace:*",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-db": "workspace:*",
+        "@pstdio/pocketcoder-drivers": "workspace:*",
+        "@pstdio/pocketcoder-memory-store": "workspace:*",
+        "@pstdio/pocketcoder-runtime-core": "workspace:*",
+        "hono": "^4.8.0",
+        "zod": "^4.0.0",
+      },
+      "devDependencies": {
+        "@pstdio/pocketcoder-sdk": "workspace:*",
+        "@pstdio/pocketcoder-supervisor": "workspace:*",
+        "@pstdio/pocketcoder-testkit": "workspace:*",
+      },
+    },
+    "packages/supervisor": {
+      "name": "@pstdio/pocketcoder-supervisor",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
       },
     },
     "packages/testkit": {
@@ -676,8 +677,6 @@
 
     "@protobufjs/utf8": ["@protobufjs/utf8@1.1.2", "", {}, "sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug=="],
 
-    "@pstdio/pocketcoder-agent": ["@pstdio/pocketcoder-agent@workspace:apps/pocketcoder-agent"],
-
     "@pstdio/pocketcoder-auth": ["@pstdio/pocketcoder-auth@workspace:packages/auth"],
 
     "@pstdio/pocketcoder-cli": ["@pstdio/pocketcoder-cli@workspace:packages/cli"],
@@ -688,7 +687,7 @@
 
     "@pstdio/pocketcoder-drivers": ["@pstdio/pocketcoder-drivers@workspace:packages/drivers"],
 
-    "@pstdio/pocketcoder-egress": ["@pstdio/pocketcoder-egress@workspace:apps/pocketcoder-egress"],
+    "@pstdio/pocketcoder-egress": ["@pstdio/pocketcoder-egress@workspace:packages/egress"],
 
     "@pstdio/pocketcoder-example-oss-agentapi": ["@pstdio/pocketcoder-example-oss-agentapi@workspace:examples/harnesses/oss"],
 
@@ -704,7 +703,9 @@
 
     "@pstdio/pocketcoder-sdk": ["@pstdio/pocketcoder-sdk@workspace:packages/sdk"],
 
-    "@pstdio/pocketcoder-server": ["@pstdio/pocketcoder-server@workspace:apps/pocketcoder-server"],
+    "@pstdio/pocketcoder-server": ["@pstdio/pocketcoder-server@workspace:packages/server"],
+
+    "@pstdio/pocketcoder-supervisor": ["@pstdio/pocketcoder-supervisor@workspace:packages/supervisor"],
 
     "@pstdio/pocketcoder-testkit": ["@pstdio/pocketcoder-testkit@workspace:packages/testkit"],
 

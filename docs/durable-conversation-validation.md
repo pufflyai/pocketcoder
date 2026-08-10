@@ -23,7 +23,7 @@ dependencies are not configured.
 ## 2. Run the focused in-process E2E
 
 ```sh
-bun test apps/pocketcoder-server/src/e2e.test.ts
+bun test packages/server/src/e2e.test.ts
 ```
 
 This starts the real supervisor and harness process against the real REST and

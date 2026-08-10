@@ -1,36 +1,36 @@
 {
-	"name": "@pstdio/pocketcoder-contracts",
-	"nx": {
-		"tags": [
-			"scope:contracts",
-			"type:library"
-		]
-	},
-	"version": "0.2.0",
-	"private": true,
-	"description": "Runtime schemas and protocol contracts for PocketCoder.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/pufflyai/pocketcoder.git",
-		"directory": "packages/contracts"
-	},
-	"files": [
-		"src",
-		"!src/**/*.test.ts"
-	],
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"engines": {
-		"bun": ">=1.3.14"
-	},
-	"scripts": {
-		"test": "bun test",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"zod": "^4.0.0"
-	}
+  "name": "@pstdio/pocketcoder-contracts",
+  "nx": {
+    "tags": [
+      "scope:contracts",
+      "type:library"
+    ]
+  },
+  "version": "0.2.0",
+  "private": true,
+  "description": "Runtime schemas and protocol contracts for PocketCoder.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pufflyai/pocketcoder.git",
+    "directory": "packages/contracts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
 }

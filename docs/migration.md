@@ -12,7 +12,7 @@ renamed or removed before that release.
 | `X-Coder-Lite-Signature` | `X-PocketCoder-Signature` |
 | `/run/coder-lite/input` | `/run/pocketcoder/input` |
 | `/opt/coder-lite/ctl.js` | `/opt/pocketcoder/pcd.js` |
-| `coder-lite-agent` binary | `pocketcoder-agent` |
+| `coder-lite-agent` binary | `pocketcoder-supervisor` |
 
 Apply the rename in one pass across deployment scripts, Compose/Kubernetes
 manifests, environment and secret names, template manifests, workspace images,

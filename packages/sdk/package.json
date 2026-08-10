@@ -1,51 +1,51 @@
 {
-	"name": "@pstdio/pocketcoder-sdk",
-	"nx": {
-		"tags": [
-			"scope:sdk",
-			"type:library"
-		]
-	},
-	"version": "0.3.0",
-	"private": false,
-	"description": "Runtime-validated TypeScript client for the PocketCoder control plane.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/pufflyai/pocketcoder.git",
-		"directory": "packages/sdk"
-	},
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		}
-	},
-	"publishConfig": {
-		"access": "public"
-	},
-	"engines": {
-		"node": ">=22.19.0"
-	},
-	"scripts": {
-		"build": "tsdown",
-		"test": "bun test",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"zod": "^4.0.0"
-	},
-	"devDependencies": {
-		"@pstdio/pocketcoder-contracts": "workspace:*",
-		"@types/bun": "1.3.14",
-		"@types/node": "26.1.2",
-		"tsdown": "0.22.14",
-		"typescript": "5.9.3"
-	}
+  "name": "@pstdio/pocketcoder-sdk",
+  "nx": {
+    "tags": [
+      "scope:sdk",
+      "type:library"
+    ]
+  },
+  "version": "0.3.0",
+  "private": false,
+  "description": "Runtime-validated TypeScript client for the PocketCoder control plane.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pufflyai/pocketcoder.git",
+    "directory": "packages/sdk"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@types/bun": "1.3.14",
+    "@types/node": "26.1.2",
+    "tsdown": "0.22.14",
+    "typescript": "5.9.3"
+  }
 }

@@ -1,38 +1,38 @@
 {
-	"name": "@pstdio/pocketcoder-drivers",
-	"nx": {
-		"tags": [
-			"scope:providers",
-			"type:adapter"
-		]
-	},
-	"version": "0.1.0",
-	"private": true,
-	"description": "Workspace driver implementations for PocketCoder.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/pufflyai/pocketcoder.git",
-		"directory": "packages/drivers"
-	},
-	"files": [
-		"src",
-		"!src/**/*.test.ts"
-	],
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"engines": {
-		"bun": ">=1.3.14"
-	},
-	"scripts": {
-		"test": "bun test",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"@pstdio/pocketcoder-auth": "workspace:*",
-		"@pstdio/pocketcoder-contracts": "workspace:*",
-		"@pstdio/pocketcoder-runtime-core": "workspace:*"
-	}
+  "name": "@pstdio/pocketcoder-drivers",
+  "nx": {
+    "tags": [
+      "scope:providers",
+      "type:adapter"
+    ]
+  },
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace driver implementations for PocketCoder.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pufflyai/pocketcoder.git",
+    "directory": "packages/drivers"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/pocketcoder-auth": "workspace:*",
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-runtime-core": "workspace:*"
+  }
 }

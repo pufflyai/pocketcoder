@@ -5,18 +5,18 @@ import type { PocketCoderTransport, RequestOptions } from "./transport";
 export type TemplateSummary = TemplateListItem;
 
 export class TemplatesApi {
-	constructor(private readonly transport: PocketCoderTransport) {}
+  constructor(private readonly transport: PocketCoderTransport) {}
 
-	async page(query: CursorListQuery = {}, options: RequestOptions = {}) {
-		const body = await this.transport.request(
-			`/v1/templates?${queryString({ limit: query.limit ?? 100, cursor: query.cursor })}`,
-			TemplatePageSchema,
-			options,
-		);
-		return page(body);
-	}
+  async page(query: CursorListQuery = {}, options: RequestOptions = {}) {
+    const body = await this.transport.request(
+      `/v1/templates?${queryString({ limit: query.limit ?? 100, cursor: query.cursor })}`,
+      TemplatePageSchema,
+      options,
+    );
+    return page(body);
+  }
 
-	async list(options: RequestOptions = {}) {
-		return (await this.page({}, options)).items;
-	}
+  async list(options: RequestOptions = {}) {
+    return (await this.page({}, options)).items;
+  }
 }
