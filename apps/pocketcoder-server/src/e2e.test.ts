@@ -227,6 +227,7 @@ function e2eTemplate(input: {
 			},
 			resources: { cpu: "1", memory: "256Mi" },
 			timeouts: { start: "1m", maxAge: "10m", idle: "5m", terminateGrace: "5s" },
+			security: { writableMemoryPaths: [] },
 			persistence: {
 				mounts: [{ name: "worktree", target: input.worktree, maxBytes: 1_048_576, maxFiles: 100 }],
 			},
