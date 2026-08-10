@@ -1,5 +1,19 @@
 # @pstdio/pocketcoder-cli
 
+## 0.6.1
+
+### Patch Changes
+
+- [#25](https://github.com/pufflyai/pocketcoder/pull/25) [`537d96b`](https://github.com/pufflyai/pocketcoder/commit/537d96b9439a29e6903892f1538972424c8c99e2) Thanks [@au-re](https://github.com/au-re)! - Use the renamed workspace supervisor from the unified packages directory.
+
+- [#25](https://github.com/pufflyai/pocketcoder/pull/25) [`537d96b`](https://github.com/pufflyai/pocketcoder/commit/537d96b9439a29e6903892f1538972424c8c99e2) Thanks [@au-re](https://github.com/au-re)! - Use Drizzle migration files directly in database commands.
+
+- [#25](https://github.com/pufflyai/pocketcoder/pull/25) [`537d96b`](https://github.com/pufflyai/pocketcoder/commit/537d96b9439a29e6903892f1538972424c8c99e2) Thanks [@au-re](https://github.com/au-re)! - Republish all public packages through trusted publishing with provenance.
+
+- [#25](https://github.com/pufflyai/pocketcoder/pull/25) [`537d96b`](https://github.com/pufflyai/pocketcoder/commit/537d96b9439a29e6903892f1538972424c8c99e2) Thanks [@au-re](https://github.com/au-re)! - Run resource actions through nested yargs handlers with scoped help.
+
+- [#25](https://github.com/pufflyai/pocketcoder/pull/25) [`537d96b`](https://github.com/pufflyai/pocketcoder/commit/537d96b9439a29e6903892f1538972424c8c99e2) Thanks [@au-re](https://github.com/au-re)! - Explain why the CLI package exists and what it does.
+
 ## 0.6.0
 
 ### Minor Changes
