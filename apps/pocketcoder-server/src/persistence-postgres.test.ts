@@ -159,7 +159,10 @@ describe.skipIf(!databaseUrl)("PostgreSQL persistence routes", () => {
 				workspace: { id: string };
 				operation: { id: string };
 			};
+			// Restore starts admission in the background. Join it before closing the database.
+			await server.scheduler.tick();
 			const restoreOperation = await store.getOperation(restored.operation.id);
+			expect(restoreOperation?.state).toBe("succeeded");
 			expect(restoreOperation?.resultWorkspaceId).toBe(restored.workspace.id);
 			expect(await store.getWorkspace(restoreOperation?.resultWorkspaceId ?? "")).not.toBeNull();
 		} finally {
