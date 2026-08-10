@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { splitAttachmentManifest } from "@pstdio/pocketcoder-client";
+import { splitAttachmentManifest } from "@pstdio/pocketcoder-sdk";
 
 export const HISTORY_ENTRY_TYPE = "pocketcoder-conversation";
 export const NOTICE_ENTRY_TYPE = "pocketcoder-history-notice";

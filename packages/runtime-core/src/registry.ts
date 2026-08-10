@@ -13,21 +13,23 @@ export interface RegistryLoadResult {
 	errors: Array<{ file: string; message: string }>;
 }
 
-export async function loadTemplateFile(path: string): Promise<ParsedTemplate> {
+export async function loadTemplateSource(path: string): Promise<unknown> {
 	const text = await Bun.file(path).text();
-	let value: unknown;
 	if (path.endsWith(".json")) {
-		value = JSON.parse(text);
+		return JSON.parse(text);
 	} else if (path.endsWith(".yaml") || path.endsWith(".yml")) {
 		const yaml = (Bun as unknown as { YAML?: { parse(t: string): unknown } }).YAML;
 		if (!yaml) {
 			throw new Error("this Bun build cannot parse YAML; use a .json template");
 		}
-		value = yaml.parse(text);
+		return yaml.parse(text);
 	} else {
 		throw new Error(`unsupported template file extension: ${path}`);
 	}
-	return parseTemplateManifest(value);
+}
+
+export async function loadTemplateFile(path: string): Promise<ParsedTemplate> {
+	return parseTemplateManifest(await loadTemplateSource(path));
 }
 
 export async function loadTemplateDir(store: Store, dir: string): Promise<RegistryLoadResult> {

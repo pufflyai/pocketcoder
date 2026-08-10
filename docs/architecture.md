@@ -24,7 +24,7 @@ neither callers nor templates can select them.
 | pocketcoder-egress | `apps/pocketcoder-egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
 | pcd | `packages/cli` | Published bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, chat, doctor |
 | remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
-| client | `packages/client` | Published runtime-validated TypeScript client for the control-plane API |
+| sdk | `packages/sdk` | Published runtime-validated TypeScript client for the control-plane API |
 | contracts | `packages/contracts` | Published zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
 | runtime-contracts | `packages/runtime-contracts` | Driver-neutral runtime ports and durable row contracts |
@@ -250,6 +250,12 @@ queued → provisioning → connected → ready ─┬→ terminating → succee
   fresh workspace/provider/credential lineage.
 
 ## Agent protocol
+
+Templates own the agent command, transport, environment, and model-specific
+configuration. PocketCoder deliberately has no `agent.type` execution branches
+and does not generate agent configuration files. The supported transport
+choice and the evidence required before adding another one are recorded in the
+[agent transport decision](agent-transport-decision.md).
 
 The supervisor opens one outbound WSS connection to `/v1/agent/connect` —
 there is no inbound route into a workspace. First connection: one-time

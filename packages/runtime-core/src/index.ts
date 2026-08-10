@@ -75,7 +75,12 @@ export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./metrics";
 export { type OutboxDeps, OutboxDispatcher } from "./outbox";
 export { type PersistenceReconcileDeps, reconcilePersistence } from "./persistence-reconcile";
 export { type ReconcileDeps, reconcileProviders } from "./reconcile";
-export { loadTemplateDir, loadTemplateFile, type RegistryLoadResult } from "./registry";
+export {
+	loadTemplateDir,
+	loadTemplateFile,
+	loadTemplateSource,
+	type RegistryLoadResult,
+} from "./registry";
 export {
 	type AdmissionLimits,
 	type ConnectionHub,

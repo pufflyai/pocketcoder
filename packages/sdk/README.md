@@ -1,8 +1,8 @@
-# `@pstdio/pocketcoder-client`
+# `@pstdio/pocketcoder-sdk`
 
-An internal workspace package, not published to npm. `pcd` and
-`@pstdio/pocketcoder-remote` bundle it at build time; to talk to the control
-plane from your own code, use the [HTTP API](../../docs/api.md) directly.
+The Node ESM SDK for the PocketCoder control plane. It ships built JavaScript
+and declarations, so consumers do not need Bun, a TypeScript loader, or access
+to PocketCoder's private workspace packages.
 
 Runtime-validated TypeScript client for the PocketCoder control-plane API. It
 uses platform `fetch`, composes timeouts with caller abort signals, validates
@@ -12,7 +12,7 @@ mutations carrying an `Idempotency-Key`; configure the bounded retry count with
 `maxRetries` (default `2`).
 
 ```ts
-import { PocketCoderClient } from "@pstdio/pocketcoder-client";
+import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 
 const client = new PocketCoderClient({
   baseUrl: "https://pocketcoder.example.com",

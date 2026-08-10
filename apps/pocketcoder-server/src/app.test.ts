@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { issueEgressAuditToken } from "@pstdio/pocketcoder-auth";
-import { PocketCoderClient } from "@pstdio/pocketcoder-client";
+import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import type { WSContext } from "hono/ws";
 import { Readiness } from "./health";
 import {

@@ -100,9 +100,30 @@ without `--scopes` to opt into live inheritance.
 
 ```sh
 pcd templates validate examples/templates/*.json # validate manifests offline, no server needed
+pcd templates render <manifest> --image <repo@sha256:digest> --out <directory> \
+  [--set '<json-pointer>=<json-value>']...
 pcd templates list [--json]                      # versions the key may launch, through the REST API
 pcd templates list-database                      # every loaded version, straight from PostgreSQL
 ```
+
+`templates render` reads JSON or YAML, replaces a placeholder image with an
+immutable digest, applies repeatable typed JSON-Pointer overrides, validates
+the result, and writes canonical JSON as `<out>/<template-name>.json`. The
+generated version is `<source-version>-<12-character-content-hash>`, so equal
+inputs produce equal files and any deployable content change gets a new
+identity. Override values must be JSON, including the quotes around strings:
+
+```sh
+pcd templates render templates/codex.yaml \
+  --image "registry.example/codex@sha256:<64-hex-digest>" \
+  --set '/spec/agent/termWidth=120' \
+  --set '/spec/agent/env={"MODEL":"gpt-5"}' \
+  --out deploy/templates
+```
+
+Treat overrides as non-secret build inputs: the command does not echo their
+values, but the shell and build system may retain its arguments. Use reviewed
+`secretRef:` values or runtime delivery for credentials.
 
 There is deliberately no `templates create/push`: templates are reviewed
 deployment files loaded from `POCKETCODER_TEMPLATE_DIR` at server startup, so a
@@ -128,8 +149,8 @@ pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] \
 pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \
   [--poll-interval-ms 500] [--response-timeout-seconds 600] [--cancel-on-exit]
 pcd workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
-pcd workspaces restore --checkpoint <uuid> --external-id <new-id>
-pcd workspaces recreate --id <source-uuid> --external-id <new-id>
+pcd workspaces restore --checkpoint <uuid> --external-id <new-id> [--input '<json>']
+pcd workspaces recreate --id <source-uuid> --external-id <new-id> [--input '<json>']
 pcd workspaces outputs --id <uuid>
 ```
 
@@ -141,7 +162,9 @@ pcd workspaces outputs --id <uuid>
 - `create --wait` follows the durable workspace change cursor until `ready`;
   terminal launch failures include their bounded redacted failure log.
 - `--input` is the opaque `launch_input` JSON delivered to the harness in
-  memory as `POCKETCODER_LAUNCH_INPUT`.
+  memory as `POCKETCODER_LAUNCH_INPUT`. It works for create, restore, and
+  recreate; each new execution receives its own bounded input, which is part
+  of idempotency and is erased from the server once that execution is ready.
 
 - `cancel` is idempotent and never creates a replacement workspace.
 - `attach` stores only a message cursor in the local state directory (mode
@@ -163,7 +186,8 @@ pcd workspaces outputs --id <uuid>
 - `terminal-sessions` requires `terminal:read` and prints the metadata-only
   audit trail. Keystrokes and output content are never recorded.
 - `preserve` ends the source execution. `restore` and `recreate` always create
-  a new execution and accept a caller-chosen external ID.
+  a new execution and accept a caller-chosen external ID and optional new
+  launch input; they never reuse the source execution's input.
 
 ## Warm pool inventory
 

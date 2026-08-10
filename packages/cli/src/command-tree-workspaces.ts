@@ -25,12 +25,14 @@ export function addWorkspaceCommands(parser: Argv) {
 			.command("restore", "Restore a checkpoint into a new workspace execution", (command) =>
 				command
 					.option("checkpoint", { type: "string", demandOption: true })
-					.option("external-id", { type: "string", demandOption: true }),
+					.option("external-id", { type: "string", demandOption: true })
+					.option("input", { type: "string", description: "Launch input as a JSON object" }),
 			)
 			.command("recreate", "Restore a workspace's latest ready checkpoint", (command) =>
 				command
 					.option("id", { type: "string", demandOption: true })
-					.option("external-id", { type: "string", demandOption: true }),
+					.option("external-id", { type: "string", demandOption: true })
+					.option("input", { type: "string", description: "Launch input as a JSON object" }),
 			)
 			.command("outputs", "Read audited template-declared outputs", idOption)
 			.command("attach", "Read or send AgentAPI messages on a live workspace", attachOptions)

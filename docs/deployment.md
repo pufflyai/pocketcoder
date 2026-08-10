@@ -24,6 +24,21 @@ the supported checksum-pinned AgentAPI at `/usr/local/bin/agentapi` and the
 supervisor. Keep everything runnable by the template's non-root uid. Always
 reference images by digest in templates — mutable tags are rejected.
 
+Promote a source template after building its workspace image with `pcd
+templates render`. The renderer accepts the immutable image reference and
+typed deployment overrides, validates the final manifest, and derives its
+version from the normalized content:
+
+```sh
+pcd templates render templates/codex.yaml \
+  --image "registry.example/codex@sha256:<64-hex-digest>" \
+  --out deploy/templates
+```
+
+Mount only the rendered output directory at `POCKETCODER_TEMPLATE_DIR`. Keep
+the source manifest unchanged so the same build inputs reproduce the same
+deployment file and version.
+
 Publishing the versioned CLI automatically creates the matching `v<version>`
 tag. That tag publishes semver image tags and creates or updates the matching
 GitHub release with a `pocketcoder-image-digests.txt` asset and the exact

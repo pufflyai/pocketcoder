@@ -3,7 +3,8 @@ import {
 	type PocketCoderClient,
 	TERMINAL_WORKSPACE_STATES,
 	type WorkspaceSummary,
-} from "@pstdio/pocketcoder-client";
+} from "@pstdio/pocketcoder-sdk";
+import { parseLaunchInput } from "./launch-input";
 import type { CliFail, ChatFlags as CreateFlags } from "./workspace-chat";
 
 export interface WorkspaceCreateDeps {
@@ -15,15 +16,6 @@ function need(flags: CreateFlags, key: string, fail: CliFail): string {
 	const value = flags[key];
 	if (typeof value !== "string" || value === "") fail(`missing required flag --${key}`);
 	return value;
-}
-
-function parseLaunchInput(flags: CreateFlags, fail: CliFail): Record<string, unknown> | undefined {
-	if (typeof flags.input !== "string") return undefined;
-	try {
-		return JSON.parse(flags.input) as Record<string, unknown>;
-	} catch {
-		fail("--input must be a JSON object");
-	}
 }
 
 function waitTimeout(flags: CreateFlags, fail: CliFail): number {
@@ -90,7 +82,7 @@ export async function createWorkspace(flags: CreateFlags, deps: WorkspaceCreateD
 	const template = need(flags, "template", deps.fail);
 	const externalId =
 		typeof flags["external-id"] === "string" ? flags["external-id"] : `pcd-${randomUUID()}`;
-	const launchInput = parseLaunchInput(flags, deps.fail);
+	const launchInput = parseLaunchInput(flags.input, deps.fail);
 	const created = await deps.client.workspaces.create({
 		externalId,
 		templateName: template,

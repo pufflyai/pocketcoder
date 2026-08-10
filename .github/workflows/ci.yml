@@ -59,3 +59,8 @@ jobs:
           POCKETCODER_TEST_DATABASE_URL: postgres://pocketcoder:pocketcoder@127.0.0.1:5432/pocketcoder
       - name: Build all entrypoints
         run: bun run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Validate publishable packages
+        run: bun run pack:check

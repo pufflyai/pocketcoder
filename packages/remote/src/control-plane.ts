@@ -6,7 +6,7 @@ import {
 	TERMINAL_WORKSPACE_STATES,
 	type WorkspaceSummary,
 	WorkspaceTerminalError,
-} from "@pstdio/pocketcoder-client";
+} from "@pstdio/pocketcoder-sdk";
 
 export {
 	ConversationGoneError,

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { PocketCoderClient } from "@pstdio/pocketcoder-client";
 import { PostgresStore } from "@pstdio/pocketcoder-db";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
+import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { parse as parseDotenv } from "dotenv";
 
 export interface Flags {

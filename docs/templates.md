@@ -28,6 +28,7 @@ command, mount, network, privilege, or driver.
 		"agent": {
 			"type": "claude",
 			"transport": "pty",
+			"termWidth": 120,
 			"command": ["claude", "--dangerously-skip-permissions"],
 			"cwd": "/home/agent/workspace",
 			"env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
@@ -62,6 +63,10 @@ command, mount, network, privilege, or driver.
 - **`agent`** — the coding-agent command, AgentAPI type, transport, cwd, and
   environment. `transport` defaults to `"pty"`; `"acp"` adds AgentAPI's
   `--experimental-acp` adapter for agents whose command speaks ACP. PocketCoder
+  passes optional `termWidth` (10–65535) to AgentAPI only for PTY agents; it is
+  rejected for ACP because ACP does not emulate a terminal. See the
+  [transport decision](agent-transport-decision.md) for the cross-agent
+  compatibility analysis. PocketCoder
   waits for AgentAPI's fixed status endpoint, synchronizes complete messages
   after `stable`, and terminates it safely for preserve. The caller's opaque
   `launch_input` is delivered to the process in memory as
@@ -120,6 +125,7 @@ HTTPS methods or paths, and it blocks SSH and other non-HTTP protocols.
   query strings, encoded traversal);
 - duplicate routes;
 - terminal cwd traversal, invalid limits, or an empty command;
+- `agent.termWidth` outside 10–65535 or supplied with ACP transport;
 - env values that look like secret literals (names matching
   `SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL` must use a
   `secretRef:` reference resolved by the deployment);
@@ -217,6 +223,22 @@ afterwards. Removing a file from the template dir retires that version for
 new workspaces without invalidating existing snapshots; putting it back
 reactivates it. Omitting `version` at creation resolves the newest active
 version once.
+
+Use `pcd templates render` when a build must promote a source manifest to a
+deployable immutable version. It replaces the placeholder image digest,
+applies typed JSON-Pointer overrides, validates and normalizes the result, and
+derives a deterministic version suffix from all deployable content:
+
+```sh
+pcd templates render templates/codex.yaml \
+  --image "registry.example/codex@sha256:<64-hex-digest>" \
+  --set '/spec/agent/termWidth=120' \
+  --out deploy/templates
+```
+
+The source must use a plain release triplet such as `1.2.3`; the rendered
+version is `1.2.3-<12-character-content-hash>`. The command writes canonical
+JSON without modifying its source.
 
 ## Writing workspace images
 

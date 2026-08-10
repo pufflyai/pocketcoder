@@ -42,7 +42,7 @@
 		"yargs": "^17.7.2"
 	},
 	"devDependencies": {
-		"@pstdio/pocketcoder-client": "workspace:*",
+		"@pstdio/pocketcoder-sdk": "workspace:*",
 		"@pstdio/pocketcoder-server": "workspace:*",
 		"@pstdio/pocketcoder-auth": "workspace:*",
 		"@pstdio/pocketcoder-contracts": "workspace:*",

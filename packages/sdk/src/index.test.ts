@@ -125,6 +125,38 @@ describe("PocketCoderClient", () => {
 		expect(requests[0]?.signal.aborted).toBe(true);
 	});
 
+	test("sends restore launch input through every recovery API", async () => {
+		const requests: Request[] = [];
+		const client = fixtureClient(
+			() =>
+				Response.json(
+					{
+						error: {
+							code: "validation.invalid",
+							message: "fixture response",
+							request_id: "request-restore",
+						},
+					},
+					{ status: 400 },
+				),
+			requests,
+		);
+		const input = {
+			external_id: "restored",
+			launch_input: { bootstrap_token: "workspace-envelope" },
+		};
+
+		await client.checkpoints.restore("checkpoint", input, "restore-key").catch(() => {});
+		await client.workspaces.recreate("workspace", input, "recreate-key").catch(() => {});
+		await client.workspaces.resume("workspace", input, "resume-key").catch(() => {});
+
+		expect(await Promise.all(requests.map((request) => request.json()))).toEqual([
+			input,
+			input,
+			input,
+		]);
+	});
+
 	test("retries retryable reads and idempotency-key mutations only", async () => {
 		let calls = 0;
 		const retryingFetch = (async () => {
