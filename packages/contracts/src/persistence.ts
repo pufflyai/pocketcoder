@@ -169,6 +169,7 @@ export type PreserveRequest = z.infer<typeof PreserveRequestSchema>;
 export const RestoreRequestSchema = z.object({
 	external_id: z.string().min(1).max(256),
 	metadata: z.record(z.string().max(64), z.string().max(512)).optional(),
+	launch_input: z.record(z.string(), z.unknown()).optional(),
 });
 export type RestoreRequest = z.infer<typeof RestoreRequestSchema>;
 

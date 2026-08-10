@@ -1,4 +1,4 @@
-import type { PocketCoderClient, TerminalConnection } from "@pstdio/pocketcoder-client";
+import type { PocketCoderClient, TerminalConnection } from "@pstdio/pocketcoder-sdk";
 import type { Flags } from "./cli-context";
 import { need } from "./cli-context";
 

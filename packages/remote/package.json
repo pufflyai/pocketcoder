@@ -42,7 +42,7 @@
 		"@earendil-works/pi-tui": "0.83.0"
 	},
 	"devDependencies": {
-		"@pstdio/pocketcoder-client": "workspace:*",
+		"@pstdio/pocketcoder-sdk": "workspace:*",
 		"@types/bun": "1.3.14",
 		"typescript": "5.9.3"
 	}

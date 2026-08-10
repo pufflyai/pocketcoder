@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { ApiError, parseDurationMs, type RestoreRequest } from "@pstdio/pocketcoder-contracts";
+import {
+	ApiError,
+	canonicalJson,
+	parseDurationMs,
+	type RestoreRequest,
+} from "@pstdio/pocketcoder-contracts";
 import type { PrincipalRow, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
 import { PersistenceMaintenanceService } from "./persistence-maintenance";
 import { templateAuthorized } from "./service";
@@ -22,6 +27,16 @@ export class PersistenceRestoreService extends PersistenceMaintenanceService {
 			throw new ApiError(
 				"restore.template_not_authorized",
 				"Principal is no longer authorized for this checkpoint template.",
+			);
+		}
+		if (
+			body.launch_input !== undefined &&
+			Buffer.byteLength(canonicalJson(body.launch_input)) >
+				checkpoint.templateSnapshot.spec.maxLaunchInputBytes
+		) {
+			throw new ApiError(
+				"validation.invalid",
+				`launch_input exceeds the template limit of ${checkpoint.templateSnapshot.spec.maxLaunchInputBytes} bytes.`,
 			);
 		}
 		this.storageDriver();
@@ -79,7 +94,7 @@ export class PersistenceRestoreService extends PersistenceMaintenanceService {
 				requestDigest,
 				templateId: template.id,
 				templateSnapshot: checkpoint.templateSnapshot,
-				launchInput: null,
+				launchInput: body.launch_input ?? null,
 				metadata: body.metadata ?? {},
 				deadlineAt: new Date(
 					now.getTime() + parseDurationMs(checkpoint.templateSnapshot.spec.timeouts.maxAge),

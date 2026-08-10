@@ -1,3 +1,20 @@
+export type {
+	CheckpointResource,
+	CheckpointState,
+	LogChunk,
+	NetworkEvent,
+	OperationKind,
+	OperationResource,
+	OperationState,
+	OutputResource,
+	PreserveRequest,
+	RestoreRequest,
+	ServerTerminalMessage,
+	StorageState,
+	TerminalSession,
+	WorkspaceResource,
+	WorkspaceState,
+} from "@pstdio/pocketcoder-contracts";
 export { AdministrationApi } from "./admin";
 export {
 	AgentApi,

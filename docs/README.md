@@ -12,6 +12,7 @@ API drives the whole lifecycle.
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
 | [Architecture](architecture.md) | Components, database schema, workspace state machine, agent protocol |
+| [Agent transport decision](agent-transport-decision.md) | Why templates keep PTY/ACP and what must be true before another transport is added |
 | [Deployment](deployment.md) | Container images, docker compose, Kubernetes, PostgreSQL placement, configuration reference |
 | [Security model](security.md) | Trust zones, credential lifetime rules, what the deployment's model gateway must enforce |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
@@ -23,7 +24,7 @@ Two clients sit on top of the same machine API:
 | Package | What it is |
 |---------|------------|
 | [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi as a thin terminal client for a workspace, with history replay, attachments, and workspace commands — published to npm |
-| [`@pstdio/pocketcoder-client`](../packages/client/README.md) | Runtime-validated TypeScript client for the control plane — an internal workspace package, bundled into the published clients rather than published itself |
+| [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) | Published Node ESM and TypeScript client for the control plane, with runtime validation and no private workspace dependencies |
 
 ## The short version
 

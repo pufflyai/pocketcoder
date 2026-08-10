@@ -7,10 +7,11 @@ import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
-import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
+import { DEFAULT_LIMITS, type WorkspaceCheckpointRow } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
 import { DEFAULT_PERSISTENCE_LIMITS } from "./persistence";
+import { markReadyThroughAgent } from "./test-server.test";
 
 const roots: string[] = [];
 const pepper = "persistence-test-pepper";
@@ -138,6 +139,49 @@ async function insertReadyCheckpoint(testServer: Awaited<ReturnType<typeof serve
 		deletedAt: null,
 	});
 	return checkpointId;
+}
+
+async function assertSupportedResume(
+	testServer: Awaited<ReturnType<typeof server>>,
+	createdId: string,
+	checkpoint: WorkspaceCheckpointRow,
+) {
+	const supportedCheckpoint = await testServer.store.insertCheckpoint({
+		...checkpoint,
+		id: randomUUID(),
+		parentCheckpointId: checkpoint.id,
+		conversationRestore: "supported",
+		label: "supported-resume-fixture",
+		createdAt: new Date(checkpoint.createdAt.getTime() + 1),
+		updatedAt: new Date(checkpoint.updatedAt.getTime() + 1),
+		readyAt: new Date((checkpoint.readyAt ?? checkpoint.updatedAt).getTime() + 1),
+	});
+	const response = await testServer.request(`/v1/workspaces/${createdId}/resume`, {
+		method: "POST",
+		headers: { "idempotency-key": "resume-supported" },
+		body: JSON.stringify({
+			external_id: "resumed-conversation",
+			launch_input: { bootstrap_token: "resume-envelope" },
+		}),
+	});
+	expect(response.status).toBe(202);
+	const body = (await response.json()) as { workspace: { id: string } };
+	expect(body as unknown).toMatchObject({
+		workspace: {
+			external_id: "resumed-conversation",
+			origin_workspace_id: createdId,
+			restored_from_checkpoint_id: supportedCheckpoint.id,
+		},
+		resume: {
+			status: "supported",
+			reason: null,
+			source_workspace_id: createdId,
+			checkpoint_id: supportedCheckpoint.id,
+		},
+	});
+	expect((await testServer.store.getWorkspace(body.workspace.id))?.launchInput).toEqual({
+		bootstrap_token: "resume-envelope",
+	});
 }
 
 describe("persistent workspace REST workflow", () => {
@@ -284,35 +328,7 @@ describe("persistent workspace preservation", () => {
 				)
 			).length,
 		).toBe(0);
-		const supportedCheckpoint = await testServer.store.insertCheckpoint({
-			...checkpoint,
-			id: randomUUID(),
-			parentCheckpointId: checkpoint.id,
-			conversationRestore: "supported",
-			label: "supported-resume-fixture",
-			createdAt: new Date(checkpoint.createdAt.getTime() + 1),
-			updatedAt: new Date(checkpoint.updatedAt.getTime() + 1),
-			readyAt: new Date((checkpoint.readyAt ?? checkpoint.updatedAt).getTime() + 1),
-		});
-		const supportedResume = await testServer.request(`/v1/workspaces/${created.id}/resume`, {
-			method: "POST",
-			headers: { "idempotency-key": "resume-supported" },
-			body: JSON.stringify({ external_id: "resumed-conversation" }),
-		});
-		expect(supportedResume.status).toBe(202);
-		expect((await supportedResume.json()) as unknown).toMatchObject({
-			workspace: {
-				external_id: "resumed-conversation",
-				origin_workspace_id: created.id,
-				restored_from_checkpoint_id: supportedCheckpoint.id,
-			},
-			resume: {
-				status: "supported",
-				reason: null,
-				source_workspace_id: created.id,
-				checkpoint_id: supportedCheckpoint.id,
-			},
-		});
+		await assertSupportedResume(testServer, created.id, checkpoint);
 		expect(testServer.driver.stopped.length).toBeGreaterThan(0);
 		expect(testServer.driver.terminated.length).toBeGreaterThan(0);
 
@@ -333,10 +349,43 @@ describe("persistent workspace preservation", () => {
 		expect(verify.status).toBe(202);
 		expect(((await verify.json()) as { state: string }).state).toBe("succeeded");
 
+		const recreate = await testServer.request(`/v1/workspaces/${created.id}/recreate`, {
+			method: "POST",
+			headers: { "idempotency-key": "recreate-with-input" },
+			body: JSON.stringify({
+				external_id: "recreated-fork",
+				launch_input: { bootstrap_token: "recreate-envelope" },
+			}),
+		});
+		expect(recreate.status).toBe(202);
+		const recreated = (await recreate.json()) as { workspace: { id: string } };
+		expect((await testServer.store.getWorkspace(recreated.workspace.id))?.launchInput).toEqual({
+			bootstrap_token: "recreate-envelope",
+		});
+
+		const oversizedRestore = await testServer.request(`/v1/checkpoints/${checkpoint.id}/restore`, {
+			method: "POST",
+			headers: { "idempotency-key": "restore-oversized" },
+			body: JSON.stringify({
+				external_id: "oversized-restore",
+				launch_input: {
+					value: "x".repeat(testServer.parsed.manifest.spec.maxLaunchInputBytes),
+				},
+			}),
+		});
+		expect(oversizedRestore.status).toBe(400);
+		expect((await oversizedRestore.json()) as unknown).toMatchObject({
+			error: { code: "validation.invalid" },
+		});
+
+		const restoreBody = {
+			external_id: "restored-fork",
+			launch_input: { bootstrap_token: "restore-envelope" },
+		};
 		const restore = await testServer.request(`/v1/checkpoints/${checkpoint.id}/restore`, {
 			method: "POST",
 			headers: { "idempotency-key": "restore-1" },
-			body: JSON.stringify({ external_id: "restored-fork" }),
+			body: JSON.stringify(restoreBody),
 		});
 		expect(restore.status).toBe(202);
 		const restored = (await restore.json()) as {
@@ -353,12 +402,27 @@ describe("persistent workspace preservation", () => {
 		const repeatedRestore = await testServer.request(`/v1/checkpoints/${checkpoint.id}/restore`, {
 			method: "POST",
 			headers: { "idempotency-key": "restore-1" },
-			body: JSON.stringify({ external_id: "restored-fork" }),
+			body: JSON.stringify(restoreBody),
 		});
 		expect(repeatedRestore.status).toBe(202);
 		expect(((await repeatedRestore.json()) as { workspace: { id: string } }).workspace.id).toBe(
 			restored.workspace.id,
 		);
+		const changedInputReplay = await testServer.request(
+			`/v1/checkpoints/${checkpoint.id}/restore`,
+			{
+				method: "POST",
+				headers: { "idempotency-key": "restore-1" },
+				body: JSON.stringify({
+					...restoreBody,
+					launch_input: { bootstrap_token: "rotated-envelope" },
+				}),
+			},
+		);
+		expect(changedInputReplay.status).toBe(409);
+		expect((await changedInputReplay.json()) as unknown).toMatchObject({
+			error: { code: "idempotency.conflict" },
+		});
 		await testServer.scheduler.tick();
 		await waitFor(async () => {
 			const operation = await testServer.store.getOperation(restored.operation.id);
@@ -378,6 +442,14 @@ describe("persistent workspace preservation", () => {
 			checkpoint?.manifest as never,
 		);
 		expect(testServer.driver.inputFor(restored.workspace.id)?.launch_mode).toBe("restore");
+		expect(testServer.driver.inputFor(restored.workspace.id)?.launch_input).toEqual({
+			bootstrap_token: "restore-envelope",
+		});
+		expect((await testServer.store.getWorkspace(restored.workspace.id))?.launchInput).toEqual({
+			bootstrap_token: "restore-envelope",
+		});
+		await markReadyThroughAgent(testServer, restored.workspace.id);
+		expect((await testServer.store.getWorkspace(restored.workspace.id))?.launchInput).toBeNull();
 	});
 });
 

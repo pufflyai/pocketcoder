@@ -313,6 +313,43 @@ describe("template persistence and routing", () => {
 });
 
 describe("AgentAPI transport", () => {
+	test("passes an explicit terminal width only to PTY transport", () => {
+		const manifest = nativeManifest();
+		(manifest.spec as { agent: Record<string, unknown> }).agent.termWidth = 200;
+		const spec = parseTemplateManifest(manifest).manifest.spec;
+
+		expect(agentApiHarness(spec).command).toEqual([
+			"/usr/local/bin/agentapi",
+			"server",
+			"--type",
+			"codex",
+			"--term-width",
+			"200",
+			"--port",
+			"3284",
+			"--",
+			"codex",
+			"--full-auto",
+		]);
+	});
+
+	test("rejects invalid terminal widths and ACP width settings", () => {
+		for (const termWidth of [9, 65_536, 20.5]) {
+			const manifest = nativeManifest();
+			(manifest.spec as { agent: Record<string, unknown> }).agent.termWidth = termWidth;
+			expect(() => parseTemplateManifest(manifest)).toThrow();
+		}
+
+		const acp = nativeManifest();
+		(acp.spec as { agent: Record<string, unknown> }).agent = {
+			type: "opencode",
+			transport: "acp",
+			termWidth: 200,
+			command: ["opencode", "acp"],
+		};
+		expect(() => parseTemplateManifest(acp)).toThrow("termWidth is only valid for PTY transport");
+	});
+
 	test("derives ACP transport for a native coding agent", () => {
 		const manifest = nativeManifest();
 		(manifest.spec as { agent: Record<string, unknown> }).agent = {

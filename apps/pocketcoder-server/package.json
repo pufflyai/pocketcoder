@@ -34,7 +34,7 @@
 		"zod": "^4.0.0"
 	},
 	"devDependencies": {
-		"@pstdio/pocketcoder-client": "workspace:*",
+		"@pstdio/pocketcoder-sdk": "workspace:*",
 		"@pstdio/pocketcoder-testkit": "workspace:*"
 	}
 }

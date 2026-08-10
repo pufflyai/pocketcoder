@@ -87,6 +87,28 @@ export function addAdministrativeCommands(parser: Argv) {
 					description: "Template manifest files",
 				}),
 			)
+			.command("render <manifest>", "Render one deployable immutable template", (command) =>
+				command
+					.positional("manifest", {
+						type: "string",
+						demandOption: true,
+						description: "Source JSON or YAML template",
+					})
+					.option("image", {
+						type: "string",
+						description: "Digest-pinned image reference",
+					})
+					.option("set", {
+						type: "string",
+						array: true,
+						description: "Typed JSON-Pointer override (repeatable)",
+					})
+					.option("out", {
+						type: "string",
+						demandOption: true,
+						description: "Output directory",
+					}),
+			)
 			.command("list", "List authorized template versions through the REST API", (command) =>
 				command.option("json", { type: "boolean", description: "Print JSON" }),
 			)

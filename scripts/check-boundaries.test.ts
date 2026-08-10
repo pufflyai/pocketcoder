@@ -84,7 +84,7 @@ test("rejects published packages that depend on unpublished ones at runtime", ()
 				dependencies: ["@example/client", "zod"],
 			},
 			{
-				path: "packages/client/package.json",
+				path: "packages/sdk/package.json",
 				name: "@example/client",
 				tags: ["type:library"],
 				private: true,

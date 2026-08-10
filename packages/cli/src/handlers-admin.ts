@@ -18,6 +18,7 @@ import {
 	startManagedServer,
 	stopManagedServer,
 } from "./server-process";
+import { renderTemplateFile } from "./template-render";
 
 export async function handleServer({ group, action, flags }: CommandContext) {
 	if (group !== "server") return false;
@@ -144,6 +145,7 @@ export async function handleKeys({ group, action, flags }: CommandContext) {
 export async function handleTemplates(context: CommandContext) {
 	if (context.group !== "templates") return false;
 	if (context.action === "validate") await validateTemplates(context.positional);
+	else if (context.action === "render") await renderTemplateFile(context.flags);
 	else if (context.action === "list") {
 		const items = await controlPlaneClient().templates.list();
 		if (context.flags.json) console.log(JSON.stringify(items, null, 2));

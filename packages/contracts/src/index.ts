@@ -241,6 +241,10 @@ export {
 	timeoutMs,
 } from "./template";
 export {
+	renderTemplateManifest,
+	type TemplateRenderOptions,
+} from "./template-render";
+export {
 	type ClientTerminalMessage,
 	ClientTerminalMessageSchema,
 	type ServerTerminalMessage,

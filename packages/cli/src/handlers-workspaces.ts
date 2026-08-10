@@ -8,6 +8,7 @@ import {
 	fail,
 	need,
 } from "./cli-context";
+import { parseLaunchInput } from "./launch-input";
 import { attachWorkspace, chatWorkspace } from "./workspace-chat";
 import { createWorkspace } from "./workspace-create";
 import { attachTerminal } from "./workspace-terminal";
@@ -122,17 +123,19 @@ export async function handleWorkspacePersistence({ group, action, flags }: Comma
 		console.log(JSON.stringify(result, null, 2));
 	} else if (action === "restore") {
 		const externalId = need(flags, "external-id");
+		const launchInput = parseLaunchInput(flags.input, fail);
 		const result = await controlPlaneClient().checkpoints.restore(
 			need(flags, "checkpoint"),
-			{ external_id: externalId },
+			{ external_id: externalId, ...(launchInput ? { launch_input: launchInput } : {}) },
 			externalId,
 		);
 		console.log(JSON.stringify(result, null, 2));
 	} else if (action === "recreate") {
 		const externalId = need(flags, "external-id");
+		const launchInput = parseLaunchInput(flags.input, fail);
 		const result = await controlPlaneClient().workspaces.recreate(
 			need(flags, "id"),
-			{ external_id: externalId },
+			{ external_id: externalId, ...(launchInput ? { launch_input: launchInput } : {}) },
 			externalId,
 		);
 		console.log(JSON.stringify(result, null, 2));

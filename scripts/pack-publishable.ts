@@ -1,5 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { checkSdkPackage } from "./check-sdk-package";
 
 interface PackageManifest {
 	name?: string;
@@ -31,6 +32,14 @@ for (const root of workspaceRoots) {
 		const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
 		if (stderr) process.stderr.write(stderr);
 		if (exitCode !== 0) failed = true;
+		if (manifest.name === "@pstdio/pocketcoder-sdk") {
+			try {
+				await checkSdkPackage(packageDir);
+			} catch (error) {
+				console.error(error);
+				failed = true;
+			}
+		}
 	}
 }
 
