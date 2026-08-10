@@ -1,53 +1,53 @@
 {
-	"name": "@pstdio/pocketcoder-cli",
-	"nx": {
-		"tags": [
-			"scope:cli",
-			"type:app"
-		]
-	},
-	"version": "0.6.0",
-	"private": false,
-	"description": "Operator and diagnostics CLI for PocketCoder.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/pufflyai/pocketcoder.git",
-		"directory": "packages/cli"
-	},
-	"files": [
-		"dist",
-		"README.md",
-		"LICENSE"
-	],
-	"bin": {
-		"pcd": "dist/index.js"
-	},
-	"publishConfig": {
-		"access": "public"
-	},
-	"engines": {
-		"bun": ">=1.3.14"
-	},
-	"scripts": {
-		"build": "bun build ./src/index.ts --outdir ./dist --target bun",
-		"compile": "bun build ./src/index.ts --compile --outfile ./dist/pcd",
-		"start": "bun ./src/index.ts",
-		"test": "bun test",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"dotenv": "^17.4.2",
-		"yargs": "^17.7.2"
-	},
-	"devDependencies": {
-		"@pstdio/pocketcoder-sdk": "workspace:*",
-		"@pstdio/pocketcoder-server": "workspace:*",
-		"@pstdio/pocketcoder-auth": "workspace:*",
-		"@pstdio/pocketcoder-contracts": "workspace:*",
-		"@pstdio/pocketcoder-db": "workspace:*",
-		"@pstdio/pocketcoder-runtime-core": "workspace:*",
-		"@types/yargs": "^17.0.35"
-	}
+  "name": "@pstdio/pocketcoder-cli",
+  "nx": {
+    "tags": [
+      "scope:cli",
+      "type:app"
+    ]
+  },
+  "version": "0.6.0",
+  "private": false,
+  "description": "Operator and diagnostics CLI for PocketCoder.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pufflyai/pocketcoder.git",
+    "directory": "packages/cli"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "pcd": "dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun ../../scripts/copy-db-migrations.ts ./dist",
+    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pcd && bun ../../scripts/copy-db-migrations.ts ./dist",
+    "start": "bun ./src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@pstdio/pocketcoder-sdk": "workspace:*",
+    "@pstdio/pocketcoder-server": "workspace:*",
+    "@pstdio/pocketcoder-auth": "workspace:*",
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-db": "workspace:*",
+    "@pstdio/pocketcoder-runtime-core": "workspace:*",
+    "@types/yargs": "^17.0.35"
+  }
 }

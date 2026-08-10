@@ -10,13 +10,13 @@ CI publishes three images to the GitHub Container Registry on every push to
   `kubectl`.
   Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
 - `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
-  `pocketcoder-agent` supervisor, checksum-pinned AgentAPI, and a loopback echo harness, useful for probe
+  `pocketcoder-supervisor`, checksum-pinned AgentAPI, and a loopback echo harness, useful for probe
   templates and as a starting point for real agent images. Built from
   [`deploy/image/Dockerfile`](../deploy/image/Dockerfile).
 - `ghcr.io/<owner>/<repo>/egress` — the sidecar proxy that enforces
   `network.mode: restricted` templates. Set `POCKETCODER_EGRESS_IMAGE` to its
   digest; without it, restricted templates cannot start. Built from
-  [`apps/pocketcoder-egress/Dockerfile`](../apps/pocketcoder-egress/Dockerfile).
+  [`packages/egress/Dockerfile`](../packages/egress/Dockerfile).
 
 Real coding-agent images extend the workspace base and install only their agent
 CLI and application environment. If they use another base, they must provide
@@ -71,7 +71,7 @@ Build locally:
 
 ```sh
 docker build -f deploy/image/server.Dockerfile -t pocketcoder-server:dev .
-bun build apps/pocketcoder-agent/src/index.ts --target bun --outdir deploy/image/dist
+bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
 docker build -t pocketcoder-workspace:dev deploy/image
 ```
 
@@ -208,8 +208,8 @@ Runtime queries are schema-qualified, while generated Drizzle migrations run
 with `search_path` pinned to the configured schema on a reserved connection.
 PocketCoder never touches `public`, other schemas, extensions, or application
 tables, and creates no cross-schema dependencies. Migrations run under a
-	schema-scoped advisory lock via `pcd db migrate`. Server startup verifies that
-	all migrations are applied but never changes the schema. Recommended roles: a migration role owning the schema,
+  schema-scoped advisory lock via `pcd db migrate`. Server startup verifies that
+  all migrations are applied but never changes the schema. Recommended roles: a migration role owning the schema,
 an application role with connect/usage/DML only.
 
 ## Configuration reference

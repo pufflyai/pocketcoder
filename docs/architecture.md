@@ -7,7 +7,7 @@ caller (machine key)
   → workspace driver (Docker container or Kubernetes Job)
   → one isolated runtime per workspace
   → storage driver (host data roots or a Kubernetes PVC)
-  → pocketcoder-agent (PID 1 supervisor)
+  → pocketcoder-supervisor (PID 1)
   → PocketCoder-owned AgentAPI → template-declared coding agent
 ```
 
@@ -19,9 +19,9 @@ neither callers nor templates can select them.
 
 | Component | Package | Responsibility |
 |-----------|---------|----------------|
-| pocketcoder-server | `apps/pocketcoder-server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
-| pocketcoder-agent | `apps/pocketcoder-agent` | PID 1 in every workspace: registration, setup, AgentAPI launch, stable transcript capture, health, relay, checkpoint quiescing, TERM/KILL |
-| pocketcoder-egress | `apps/pocketcoder-egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
+| pocketcoder-server | `packages/server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
+| pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, AgentAPI launch, stable transcript capture, health, relay, checkpoint quiescing, TERM/KILL |
+| pocketcoder-egress | `packages/egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
 | pcd | `packages/cli` | Published bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, chat, doctor |
 | remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
 | sdk | `packages/sdk` | Published runtime-validated TypeScript client for the control-plane API |
@@ -46,8 +46,8 @@ erDiagram
     PRINCIPALS ||--o{ MACHINE_KEYS : authenticates
     PRINCIPALS ||--o{ WORKSPACES : owns
     TEMPLATES ||--o{ WORKSPACES : snapshots
-	TEMPLATES ||--o{ WARM_POOL_RUNTIMES : provisions
-	WORKSPACES o|--o| WARM_POOL_RUNTIMES : claims
+  TEMPLATES ||--o{ WARM_POOL_RUNTIMES : provisions
+  WORKSPACES o|--o| WARM_POOL_RUNTIMES : claims
     PRINCIPALS ||--o{ WORKSPACE_STORAGE : owns
     WORKSPACES ||--o{ WORKSPACE_STORAGE : allocates
     PRINCIPALS ||--o{ WORKSPACE_CHECKPOINTS : owns
@@ -58,7 +58,7 @@ erDiagram
     WORKSPACE_CHECKPOINTS o|--o{ WORKSPACE_OPERATIONS : restores
     WORKSPACES o|--o{ WORKSPACE_OPERATIONS : produces
     WORKSPACES ||--o{ WORKSPACE_OUTPUTS : publishes
-	WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
+  WORKSPACES ||--o| WORKSPACE_CONVERSATIONS : retains
     WORKSPACES ||--o{ WORKSPACE_CONVERSATION_MESSAGES : records
     WORKSPACES ||--o{ WORKSPACE_TERMINAL_SESSIONS : audits
     MACHINE_KEYS ||--o{ WORKSPACE_TERMINAL_SESSIONS : opens
@@ -101,13 +101,13 @@ erDiagram
         text template_digest
         jsonb template_snapshot
         text state
-		text provisioning_mode
+    text provisioning_mode
         jsonb provider_ref
         timestamptz deadline_at
         timestamptz terminal_at
     }
 
-	WARM_POOL_RUNTIMES {
+  WARM_POOL_RUNTIMES {
         uuid id PK
         uuid template_id FK
         uuid workspace_id FK,UK
@@ -162,7 +162,7 @@ erDiagram
         timestamptz occurred_at
     }
 
-	WORKSPACE_CONVERSATIONS {
+  WORKSPACE_CONVERSATIONS {
         uuid workspace_id PK,FK
         text status
         timestamptz expires_at
@@ -219,8 +219,10 @@ erDiagram
     }
 ```
 
-The Drizzle definition in `packages/db/src/schema.ts` is the source of truth;
+The Drizzle definitions in `packages/db/src/schema/` are the source of truth;
 the diagram intentionally omits non-relational detail fields and indexes.
+`drizzle-kit generate` writes reviewed SQL to `packages/db/drizzle/`, and the
+Drizzle ORM migrator reads those files directly at runtime.
 
 ## Workspace state machine
 

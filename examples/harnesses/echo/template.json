@@ -1,40 +1,40 @@
 {
-	"apiVersion": "pocketcoder.dev/v1alpha1",
-	"kind": "Template",
-	"metadata": {
-		"name": "echo-harness",
-		"description": "Credential-free echo harness for the PocketCoder full-stack E2E"
-	},
-	"spec": {
-		"version": "1.0.0",
-		"image": "example.invalid/pocketcoder-echo@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-		"harness": {
-			"command": ["bun", "/opt/pocketcoder/echo-harness.ts"]
-		},
-		"resources": { "cpu": "1", "memory": "256Mi" },
-		"timeouts": {
-			"start": "2m",
-			"maxAge": "15m",
-			"idle": "5m",
-			"disconnectGrace": "30s",
-			"terminateGrace": "5s"
-		},
-		"services": {
-			"agent": {
-				"baseUrl": "http://127.0.0.1:3284",
-				"healthPath": "/status",
-				"routes": [
-					{ "method": "GET", "path": "/status" },
-					{ "method": "GET", "path": "/messages", "query": ["after"] },
-					{ "method": "POST", "path": "/message" }
-				]
-			}
-		},
-		"security": {
-			"uid": 10001,
-			"gid": 10001,
-			"readOnlyRoot": true,
-			"writableMemoryPaths": ["/tmp"]
-		}
-	}
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": {
+    "name": "echo-harness",
+    "description": "Credential-free echo harness for the PocketCoder full-stack E2E"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "example.invalid/pocketcoder-echo@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "harness": {
+      "command": ["bun", "/opt/pocketcoder/echo-harness.ts"]
+    },
+    "resources": { "cpu": "1", "memory": "256Mi" },
+    "timeouts": {
+      "start": "2m",
+      "maxAge": "15m",
+      "idle": "5m",
+      "disconnectGrace": "30s",
+      "terminateGrace": "5s"
+    },
+    "services": {
+      "agent": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "healthPath": "/status",
+        "routes": [
+          { "method": "GET", "path": "/status" },
+          { "method": "GET", "path": "/messages", "query": ["after"] },
+          { "method": "POST", "path": "/message" }
+        ]
+      }
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp"]
+    }
+  }
 }

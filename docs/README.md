@@ -47,5 +47,5 @@ pcd workspaces cancel --id <uuid>
 
 Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
-`pocketcoder-agent` (PID 1) → PocketCoder-owned AgentAPI → your template's
+`pocketcoder-supervisor` (PID 1) → PocketCoder-owned AgentAPI → your template's
 coding-agent command.

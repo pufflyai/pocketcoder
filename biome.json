@@ -1,68 +1,69 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
-	"vcs": {
-		"enabled": true,
-		"clientKind": "git",
-		"useIgnoreFile": true,
-		"defaultBranch": "main"
-	},
-	"files": {
-		"ignoreUnknown": true,
-		"includes": [
-			"**",
-			"!!**/coverage",
-			"!!**/dist",
-			"!!**/.nx",
-			"!!**/node_modules",
-			"!!packages/db/drizzle"
-		]
-	},
-	"formatter": {
-		"enabled": true,
-		"indentStyle": "tab",
-		"lineWidth": 100
-	},
-	"linter": {
-		"enabled": true,
-		"rules": {
-			"preset": "recommended",
-			"complexity": {
-				"noExcessiveCognitiveComplexity": {
-					"level": "warn",
-					"options": {
-						"maxAllowedComplexity": 20
-					}
-				},
-				"noExcessiveLinesPerFunction": {
-					"level": "error",
-					"options": {
-						"maxLines": 180,
-						"skipBlankLines": true
-					}
-				}
-			},
-			"style": {
-				"noExcessiveLinesPerFile": {
-					"level": "error",
-					"options": {
-						"maxLines": 1200,
-						"skipBlankLines": true
-					}
-				}
-			}
-		}
-	},
-	"javascript": {
-		"formatter": {
-			"quoteStyle": "double",
-			"semicolons": "always",
-			"trailingCommas": "all"
-		}
-	},
-	"json": {
-		"parser": {
-			"allowComments": true,
-			"allowTrailingCommas": true
-		}
-	}
+  "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!!**/coverage",
+      "!!**/dist",
+      "!!**/.nx",
+      "!!**/node_modules",
+      "!!packages/db/drizzle"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 20
+          }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 180,
+            "skipBlankLines": true
+          }
+        }
+      },
+      "style": {
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": {
+            "maxLines": 350,
+            "skipBlankLines": true
+          }
+        }
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "json": {
+    "parser": {
+      "allowComments": true,
+      "allowTrailingCommas": true
+    }
+  }
 }

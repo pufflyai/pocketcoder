@@ -59,11 +59,11 @@ JSON
 
 ```json
 {
-	"external_id": "your-task-uuid",
-	"template": { "name": "claude-code-agent", "version": "1.0.0" },
-	"launch_input": { "bootstrap_code": "opaque-single-use-value" },
-	"source": { "kind": "git", "repository": "app", "revision": "main" },
-	"metadata": { "source": "backend" }
+  "external_id": "your-task-uuid",
+  "template": { "name": "claude-code-agent", "version": "1.0.0" },
+  "launch_input": { "bootstrap_code": "opaque-single-use-value" },
+  "source": { "kind": "git", "repository": "app", "revision": "main" },
+  "metadata": { "source": "backend" }
 }
 ```
 
@@ -125,10 +125,10 @@ resource and lifecycle event:
 
 ```json
 {
-	"reason_code": "child_exit_failure",
-	"log_tail": "Traceback ...\nPermissionError: /home/onefin/.pi\n",
-	"log_tail_truncated": true,
-	"last_log_seq": 42
+  "reason_code": "child_exit_failure",
+  "log_tail": "Traceback ...\nPermissionError: /home/onefin/.pi\n",
+  "log_tail_truncated": true,
+  "last_log_seq": 42
 }
 ```
 
@@ -379,6 +379,6 @@ at-least-once, ordering is not guaranteed.
 ## Agent connect (internal)
 
 `GET /v1/agent/connect` is the WebSocket endpoint used exclusively by
-`pocketcoder-agent` inside workspaces. It authenticates with a one-time
+`pocketcoder-supervisor` inside workspaces. It authenticates with a one-time
 registration secret (first connection) or a server-issued reconnect
 credential — never with machine keys. Callers never use it.

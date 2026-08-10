@@ -1,45 +1,45 @@
 {
-	"name": "@pstdio/pocketcoder-db",
-	"nx": {
-		"tags": [
-			"scope:persistence",
-			"type:adapter"
-		]
-	},
-	"version": "0.1.0",
-	"private": true,
-	"description": "PostgreSQL persistence for PocketCoder.",
-	"type": "module",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/pufflyai/pocketcoder.git",
-		"directory": "packages/db"
-	},
-	"files": [
-		"drizzle",
-		"src",
-		"!src/**/*.test.ts"
-	],
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"engines": {
-		"bun": ">=1.3.14"
-	},
-	"scripts": {
-		"db:generate": "bun ./scripts/generate.ts",
-		"test": "bun test",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"@pstdio/pocketcoder-contracts": "workspace:*",
-		"@pstdio/pocketcoder-runtime-contracts": "workspace:*",
-		"@pstdio/pocketcoder-runtime-core": "workspace:*",
-		"drizzle-orm": "1.0.0-rc.4"
-	},
-	"devDependencies": {
-		"@pstdio/pocketcoder-testkit": "workspace:*",
-		"drizzle-kit": "1.0.0-rc.4"
-	}
+  "name": "@pstdio/pocketcoder-db",
+  "nx": {
+    "tags": [
+      "scope:persistence",
+      "type:adapter"
+    ]
+  },
+  "version": "0.1.0",
+  "private": true,
+  "description": "PostgreSQL persistence for PocketCoder.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pufflyai/pocketcoder.git",
+    "directory": "packages/db"
+  },
+  "files": [
+    "drizzle",
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
+    "@pstdio/pocketcoder-runtime-core": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4"
+  },
+  "devDependencies": {
+    "@pstdio/pocketcoder-testkit": "workspace:*",
+    "drizzle-kit": "1.0.0-rc.4"
+  }
 }

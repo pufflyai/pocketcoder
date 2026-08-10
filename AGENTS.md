@@ -41,7 +41,7 @@ Readability and structure matter most — we're happy to make bigger changes to 
 
 ## Changesets
 
-- Two packages are published: **`@pstdio/pocketcoder-cli`** and **`@pstdio/pocketcoder-remote`** — add a changeset (`bun changeset`, one-line summary) when a change affects one of them. Not for test/refactor-only changes.
+- Three packages are published: **`@pstdio/pocketcoder-cli`**, **`@pstdio/pocketcoder-remote`**, and **`@pstdio/pocketcoder-sdk`** — add a changeset (`bun changeset`, one-line summary) when a change affects one of them. Not for test/refactor-only changes.
 - Every other workspace is private and gets **bundled into** the published packages at build time. A published package must never list a private workspace package under `dependencies` — npm cannot resolve it — so declare it in `devDependencies` and let the bundler inline it. `bun run check` enforces this.
 - Never edit `package.json` versions manually.
 - `packages/remote` ships two bundles: the launcher (`src/bin.ts`) and the extension entry (`src/extension.ts`) that Pi loads with jiti at runtime. The extension bundle inlines the private workspace packages, so `@earendil-works/*` stay external — they are exact-pinned and shared with the host Pi, so treat Pi upgrades as deliberate changes.

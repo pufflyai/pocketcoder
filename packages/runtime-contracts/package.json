@@ -1,24 +1,24 @@
 {
-	"name": "@pstdio/pocketcoder-runtime-contracts",
-	"nx": {
-		"tags": [
-			"scope:runtime",
-			"type:ports"
-		]
-	},
-	"version": "0.1.0",
-	"private": true,
-	"description": "Driver-neutral runtime ports and durable row contracts for PocketCoder.",
-	"type": "module",
-	"license": "MIT",
-	"exports": {
-		".": "./src/index.ts"
-	},
-	"scripts": {
-		"test": "bun test --pass-with-no-tests",
-		"typecheck": "tsc --project ./tsconfig.json --noEmit"
-	},
-	"dependencies": {
-		"@pstdio/pocketcoder-contracts": "workspace:*"
-	}
+  "name": "@pstdio/pocketcoder-runtime-contracts",
+  "nx": {
+    "tags": [
+      "scope:runtime",
+      "type:ports"
+    ]
+  },
+  "version": "0.1.0",
+  "private": true,
+  "description": "Driver-neutral runtime ports and durable row contracts for PocketCoder.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test --pass-with-no-tests",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/pocketcoder-contracts": "workspace:*"
+  }
 }

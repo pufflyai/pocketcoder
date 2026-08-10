@@ -9,7 +9,7 @@ A lightweight control plane for coding agents in isolated workspaces.
 
 **Documentation lives in [docs/](docs/README.md)** — start with [getting
 started](docs/getting-started.md), then the [CLI reference](docs/cli.md),
-[templates](docs/templates.md), [HTTP API](docs/api.md),
+[Node SDK](packages/sdk/README.md), [templates](docs/templates.md), [HTTP API](docs/api.md),
 [deployment](docs/deployment.md), and [architecture](docs/architecture.md).
 
 ## AgentAPI-native workspaces
@@ -133,7 +133,7 @@ bun run test:unit   # package test suites through Lerna only
 bun run typecheck   # strict TypeScript across the Lerna workspace
 bun run build       # bundle packages through Lerna with Nx caching
 bun run pack:check  # pack the published packages and inspect their tarballs
-bun run db:generate -- --name=<change>  # generate + embed a Drizzle migration
+bun run db:generate -- --name=<change>  # generate a Drizzle migration
 bun run packages    # list packages managed by Lerna
 bun run start       # pocketcoder-server
 bun run pcd -- server start|status|stop  # manage only the configured server process
@@ -150,7 +150,7 @@ bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses O
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
-Lerna coordinates tasks across `apps/*`, `packages/*`, and the private
+Lerna coordinates tasks across `packages/*` and the private
 `examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
 
@@ -167,22 +167,29 @@ applications remain separate projects and integrate through the machine API.
 
 ## Releasing packages
 
-Two npm packages are public — the two things a consumer runs directly:
+Three npm packages are public:
 
 | Package | What it is |
 |---------|------------|
 | `@pstdio/pocketcoder-cli` | the `pcd` operator and diagnostics CLI |
 | `@pstdio/pocketcoder-remote` | Pi-based terminal UI for workspaces |
+| `@pstdio/pocketcoder-sdk` | Node ESM and TypeScript client for the control plane |
 
 Every other workspace remains private, is linked by Bun with `workspace:*`, and
-is imported through its `@pstdio/pocketcoder-*` package boundary. Both published
-packages bundle the private packages they use at build time, so neither declares
-a workspace dependency at runtime — `bun run check` fails if one ever does. The
-server, agent, and egress proxy are distributed as container images.
+is imported through its `@pstdio/pocketcoder-*` package boundary. Published
+packages bundle the private packages they use at build time, so they do not
+declare a private workspace dependency at runtime — `bun run check` fails if
+one ever does. The server, agent, and egress proxy are distributed as container
+images.
 
 `packages/remote` ships two bundles: the launcher and the extension entry that
 Pi loads with jiti at runtime. Only `@earendil-works/*` stays external, because
 the extension shares those modules with the Pi process hosting it.
+
+`packages/sdk` ships Node ESM and bundled TypeScript declarations. Its only
+runtime dependency is `zod`; private workspace packages are bundled. The
+package check installs its tarball in a clean project, type-checks a consumer,
+and runs that consumer with Node.
 
 The `Release Packages` workflow and Changesets configuration version and
 publish only non-private packages. Add a changeset whenever a change affects a
@@ -194,10 +201,11 @@ bun run changeset
 ```
 
 After changes land on `main`, `Release Packages` opens or updates a version pull
-request for non-private packages only. Merging that pull request publishes
-those packages, creates GitHub releases, and pushes the matching `v<version>`
-tag. The tag build publishes multi-architecture server, workspace, and egress
-images and records their immutable digests on that release.
+request for non-private packages only. Merging that pull request publishes the
+packages and creates a package tag and GitHub release for each one. A CLI
+release also pushes the matching `v<cli-version>` tag. That tag build publishes
+multi-architecture server, workspace, and egress images and records their
+immutable digests on the release.
 
 For tokenless publishing, configure an npm trusted publisher for each published
 package, using organization `pufflyai`, repository `pocketcoder`, and workflow
@@ -206,8 +214,8 @@ filename `release-packages.yml`.
 A package that has never been published cannot use trusted publishing for its
 first release: npm requires the package to exist before a trusted publisher can
 be attached to it, and OIDC-only runs fail with `ENEEDAUTH`. Bootstrap a new
-package once with an `NPM_TOKEN` repository secret, then configure its trusted
-publisher and remove the secret.
+package once outside this workflow with a short-lived token, then configure its
+trusted publisher. Do not keep a publish token in the repository.
 
 ## Configuration
 

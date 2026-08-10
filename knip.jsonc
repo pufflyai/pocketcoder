@@ -1,28 +1,28 @@
 {
-	"$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-	"ignoreExportsUsedInFile": true,
-	"workspaces": {
-		".": {
-			"entry": ["deploy/image/echo-harness.ts", "examples/**/*.test.ts"],
-			// Lerna invokes Nx internally for task hashing and caching.
-			"ignoreDependencies": ["nx"]
-		},
-		".pstdio/extensions/*": {
-			"entry": ["src/view.ts", "**/*.test.ts"]
-		},
-		"apps/pocketcoder-server": {
-			"entry": ["src/**/*.test.ts"]
-		},
-		"packages/remote": {
-			"entry": ["src/extension.ts", "src/**/*.test.ts"]
-		},
-		"examples/harnesses/*": {
-			"entry": ["agentapi-compat.ts", "*.test.ts"]
-		},
-		"examples/harnesses/oss": {
-			"entry": ["*.test.ts"],
-			// Loaded dynamically by OpenCode from OPENCODE_CONFIG_CONTENT.
-			"ignoreDependencies": ["@ai-sdk/openai-compatible", "@openai/codex", "opencode-ai"]
-		}
-	}
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "ignoreExportsUsedInFile": true,
+  "workspaces": {
+    ".": {
+      "entry": ["deploy/image/echo-harness.ts", "examples/**/*.test.ts"],
+      // Lerna invokes Nx internally for task hashing and caching.
+      "ignoreDependencies": ["nx"]
+    },
+    ".pstdio/extensions/*": {
+      "entry": ["src/view.ts", "**/*.test.ts"]
+    },
+    "packages/server": {
+      "entry": ["src/**/*.test.ts"]
+    },
+    "packages/remote": {
+      "entry": ["src/extension.ts", "src/**/*.test.ts"]
+    },
+    "examples/harnesses/*": {
+      "entry": ["agentapi-compat.ts", "*.test.ts"]
+    },
+    "examples/harnesses/oss": {
+      "entry": ["*.test.ts"],
+      // Loaded dynamically by OpenCode from OPENCODE_CONFIG_CONTENT.
+      "ignoreDependencies": ["@ai-sdk/openai-compatible", "@openai/codex", "opencode-ai"]
+    }
+  }
 }

@@ -1,0 +1,25 @@
+{
+  "name": "@pstdio/pocketcoder-supervisor",
+  "nx": {
+    "tags": [
+      "scope:supervisor",
+      "type:app"
+    ]
+  },
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/supervisor.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-supervisor",
+    "start": "bun ./src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/pocketcoder-contracts": "workspace:*"
+  }
+}

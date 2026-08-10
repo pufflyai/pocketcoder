@@ -1,4 +1,5 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
-import { PostgresOutboxStore } from "./store-outbox";
+import { OutboxCommands } from "./commands/outbox";
 
-export class PostgresStore extends PostgresOutboxStore implements Store {}
+// Each command layer adds one part of the Store contract to this public facade.
+export class PostgresStore extends OutboxCommands implements Store {}

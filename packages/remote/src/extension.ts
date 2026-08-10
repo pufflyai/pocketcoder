@@ -1,18 +1,18 @@
 import {
-	type Api,
-	type AssistantMessage,
-	type AssistantMessageEventStream,
-	type Context,
-	createAssistantMessageEventStream,
-	type Model,
+  type Api,
+  type AssistantMessage,
+  type AssistantMessageEventStream,
+  type Context,
+  createAssistantMessageEventStream,
+  type Model,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-	collectTurnFiles,
-	DIRECT_MODE_ATTACHMENT_ERROR,
-	registerAttachCommand,
-	uploadTurnFiles,
-	userTextOf,
+  collectTurnFiles,
+  DIRECT_MODE_ATTACHMENT_ERROR,
+  registerAttachCommand,
+  uploadTurnFiles,
+  userTextOf,
 } from "./attachments";
 import { RemoteAgentClient } from "./client";
 import { registerWorkspaceCommands } from "./commands";
@@ -27,174 +27,174 @@ const PROVIDER = "pocketcoder-agentapi";
 const MODEL = "remote-agent";
 
 function emptyUsage(): AssistantMessage["usage"] {
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
 }
 
 function remoteStream(
-	targets: TargetRef,
-	controlPlane: ControlPlaneClient | undefined,
-	attachmentQueue: string[],
-	model: Model<Api>,
-	context: Context,
-	signal?: AbortSignal,
-	onOutputStart?: () => void,
+  targets: TargetRef,
+  controlPlane: ControlPlaneClient | undefined,
+  attachmentQueue: string[],
+  model: Model<Api>,
+  context: Context,
+  signal?: AbortSignal,
+  onOutputStart?: () => void,
 ): AssistantMessageEventStream {
-	const stream = createAssistantMessageEventStream();
-	const output: AssistantMessage = {
-		role: "assistant",
-		content: [],
-		api: model.api,
-		provider: model.provider,
-		model: model.id,
-		usage: emptyUsage(),
-		stopReason: "pending",
-		timestamp: Date.now(),
-	};
+  const stream = createAssistantMessageEventStream();
+  const output: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: emptyUsage(),
+    stopReason: "pending",
+    timestamp: Date.now(),
+  };
 
-	void (async () => {
-		stream.push({ type: "start", partial: output });
-		try {
-			const target = targets.current;
-			if (target.mode === "unset") {
-				throw new Error("no workspace attached; run /workspace or /workspace-create first");
-			}
-			const files = collectTurnFiles(context, attachmentQueue);
-			if (files.length > 0 && (target.mode !== "relay" || !controlPlane)) {
-				throw new Error(DIRECT_MODE_ATTACHMENT_ERROR);
-			}
-			let attachmentIds: string[] = [];
-			if (files.length > 0 && target.mode === "relay" && controlPlane) {
-				attachmentIds = await uploadTurnFiles(controlPlane, target.workspaceId, files);
-				attachmentQueue.length = 0;
-			}
-			const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key });
-			await emitRemoteResponse(
-				stream,
-				output,
-				async (onSnapshot) =>
-					await client.send(userTextOf(context), signal, attachmentIds, onSnapshot),
-				onOutputStart,
-			);
-		} catch (error) {
-			output.stopReason = signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : String(error);
-			stream.push({ type: "error", reason: output.stopReason, error: output });
-		} finally {
-			stream.end();
-		}
-	})();
+  void (async () => {
+    stream.push({ type: "start", partial: output });
+    try {
+      const target = targets.current;
+      if (target.mode === "unset") {
+        throw new Error("no workspace attached; run /workspace or /workspace-create first");
+      }
+      const files = collectTurnFiles(context, attachmentQueue);
+      if (files.length > 0 && (target.mode !== "relay" || !controlPlane)) {
+        throw new Error(DIRECT_MODE_ATTACHMENT_ERROR);
+      }
+      let attachmentIds: string[] = [];
+      if (files.length > 0 && target.mode === "relay" && controlPlane) {
+        attachmentIds = await uploadTurnFiles(controlPlane, target.workspaceId, files);
+        attachmentQueue.length = 0;
+      }
+      const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key });
+      await emitRemoteResponse(
+        stream,
+        output,
+        async (onSnapshot) =>
+          await client.send(userTextOf(context), signal, attachmentIds, onSnapshot),
+        onOutputStart,
+      );
+    } catch (error) {
+      output.stopReason = signal?.aborted ? "aborted" : "error";
+      output.errorMessage = error instanceof Error ? error.message : String(error);
+      stream.push({ type: "error", reason: output.stopReason, error: output });
+    } finally {
+      stream.end();
+    }
+  })();
 
-	return stream;
+  return stream;
 }
 
 async function pickInitialWorkspace(
-	controlPlane: ControlPlaneClient,
-	targets: TargetRef,
-	context: ExtensionContext,
+  controlPlane: ControlPlaneClient,
+  targets: TargetRef,
+  context: ExtensionContext,
 ): Promise<void> {
-	const target = targets.current;
-	if (target.mode !== "unset" || !context.hasUI) return;
-	const workspaces = (await controlPlane.workspaces.list({ state: "ready" })).items;
-	if (workspaces.length === 0) {
-		context.ui.notify("no ready workspaces; run /workspace-create", "warning");
-		return;
-	}
-	const labels = workspaces.map(
-		(workspace) =>
-			`${workspace.external_id} · ${workspace.template.name} · ${workspace.id.slice(0, 8)}`,
-	);
-	const selection = await context.ui.select("Attach to workspace", labels);
-	if (selection === undefined) {
-		context.ui.notify("no workspace attached; run /workspace to attach", "warning");
-		return;
-	}
-	const workspace = workspaces[labels.indexOf(selection)];
-	if (workspace) targets.set(relayTarget(target.baseUrl, target.key, workspace.id));
+  const target = targets.current;
+  if (target.mode !== "unset" || !context.hasUI) return;
+  const workspaces = (await controlPlane.workspaces.list({ state: "ready" })).items;
+  if (workspaces.length === 0) {
+    context.ui.notify("no ready workspaces; run /workspace-create", "warning");
+    return;
+  }
+  const labels = workspaces.map(
+    (workspace) =>
+      `${workspace.external_id} · ${workspace.template.name} · ${workspace.id.slice(0, 8)}`,
+  );
+  const selection = await context.ui.select("Attach to workspace", labels);
+  if (selection === undefined) {
+    context.ui.notify("no workspace attached; run /workspace to attach", "warning");
+    return;
+  }
+  const workspace = workspaces[labels.indexOf(selection)];
+  if (workspace) targets.set(relayTarget(target.baseUrl, target.key, workspace.id));
 }
 
 export default function (pi: ExtensionAPI): void {
-	const targets = new TargetRef(targetFromEnvironment());
-	const initial = targets.current;
-	const controlPlane =
-		initial.mode === "direct"
-			? undefined
-			: new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
-	const attachmentQueue: string[] = [];
-	let poller: StatusPoller | undefined;
-	let activeContext: ExtensionContext | undefined;
+  const targets = new TargetRef(targetFromEnvironment());
+  const initial = targets.current;
+  const controlPlane =
+    initial.mode === "direct"
+      ? undefined
+      : new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
+  const attachmentQueue: string[] = [];
+  let poller: StatusPoller | undefined;
+  let activeContext: ExtensionContext | undefined;
 
-	pi.registerProvider(PROVIDER, {
-		name: "PocketCoder remote agent",
-		baseUrl: initial.mode === "direct" ? initial.serviceUrl : initial.baseUrl,
-		apiKey: "local-ui",
-		api: "openai-completions",
-		models: [
-			{
-				id: MODEL,
-				name: "PocketCoder remote agent",
-				reasoning: false,
-				input: ["text", "image"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 1_000_000,
-				maxTokens: 100_000,
-			},
-		],
-		streamSimple: (model, context, options) =>
-			remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal, () =>
-				activeContext?.ui.setWorkingVisible(false),
-			),
-	});
+  pi.registerProvider(PROVIDER, {
+    name: "PocketCoder remote agent",
+    baseUrl: initial.mode === "direct" ? initial.serviceUrl : initial.baseUrl,
+    apiKey: "local-ui",
+    api: "openai-completions",
+    models: [
+      {
+        id: MODEL,
+        name: "PocketCoder remote agent",
+        reasoning: false,
+        input: ["text", "image"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000_000,
+        maxTokens: 100_000,
+      },
+    ],
+    streamSimple: (model, context, options) =>
+      remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal, () =>
+        activeContext?.ui.setWorkingVisible(false),
+      ),
+  });
 
-	registerConversationRenderers(pi);
-	registerAttachCommand(pi, { targets, queue: attachmentQueue });
-	if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
+  registerConversationRenderers(pi);
+  registerAttachCommand(pi, { targets, queue: attachmentQueue });
+  if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
 
-	pi.on("session_start", async (_event, context) => {
-		activeContext = context;
-		pi.setActiveTools([]);
-		await poller?.stop();
-		poller = undefined;
+  pi.on("session_start", async (_event, context) => {
+    activeContext = context;
+    pi.setActiveTools([]);
+    await poller?.stop();
+    poller = undefined;
 
-		if (controlPlane) await pickInitialWorkspace(controlPlane, targets, context);
-		const target = targets.current;
-		if (target.mode === "direct") {
-			context.ui.setStatus(STATUS_KEY, "direct agentapi");
-			return;
-		}
-		if (target.mode === "unset") {
-			context.ui.setStatus(STATUS_KEY, "no workspace");
-			return;
-		}
-		context.ui.setStatus(STATUS_KEY, `ws ${target.workspaceId.slice(0, 8)}`);
-		if (!controlPlane) return;
-		try {
-			const workspace = await controlPlane.workspaces.get(target.workspaceId);
-			await replayHistory(pi, controlPlane, target.workspaceId);
-			poller = new StatusPoller(controlPlane, workspace, context.ui);
-			poller.start();
-		} catch (error) {
-			context.ui.notify(
-				`could not load workspace history: ${error instanceof Error ? error.message : String(error)}`,
-				"warning",
-			);
-		}
-	});
+    if (controlPlane) await pickInitialWorkspace(controlPlane, targets, context);
+    const target = targets.current;
+    if (target.mode === "direct") {
+      context.ui.setStatus(STATUS_KEY, "direct agentapi");
+      return;
+    }
+    if (target.mode === "unset") {
+      context.ui.setStatus(STATUS_KEY, "no workspace");
+      return;
+    }
+    context.ui.setStatus(STATUS_KEY, `ws ${target.workspaceId.slice(0, 8)}`);
+    if (!controlPlane) return;
+    try {
+      const workspace = await controlPlane.workspaces.get(target.workspaceId);
+      await replayHistory(pi, controlPlane, target.workspaceId);
+      poller = new StatusPoller(controlPlane, workspace, context.ui);
+      poller.start();
+    } catch (error) {
+      context.ui.notify(
+        `could not load workspace history: ${error instanceof Error ? error.message : String(error)}`,
+        "warning",
+      );
+    }
+  });
 
-	pi.on("turn_start", async () => poller?.pause());
-	pi.on("turn_end", async (_event, context) => {
-		context.ui.setWorkingVisible(true);
-		poller?.resume();
-	});
-	pi.on("session_shutdown", async () => {
-		await poller?.stop();
-		poller = undefined;
-		activeContext = undefined;
-	});
+  pi.on("turn_start", async () => poller?.pause());
+  pi.on("turn_end", async (_event, context) => {
+    context.ui.setWorkingVisible(true);
+    poller?.resume();
+  });
+  pi.on("session_shutdown", async () => {
+    await poller?.stop();
+    poller = undefined;
+    activeContext = undefined;
+  });
 }

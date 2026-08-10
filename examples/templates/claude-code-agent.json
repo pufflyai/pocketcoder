@@ -1,49 +1,49 @@
 {
-	"apiVersion": "pocketcoder.dev/v1alpha1",
-	"kind": "Template",
-	"metadata": {
-		"name": "claude-code-agent",
-		"description": "Claude Code harness behind AgentAPI with repository setup commands"
-	},
-	"spec": {
-		"version": "1.0.0",
-		"image": "example.registry/coding-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
-		"setup": [
-			{
-				"name": "clone-workspace-repo",
-				"command": ["/usr/local/bin/clone-repo.sh"],
-				"timeoutSeconds": 300
-			},
-			{
-				"name": "install-deps",
-				"command": ["bun", "install", "--frozen-lockfile"],
-				"timeoutSeconds": 600
-			}
-		],
-		"agent": {
-			"type": "claude",
-			"command": ["claude", "--dangerously-skip-permissions"],
-			"cwd": "/home/agent/workspace",
-			"env": {
-				"ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080"
-			}
-		},
-		"env": {
-			"HOME": "/home/agent"
-		},
-		"resources": { "cpu": "2", "memory": "2Gi" },
-		"timeouts": {
-			"start": "2m",
-			"maxAge": "2h",
-			"idle": "20m",
-			"disconnectGrace": "5m",
-			"terminateGrace": "15s"
-		},
-		"security": {
-			"uid": 10001,
-			"gid": 10001,
-			"readOnlyRoot": true,
-			"writableMemoryPaths": ["/tmp", "/run/agent", "/home/agent"]
-		}
-	}
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": {
+    "name": "claude-code-agent",
+    "description": "Claude Code harness behind AgentAPI with repository setup commands"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "example.registry/coding-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "setup": [
+      {
+        "name": "clone-workspace-repo",
+        "command": ["/usr/local/bin/clone-repo.sh"],
+        "timeoutSeconds": 300
+      },
+      {
+        "name": "install-deps",
+        "command": ["bun", "install", "--frozen-lockfile"],
+        "timeoutSeconds": 600
+      }
+    ],
+    "agent": {
+      "type": "claude",
+      "command": ["claude", "--dangerously-skip-permissions"],
+      "cwd": "/home/agent/workspace",
+      "env": {
+        "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080"
+      }
+    },
+    "env": {
+      "HOME": "/home/agent"
+    },
+    "resources": { "cpu": "2", "memory": "2Gi" },
+    "timeouts": {
+      "start": "2m",
+      "maxAge": "2h",
+      "idle": "20m",
+      "disconnectGrace": "5m",
+      "terminateGrace": "15s"
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp", "/run/agent", "/home/agent"]
+    }
+  }
 }
