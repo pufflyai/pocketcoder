@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.6.0
+
+### Minor Changes
+
+- [#21](https://github.com/pufflyai/pocketcoder/pull/21) [`8ea16d7`](https://github.com/pufflyai/pocketcoder/commit/8ea16d767f18a5fa9c1a752222b08f91b450113d) Thanks [@au-re](https://github.com/au-re)! - Add restore launch input, deterministic template rendering, configurable PTY width, and the public Node SDK.
+
+### Patch Changes
+
+- [#20](https://github.com/pufflyai/pocketcoder/pull/20) [`ab21d6c`](https://github.com/pufflyai/pocketcoder/commit/ab21d6c7c09f1f4b019b36b93fe70b85b6280869) Thanks [@au-re](https://github.com/au-re)! - Deliver repository credentials only to create-time setup and clear them before the workspace harness starts.
+
 ## 0.5.0
 
 ### Minor Changes
