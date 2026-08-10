@@ -250,6 +250,7 @@ describe("scheduler admission", () => {
 		const after = await store.getWorkspace(ws.id);
 		expect(after?.state).toBe("failed");
 		expect(after?.reasonCode).toBe("launch_failed");
+		expect(after?.launchInput).toBeNull();
 		expect(after?.failureLogTail).toContain("fake driver create failure");
 		expect(after?.failureLastLogSeq).toBe(1);
 		const logs = await store.readLogs(ws.id, 0, 10);

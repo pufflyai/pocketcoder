@@ -11,6 +11,7 @@ import { DEFAULT_LIMITS, type WorkspaceCheckpointRow } from "@pstdio/pocketcoder
 import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "./app";
 import { DEFAULT_PERSISTENCE_LIMITS } from "./persistence";
+import { markReadyThroughAgent } from "./test-server.test";
 
 const roots: string[] = [];
 const pepper = "persistence-test-pepper";
@@ -444,6 +445,11 @@ describe("persistent workspace preservation", () => {
 		expect(testServer.driver.inputFor(restored.workspace.id)?.launch_input).toEqual({
 			bootstrap_token: "restore-envelope",
 		});
+		expect((await testServer.store.getWorkspace(restored.workspace.id))?.launchInput).toEqual({
+			bootstrap_token: "restore-envelope",
+		});
+		await markReadyThroughAgent(testServer, restored.workspace.id);
+		expect((await testServer.store.getWorkspace(restored.workspace.id))?.launchInput).toBeNull();
 	});
 });
 
