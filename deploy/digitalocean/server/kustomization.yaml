@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: pocketcoder
+resources:
+  - ../../kubernetes
+patches:
+  - path: deployment-patch.yaml
+  - path: pvc-patch.yaml
+images:
+  - name: ghcr.io/OWNER/REPOSITORY/server
+    newName: REPLACE_SERVER_IMAGE_REPOSITORY
+    digest: sha256:REPLACE_SERVER_IMAGE_DIGEST
+configMapGenerator:
+  - name: pocketcoder-templates
+    files:
+      - persistent-echo.json=templates/persistent-echo.json
+generatorOptions:
+  disableNameSuffixHash: true

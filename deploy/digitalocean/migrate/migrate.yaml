@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pocketcoder-migrate
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: pocketcoder-migrate
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: pocketcoder-controller
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/OWNER/REPOSITORY/server:VERSION
+          imagePullPolicy: IfNotPresent
+          command: ["pcd"]
+          args: ["db", "migrate"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: POCKETCODER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pocketcoder-server
+                  key: database-url
+            - name: POCKETCODER_DATABASE_SCHEMA
+              value: pocketcoder
