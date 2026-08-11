@@ -102,9 +102,11 @@ export class FilesystemStorageDriver implements WorkspaceStorageDriver {
   }
 
   private async initRoots(): Promise<void> {
-    await mkdir(this.workspaceRoot, { recursive: true, mode: 0o700 });
+    // NFS root squashing makes kubelet traverse as an anonymous user while it
+    // resolves a subPath. Execute-only parents reveal no sibling names.
+    await mkdir(this.workspaceRoot, { recursive: true, mode: 0o711 });
     await mkdir(this.checkpointRoot, { recursive: true, mode: 0o700 });
-    await chmod(this.workspaceRoot, 0o700);
+    await chmod(this.workspaceRoot, 0o711);
     await chmod(this.checkpointRoot, 0o700);
   }
 
@@ -127,8 +129,8 @@ export class FilesystemStorageDriver implements WorkspaceStorageDriver {
   async allocate(input: StorageAllocation): Promise<AllocatedStorage> {
     await this.initRoots();
     const root = childOf(this.workspaceRoot, input.storageId);
-    await mkdir(root, { recursive: true, mode: 0o700 });
-    await chmod(root, 0o700);
+    await mkdir(root, { recursive: true, mode: 0o711 });
+    await chmod(root, 0o711);
     for (const mount of input.mounts) {
       const path = join(root, mount.name);
       await mkdir(path, { recursive: true, mode: 0o770 });

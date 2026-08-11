@@ -62,12 +62,14 @@ workspace.
 
 ## Model access is a gateway concern
 
-pocketcoder does not ship a model gateway; the deployment provides one (for
-example [agentgateway](https://agentgateway.dev/)) and it is the only place
-provider API keys exist. Because the workspace is one trust zone, the gateway
-must not assume requests come from the harness — agent-written code can reach
-it with the same credential. Enforce policy per *workspace identity* so that
-this does not matter:
+PocketCoder core does not operate a shared model gateway. A deployment provides
+one, and it is the only place provider API keys exist. The repository includes
+a [single-session example](../deploy/digitalocean/PI.md); a multi-workspace
+service can instead use a dedicated gateway such as
+[agentgateway](https://agentgateway.dev/). Because the workspace is one trust
+zone, the gateway must not assume requests come from the harness — agent-written
+code can reach it with the same credential. Enforce policy per *workspace
+identity* so that this does not matter:
 
 - allowed models, and modalities (reject image parts for text-only use — this
   alone blocks the document-exfiltration replay above);

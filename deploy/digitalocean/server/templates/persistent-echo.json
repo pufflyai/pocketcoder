@@ -1,0 +1,69 @@
+{
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": {
+    "name": "persistent-echo",
+    "description": "Credential-free DOKS persistence probe"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "REPLACE_WORKSPACE_IMAGE_REPOSITORY@sha256:REPLACE_WORKSPACE_IMAGE_DIGEST",
+    "harness": {
+      "command": ["bun", "/opt/pocketcoder/echo-harness.ts"],
+      "cwd": "/workspace",
+      "env": {
+        "POCKETCODER_ECHO_STATE": "/state/messages.json"
+      }
+    },
+    "resources": { "cpu": "1", "memory": "256Mi" },
+    "timeouts": {
+      "start": "1m",
+      "maxAge": "30m",
+      "idle": "10m",
+      "disconnectGrace": "5m",
+      "terminateGrace": "10s"
+    },
+    "services": {
+      "agent": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "routes": [
+          { "method": "GET", "path": "/status" },
+          { "method": "GET", "path": "/messages", "query": ["after"] },
+          { "method": "POST", "path": "/message" }
+        ]
+      }
+    },
+    "security": {
+      "writableMemoryPaths": ["/tmp"]
+    },
+    "persistence": {
+      "mounts": [
+        {
+          "name": "worktree",
+          "target": "/workspace",
+          "maxBytes": 1073741824,
+          "maxFiles": 100000
+        },
+        {
+          "name": "conversation",
+          "target": "/state",
+          "maxBytes": 104857600,
+          "maxFiles": 10000
+        }
+      ],
+      "conversationRestore": "supported",
+      "sessionCompatibility": "persistent-echo/v1",
+      "checkpoint": {
+        "onIdle": "preserve",
+        "onDeadline": "preserve",
+        "onCleanExit": "preserve",
+        "onFailure": "retain-for-recovery",
+        "retention": "168h"
+      }
+    },
+    "checkpointHook": {
+      "command": ["/bin/sync"],
+      "timeoutSeconds": 10
+    }
+  }
+}

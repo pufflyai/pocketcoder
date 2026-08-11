@@ -153,6 +153,10 @@ workspace container remains non-root, capability-free, read-only, and unable to 
 contains separate controller/workspace service accounts, least-privilege
 Role/RoleBinding, a single-replica server Deployment, Service, and PVC:
 
+For a maintained DOKS recipe with DigitalOcean NFS, Managed PostgreSQL,
+two-phase migration, strict image preflight, and optional public HTTPS, see the
+[DigitalOcean Kubernetes example](../deploy/digitalocean/README.md).
+
 ```sh
 kubectl create namespace pocketcoder
 kubectl -n pocketcoder create secret generic pocketcoder-server \

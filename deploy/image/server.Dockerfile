@@ -18,7 +18,13 @@ COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/server/index.js /opt/pocketcoder/server.js
 COPY --from=build /out/pcd/index.js /opt/pocketcoder/pcd.js
+COPY --from=build /src/packages/db/drizzle /opt/pocketcoder/drizzle
+COPY deploy/image/kubeconfig.yaml /opt/pocketcoder/kubeconfig.yaml
+RUN test -f /opt/pocketcoder/drizzle/20260730103433_initial/migration.sql
 RUN chmod 0755 /opt/pocketcoder/pcd.js \
   && ln -s /opt/pocketcoder/pcd.js /usr/local/bin/pcd
+
+ENV KUBECONFIG=/opt/pocketcoder/kubeconfig.yaml
+WORKDIR /
 
 CMD ["bun", "/opt/pocketcoder/server.js"]

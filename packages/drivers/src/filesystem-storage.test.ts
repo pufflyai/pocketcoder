@@ -162,5 +162,7 @@ describe("filesystem checkpoint storage", () => {
         },
       },
     ]);
+    expect((await lstat(paths.workspaceRoot)).mode & 0o777).toBe(0o711);
+    expect((await lstat(String(allocation.ref.root))).mode & 0o777).toBe(0o711);
   });
 });
