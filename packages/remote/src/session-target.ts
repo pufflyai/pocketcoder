@@ -60,7 +60,17 @@ export class TargetRef {
     for (const listener of this.listeners) listener(next);
   }
 
-  onChange(listener: (target: SessionTarget) => void): void {
+  compareAndSwap(expected: SessionTarget, next: SessionTarget): boolean {
+    if (this.target !== expected) return false;
+    this.set(next);
+    return true;
+  }
+
+  onChange(listener: (target: SessionTarget) => void): () => void {
     this.listeners.push(listener);
+    return () => {
+      const index = this.listeners.indexOf(listener);
+      if (index >= 0) this.listeners.splice(index, 1);
+    };
   }
 }

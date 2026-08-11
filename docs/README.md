@@ -23,8 +23,8 @@ Two clients sit on top of the same machine API:
 
 | Package | What it is |
 |---------|------------|
-| [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi as a thin terminal client for a workspace, with history replay, attachments, and workspace commands — published to npm |
-| [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) | Published Node ESM and TypeScript client for the control plane, with runtime validation and no private workspace dependencies |
+| [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi terminal client, plus a typed embedded adapter for user-turn workspace resume |
+| [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) | Node ESM client with a reusable resolver for stateless user turns after workspace preservation |
 
 ## The short version
 

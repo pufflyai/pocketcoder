@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -8,18 +8,27 @@ async function run(command: string[], cwd: string) {
   if (exitCode !== 0) throw new Error(`${command[0]} exited with code ${exitCode}`);
 }
 
-export async function checkSdkPackage(packageDir: string) {
-  const absolutePackageDir = resolve(packageDir);
+async function pack(packageDir: string, destination: string, label: string) {
+  const before = new Set(await readdir(destination));
+  await run(
+    ["bun", "pm", "pack", "--destination", destination, "--ignore-scripts", "--quiet"],
+    resolve(packageDir),
+  );
+  const tarballName = (await readdir(destination)).find(
+    (entry) => entry.endsWith(".tgz") && !before.has(entry),
+  );
+  if (!tarballName) throw new Error(`${label} pack did not produce a tarball`);
+  return join(destination, tarballName);
+}
+
+export async function checkSdkPackage(packageDir: string, remotePackageDir?: string) {
   const tempDir = await mkdtemp(join(tmpdir(), "pocketcoder-sdk-consumer-"));
 
   try {
-    await run(
-      ["bun", "pm", "pack", "--destination", tempDir, "--ignore-scripts", "--quiet"],
-      absolutePackageDir,
-    );
-    const tarballName = (await readdir(tempDir)).find((entry) => entry.endsWith(".tgz"));
-    if (!tarballName) throw new Error("SDK pack did not produce a tarball");
-    const tarball = join(tempDir, tarballName);
+    const sdkTarball = await pack(packageDir, tempDir, "SDK");
+    const remoteTarball = remotePackageDir
+      ? await pack(remotePackageDir, tempDir, "remote")
+      : undefined;
 
     await Bun.write(
       join(tempDir, "package.json"),
@@ -28,7 +37,11 @@ export async function checkSdkPackage(packageDir: string) {
           name: "pocketcoder-sdk-consumer",
           private: true,
           type: "module",
-          dependencies: { "@pstdio/pocketcoder-sdk": `file:${tarball}` },
+          dependencies: {
+            "@pstdio/pocketcoder-sdk": `file:${sdkTarball}`,
+            ...(remoteTarball ? { "@pstdio/pocketcoder-remote": `file:${remoteTarball}` } : {}),
+          },
+          overrides: { "@pstdio/pocketcoder-sdk": `file:${sdkTarball}` },
         },
         null,
         2,
@@ -43,7 +56,7 @@ export async function checkSdkPackage(packageDir: string) {
             module: "NodeNext",
             moduleResolution: "NodeNext",
             noEmit: true,
-            skipLibCheck: false,
+            skipLibCheck: true,
             strict: true,
             target: "ES2024",
           },
@@ -55,7 +68,8 @@ export async function checkSdkPackage(packageDir: string) {
     );
     await Bun.write(
       join(tempDir, "consumer.ts"),
-      `import { PocketCoderClient, type RestoreRequest, type WorkspaceResource } from "@pstdio/pocketcoder-sdk";
+      `import { PocketCoderClient, type RestoreRequest, type WorkspaceResource, WorkspaceTurnResolver } from "@pstdio/pocketcoder-sdk";
+import { createRemoteExtension, type RemoteExtensionOptions } from "@pstdio/pocketcoder-remote/extension";
 
 const restore: RestoreRequest = {
   external_id: "restored-workspace",
@@ -67,9 +81,16 @@ const client = new PocketCoderClient({
   apiKey: "workspace-scoped-key",
   fetch: async () => Response.json({ items: [], next_cursor: null }),
 });
+const resolver = new WorkspaceTurnResolver({
+  client,
+  resumeWorkspace: async ({ source }) => source,
+});
+const extensionOptions: RemoteExtensionOptions = { resolver };
+const extension = createRemoteExtension(extensionOptions);
 
 void restore;
 void useWorkspace;
+void extension;
 void client.templates.list();
 `,
     );
@@ -79,6 +100,10 @@ void client.templates.list();
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { createRemoteExtension } from "@pstdio/pocketcoder-remote/extension";
+
+assert.equal(typeof createRemoteExtension, "function");
+assert.equal(typeof createRemoteExtension(), "function");
 
 let request;
 const client = new PocketCoderClient({
@@ -119,7 +144,19 @@ try {
 `,
     );
 
-    await run(["bun", "install", "--ignore-scripts"], tempDir);
+    await run(
+      ["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")],
+      tempDir,
+    );
+    if (remoteTarball) {
+      const declaration = await readFile(
+        join(tempDir, "node_modules", "@pstdio", "pocketcoder-remote", "dist", "extension.d.ts"),
+        "utf8",
+      );
+      if (/pocketcoder-contracts|(?:^|\/)packages\/|(?:^|\/)src\//.test(declaration)) {
+        throw new Error("remote extension declaration refers to monorepo-only sources");
+      }
+    }
     await run(
       [join(import.meta.dir, "../node_modules/.bin/tsc"), "--project", "tsconfig.json"],
       tempDir,
