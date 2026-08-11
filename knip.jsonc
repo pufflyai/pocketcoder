@@ -17,7 +17,7 @@
       "entry": ["src/extension.ts", "src/**/*.test.ts"]
     },
     "examples/harnesses/*": {
-      "entry": ["agentapi-compat.ts", "*.test.ts"]
+      "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]
     },
     "examples/harnesses/oss": {
       "entry": ["*.test.ts"],

@@ -150,7 +150,7 @@ export async function preparePiRuntime(
     PI_GATEWAY_MODEL: options.gatewayModel,
     PI_GATEWAY_PROVIDER: options.gatewayProvider ?? "pocketcoder-openai",
     PI_GATEWAY_API: options.gatewayApi ?? "openai-responses",
-    PI_GATEWAY_BEARER_REF: "secretRef:pi-gateway/bearer",
+    PI_GATEWAY_BEARER: "secretRef:pi-gateway/bearer",
   };
   const materializationDigest = createHash("sha256").update(canonicalJson(source)).digest("hex");
   source.spec.version = `${sourceVersion}-local.${materializationDigest.slice(0, 12)}`;

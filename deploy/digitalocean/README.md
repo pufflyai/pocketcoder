@@ -3,7 +3,8 @@
 This example deploys one PocketCoder server to DigitalOcean Kubernetes (DOKS).
 It uses DigitalOcean Managed PostgreSQL and Network File Storage (NFS). The
 default Service is private. The test workspace uses the credential-free
-`persistent-echo` harness.
+`persistent-echo` harness. A second flow runs the real Pi coding agent through
+a private, single-session model gateway.
 
 The example configures Kubernetes resources. It does not create or delete
 DigitalOcean cloud resources.
@@ -22,6 +23,8 @@ Prepare these resources in one DigitalOcean project:
 - A DigitalOcean Managed PostgreSQL database. Restrict its trusted sources to
   the DOKS cluster and use a private connection URL with `sslmode=require`.
 - Exact server and workspace image references from one release.
+- Exact Pi and Pi gateway image references if you will run the coding-agent
+  flow.
 - A registry pull Secret if either image is private.
 
 DigitalOcean NFS enforces root squashing. The server therefore runs as uid/gid
@@ -58,6 +61,11 @@ Edit these files under `.pocketcoder/`:
   digest.
 - `digitalocean/server/templates/persistent-echo.json`: replace the workspace
   repository and digest.
+- `digitalocean/server/templates/pi-harness.json`: replace the Pi repository,
+  digest, and allowed model.
+- `digitalocean/pi-gateway/kustomization.yaml`: replace the gateway repository
+  and digest.
+- `digitalocean/pi-gateway/gateway.yaml`: set the same allowed model.
 
 Every image must use `repo@sha256:<64 lowercase hex>`. Mutable tags, repeated
 placeholder digests, unresolved `REPLACE_` values, and mismatched migration and
@@ -69,10 +77,12 @@ Render and check every phase before applying anything:
 kubectl kustomize .pocketcoder/digitalocean/storage >/tmp/pocketcoder-storage.yaml
 kubectl kustomize .pocketcoder/digitalocean/migrate >/tmp/pocketcoder-migrate.yaml
 kubectl kustomize .pocketcoder/digitalocean/server >/tmp/pocketcoder-server.yaml
+kubectl kustomize .pocketcoder/digitalocean/pi-gateway >/tmp/pocketcoder-pi-gateway.yaml
 bun run example:digitalocean:check \
   /tmp/pocketcoder-storage.yaml \
   /tmp/pocketcoder-migrate.yaml \
-  /tmp/pocketcoder-server.yaml
+  /tmp/pocketcoder-server.yaml \
+  /tmp/pocketcoder-pi-gateway.yaml
 ```
 
 The rendered files contain no secret values.
@@ -173,8 +183,8 @@ prints the key once. Keep it only in the operator shell.
 kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
   pcd principals create \
   --name digitalocean-example \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read \
-  --templates persistent-echo
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
+  --templates persistent-echo,pi-harness
 
 key_expiry="$(bun -e 'console.log(new Date(Date.now() + 3_600_000).toISOString())')"
 export POCKETCODER_KEY="$(
@@ -274,20 +284,11 @@ Save its JSON output with the DOKS version, region, NFS tier, path modes, and
 probe result. This real-cluster result is required before calling the example
 supported.
 
-## Interactive access
+## Run Pi remotely
 
-The same private relay supports an interactive echo conversation:
-
-```bash
-bun run pcd -- workspaces chat --id '<ready-workspace-id>'
-```
-
-Or open the Pi terminal. Omit the workspace id to use its picker:
-
-```bash
-POCKETCODER_WORKSPACE_ID='<ready-workspace-id>' \
-bunx @pstdio/pocketcoder-remote
-```
+Follow the [Pi session guide](./PI.md) to create the short-lived gateway
+Secret, start one bounded gateway, launch Pi, connect a terminal or remote Pi
+client, and tear the session down.
 
 ## Optional public HTTPS
 
@@ -316,6 +317,8 @@ Unset the short-lived key first:
 
 ```bash
 unset POCKETCODER_KEY POCKETCODER_URL
+kubectl delete -k .pocketcoder/digitalocean/pi-gateway --ignore-not-found
+kubectl -n pocketcoder delete secret pocketcoder-pi-gateway-session --ignore-not-found
 kubectl delete namespace pocketcoder
 kubectl delete persistentvolume pocketcoder-digitalocean-nfs
 ```

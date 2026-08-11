@@ -1,22 +1,13 @@
 import { readFile } from "node:fs/promises";
-
-type KubeObject = Record<string, unknown>;
-
-function object(value: unknown): KubeObject | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as KubeObject)
-    : null;
-}
-
-function at(value: unknown, ...keys: string[]) {
-  let current = value;
-  for (const key of keys) {
-    const currentObject = object(current);
-    if (!currentObject) return undefined;
-    current = currentObject[key];
-  }
-  return current;
-}
+import { validatePiGateway } from "./preflight-gateway";
+import {
+  at,
+  imageError,
+  type KubeObject,
+  named,
+  namedContainer,
+  object,
+} from "./preflight-objects";
 
 function parseDocuments(rendered: string, errors: string[]) {
   const documents: KubeObject[] = [];
@@ -34,28 +25,6 @@ function parseDocuments(rendered: string, errors: string[]) {
   return documents;
 }
 
-function named(documents: KubeObject[], kind: string, name: string) {
-  return documents.find(
-    (document) => document.kind === kind && at(document, "metadata", "name") === name,
-  );
-}
-
-function namedContainer(resource: KubeObject | undefined, name: string) {
-  const containers = at(resource, "spec", "template", "spec", "containers");
-  if (!Array.isArray(containers)) return undefined;
-  return containers.map(object).find((container) => container?.name === name) ?? undefined;
-}
-
-function imageError(reference: string) {
-  const match = reference.match(/^[^\s@]+@sha256:([0-9a-f]{64})$/);
-  if (!match) return `image ${reference} must use repo@sha256:<64 lowercase hex>`;
-  const digest = match[1] ?? "";
-  if (/^([0-9a-f])\1{63}$/.test(digest)) {
-    return `image ${reference} uses an obvious placeholder digest`;
-  }
-  return null;
-}
-
 function templateImages(documents: KubeObject[], errors: string[]) {
   const configMap = named(documents, "ConfigMap", "pocketcoder-templates");
   const data = object(configMap?.data);
@@ -63,21 +32,22 @@ function templateImages(documents: KubeObject[], errors: string[]) {
     errors.push("pocketcoder-templates ConfigMap is missing");
     return [];
   }
-  const source = data["persistent-echo.json"];
-  if (typeof source !== "string") {
-    errors.push("pocketcoder-templates must contain persistent-echo.json");
-    return [];
+  const images: string[] = [];
+  for (const name of ["persistent-echo.json", "pi-harness.json"]) {
+    const source = data[name];
+    if (typeof source !== "string") {
+      errors.push(`pocketcoder-templates must contain ${name}`);
+      continue;
+    }
+    try {
+      const image = at(JSON.parse(source), "spec", "image");
+      if (typeof image !== "string") throw new Error("spec.image is missing");
+      images.push(image);
+    } catch (error) {
+      errors.push(`${name} is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  try {
-    const image = at(JSON.parse(source), "spec", "image");
-    if (typeof image !== "string") throw new Error("spec.image is missing");
-    return [image];
-  } catch (error) {
-    errors.push(
-      `persistent-echo.json is invalid: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return [];
-  }
+  return images;
 }
 
 function validateImages(documents: KubeObject[], errors: string[]) {
@@ -92,7 +62,7 @@ function validateImages(documents: KubeObject[], errors: string[]) {
   const references = [deploymentImage, migrationImage, ...templateImages(documents, errors)];
   for (const reference of references) {
     if (typeof reference !== "string") {
-      errors.push("server, migration, and persistent echo images are required");
+      errors.push("server, migration, echo, and Pi images are required");
       continue;
     }
     const error = imageError(reference);
@@ -286,6 +256,7 @@ export function validateRenderedManifest(rendered: string) {
   validateServer(documents, errors);
   validateMigration(documents, errors);
   validateService(documents, errors);
+  validatePiGateway(documents, errors);
   return [...new Set(errors)];
 }
 

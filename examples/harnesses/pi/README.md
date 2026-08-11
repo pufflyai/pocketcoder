@@ -67,9 +67,15 @@ bun examples/e2e/local.ts --harness pi
 
 `PI_GATEWAY_API` selects `openai-completions` (the default) or
 `openai-responses`. `PI_GATEWAY_BEARER` is the workspace-to-gateway
-credential. A production deployment should resolve real provider credentials
-through its deployment secret mechanism; never place provider credentials in
-a template or `launch_input`.
+credential. In a deployment template, set it to a `secretRef:` so PocketCoder
+projects only that key as a read-only file. Never place a provider credential
+in a template or `launch_input`.
+
+[`gateway.Dockerfile`](./gateway.Dockerfile) packages the example OpenAI gateway.
+It enforces one bearer, model, text-only policy, expiry, output cap, and bounded
+request counts and bytes. The [DigitalOcean Pi guide](../../../deploy/digitalocean/PI.md)
+shows how to deploy it for one short-lived workspace session. A shared or paid
+service still needs durable identity, usage, revocation, and budget controls.
 
 ## Open the workspace agent in local Pi
 

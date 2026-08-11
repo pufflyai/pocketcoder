@@ -8,8 +8,12 @@ PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/home/agent/.pi/agent}"
 PI_PROVIDER="${PI_GATEWAY_PROVIDER:-pocketcoder-gateway}"
 PI_API="${PI_GATEWAY_API:-openai-completions}"
 PI_GATEWAY_BEARER_FILE="${PI_GATEWAY_BEARER_FILE:-/run/pocketcoder/secrets/pi-gateway%2Fbearer}"
+PI_EXECUTABLE="${PI_EXECUTABLE:-/opt/pi/node_modules/.bin/pi}"
 # No default: a baked-in bearer would be a shared standing credential
 # (docs/security.md). The deployment must provide a per-workspace one.
+if [ -n "${PI_GATEWAY_BEARER:-}" ] && [ -f "$PI_GATEWAY_BEARER" ]; then
+  PI_GATEWAY_BEARER_FILE="$PI_GATEWAY_BEARER"
+fi
 if [ -f "$PI_GATEWAY_BEARER_FILE" ]; then
   PI_GATEWAY_BEARER="$(sed -n '1p' "$PI_GATEWAY_BEARER_FILE")"
 fi
@@ -52,7 +56,7 @@ const config = {
 await Bun.write(path, `${JSON.stringify(config, null, 2)}\n`);
 ' "$PI_AGENT_DIR/models.json" "$PI_PROVIDER" "$PI_GATEWAY_URL" "$PI_GATEWAY_MODEL" "$PI_API" "$PI_GATEWAY_BEARER" "$PI_CONTEXT_WINDOW" "$PI_MAX_TOKENS"
 
-exec /opt/pi/node_modules/.bin/pi \
+exec "$PI_EXECUTABLE" \
   --provider "$PI_PROVIDER" \
   --model "$PI_GATEWAY_MODEL" \
   --api-key "$PI_GATEWAY_BEARER" \

@@ -1,0 +1,58 @@
+{
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": {
+    "name": "pi-harness",
+    "description": "Pi coding agent through a bounded session gateway"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "REPLACE_PI_IMAGE_REPOSITORY@sha256:REPLACE_PI_IMAGE_DIGEST",
+    "setup": [
+      {
+        "name": "load-test-workspace",
+        "command": ["cp", "-R", "/opt/pocketcoder-fixtures/.", "/workspace"],
+        "cwd": "/workspace",
+        "timeoutSeconds": 30
+      }
+    ],
+    "agent": {
+      "type": "custom",
+      "command": ["/usr/local/bin/run-pi"],
+      "cwd": "/workspace",
+      "env": {
+        "PI_GATEWAY_URL": "http://pocketcoder-pi-gateway:8080/v1",
+        "PI_GATEWAY_MODEL": "REPLACE_PI_GATEWAY_MODEL",
+        "PI_GATEWAY_PROVIDER": "pocketcoder-openai",
+        "PI_GATEWAY_API": "openai-responses",
+        "PI_GATEWAY_BEARER": "secretRef:pocketcoder-pi-gateway-session/bearer",
+        "PI_GATEWAY_MAX_TOKENS": "4096",
+        "PI_CODING_AGENT_DIR": "/home/agent/.pi/agent",
+        "PI_WORKSPACE_DIR": "/workspace"
+      }
+    },
+    "terminal": {
+      "command": ["/bin/sh"],
+      "cwd": "/workspace",
+      "maxSessions": 2,
+      "idleTimeout": "10m"
+    },
+    "env": {
+      "HOME": "/home/agent"
+    },
+    "resources": { "cpu": "1", "memory": "1Gi" },
+    "timeouts": {
+      "start": "5m",
+      "maxAge": "1h",
+      "idle": "20m",
+      "disconnectGrace": "5m",
+      "terminateGrace": "15s"
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"]
+    }
+  }
+}
