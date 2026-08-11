@@ -8,6 +8,7 @@ interface PackageManifest {
 }
 
 const workspaceRoots = ["packages"];
+const packageDirs = new Map<string, string>();
 let publishableCount = 0;
 let failed = false;
 
@@ -23,6 +24,7 @@ for (const root of workspaceRoots) {
     if (manifest.private === true) continue;
 
     publishableCount += 1;
+    if (manifest.name) packageDirs.set(manifest.name, packageDir);
     console.log(`Checking npm package contents for ${manifest.name ?? packageDir}`);
     const child = Bun.spawn(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
       cwd: packageDir,
@@ -32,14 +34,16 @@ for (const root of workspaceRoots) {
     const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
     if (stderr) process.stderr.write(stderr);
     if (exitCode !== 0) failed = true;
-    if (manifest.name === "@pstdio/pocketcoder-sdk") {
-      try {
-        await checkSdkPackage(packageDir);
-      } catch (error) {
-        console.error(error);
-        failed = true;
-      }
-    }
+  }
+}
+
+const sdkDir = packageDirs.get("@pstdio/pocketcoder-sdk");
+if (sdkDir) {
+  try {
+    await checkSdkPackage(sdkDir, packageDirs.get("@pstdio/pocketcoder-remote"));
+  } catch (error) {
+    console.error(error);
+    failed = true;
   }
 }
 

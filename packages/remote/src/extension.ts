@@ -7,21 +7,22 @@ import {
   type Model,
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-  collectTurnFiles,
-  DIRECT_MODE_ATTACHMENT_ERROR,
-  registerAttachCommand,
-  uploadTurnFiles,
-  userTextOf,
-} from "./attachments";
-import { RemoteAgentClient } from "./client";
+import type { WorkspaceTurnResolver } from "@pstdio/pocketcoder-sdk";
+import { captureTurnAttachmentBatch, registerAttachCommand, userTextOf } from "./attachments";
 import { registerWorkspaceCommands } from "./commands";
 import { ControlPlaneClient } from "./control-plane";
 import { replayHistory } from "./history";
+import { LiveSession } from "./live-session";
 import { registerConversationRenderers } from "./renderers";
 import { emitRemoteResponse } from "./response-stream";
-import { relayTarget, TargetRef, targetFromEnvironment } from "./session-target";
+import {
+  relayTarget,
+  type SessionTarget,
+  TargetRef,
+  targetFromEnvironment,
+} from "./session-target";
 import { STATUS_KEY, StatusPoller } from "./status";
+import { executeRemoteTurn } from "./turn";
 
 const PROVIDER = "pocketcoder-agentapi";
 const MODEL = "remote-agent";
@@ -40,13 +41,20 @@ function emptyUsage(): AssistantMessage["usage"] {
 function remoteStream(
   targets: TargetRef,
   controlPlane: ControlPlaneClient | undefined,
+  resolver: WorkspaceTurnResolver | undefined,
   attachmentQueue: string[],
   model: Model<Api>,
   context: Context,
   signal?: AbortSignal,
   onOutputStart?: () => void,
+  onResolved?: (
+    source: SessionTarget,
+    workspace: Parameters<LiveSession["applyResolved"]>[2],
+  ) => Promise<void>,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
+  const source = targets.current;
+  const attachmentBatch = captureTurnAttachmentBatch(context, attachmentQueue);
   const output: AssistantMessage = {
     role: "assistant",
     content: [],
@@ -61,25 +69,22 @@ function remoteStream(
   void (async () => {
     stream.push({ type: "start", partial: output });
     try {
-      const target = targets.current;
-      if (target.mode === "unset") {
-        throw new Error("no workspace attached; run /workspace or /workspace-create first");
-      }
-      const files = collectTurnFiles(context, attachmentQueue);
-      if (files.length > 0 && (target.mode !== "relay" || !controlPlane)) {
-        throw new Error(DIRECT_MODE_ATTACHMENT_ERROR);
-      }
-      let attachmentIds: string[] = [];
-      if (files.length > 0 && target.mode === "relay" && controlPlane) {
-        attachmentIds = await uploadTurnFiles(controlPlane, target.workspaceId, files);
-        attachmentQueue.length = 0;
-      }
-      const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key });
       await emitRemoteResponse(
         stream,
         output,
-        async (onSnapshot) =>
-          await client.send(userTextOf(context), signal, attachmentIds, onSnapshot),
+        async (onSnapshot) => {
+          const result = await executeRemoteTurn({
+            target: source,
+            controlPlane,
+            resolver,
+            attachmentBatch,
+            prompt: userTextOf(context),
+            signal,
+            onSnapshot,
+          });
+          if (result.workspace) await onResolved?.(source, result.workspace);
+          return result.text;
+        },
         onOutputStart,
       );
     } catch (error) {
@@ -92,6 +97,10 @@ function remoteStream(
   })();
 
   return stream;
+}
+
+export interface RemoteExtensionOptions {
+  resolver?: WorkspaceTurnResolver;
 }
 
 async function pickInitialWorkspace(
@@ -119,82 +128,97 @@ async function pickInitialWorkspace(
   if (workspace) targets.set(relayTarget(target.baseUrl, target.key, workspace.id));
 }
 
-export default function (pi: ExtensionAPI): void {
-  const targets = new TargetRef(targetFromEnvironment());
-  const initial = targets.current;
-  const controlPlane =
-    initial.mode === "direct"
-      ? undefined
-      : new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
-  const attachmentQueue: string[] = [];
-  let poller: StatusPoller | undefined;
-  let activeContext: ExtensionContext | undefined;
+export function createRemoteExtension(options: RemoteExtensionOptions = {}) {
+  return (pi: ExtensionAPI): void => {
+    const targets = new TargetRef(targetFromEnvironment());
+    const initial = targets.current;
+    const controlPlane =
+      initial.mode === "direct"
+        ? undefined
+        : new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
+    const attachmentQueue: string[] = [];
+    const liveSession = controlPlane
+      ? new LiveSession(targets, (workspace, ui) => new StatusPoller(controlPlane, workspace, ui))
+      : undefined;
+    let activeContext: ExtensionContext | undefined;
 
-  pi.registerProvider(PROVIDER, {
-    name: "PocketCoder remote agent",
-    baseUrl: initial.mode === "direct" ? initial.serviceUrl : initial.baseUrl,
-    apiKey: "local-ui",
-    api: "openai-completions",
-    models: [
-      {
-        id: MODEL,
-        name: "PocketCoder remote agent",
-        reasoning: false,
-        input: ["text", "image"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 1_000_000,
-        maxTokens: 100_000,
+    pi.registerProvider(PROVIDER, {
+      name: "PocketCoder remote agent",
+      baseUrl: initial.mode === "direct" ? initial.serviceUrl : initial.baseUrl,
+      apiKey: "local-ui",
+      api: "openai-completions",
+      models: [
+        {
+          id: MODEL,
+          name: "PocketCoder remote agent",
+          reasoning: false,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1_000_000,
+          maxTokens: 100_000,
+        },
+      ],
+      streamSimple: (model, context, streamOptions) => {
+        const sessionIdentity = liveSession?.identity;
+        return remoteStream(
+          targets,
+          controlPlane,
+          options.resolver,
+          attachmentQueue,
+          model,
+          context,
+          streamOptions?.signal,
+          () => activeContext?.ui.setWorkingVisible(false),
+          async (source, workspace) => {
+            await liveSession?.applyResolved(sessionIdentity, source, workspace);
+          },
+        );
       },
-    ],
-    streamSimple: (model, context, options) =>
-      remoteStream(targets, controlPlane, attachmentQueue, model, context, options?.signal, () =>
-        activeContext?.ui.setWorkingVisible(false),
-      ),
-  });
+    });
 
-  registerConversationRenderers(pi);
-  registerAttachCommand(pi, { targets, queue: attachmentQueue });
-  if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
+    registerConversationRenderers(pi);
+    registerAttachCommand(pi, { targets, queue: attachmentQueue });
+    if (controlPlane) registerWorkspaceCommands(pi, { targets, controlPlane });
 
-  pi.on("session_start", async (_event, context) => {
-    activeContext = context;
-    pi.setActiveTools([]);
-    await poller?.stop();
-    poller = undefined;
+    pi.on("session_start", async (_event, context) => {
+      activeContext = context;
+      pi.setActiveTools([]);
+      const sessionIdentity = await liveSession?.activate(context);
 
-    if (controlPlane) await pickInitialWorkspace(controlPlane, targets, context);
-    const target = targets.current;
-    if (target.mode === "direct") {
-      context.ui.setStatus(STATUS_KEY, "direct agentapi");
-      return;
-    }
-    if (target.mode === "unset") {
-      context.ui.setStatus(STATUS_KEY, "no workspace");
-      return;
-    }
-    context.ui.setStatus(STATUS_KEY, `ws ${target.workspaceId.slice(0, 8)}`);
-    if (!controlPlane) return;
-    try {
-      const workspace = await controlPlane.workspaces.get(target.workspaceId);
-      await replayHistory(pi, controlPlane, target.workspaceId);
-      poller = new StatusPoller(controlPlane, workspace, context.ui);
-      poller.start();
-    } catch (error) {
-      context.ui.notify(
-        `could not load workspace history: ${error instanceof Error ? error.message : String(error)}`,
-        "warning",
-      );
-    }
-  });
+      if (controlPlane) await pickInitialWorkspace(controlPlane, targets, context);
+      const target = targets.current;
+      if (target.mode === "direct") {
+        context.ui.setStatus(STATUS_KEY, "direct agentapi");
+        return;
+      }
+      if (target.mode === "unset") {
+        context.ui.setStatus(STATUS_KEY, "no workspace");
+        return;
+      }
+      context.ui.setStatus(STATUS_KEY, `ws ${target.workspaceId.slice(0, 8)}`);
+      if (!controlPlane || sessionIdentity === undefined) return;
+      try {
+        const workspace = await controlPlane.workspaces.get(target.workspaceId);
+        await replayHistory(pi, controlPlane, target.workspaceId);
+        liveSession?.attachPoller(sessionIdentity, workspace);
+      } catch (error) {
+        context.ui.notify(
+          `could not load workspace history: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      }
+    });
 
-  pi.on("turn_start", async () => poller?.pause());
-  pi.on("turn_end", async (_event, context) => {
-    context.ui.setWorkingVisible(true);
-    poller?.resume();
-  });
-  pi.on("session_shutdown", async () => {
-    await poller?.stop();
-    poller = undefined;
-    activeContext = undefined;
-  });
+    pi.on("turn_start", async () => liveSession?.pause());
+    pi.on("turn_end", async (_event, context) => {
+      context.ui.setWorkingVisible(true);
+      liveSession?.resume();
+    });
+    pi.on("session_shutdown", async () => {
+      activeContext = undefined;
+      await liveSession?.shutdown();
+    });
+  };
 }
+
+export default createRemoteExtension();

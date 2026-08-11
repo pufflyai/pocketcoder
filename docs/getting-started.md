@@ -175,8 +175,8 @@ running setup. A status-only `cat` harness cannot make doctor pass.
 ## Next steps
 
 - Write your own environment: [Templates](templates.md)
-- Wire up your backend: [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md)
-  or the [HTTP API](api.md)
+- Wire up your backend, including a stateless turn after preservation:
+  [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) or the [HTTP API](api.md)
 - Use a local coding-agent UI against a workspace:
   [`@pstdio/pocketcoder-remote`](../packages/remote/README.md)
 - Run it for real: [Deployment](deployment.md)

@@ -9,11 +9,9 @@ import {
   DIRECT_MODE_ATTACHMENT_ERROR,
   pathTokens,
   registerAttachCommand,
-  uploadTurnFiles,
 } from "./attachments";
 import { RemoteAgentClient } from "./client";
 import type { CommandContext, CommandRegistrar } from "./commands";
-import { ControlPlaneClient } from "./control-plane";
 import { formatConversationMessage, type ThemeLike } from "./renderers";
 import { TargetRef } from "./session-target";
 
@@ -77,48 +75,6 @@ describe("pathTokens", () => {
     const spaced = join(dir, "my report.pdf");
     writeFileSync(spaced, "x");
     expect(pathTokens(`read @"${spaced}" now`)).toEqual([spaced]);
-  });
-});
-
-describe("uploadTurnFiles", () => {
-  test("uploads each file through the control plane and returns ids in order", async () => {
-    const requests: Request[] = [];
-    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-      const request =
-        input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
-      requests.push(request);
-      const id = new URL(request.url).pathname.split("/").at(-1) as string;
-      return Response.json(
-        {
-          id,
-          name: "report.pdf",
-          path: `/home/pocketcoder/.pcd/attachments/${id}/report.pdf`,
-          media_type: "application/pdf",
-          size_bytes: 9,
-          sha256: "a".repeat(64),
-        },
-        { status: 201 },
-      );
-    }) as typeof fetch;
-    const controlPlane = new ControlPlaneClient(
-      { baseUrl: "http://pocketcoder.test", key: "pkt_example" },
-      fetchImpl,
-    );
-    const workspaceId = randomUUID();
-    const ids = await uploadTurnFiles(controlPlane, workspaceId, [
-      {
-        name: "report.pdf",
-        mediaType: "application/pdf",
-        bytes: new TextEncoder().encode("pdf bytes"),
-      },
-    ]);
-    expect(ids).toHaveLength(1);
-    const request = requests[0] as Request;
-    expect(request.method).toBe("PUT");
-    expect(new URL(request.url).pathname).toBe(
-      `/v1/workspaces/${workspaceId}/attachments/${ids[0]}`,
-    );
-    expect(request.headers.get("content-disposition")).toBe('attachment; filename="report.pdf"');
   });
 });
 

@@ -15,10 +15,10 @@ final-response polling path.
 ## Install
 
 ```sh
-npm install -g @pstdio/pocketcoder-remote   # or: bun add -g @pstdio/pocketcoder-remote
+bun add -g @pstdio/pocketcoder-remote
 ```
 
-Or run without installing: `npx @pstdio/pocketcoder-remote`.
+Or run without installing: `bunx @pstdio/pocketcoder-remote`.
 
 ## Usage
 
@@ -55,7 +55,7 @@ you already use Pi, you can load the extension directly instead:
 
 ```sh
 POCKETCODER_URL=... POCKETCODER_KEY=... POCKETCODER_WORKSPACE_ID=... \
-pi --extension node_modules/@pstdio/pocketcoder-remote/src/extension.ts \
+pi --extension node_modules/@pstdio/pocketcoder-remote/dist/extension.js \
    --provider pocketcoder-agentapi --model remote-agent --api-key local-ui \
    --no-tools --no-extensions --no-skills --no-context-files \
    --no-prompt-templates --no-session --offline
@@ -81,6 +81,60 @@ a normal local coding session is not supported. This package pins
 `@earendil-works/pi-coding-agent` to an exact version; running the extension
 under a different Pi version is untested.
 
+## Embed the Pi adapter with workspace resume
+
+Products that can issue fresh workspace bootstrap input may pass the public SDK
+resolver into the typed extension factory:
+
+```ts
+import { createRemoteExtension } from "@pstdio/pocketcoder-remote/extension";
+import {
+  PocketCoderClient,
+  WorkspaceTurnResolver,
+} from "@pstdio/pocketcoder-sdk";
+
+const client = new PocketCoderClient({
+  baseUrl: process.env.POCKETCODER_URL!,
+  apiKey: process.env.POCKETCODER_KEY!,
+});
+
+const resolver = new WorkspaceTurnResolver({
+  client,
+  resumeWorkspace: async ({ source, attemptId, signal }) => {
+    const launchInput = await issueWorkspaceBootstrap({ signal });
+    const result = await client.workspaces.resume(
+      source.id,
+      { external_id: `pi-${attemptId}`, launch_input: launchInput },
+      attemptId,
+      { signal },
+    );
+    return result.workspace;
+  },
+});
+
+export default createRemoteExtension({ resolver });
+```
+
+The bootstrap input must be new, workspace-scoped, and expire with the resumed
+workspace. The key needs `workspaces:read`, `workspaces:restore`, and
+`services:relay`; attachments also need `attachments:write`.
+
+Resume runs only for a user turn. The adapter uploads one captured attachment
+batch to the resolved workspace and retries only a verified terminal failure
+before the prompt is accepted. `/attach` entries remain queued until that
+acceptance point. After acceptance, relay or history failures never replay the
+prompt.
+
+If the same Pi UI is still open, it changes its local target to the resumed
+workspace for later turns, status, attachments, and `/workspace-cancel`. A user
+workspace switch or session shutdown wins over a late result. No full history
+is replayed into that live UI, and no A-to-B mapping is stored. Canceling the
+caller only stops its wait; an accepted server resume may continue.
+
+The package launcher uses the default extension without a resolver. It does not
+resume automatically. A preserved workspace therefore returns the fixed
+no-handler error until an embedded product supplies the callback.
+
 ## In-UI commands
 
 - `/workspace` — pick and switch to another ready workspace (replays its history)
@@ -98,7 +152,8 @@ the PocketCoder attachment API when the turn is sent:
 - queue one explicitly with `/attach <path>`.
 
 The agent receives each file's workspace path under `$HOME/.pcd/attachments`.
-If an upload fails the message is not sent. With a direct AgentAPI URL
+If an upload fails the message is not sent, and explicit queued files remain
+for the next safe attempt. With a direct AgentAPI URL
 (`POCKETCODER_AGENTAPI_URL`) managed uploads are unavailable — attachment
 gestures fail with an explanation while plain text keeps working.
 

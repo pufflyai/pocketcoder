@@ -1,10 +1,18 @@
 import { type AgentApiEvent, readAgentApiEvents } from "./agentapi-events";
+import {
+  type AgentApiMessage,
+  changesUrlFor,
+  delay,
+  isAgentMessage,
+  parseMessages,
+} from "./client-helpers";
+import {
+  RemoteRequestError,
+  type RemoteRequestPhase,
+  remoteResponseError,
+} from "./remote-request-error";
 
-export interface AgentApiMessage {
-  id: number;
-  content: string;
-  role: string;
-}
+export type { AgentApiMessage } from "./client-helpers";
 
 export interface RemoteAgentClientConfig {
   serviceUrl: string;
@@ -17,10 +25,6 @@ interface AgentApiStatus {
   status?: string;
 }
 
-interface AgentApiMessages {
-  messages?: unknown;
-}
-
 interface WorkspaceChange {
   cursor?: unknown;
   workspace?: {
@@ -30,61 +34,10 @@ interface WorkspaceChange {
 
 type FetchLike = typeof fetch;
 type SnapshotCallback = (snapshot: string) => void;
-
-function delay(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timeout);
-      reject(signal?.reason ?? new Error("remote request aborted"));
-    };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
+type AcceptedCallback = () => void;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function parseMessages(value: unknown): AgentApiMessage[] {
-  const items = isRecord(value) && Array.isArray(value.messages) ? value.messages : [];
-  return items.flatMap((item) => {
-    if (
-      !isRecord(item) ||
-      typeof item.id !== "number" ||
-      typeof item.content !== "string" ||
-      typeof item.role !== "string"
-    ) {
-      return [];
-    }
-    return [{ id: item.id, content: item.content, role: item.role }];
-  });
-}
-
-function isAgentMessage(message: AgentApiMessage): boolean {
-  return message.role === "agent" || message.role === "assistant";
-}
-
-function changesUrlFor(serviceUrl: string): string | undefined {
-  const url = new URL(serviceUrl);
-  const match = url.pathname.match(/^(.*\/v1\/workspaces\/[^/]+)\/(?:agent|services\/agent)$/);
-  if (!match) return undefined;
-  url.pathname = `${match[1]}/changes`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-async function responseError(response: Response): Promise<string> {
-  const body = (await response.text()).trim();
-  return body ? `${response.status} ${body.slice(0, 1000)}` : String(response.status);
 }
 
 export class RemoteAgentClient {
@@ -115,19 +68,23 @@ export class RemoteAgentClient {
     });
   }
 
-  private async messages(signal?: AbortSignal): Promise<AgentApiMessage[]> {
+  private async messages(
+    phase: RemoteRequestPhase,
+    promptAccepted: boolean,
+    signal?: AbortSignal,
+  ): Promise<AgentApiMessage[]> {
     const response = await this.request("/messages", { signal });
-    if (!response.ok) {
-      throw new Error(`AgentAPI messages request failed: ${await responseError(response)}`);
-    }
-    return parseMessages((await response.json()) as AgentApiMessages);
+    if (!response.ok) throw await remoteResponseError(response, phase, promptAccepted);
+    return parseMessages(await response.json());
   }
 
-  private async status(signal?: AbortSignal): Promise<string> {
+  private async status(
+    phase: RemoteRequestPhase,
+    promptAccepted: boolean,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const response = await this.request("/status", { signal });
-    if (!response.ok) {
-      throw new Error(`AgentAPI status request failed: ${await responseError(response)}`);
-    }
+    if (!response.ok) throw await remoteResponseError(response, phase, promptAccepted);
     const body = (await response.json()) as AgentApiStatus;
     if (body.status !== "running" && body.status !== "stable") {
       throw new Error(`AgentAPI returned an unknown status: ${JSON.stringify(body.status)}`);
@@ -135,15 +92,17 @@ export class RemoteAgentClient {
     return body.status;
   }
 
-  private async eventStream(signal: AbortSignal): Promise<Response | null> {
+  private async eventStream(
+    phase: RemoteRequestPhase,
+    promptAccepted: boolean,
+    signal: AbortSignal,
+  ): Promise<Response | null> {
     const response = await this.request("/events", {
       headers: { accept: "text/event-stream" },
       signal,
     });
     if ([404, 409, 422].includes(response.status)) return null;
-    if (!response.ok) {
-      throw new Error(`AgentAPI events request failed: ${await responseError(response)}`);
-    }
+    if (!response.ok) throw await remoteResponseError(response, phase, promptAccepted);
     if (!response.body) throw new Error("AgentAPI events response had no body");
     return response;
   }
@@ -151,6 +110,8 @@ export class RemoteAgentClient {
   private async workspaceChange(
     after: number,
     waitSeconds: number,
+    phase: RemoteRequestPhase,
+    promptAccepted: boolean,
     signal?: AbortSignal,
   ): Promise<{ cursor: number; agentState: string } | undefined> {
     if (!this.changesUrl) return undefined;
@@ -165,9 +126,7 @@ export class RemoteAgentClient {
       this.changesUrl = undefined;
       return undefined;
     }
-    if (!response.ok) {
-      throw new Error(`PocketCoder changes request failed: ${await responseError(response)}`);
-    }
+    if (!response.ok) throw await remoteResponseError(response, phase, promptAccepted);
     const body = (await response.json()) as WorkspaceChange;
     if (
       typeof body.cursor !== "number" ||
@@ -195,9 +154,7 @@ export class RemoteAgentClient {
       }),
       signal,
     });
-    if (!response.ok) {
-      throw new Error(`AgentAPI message request failed: ${await responseError(response)}`);
-    }
+    if (!response.ok) throw await remoteResponseError(response, "submit", false);
   }
 
   private async pollForReply(
@@ -211,12 +168,17 @@ export class RemoteAgentClient {
       const change = await this.workspaceChange(
         changeCursor,
         Math.max(1, Math.min(30, Math.ceil(remainingMs / 1000))),
+        "reply_status",
+        true,
         signal,
       );
       if (change) changeCursor = change.cursor;
       const [status, messages] = change
-        ? [change.agentState, await this.messages(signal)]
-        : await Promise.all([this.status(signal), this.messages(signal)]);
+        ? [change.agentState, await this.messages("reply_messages", true, signal)]
+        : await Promise.all([
+            this.status("reply_status", true, signal),
+            this.messages("reply_messages", true, signal),
+          ]);
       const reply = messages
         .filter((message) => message.id > baselineId && isAgentMessage(message))
         .at(-1);
@@ -229,29 +191,50 @@ export class RemoteAgentClient {
   private async consumeEvents(
     initial: Response,
     onEvent: (event: AgentApiEvent) => Promise<void>,
+    promptAccepted: () => boolean,
     signal: AbortSignal,
   ): Promise<"fallback" | "aborted"> {
     let response = initial;
     while (!signal.aborted) {
-      try {
-        if (!response.body) throw new Error("AgentAPI events response had no body");
-        for await (const event of readAgentApiEvents(response.body, signal)) {
-          await onEvent(event);
-        }
-      } catch {
-        if (signal.aborted) return "aborted";
-      }
-      if (signal.aborted) return "aborted";
-      await delay(this.pollIntervalMs, signal);
-      try {
-        const reconnected = await this.eventStream(signal);
-        if (!reconnected) return "fallback";
-        response = reconnected;
-      } catch {
-        if (signal.aborted) return "aborted";
-      }
+      const read = await this.readEvents(response, onEvent, signal);
+      if (read === "aborted") return "aborted";
+      const next = await this.nextEventStream(promptAccepted, signal);
+      if (next === "aborted") return "aborted";
+      if (next === "retry") continue;
+      if (!next) return "fallback";
+      response = next;
     }
     return "aborted";
+  }
+
+  private async readEvents(
+    response: Response,
+    onEvent: (event: AgentApiEvent) => Promise<void>,
+    signal: AbortSignal,
+  ): Promise<"ended" | "aborted"> {
+    try {
+      if (!response.body) throw new Error("AgentAPI events response had no body");
+      for await (const event of readAgentApiEvents(response.body, signal)) await onEvent(event);
+      return "ended";
+    } catch (error) {
+      if (error instanceof RemoteRequestError) throw error;
+      return signal.aborted ? "aborted" : "ended";
+    }
+  }
+
+  private async nextEventStream(
+    promptAccepted: () => boolean,
+    signal: AbortSignal,
+  ): Promise<Response | null | "retry" | "aborted"> {
+    while (!promptAccepted() && !signal.aborted) await delay(this.pollIntervalMs, signal);
+    if (signal.aborted) return "aborted";
+    await delay(this.pollIntervalMs, signal);
+    try {
+      return await this.eventStream("reply_events", true, signal);
+    } catch (error) {
+      if (error instanceof RemoteRequestError) throw error;
+      return signal.aborted ? "aborted" : "retry";
+    }
   }
 
   async send(
@@ -259,6 +242,7 @@ export class RemoteAgentClient {
     signal?: AbortSignal,
     attachmentIds: string[] = [],
     onSnapshot?: SnapshotCallback,
+    onAccepted?: AcceptedCallback,
   ): Promise<string> {
     const timeout = new AbortController();
     const timer = setTimeout(
@@ -269,13 +253,20 @@ export class RemoteAgentClient {
     const stopEvents = new AbortController();
     const eventSignal = AbortSignal.any([turnSignal, stopEvents.signal]);
     try {
-      const before = await this.messages(turnSignal);
+      const before = await this.messages("initial_messages", false, turnSignal);
       const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
-      const baselineChange = await this.workspaceChange(0, 0, turnSignal);
+      const baselineChange = await this.workspaceChange(
+        0,
+        0,
+        "baseline_changes",
+        false,
+        turnSignal,
+      );
       const deadline = Date.now() + this.timeoutMs;
-      const initialEvents = await this.eventStream(eventSignal);
+      const initialEvents = await this.eventStream("initial_events", false, eventSignal);
       if (!initialEvents) {
         await this.submit(prompt, attachmentIds, turnSignal);
+        onAccepted?.();
         return await this.pollForReply(
           baselineId,
           baselineChange?.cursor ?? 0,
@@ -306,17 +297,19 @@ export class RemoteAgentClient {
           if (event.event !== "status_change" || event.data.status !== "stable" || !submitted) {
             return;
           }
-          const final = (await this.messages(turnSignal))
+          const final = (await this.messages("reply_messages", true, turnSignal))
             .filter((message) => message.id > baselineId && isAgentMessage(message))
             .at(-1);
           if (!final?.content.trim()) return;
           if (final.content !== lastSnapshot) onSnapshot?.(final.content);
           complete(final.content);
         },
+        () => submitted,
         eventSignal,
       );
-      submitted = true;
       await this.submit(prompt, attachmentIds, turnSignal);
+      submitted = true;
+      onAccepted?.();
       const outcome = await Promise.race([
         completed.then((value) => ({ kind: "complete" as const, value })),
         consume.then((result) => ({ kind: result })),

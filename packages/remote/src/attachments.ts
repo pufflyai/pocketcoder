@@ -2,7 +2,8 @@ import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import type { Context } from "@earendil-works/pi-ai";
 import type { CommandContext, CommandRegistrar } from "./commands";
-import type { ControlPlaneClient } from "./control-plane";
+import { type ControlPlaneClient, ControlPlaneError } from "./control-plane";
+import { RemoteRequestError } from "./remote-request-error";
 import type { TargetRef } from "./session-target";
 
 // Turn-level attachment capture for the Pi remote: pasted images, explicit
@@ -107,22 +108,73 @@ export function collectTurnFiles(context: Context, queue: string[], cwd?: string
   return [...imageParts(context), ...paths.map(fileFromPath)];
 }
 
-export async function uploadTurnFiles(
-  controlPlane: ControlPlaneClient,
-  workspaceId: string,
-  files: TurnFile[],
-): Promise<string[]> {
-  const ids: string[] = [];
-  for (const file of files) {
-    const uploaded = await controlPlane.attachments.upload(workspaceId, {
-      name: file.name,
-      mediaType: file.mediaType,
-      body: file.bytes,
-      sizeBytes: file.bytes.byteLength,
-    });
-    ids.push(uploaded.id);
+interface BatchEntry {
+  id: string;
+  file: TurnFile;
+}
+
+export class TurnAttachmentBatch {
+  private readonly entries: readonly BatchEntry[];
+  private readonly queue: string[];
+  private readonly capturedQueueLength: number;
+  private committed = false;
+
+  constructor(files: TurnFile[], queue: string[], capturedQueueLength: number) {
+    this.entries = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file: { ...file, bytes: file.bytes.slice() },
+    }));
+    this.queue = queue;
+    this.capturedQueueLength = capturedQueueLength;
   }
-  return ids;
+
+  get hasFiles(): boolean {
+    return this.entries.length > 0;
+  }
+
+  async upload(controlPlane: ControlPlaneClient, workspaceId: string): Promise<string[]> {
+    const ids: string[] = [];
+    for (const entry of this.entries) {
+      try {
+        const uploaded = await controlPlane.attachments.upload(workspaceId, {
+          id: entry.id,
+          name: entry.file.name,
+          mediaType: entry.file.mediaType,
+          body: entry.file.bytes,
+          sizeBytes: entry.file.bytes.byteLength,
+        });
+        ids.push(uploaded.id);
+      } catch (error) {
+        if (error instanceof ControlPlaneError) {
+          throw new RemoteRequestError({
+            phase: "attachment",
+            promptAccepted: false,
+            status: error.status,
+            code: error.code,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }
+    return ids;
+  }
+
+  commit(): void {
+    if (this.committed) return;
+    this.committed = true;
+    this.queue.splice(0, this.capturedQueueLength);
+  }
+}
+
+export function captureTurnAttachmentBatch(
+  context: Context,
+  queue: string[],
+  cwd?: string,
+): TurnAttachmentBatch {
+  const capturedQueue = queue.slice();
+  const files = collectTurnFiles(context, capturedQueue, cwd);
+  return new TurnAttachmentBatch(files, queue, capturedQueue.length);
 }
 
 export interface AttachCommandDeps {

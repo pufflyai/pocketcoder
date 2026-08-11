@@ -33,6 +33,7 @@ export { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
 export {
   type ClientErrorCode,
   ConversationGoneError,
+  isPocketCoderErrorCode,
   PocketCoderError,
   WorkspaceTerminalError,
 } from "./errors";
@@ -47,6 +48,15 @@ export type {
   RequestOptions,
   WebSocketFactory,
 } from "./transport";
+export {
+  type ResolvedWorkspaceTurn,
+  type ResolveWorkspaceTurnOptions,
+  type ResumeWorkspaceContext,
+  WorkspaceTurnResolutionError,
+  type WorkspaceTurnResolutionErrorCode,
+  WorkspaceTurnResolver,
+  type WorkspaceTurnResolverOptions,
+} from "./workspace-turn-resolver";
 export {
   TERMINAL_WORKSPACE_STATES,
   type WorkspaceCreateInput,

@@ -1,4 +1,5 @@
 import {
+  ERROR_CODES,
   type ErrorCode,
   ErrorEnvelopeSchema,
   type WorkspaceResource,
@@ -47,6 +48,10 @@ export class WorkspaceTerminalError extends Error {
     this.name = "WorkspaceTerminalError";
     this.workspace = workspace;
   }
+}
+
+export function isPocketCoderErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === "string" && value in ERROR_CODES;
 }
 
 export function responseError(response: Response, body: unknown) {
