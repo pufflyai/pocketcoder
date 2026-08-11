@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.6.2
+
+### Patch Changes
+
+- [#28](https://github.com/pufflyai/pocketcoder/pull/28) [`0aae437`](https://github.com/pufflyai/pocketcoder/commit/0aae437eba7ee38127116ebb9c81d383bbfa52c4) Thanks [@au-re](https://github.com/au-re)! - Support root-squashed NFS workspace storage in the DigitalOcean Kubernetes example.
+
 ## 0.6.1
 
 ### Patch Changes
