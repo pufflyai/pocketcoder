@@ -41,7 +41,6 @@ export async function checkSdkPackage(packageDir: string, remotePackageDir?: str
             "@pstdio/pocketcoder-sdk": `file:${sdkTarball}`,
             ...(remoteTarball ? { "@pstdio/pocketcoder-remote": `file:${remoteTarball}` } : {}),
           },
-          overrides: { "@pstdio/pocketcoder-sdk": `file:${sdkTarball}` },
         },
         null,
         2,

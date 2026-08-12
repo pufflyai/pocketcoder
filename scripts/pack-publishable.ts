@@ -1,14 +1,19 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { assertNoLocalInstallDependencies } from "./check-publishable-manifest";
 import { checkSdkPackage } from "./check-sdk-package";
 
 interface PackageManifest {
   name?: string;
   private?: boolean;
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 }
 
 const workspaceRoots = ["packages"];
 const packageDirs = new Map<string, string>();
+const manifestsOnly = process.argv.includes("--manifests-only");
 let publishableCount = 0;
 let failed = false;
 
@@ -25,6 +30,15 @@ for (const root of workspaceRoots) {
 
     publishableCount += 1;
     if (manifest.name) packageDirs.set(manifest.name, packageDir);
+    console.log(`Checking publishable manifest for ${manifest.name ?? packageDir}`);
+    try {
+      assertNoLocalInstallDependencies(manifest);
+    } catch (error) {
+      console.error(error);
+      failed = true;
+    }
+    if (manifestsOnly) continue;
+
     console.log(`Checking npm package contents for ${manifest.name ?? packageDir}`);
     const child = Bun.spawn(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
       cwd: packageDir,
@@ -38,7 +52,7 @@ for (const root of workspaceRoots) {
 }
 
 const sdkDir = packageDirs.get("@pstdio/pocketcoder-sdk");
-if (sdkDir) {
+if (sdkDir && !manifestsOnly) {
   try {
     await checkSdkPackage(sdkDir, packageDirs.get("@pstdio/pocketcoder-remote"));
   } catch (error) {
@@ -49,6 +63,8 @@ if (sdkDir) {
 
 if (publishableCount === 0) {
   console.log("No publishable npm packages; skipping package-content checks.");
+} else if (manifestsOnly && !failed) {
+  console.log("Publishable package manifests are valid.");
 }
 
 if (failed) process.exit(1);
