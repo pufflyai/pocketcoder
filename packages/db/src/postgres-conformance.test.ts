@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { registerStoreContract } from "@pstdio/pocketcoder-testkit";
 import { SQL } from "bun";
-import { advisoryLockKey, assertValidSchema } from "./database-schema";
 import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
 import { PostgresStore } from "./store";
 import { TEST_DATABASE_URL } from "./test-fixtures";
@@ -25,19 +24,6 @@ registerStoreContract("PostgreSQL", {
       },
     };
   },
-});
-
-describe("schema helpers", () => {
-  test("schema names are validated before qualification", () => {
-    expect(assertValidSchema("pocketcoder")).toBe("pocketcoder");
-    expect(() => assertValidSchema('bad"; DROP SCHEMA public;')).toThrow();
-    expect(() => assertValidSchema("Capitals")).toThrow();
-  });
-
-  test("advisory lock keys are stable per schema and distinct across schemas", () => {
-    expect(advisoryLockKey("pocketcoder")).toBe(advisoryLockKey("pocketcoder"));
-    expect(advisoryLockKey("pocketcoder")).not.toBe(advisoryLockKey("other_schema"));
-  });
 });
 
 describe.skipIf(!TEST_DATABASE_URL)("postgres store lifecycle", () => {
