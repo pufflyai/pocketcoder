@@ -1,5 +1,16 @@
 # @pstdio/pocketcoder-remote
 
+## 0.3.0
+
+### Minor Changes
+
+- [#27](https://github.com/pufflyai/pocketcoder/pull/27) [`0d450c0`](https://github.com/pufflyai/pocketcoder/commit/0d450c0e66eb7417d460196b46690d15d3d879b6) Thanks [@au-re](https://github.com/au-re)! - Add reusable user-turn workspace resume and the typed embedded Pi adapter.
+
+### Patch Changes
+
+- Updated dependencies [[`0d450c0`](https://github.com/pufflyai/pocketcoder/commit/0d450c0e66eb7417d460196b46690d15d3d879b6)]:
+  - @pstdio/pocketcoder-sdk@0.4.0
+
 ## 0.2.2
 
 ### Patch Changes
