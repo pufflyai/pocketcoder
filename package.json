@@ -44,8 +44,8 @@
     "test": "bun run test:all",
     "test:all": "bun run test:unit && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test",
     "test:deploy": "bun test deploy",
-    "test:integration": "bun test packages/db/src/store.test.ts packages/drivers/src/kubernetes.test.ts packages/egress/src/docker-conformance.test.ts packages/egress/src/kubernetes-conformance.test.ts",
-    "test:unit": "lerna run test",
+    "test:integration": "bun test packages/db/src/postgres-conformance.test.ts packages/db/src/commands/persistence-conformance.test.ts packages/db/src/commands/workspaces-conformance.test.ts packages/server/src/persistence-postgres-conformance.test.ts packages/drivers/src/docker-conformance.test.ts packages/drivers/src/kubernetes.test.ts packages/egress/src/docker-conformance.test.ts packages/egress/src/kubernetes-conformance.test.ts",
+    "test:unit": "lerna run test -- --path-ignore-patterns='**/*conformance.test.ts'",
     "typecheck": "lerna run typecheck",
     "version-packages": "changeset version"
   },
