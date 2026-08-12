@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-remote
 
+## 0.3.1
+
+### Patch Changes
+
+- [#32](https://github.com/pufflyai/pocketcoder/pull/32) [`df8d19d`](https://github.com/pufflyai/pocketcoder/commit/df8d19d72bf7d0182fa1ab3a6781885db5fc0439) Thanks [@au-re](https://github.com/au-re)! - Publish a concrete SDK range and reject local-only dependencies before release.
+
 ## 0.3.0
 
 ### Minor Changes
