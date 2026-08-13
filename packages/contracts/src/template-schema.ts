@@ -61,6 +61,7 @@ export const AgentSchema = HarnessSchema.extend({
     .default("custom"),
   transport: z.enum(["pty", "acp"]).default("pty"),
   termWidth: z.number().int().min(10).max(65_535).optional(),
+  stateFile: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
 });
 
 export const TerminalSchema = z.object({

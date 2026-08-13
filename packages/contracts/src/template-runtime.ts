@@ -45,6 +45,7 @@ export function agentApiHarness(spec: TemplateSpec): Harness {
       spec.agent.type,
       ...(spec.agent.transport === "acp" ? ["--experimental-acp"] : []),
       ...(spec.agent.termWidth === undefined ? [] : ["--term-width", String(spec.agent.termWidth)]),
+      ...(spec.agent.stateFile === undefined ? [] : ["--state-file", spec.agent.stateFile]),
       "--port",
       "3284",
       "--",
