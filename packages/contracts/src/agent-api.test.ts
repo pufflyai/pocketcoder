@@ -62,9 +62,38 @@ describe("AgentAPI transport", () => {
   test("requires a persisted state file for native conversation restore", () => {
     for (const stateFile of [undefined, "/tmp/agentapi.json"]) {
       expect(() => parseTemplateManifest(nativeRestoreManifest(stateFile))).toThrow(
-        "supported conversation restore requires agent.stateFile inside a persistence mount",
+        "supported conversation restore requires agent.stateFile below a persistence mount",
       );
     }
+  });
+
+  test("requires the state file to be below a persistence mount", () => {
+    expect(() => parseTemplateManifest(nativeRestoreManifest("/state"))).toThrow(
+      "supported conversation restore requires agent.stateFile below a persistence mount",
+    );
+  });
+
+  test("rejects AgentAPI state persistence for ACP transport", () => {
+    const stateFile = nativeManifest();
+    (stateFile.spec as { agent: Record<string, unknown> }).agent = {
+      type: "opencode",
+      transport: "acp",
+      command: ["opencode", "acp"],
+      stateFile: "/state/agentapi.json",
+    };
+    expect(() => parseTemplateManifest(stateFile)).toThrow(
+      "stateFile is only valid for PTY transport",
+    );
+
+    const restore = nativeRestoreManifest();
+    (restore.spec as { agent: Record<string, unknown> }).agent = {
+      type: "opencode",
+      transport: "acp",
+      command: ["opencode", "acp"],
+    };
+    expect(() => parseTemplateManifest(restore)).toThrow(
+      "supported conversation restore requires PTY transport",
+    );
   });
 
   test("rejects an unnormalized AgentAPI state file", () => {

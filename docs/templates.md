@@ -175,12 +175,13 @@ Setup steps default to `runOn: ["create"]`. Mark validation or repair steps
 with `runOn: ["restore"]` when they are safe against restored content.
 `conversationRestore: supported` requires a separate harness-state mount and
 `sessionCompatibility`; otherwise use the honest `filesystem_only` default.
-Native `agent` templates must also set `agent.stateFile` to a normalized file
-path inside a persistence mount. PocketCoder passes it to AgentAPI as
-`--state-file`, which makes AgentAPI load and save its transcript. The
-supervisor blocks new messages, waits for AgentAPI to become stable, captures
-the final transcript, and terminates it before snapshotting. Legacy templates
-may still provide `checkpointHook`.
+Native PTY `agent` templates must also set `agent.stateFile` to a normalized
+file path below a persistence mount. PocketCoder passes it to AgentAPI as
+`--state-file`, which makes AgentAPI load and save its transcript. AgentAPI
+does not support state persistence for ACP, so native ACP templates must use
+`filesystem_only`. The supervisor blocks new messages, waits for AgentAPI to
+become stable, captures the final transcript, and terminates it before
+snapshotting. Legacy templates may still provide `checkpointHook`.
 
 `conversationRetention` controls how long the canonical display transcript is
 readable after terminal state (default `168h`). It is separate from checkpoint

@@ -217,12 +217,20 @@ function validateAgentStateFile(
       message: "stateFile must be a normalized absolute filesystem path",
     });
   }
+  if (spec.agent.transport === "acp" && spec.persistence.conversationRestore === "supported") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["spec", "persistence", "conversationRestore"],
+      message: "supported conversation restore requires PTY transport",
+    });
+    return;
+  }
   if (spec.persistence.conversationRestore !== "supported") return;
-  if (normalized && mounts.some((mount) => pathContains(mount.target, stateFile))) return;
+  if (normalized && mounts.some((mount) => stateFile.startsWith(`${mount.target}/`))) return;
   ctx.addIssue({
     code: "custom",
     path: ["spec", "agent", "stateFile"],
-    message: "supported conversation restore requires agent.stateFile inside a persistence mount",
+    message: "supported conversation restore requires agent.stateFile below a persistence mount",
   });
 }
 
