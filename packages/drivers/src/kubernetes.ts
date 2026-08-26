@@ -12,6 +12,11 @@ import { isKubernetesName, kubectl, resourceName } from "./kubernetes-command";
 import { discoveredWarmRuntimes, discoveredWorkspaces } from "./kubernetes-discovery";
 import { KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { warmJobManifest, workspaceJobManifest } from "./kubernetes-manifests";
+import {
+  type KubernetesSchedulingOptions,
+  type KubernetesToleration,
+  validateToleration,
+} from "./kubernetes-scheduling";
 
 export {
   KUBERNETES_DIGEST_ANNOTATION,
@@ -19,7 +24,7 @@ export {
   KUBERNETES_WORKSPACE_LABEL,
 } from "./kubernetes-labels";
 
-export interface KubernetesDriverOptions extends EgressDriverOptions {
+export interface KubernetesDriverOptions extends EgressDriverOptions, KubernetesSchedulingOptions {
   namespace?: string;
   kubectlBin?: string;
   serviceAccountName?: string;
@@ -31,6 +36,8 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly namespace: string;
   private readonly kubectlBin: string;
   private readonly serviceAccountName: string | undefined;
+  private readonly nodeSelector: Record<string, string> | undefined;
+  private readonly tolerations: KubernetesToleration[] | undefined;
   private readonly imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   private readonly egress: EgressDriverOptions;
   private sidecarsSupported = false;
@@ -45,6 +52,9 @@ export class KubernetesDriver implements WorkspaceDriver {
     if (this.serviceAccountName && !isKubernetesName(this.serviceAccountName)) {
       throw new Error("serviceAccountName must be a Kubernetes resource name");
     }
+    this.nodeSelector = options.nodeSelector;
+    this.tolerations = options.tolerations;
+    for (const toleration of this.tolerations ?? []) validateToleration(toleration);
     this.imagePullPolicy = options.imagePullPolicy ?? "IfNotPresent";
     this.egress = {
       ...(options.egressImage ? { egressImage: options.egressImage } : {}),
@@ -109,6 +119,8 @@ export class KubernetesDriver implements WorkspaceDriver {
 
     const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
       serviceAccountName: this.serviceAccountName,
+      nodeSelector: this.nodeSelector,
+      tolerations: this.tolerations,
       imagePullPolicy: this.imagePullPolicy,
       egressImage: this.egress.egressImage,
     });
@@ -187,6 +199,8 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
     const manifest = warmJobManifest(launch, name, inputSecret, egressSecret, {
       serviceAccountName: this.serviceAccountName,
+      nodeSelector: this.nodeSelector,
+      tolerations: this.tolerations,
       imagePullPolicy: this.imagePullPolicy,
       egressImage: this.egress.egressImage,
     });

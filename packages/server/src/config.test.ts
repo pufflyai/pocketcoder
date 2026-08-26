@@ -40,6 +40,8 @@ describe("portable persistence configuration", () => {
       POCKETCODER_DRIVER: "kubernetes",
       POCKETCODER_KUBERNETES_NAMESPACE: "agents",
       POCKETCODER_KUBERNETES_SERVICE_ACCOUNT: "workspace",
+      POCKETCODER_KUBERNETES_NODE_SELECTOR: '{"dedicated":"workspace"}',
+      POCKETCODER_KUBERNETES_TOLERATIONS: '[{"operator":"Exists","effect":"NoSchedule"}]',
       POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
       POCKETCODER_KUBERNETES_WORKSPACE_CLAIM: "workspace-data",
       POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
@@ -49,6 +51,8 @@ describe("portable persistence configuration", () => {
     expect(config.driverKind).toBe("kubernetes");
     expect(config.storageBackend).toBe("kubernetes-pvc");
     expect(config.secretProvider).toBe("kubernetes");
+    expect(config.kubernetesNodeSelector).toEqual({ dedicated: "workspace" });
+    expect(config.kubernetesTolerations).toEqual([{ operator: "Exists", effect: "NoSchedule" }]);
     expect(config.workspaceServerUrl).toBe("http://pocketcoder-server.agents.svc:7080");
   });
 

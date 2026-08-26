@@ -124,6 +124,10 @@ export const TimeoutsSchema = z.object({
 export const ResourcesSchema = z.object({
   cpu: z.string().regex(/^\d+(\.\d+)?m?$/),
   memory: z.string().regex(/^\d+(Mi|Gi)$/),
+  ephemeralStorage: z
+    .string()
+    .regex(/^\d+(Mi|Gi)$/)
+    .optional(),
 });
 
 const RepositorySchema = z.object({

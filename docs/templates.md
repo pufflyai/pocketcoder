@@ -40,7 +40,7 @@ command, mount, network, privilege, or driver.
       "idleTimeout": "10m"
     },
     "env": { "HOME": "/home/agent" },
-    "resources": { "cpu": "2", "memory": "2Gi" },
+    "resources": { "cpu": "2", "memory": "2Gi", "ephemeralStorage": "10Gi" },
     "timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
     "security": {
       "uid": 10001, "gid": 10001, "readOnlyRoot": true,
@@ -89,6 +89,9 @@ command, mount, network, privilege, or driver.
 - **`timeouts`** — `start` (registration + first health), `maxAge` (hard
   lifetime), `idle` (no relay activity and agent not running), `disconnectGrace`
   (supervisor reconnect window), `terminateGrace` (TERM→KILL).
+- **`resources`** — required CPU and memory sizing, plus optional scratch disk
+  sizing in `ephemeralStorage`. Ephemeral storage is Kubernetes-only in this
+  release. The Docker driver accepts the field but does not enforce it.
 - **`security`** — non-root uid/gid (≥1000), read-only root, memory-backed
   writable paths, dropped capabilities, no privilege escalation. Values can
   only be stricter than the defaults, never weaker.

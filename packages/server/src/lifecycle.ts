@@ -84,6 +84,8 @@ function createWorkspaceDriver(config: ServerConfig) {
     return new KubernetesDriver({
       ...egress,
       namespace: config.kubernetesNamespace,
+      nodeSelector: config.kubernetesNodeSelector ?? undefined,
+      tolerations: config.kubernetesTolerations,
       ...(config.kubernetesServiceAccount
         ? { serviceAccountName: config.kubernetesServiceAccount }
         : {}),
