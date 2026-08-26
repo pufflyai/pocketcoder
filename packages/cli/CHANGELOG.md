@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.7.0
+
+### Minor Changes
+
+- [#36](https://github.com/pufflyai/pocketcoder/pull/36) [`ba746ae`](https://github.com/pufflyai/pocketcoder/commit/ba746aec6a78e80261d9feaa51598212b147c341) Thanks [@jenshorn](https://github.com/jenshorn)! - Add Kubernetes workspace node scheduling and ephemeral storage limits.
+
+### Patch Changes
+
+- [#35](https://github.com/pufflyai/pocketcoder/pull/35) [`cb12513`](https://github.com/pufflyai/pocketcoder/commit/cb125130e87697b90704f3dd70d380dfa2cf888e) Thanks [@au-re](https://github.com/au-re)! - Persist native AgentAPI transcripts when templates declare conversation restore support.
+
 ## 0.6.2
 
 ### Patch Changes
