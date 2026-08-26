@@ -188,6 +188,7 @@ function validatePersistence(spec: TemplateSpec, ctx: z.RefinementCtx): void {
     validatePersistenceMount(spec, mounts, mount, index, seenNames, ctx);
   }
   validateSourceMount(spec, mounts, ctx);
+  validateAgentStateFile(spec, mounts, ctx);
   if (
     spec.persistence.conversationRestore === "supported" &&
     (!spec.persistence.sessionCompatibility || mounts.length < 2)
@@ -199,6 +200,38 @@ function validatePersistence(spec: TemplateSpec, ctx: z.RefinementCtx): void {
         "supported conversation restore requires sessionCompatibility and a separate harness-state mount",
     });
   }
+}
+
+function validateAgentStateFile(
+  spec: TemplateSpec,
+  mounts: PersistenceMount[],
+  ctx: z.RefinementCtx,
+): void {
+  if (!isAgentApiNative(spec)) return;
+  const stateFile = spec.agent.stateFile;
+  const normalized = stateFile !== undefined && isNormalizedFilesystemPath(stateFile);
+  if (stateFile !== undefined && !normalized) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["spec", "agent", "stateFile"],
+      message: "stateFile must be a normalized absolute filesystem path",
+    });
+  }
+  if (spec.agent.transport === "acp" && spec.persistence.conversationRestore === "supported") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["spec", "persistence", "conversationRestore"],
+      message: "supported conversation restore requires PTY transport",
+    });
+    return;
+  }
+  if (spec.persistence.conversationRestore !== "supported") return;
+  if (normalized && mounts.some((mount) => stateFile.startsWith(`${mount.target}/`))) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["spec", "agent", "stateFile"],
+    message: "supported conversation restore requires agent.stateFile below a persistence mount",
+  });
 }
 
 function validatePersistenceMount(

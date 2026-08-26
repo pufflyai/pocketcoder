@@ -61,6 +61,7 @@ export const AgentSchema = HarnessSchema.extend({
     .default("custom"),
   transport: z.enum(["pty", "acp"]).default("pty"),
   termWidth: z.number().int().min(10).max(65_535).optional(),
+  stateFile: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
 });
 
 export const TerminalSchema = z.object({
@@ -209,12 +210,15 @@ const TemplateSpecInputSchema = z
       });
     }
     if (!spec.agent) return;
-    if (spec.agent.transport === "acp" && spec.agent.termWidth !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["agent", "termWidth"],
-        message: "termWidth is only valid for PTY transport",
-      });
+    if (spec.agent.transport === "acp") {
+      for (const field of ["termWidth", "stateFile"] as const) {
+        if (spec.agent[field] === undefined) continue;
+        ctx.addIssue({
+          code: "custom",
+          path: ["agent", field],
+          message: `${field} is only valid for PTY transport`,
+        });
+      }
     }
     for (const field of ["harness", "services", "checkpointHook"] as const) {
       if (spec[field] === undefined) continue;

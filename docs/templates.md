@@ -64,7 +64,9 @@ command, mount, network, privilege, or driver.
   environment. `transport` defaults to `"pty"`; `"acp"` adds AgentAPI's
   `--experimental-acp` adapter for agents whose command speaks ACP. PocketCoder
   passes optional `termWidth` (10–65535) to AgentAPI only for PTY agents; it is
-  rejected for ACP because ACP does not emulate a terminal. See the
+  rejected for ACP because ACP does not emulate a terminal. The derived agent
+  service and its health check use `http://127.0.0.1:3284`, so an explicit
+  `AGENTAPI_ALLOWED_HOSTS` must include `127.0.0.1`. See the
   [transport decision](agent-transport-decision.md) for the cross-agent
   compatibility analysis. PocketCoder
   waits for AgentAPI's fixed status endpoint, synchronizes complete messages
@@ -176,9 +178,13 @@ Setup steps default to `runOn: ["create"]`. Mark validation or repair steps
 with `runOn: ["restore"]` when they are safe against restored content.
 `conversationRestore: supported` requires a separate harness-state mount and
 `sessionCompatibility`; otherwise use the honest `filesystem_only` default.
-For native `agent` templates the supervisor blocks new messages, waits for
-AgentAPI to become stable, captures the final transcript, and terminates it
-before snapshotting. Legacy templates may still provide `checkpointHook`.
+Native PTY `agent` templates must also set `agent.stateFile` to a normalized
+file path below a persistence mount. PocketCoder passes it to AgentAPI as
+`--state-file`, which makes AgentAPI load and save its transcript. AgentAPI
+does not support state persistence for ACP, so native ACP templates must use
+`filesystem_only`. The supervisor blocks new messages, waits for AgentAPI to
+become stable, captures the final transcript, and terminates it before
+snapshotting. Legacy templates may still provide `checkpointHook`.
 
 `conversationRetention` controls how long the canonical display transcript is
 readable after terminal state (default `168h`). It is separate from checkpoint
