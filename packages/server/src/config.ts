@@ -1,10 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import {
   type AdmissionLimits,
   DEFAULT_LIMITS,
   type WarmPoolConfigEntry,
 } from "@pstdio/pocketcoder-runtime-core";
+import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "./persistence";
 
 type Environment = Record<string, string | undefined>;
@@ -33,6 +35,8 @@ export interface ServerConfig {
   secretRoot: string | null;
   kubernetesNamespace: string;
   kubernetesServiceAccount: string | null;
+  kubernetesNodeSelector: Record<string, string> | null;
+  kubernetesTolerations: KubernetesToleration[];
   kubernetesWorkspaceClaim: string | null;
   kubernetesWorkspaceSubPath: string;
   // URL workspaces use to reach this server; with the Docker driver on a
@@ -317,6 +321,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     "docker",
   );
   const kubernetesNamespace = env.POCKETCODER_KUBERNETES_NAMESPACE ?? "default";
+  const scheduling = resolveKubernetesScheduling(env);
   const storage = resolveStorage(env);
   const secrets = resolveSecrets(env);
   assertCompatibleBackends(driverKind, storage, secrets);
@@ -341,6 +346,8 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     ...secrets,
     kubernetesNamespace,
     kubernetesServiceAccount: env.POCKETCODER_KUBERNETES_SERVICE_ACCOUNT ?? null,
+    kubernetesNodeSelector: scheduling.nodeSelector ?? null,
+    kubernetesTolerations: scheduling.tolerations ?? [],
     kubernetesWorkspaceSubPath: env.POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH ?? "workspaces",
     workspaceServerUrl: httpUrlEnv(
       env,

@@ -176,6 +176,17 @@ server replica—the connection hub and scheduler are intentionally
 single-active. Workspace Jobs use the unprivileged `pocketcoder-workspace`
 service account, not the controller account.
 
+Use driver-level scheduling settings to keep all workspace and warm-pool Jobs
+on a labeled, tainted node pool:
+
+```sh
+export POCKETCODER_KUBERNETES_NODE_SELECTOR='{"onefin.com/workload":"agent-workspace"}'
+export POCKETCODER_KUBERNETES_TOLERATIONS='[{"key":"onefin.com/workload","operator":"Equal","value":"agent-workspace","effect":"NoSchedule"}]'
+```
+
+The selector must be a JSON object with string values. Tolerations must be a
+JSON array. This release supports only the `NoSchedule` effect.
+
 Memory-backed writable paths are mounted with the template uid/gid. Kubernetes
 Jobs set pod `fsGroup` to the template gid with
 `fsGroupChangePolicy: OnRootMismatch`; Docker tmpfs mounts set `uid`, `gid`,
@@ -188,7 +199,16 @@ context before rollout:
 ```sh
 POCKETCODER_KUBERNETES_CONFORMANCE=1 \
 POCKETCODER_KUBERNETES_NAMESPACE=pocketcoder \
-bun test packages/drivers/src/kubernetes.test.ts
+bun test packages/drivers/src/kubernetes-conformance.test.ts
+```
+
+To test a labeled, tainted workspace node pool, also set
+`POCKETCODER_KUBERNETES_CONFORMANCE_IMAGE` to a digest-pinned image and set the
+two scheduling variables above. Then run:
+
+```sh
+POCKETCODER_KUBERNETES_CONFORMANCE=1 \
+bun test packages/drivers/src/kubernetes-scheduling-conformance.test.ts
 ```
 
 With `POCKETCODER_SECRET_PROVIDER=kubernetes`, a template value
@@ -239,6 +259,8 @@ an application role with connect/usage/DML only.
 | `POCKETCODER_SECRET_ROOT` | required for file secrets | Deployment-owned local secret root |
 | `POCKETCODER_KUBERNETES_NAMESPACE` | `default` | Namespace for Jobs and input Secrets |
 | `POCKETCODER_KUBERNETES_SERVICE_ACCOUNT` | none | Service account assigned to workspace Jobs |
+| `POCKETCODER_KUBERNETES_NODE_SELECTOR` | none | JSON object that selects nodes for workspace and warm-pool Jobs |
+| `POCKETCODER_KUBERNETES_TOLERATIONS` | `[]` | JSON array of `NoSchedule` tolerations for workspace and warm-pool Jobs |
 | `POCKETCODER_KUBERNETES_WORKSPACE_CLAIM` | required for PVC | Claim mounted by server and workspace Jobs |
 | `POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH` | `workspaces` | Opaque allocation prefix in the claim |
 | `POCKETCODER_MAX_RETAINED_BYTES` | `500Gi` | Global checkpoint quota |

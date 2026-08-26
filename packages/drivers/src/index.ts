@@ -26,6 +26,11 @@ export {
   type KubernetesDriverOptions,
 } from "./kubernetes";
 export {
+  type KubernetesSchedulingOptions,
+  type KubernetesToleration,
+  validateToleration,
+} from "./kubernetes-scheduling";
+export {
   KubernetesSecretResolver,
   type KubernetesSecretResolverOptions,
 } from "./kubernetes-secrets";
