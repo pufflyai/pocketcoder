@@ -26,9 +26,10 @@ async function fakeKubectl(): Promise<{ bin: string; log: string }> {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-kubectl-test-"));
   temporaryDirectories.push(directory);
   const log = join(directory, "calls.ndjson");
-  const bin = join(directory, "kubectl");
+  const script = join(directory, "kubectl.ts");
+  const bin = process.platform === "win32" ? join(directory, "kubectl.cmd") : script;
   await writeFile(
-    bin,
+    script,
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
@@ -40,6 +41,9 @@ if (args.includes("version")) console.log(JSON.stringify({ serverVersion: { majo
 `,
     { mode: 0o755 },
   );
+  if (process.platform === "win32") {
+    await writeFile(bin, `@${JSON.stringify(process.execPath)} ${JSON.stringify(script)} %*\r\n`);
+  }
   return { bin, log };
 }
 

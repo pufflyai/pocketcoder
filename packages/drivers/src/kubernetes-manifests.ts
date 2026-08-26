@@ -9,11 +9,18 @@ import {
   KUBERNETES_POOL_LABEL,
   KUBERNETES_WORKSPACE_LABEL,
 } from "./kubernetes-labels";
+import {
+  type KubernetesToleration,
+  resourceRequirements,
+  schedulingFields,
+} from "./kubernetes-scheduling";
 
 interface ManifestOptions {
   serviceAccountName?: string;
   imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   egressImage?: string;
+  nodeSelector?: Record<string, string>;
+  tolerations?: KubernetesToleration[];
 }
 
 function volumeForMount(mount: RuntimeMountRef, index: number) {
@@ -132,6 +139,7 @@ export function workspaceJobManifest(
         spec: {
           restartPolicy: "Never",
           automountServiceAccountToken: false,
+          ...schedulingFields(options),
           ...(options.serviceAccountName ? { serviceAccountName: options.serviceAccountName } : {}),
           securityContext: {
             fsGroup: spec.security.gid,
@@ -148,10 +156,7 @@ export function workspaceJobManifest(
               env: Object.entries(spec.env)
                 .filter(([, value]) => !value.startsWith("secretRef:"))
                 .map(([name, value]) => ({ name, value })),
-              resources: {
-                requests: { cpu: spec.resources.cpu, memory: spec.resources.memory },
-                limits: { cpu: spec.resources.cpu, memory: spec.resources.memory },
-              },
+              resources: resourceRequirements(spec.resources),
               securityContext: {
                 runAsUser: spec.security.uid,
                 runAsGroup: spec.security.gid,
@@ -210,6 +215,7 @@ export function warmJobManifest(
         spec: {
           restartPolicy: "Never",
           automountServiceAccountToken: false,
+          ...schedulingFields(options),
           ...(options.serviceAccountName ? { serviceAccountName: options.serviceAccountName } : {}),
           securityContext: {
             fsGroup: spec.security.gid,
@@ -224,7 +230,7 @@ export function warmJobManifest(
               imagePullPolicy: options.imagePullPolicy,
               command: spec.command,
               env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
-              resources: { requests: spec.resources, limits: spec.resources },
+              resources: resourceRequirements(spec.resources),
               securityContext: {
                 runAsUser: spec.security.uid,
                 runAsGroup: spec.security.gid,
