@@ -34,6 +34,7 @@ export function resumeInvocation(input: {
     ],
     env: {
       ...isolatedEnvironment(),
+      ...(input.check ? { POCKETCODER_RESUME_RPC: "1" } : {}),
       POCKETCODER_URL: input.baseUrl,
       POCKETCODER_KEY: input.key,
       POCKETCODER_WORKSPACE_ID: input.workspaceId,

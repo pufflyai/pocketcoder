@@ -6,6 +6,7 @@
       "entry": [
         "deploy/image/echo-harness.ts",
         "examples/resume/extension.ts",
+        "examples/resume/daemon.ts",
         "examples/**/*.test.ts"
       ],
       // Lerna invokes Nx internally for task hashing and caching.

@@ -42,6 +42,13 @@ const resolver = new WorkspaceTurnResolver({
 
 export default function (pi: ExtensionAPI) {
   createRemoteExtension({ resolver })(pi);
+  // RPC clients also need the same quit command as the interactive terminal.
+  if (process.env.POCKETCODER_RESUME_RPC === "1") {
+    pi.registerCommand("quit", {
+      description: "Disconnect and preserve this isolated session.",
+      handler: async (_args, context) => context.shutdown(),
+    });
+  }
   pi.registerCommand("preserve", {
     description: "Preserve this workspace. The next message resumes it.",
     handler: async (_args, context) => {

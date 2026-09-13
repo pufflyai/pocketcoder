@@ -67,7 +67,29 @@ export class ResumeSession {
     await this.client.workspaces.preserve(id, { label: "manual-test" }, randomUUID());
   }
 
-  controlServer() {
+  async detach() {
+    const generation = this.generations.at(-1);
+    if (!generation) throw new Error("No workspace in this session");
+    const current = await this.client.workspaces.get(generation.id);
+    if (["queued", "provisioning", "connected"].includes(current.state)) {
+      await this.client.workspaces.waitForReady(current, 300_000);
+    }
+    const ready = await this.client.workspaces.get(generation.id);
+    if (ready.state === "ready") await this.preserve(ready.id);
+    await waitFor(
+      async () => {
+        const workspace = await this.client.workspaces.get(generation.id);
+        if (["failed", "expired", "canceled", "succeeded"].includes(workspace.state)) {
+          throw new Error(`Workspace cannot be preserved: ${workspace.state}`);
+        }
+        return workspace.state === "preserved";
+      },
+      120_000,
+      "preserve before disconnect",
+    );
+  }
+
+  controlServer(stop?: () => void) {
     const key = randomBytes(32).toString("base64url");
     const server = Bun.serve({
       hostname: "127.0.0.1",
@@ -80,6 +102,19 @@ export class ResumeSession {
         const body = (await request.json()) as { workspaceId: string; attemptId: string };
         try {
           const path = new URL(request.url).pathname;
+          if (path === "/stop" && stop) {
+            setTimeout(stop, 0);
+            return Response.json({ ok: true });
+          }
+          if (path === "/attach") {
+            const workspace = this.generations.at(-1);
+            if (!workspace) throw new Error("No workspace in this session");
+            return Response.json(await this.client.workspaces.get(workspace.id));
+          }
+          if (path === "/detach") {
+            await this.detach();
+            return Response.json({ ok: true });
+          }
           if (path === "/resume")
             return Response.json(await this.resume(body.workspaceId, body.attemptId));
           if (path === "/preserve") {

@@ -97,28 +97,43 @@ Docker must be running. The command builds the Pi image and remote client, then
 starts a separate PostgreSQL container, API, model gateways, and temporary storage.
 It does not use your existing PocketCoder server, machine key, or database.
 
-Ask Pi to write a value to `/workspace/resume-test.txt`. Wait 60 seconds without
-sending a message, or type `/preserve`. The workspace saves its files, Pi session,
-and AgentAPI transcript, then stops. Send another message in the same terminal.
-It creates a new workspace from that checkpoint with fresh gateway credentials,
-switches the terminal to it, and sends the message once. Ask it to read the file
-and recall the earlier conversation to check both forms of persistence.
+Ask Pi to write a value to `/workspace/resume-test.txt`. Type `/quit` and wait
+for `Session saved`. Run the same command again. The earlier conversation appears
+when Pi opens. Ask it to read the file and recall your earlier message. Its first
+new message restores the saved workspace and Pi session with fresh credentials.
+
+The isolated server keeps running in the background after Pi exits. Its connection
+file is under `.pocketcoder/resume-session`, readable only by your host user. Run
+the command from the same directory to reconnect. Pi's local `/resume` picker is
+not used here; PocketCoder stores the conversation and checkpoint on the server.
+You can also wait 60 seconds or type `/preserve` to test automatic resume without
+closing the terminal.
 
 The host gateway holds the provider key. Each workspace gets a separate bearer
-that the gateway rejects as soon as that execution stops. The local operator key
-has a five-minute cleanup window after the run ends automatically at two hours.
-Gateway access ends with the run. Exit Pi with Ctrl+D to remove the isolated
-run, including its database and checkpoints. Storage survives workspace resumes
-within the run; a new launcher invocation starts with empty storage.
+that the gateway rejects as soon as that execution stops. This test session lasts
+two hours from its first launch, including time spent disconnected. At that point
+it removes the test database and checkpoints. The host operator key has five more
+minutes for cleanup. This example survives closing Pi; it does not survive a host
+reboot or a Docker reset.
 
 ```sh
-# Choose a different idle interval, in seconds.
+# Reconnect after /quit.
+bun run example:pi:resume
+
+# Delete the isolated session, database, and checkpoints when finished.
+bun run example:pi:resume -- --stop
+
+# Choose the idle interval when starting a new session.
 bun run example:pi:resume -- --idle-seconds 120
 
-# Run the real Pi/AgentAPI/remote-extension stack with a deterministic model.
-# No provider key is needed. Checks two resumes and removes the stack afterward.
+# Run real Pi and AgentAPI with a deterministic model, without a provider key.
+# Checks idle resume, /quit, a second launcher, history, files, and model context.
 bun run example:pi:resume:check
 ```
+
+The build and server log is `.pocketcoder/resume-session/daemon.log`. Use
+`--state-dir <directory>` for a separate isolated session, and pass that same
+directory when reconnecting or stopping it.
 
 ## 2. Create a principal and machine key
 
