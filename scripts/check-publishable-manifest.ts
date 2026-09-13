@@ -1,3 +1,5 @@
+import { satisfies, validRange } from "semver";
+
 const installDependencyFields = [
   "dependencies",
   "optionalDependencies",
@@ -62,7 +64,10 @@ export function assertWorkspaceInstallDependencies(
       if (workspace.private) {
         throw new Error(`${dependency} refers to a private workspace`);
       }
-      if (!Bun.semver.satisfies(workspace.version, range)) {
+      if (validRange(range) === null) {
+        throw new Error(`${dependency} (${range}) is not a semantic version range`);
+      }
+      if (!satisfies(workspace.version, range)) {
         throw new Error(
           `${dependency} (${range}) does not accept workspace version ${workspace.version}`,
         );

@@ -51,6 +51,7 @@ test.each([
   ["1.0.0", "^1.0.0"],
   ["1.2.3", "~1.2.0"],
   ["2.0.0", "^1.0.0 || ^2.0.0"],
+  ["0.6.0-beta.1", "^0.6.0-beta.1"],
 ])("package checks accept compatible release %s with range %s", async (version, range) => {
   const root = await workspaceFixture(version, range);
   const manifests = await runFixture(root);
@@ -71,6 +72,29 @@ test.each(["dependencies", "optionalDependencies", "peerDependencies"])(
     expect(result.code).toBe(1);
   },
 );
+
+test.each(["banana", "latest", "npm:@pstdio/pocketcoder-sdk@^99.0.0"])(
+  "manifest checks reject non-semver workspace range %s",
+  async (range) => {
+    const result = await runFixture(await workspaceFixture("0.5.0", range));
+    expect(result.output).toContain(
+      `@pstdio/pocketcoder-remote dependencies.@pstdio/pocketcoder-sdk (${range}) is not a semantic version range`,
+    );
+    expect(result.code).toBe(1);
+  },
+);
+
+test("manifest checks reject prereleases outside the declared range", async () => {
+  const result = await runFixture(await workspaceFixture("0.6.0-beta.1", "^0.6.0"));
+  expect(result.output).toContain("does not accept workspace version 0.6.0-beta.1");
+  expect(result.code).toBe(1);
+});
+
+test("manifest checks reject workspace protocols before tarball overrides can hide them", async () => {
+  const result = await runFixture(await workspaceFixture("0.5.0", "workspace:^"));
+  expect(result.output).toContain("has local-only install dependencies");
+  expect(result.code).toBe(1);
+});
 
 test.each(["dependencies", "optionalDependencies", "peerDependencies"])(
   "manifest checks reject private workspace %s",
