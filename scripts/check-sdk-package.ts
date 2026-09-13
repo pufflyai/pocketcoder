@@ -21,6 +21,31 @@ async function pack(packageDir: string, destination: string, label: string) {
   return join(destination, tarballName);
 }
 
+export async function installPackedDependencies(tempDir: string, tarballs: Record<string, string>) {
+  const dependencies = Object.fromEntries(
+    Object.entries(tarballs).map(([name, path]) => [name, `file:${path}`]),
+  );
+  // Manifest checks validate the ranges first. Overrides also use these unpublished tarballs transitively.
+  await Bun.write(
+    join(tempDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "pocketcoder-sdk-consumer",
+        private: true,
+        type: "module",
+        dependencies,
+        overrides: dependencies,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await run(
+    ["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")],
+    tempDir,
+  );
+}
+
 export async function checkSdkPackage(packageDir: string, remotePackageDir?: string) {
   const tempDir = await mkdtemp(join(tmpdir(), "pocketcoder-sdk-consumer-"));
 
@@ -30,22 +55,6 @@ export async function checkSdkPackage(packageDir: string, remotePackageDir?: str
       ? await pack(remotePackageDir, tempDir, "remote")
       : undefined;
 
-    await Bun.write(
-      join(tempDir, "package.json"),
-      `${JSON.stringify(
-        {
-          name: "pocketcoder-sdk-consumer",
-          private: true,
-          type: "module",
-          dependencies: {
-            "@pstdio/pocketcoder-sdk": `file:${sdkTarball}`,
-            ...(remoteTarball ? { "@pstdio/pocketcoder-remote": `file:${remoteTarball}` } : {}),
-          },
-        },
-        null,
-        2,
-      )}\n`,
-    );
     await Bun.write(
       join(tempDir, "tsconfig.json"),
       `${JSON.stringify(
@@ -143,10 +152,10 @@ try {
 `,
     );
 
-    await run(
-      ["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")],
-      tempDir,
-    );
+    await installPackedDependencies(tempDir, {
+      "@pstdio/pocketcoder-sdk": sdkTarball,
+      ...(remoteTarball ? { "@pstdio/pocketcoder-remote": remoteTarball } : {}),
+    });
     if (remoteTarball) {
       const declaration = await readFile(
         join(tempDir, "node_modules", "@pstdio", "pocketcoder-remote", "dist", "extension.d.ts"),

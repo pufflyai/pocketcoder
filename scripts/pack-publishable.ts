@@ -1,10 +1,14 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { assertNoLocalInstallDependencies } from "./check-publishable-manifest";
+import {
+  assertNoLocalInstallDependencies,
+  assertWorkspaceInstallDependencies,
+} from "./check-publishable-manifest";
 import { checkSdkPackage } from "./check-sdk-package";
 
 interface PackageManifest {
-  name?: string;
+  name: string;
+  version: string;
   private?: boolean;
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -12,7 +16,9 @@ interface PackageManifest {
 }
 
 const workspaceRoots = ["packages"];
+const packages: { directory: string; manifest: PackageManifest }[] = [];
 const packageDirs = new Map<string, string>();
+const manifests = new Map<string, PackageManifest>();
 const manifestsOnly = process.argv.includes("--manifests-only");
 let publishableCount = 0;
 let failed = false;
@@ -26,29 +32,37 @@ for (const root of workspaceRoots) {
     if (!(await packageJson.exists())) continue;
 
     const manifest = (await packageJson.json()) as PackageManifest;
-    if (manifest.private === true) continue;
-
-    publishableCount += 1;
-    if (manifest.name) packageDirs.set(manifest.name, packageDir);
-    console.log(`Checking publishable manifest for ${manifest.name ?? packageDir}`);
-    try {
-      assertNoLocalInstallDependencies(manifest);
-    } catch (error) {
-      console.error(error);
-      failed = true;
-    }
-    if (manifestsOnly) continue;
-
-    console.log(`Checking npm package contents for ${manifest.name ?? packageDir}`);
-    const child = Bun.spawn(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
-      cwd: packageDir,
-      stdout: "inherit",
-      stderr: "pipe",
-    });
-    const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
-    if (stderr) process.stderr.write(stderr);
-    if (exitCode !== 0) failed = true;
+    packages.push({ directory: packageDir, manifest });
+    manifests.set(manifest.name, manifest);
   }
+}
+
+// Load every manifest first so dependency validation does not depend on directory order.
+for (const { directory: packageDir, manifest } of packages) {
+  if (manifest.private === true) continue;
+
+  const { name } = manifest;
+  packageDirs.set(name, packageDir);
+  publishableCount += 1;
+  console.log(`Checking publishable manifest for ${name}`);
+  try {
+    assertNoLocalInstallDependencies(manifest);
+    assertWorkspaceInstallDependencies(manifest, manifests);
+  } catch (error) {
+    console.error(error);
+    failed = true;
+  }
+  if (manifestsOnly) continue;
+
+  console.log(`Checking npm package contents for ${name}`);
+  const child = Bun.spawn(["bun", "pm", "pack", "--dry-run", "--ignore-scripts"], {
+    cwd: packageDir,
+    stdout: "inherit",
+    stderr: "pipe",
+  });
+  const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+  if (stderr) process.stderr.write(stderr);
+  if (exitCode !== 0) failed = true;
 }
 
 const sdkDir = packageDirs.get("@pstdio/pocketcoder-sdk");

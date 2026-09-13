@@ -16,7 +16,7 @@ test("publishes the typed extension subpath with only public runtime dependencie
       },
     },
     dependencies: {
-      "@pstdio/pocketcoder-sdk": "^0.4.0",
+      "@pstdio/pocketcoder-sdk": expect.any(String),
     },
   });
   expect(manifest.dependencies).not.toHaveProperty("@pstdio/pocketcoder-contracts");

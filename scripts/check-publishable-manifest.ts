@@ -48,3 +48,25 @@ export function assertNoLocalInstallDependencies(manifest: PublishableManifest) 
     )}`,
   );
 }
+
+export function assertWorkspaceInstallDependencies(
+  manifest: PublishableManifest,
+  workspaces: ReadonlyMap<string, { version: string; private?: boolean }>,
+) {
+  for (const field of installDependencyFields) {
+    for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+      const workspace = workspaces.get(name);
+      if (!workspace) continue;
+
+      const dependency = `${manifest.name ?? "Publishable package"} ${field}.${name}`;
+      if (workspace.private) {
+        throw new Error(`${dependency} refers to a private workspace`);
+      }
+      if (!Bun.semver.satisfies(workspace.version, range)) {
+        throw new Error(
+          `${dependency} (${range}) does not accept workspace version ${workspace.version}`,
+        );
+      }
+    }
+  }
+}

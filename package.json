@@ -39,7 +39,7 @@
     "local:up": "bun examples/local/up.ts",
     "manifest:check": "bun scripts/pack-publishable.ts --manifests-only",
     "pack:check": "bun scripts/pack-publishable.ts",
-    "pack:check:test": "bun test scripts/check-publishable-manifest.test.ts",
+    "pack:check:test": "bun test scripts/check-publishable-manifest.test.ts scripts/check-sdk-package.test.ts",
     "packages": "lerna list --all",
     "release": "bun run build && bun run pack:check && changeset publish",
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",
