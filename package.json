@@ -29,7 +29,7 @@
     "example:e2e:pi": "bun examples/e2e/local.ts --harness pi",
     "example:e2e:pi:openai": "bun examples/e2e/local.ts --harness pi --openai",
     "example:pi:ui": "bun examples/e2e/local.ts --harness pi --ui --openai",
-    "example:test": "bun test examples/e2e examples/local",
+    "example:test": "bun test examples/e2e examples/local examples/resume",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "knip": "knip",
@@ -48,8 +48,10 @@
     "test:deploy": "bun test deploy",
     "test:integration": "bun test packages/db/src/postgres-conformance.test.ts packages/db/src/commands/persistence-conformance.test.ts packages/db/src/commands/workspaces-conformance.test.ts packages/server/src/persistence-postgres-conformance.test.ts packages/drivers/src/docker-conformance.test.ts packages/drivers/src/kubernetes.test.ts packages/egress/src/docker-conformance.test.ts packages/egress/src/kubernetes-conformance.test.ts",
     "test:unit": "lerna run test -- --path-ignore-patterns='**/*conformance.test.ts'",
-    "typecheck": "lerna run typecheck",
-    "version-packages": "changeset version"
+    "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json",
+    "version-packages": "changeset version",
+    "example:pi:resume": "bun examples/resume/run.ts",
+    "example:pi:resume:check": "bun examples/resume/run.ts --check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -62,6 +64,9 @@
     "knip": "^6.29.0",
     "lerna": "^9.0.7",
     "nx": "^23.1.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@pstdio/pocketcoder-sdk": "workspace:*",
+    "@pstdio/pocketcoder-remote": "workspace:*",
+    "@earendil-works/pi-coding-agent": "0.83.0"
   }
 }

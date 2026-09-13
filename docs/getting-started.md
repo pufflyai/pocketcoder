@@ -83,6 +83,42 @@ rerun. `local:gateway` reads only the generated workspace-to-gateway bearer;
 the OpenAI key remains in that host process. You can inspect or stop the server
 independently with `pcd server status` and `pcd server stop`.
 
+### Test automatic resume in an isolated terminal
+
+PocketCoder provides filesystem storage, checkpoints, and restore. The local
+resume example enables these features and supplies the terminal's resume callback:
+
+```sh
+# Set OPENAI_API_KEY and OPENAI_MODEL in .env, or export them in your shell.
+bun run example:pi:resume
+```
+
+Docker must be running. The command builds the Pi image and remote client, then
+starts a separate PostgreSQL container, API, model gateways, and temporary storage.
+It does not use your existing PocketCoder server, machine key, or database.
+
+Ask Pi to write a value to `/workspace/resume-test.txt`. Wait 60 seconds without
+sending a message, or type `/preserve`. The workspace saves its files, Pi session,
+and AgentAPI transcript, then stops. Send another message in the same terminal.
+It creates a new workspace from that checkpoint with fresh gateway credentials,
+switches the terminal to it, and sends the message once. Ask it to read the file
+and recall the earlier conversation to check both forms of persistence.
+
+The host gateway holds the provider key. Each workspace gets a separate bearer
+that the gateway rejects as soon as that execution stops. The local operator key
+and gateways expire after two hours. Exit Pi with Ctrl+D to remove the isolated
+run, including its database and checkpoints. Storage survives workspace resumes
+within the run; a new launcher invocation starts with empty storage.
+
+```sh
+# Choose a different idle interval, in seconds.
+bun run example:pi:resume -- --idle-seconds 120
+
+# Run the real Pi/AgentAPI/remote-extension stack with a deterministic model.
+# No provider key is needed. Checks two resumes and removes the stack afterward.
+bun run example:pi:resume:check
+```
+
 ## 2. Create a principal and machine key
 
 There are no human accounts. Callers are **principals** (e.g. your backend)

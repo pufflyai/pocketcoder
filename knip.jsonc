@@ -3,7 +3,11 @@
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
-      "entry": ["deploy/image/echo-harness.ts", "examples/**/*.test.ts"],
+      "entry": [
+        "deploy/image/echo-harness.ts",
+        "examples/resume/extension.ts",
+        "examples/**/*.test.ts"
+      ],
       // Lerna invokes Nx internally for task hashing and caching.
       "ignoreDependencies": ["nx"]
     },

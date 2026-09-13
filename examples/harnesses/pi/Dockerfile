@@ -31,6 +31,7 @@ RUN bun install --production --frozen-lockfile
 
 COPY --from=agentapi-download /agentapi /usr/local/bin/agentapi
 COPY examples/harnesses/pi/agentapi-compat.ts /opt/pi/agentapi-compat.ts
+COPY examples/harnesses/pi/persistent-pi.ts /opt/pi/persistent-pi.ts
 COPY examples/harnesses/pi/workspace/ /opt/pocketcoder-fixtures/
 COPY examples/harnesses/pi/run-pi /usr/local/bin/run-pi
 COPY --from=supervisor-build /out/supervisor.js /opt/pocketcoder/supervisor.js

@@ -46,6 +46,8 @@ jobs:
           bun test
       - name: Run Pi through AgentAPI full-stack E2E and pcd doctor
         run: bun run example:e2e:pi
+      - name: Run Pi automatic resume full-stack E2E
+        run: bun run example:pi:resume:check
       - name: Validate the Codex and OpenCode AgentAPI fixtures
         working-directory: examples/harnesses/oss
         run: |

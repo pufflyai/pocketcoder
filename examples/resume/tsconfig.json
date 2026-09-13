@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@pstdio/pocketcoder-sdk": ["../../packages/sdk/src/index.ts"],
+      "@pstdio/pocketcoder-remote/extension": ["../../packages/remote/src/extension.ts"]
+    }
+  },
+  "include": ["./*.ts"]
+}
