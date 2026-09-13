@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { waitFor } from "../e2e/local-process";
 import { checkClient } from "./check-client";
+import { daemonLock } from "./daemon-lock";
 import { isolatedEnvironment } from "./environment";
 
 async function verifyCleanup(exited: Promise<number>) {
@@ -33,10 +35,31 @@ export async function checkReconnect() {
   };
   const token = `RECONNECT-${crypto.randomUUID()}`;
   try {
-    console.log("Reconnect check: starting the first launcher...");
+    console.log("Reconnect check: interrupting startup, then relaunching immediately...");
+    const interrupted = launch();
+    await waitFor(
+      async () =>
+        (
+          await Bun.file(join(directory, "daemon.log"))
+            .text()
+            .catch(() => "")
+        ).includes("Building the remote client"),
+      30_000,
+      "startup in progress",
+    );
+    if (await Bun.file(join(directory, "connection.json")).exists())
+      throw new Error("Test must interrupt before startup completes");
+    const owner = await stat(daemonLock(directory));
+    interrupted.child.kill("SIGINT");
+    await interrupted.child.exited;
     const first = launch();
     await first.prompt(`Save token ${token}`, "Saved.");
     const state = await Bun.file(join(directory, "connection.json")).json();
+    if ((await stat(daemonLock(directory))).ino !== owner.ino)
+      throw new Error("Relaunch replaced the original daemon");
+    const startupLog = await Bun.file(join(directory, "daemon.log")).text();
+    if (startupLog.split("Building the remote client").length !== 2)
+      throw new Error("Relaunch started more than one stack");
     console.log("Reconnect check: quitting the first launcher...");
     await first.quit();
     const saved = await Bun.file(join(directory, "connection.json")).json();
@@ -76,7 +99,7 @@ export async function checkReconnect() {
     const source = await api.workspaces.get(workspace.id);
     if (source.state !== "preserved") throw new Error("The original checkpoint was lost");
     console.log(
-      "Reconnect check passed: /quit, second launcher, visible history, model context and file restored.",
+      "Reconnect check passed: interrupted startup, one daemon, /quit, visible history, model context and file restored.",
     );
   } finally {
     for (const client of clients) await client.close();

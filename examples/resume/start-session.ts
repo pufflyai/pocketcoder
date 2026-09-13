@@ -24,6 +24,7 @@ export async function startSession(stack: IsolatedStack, idleSeconds: number, ch
     check ? "openai-completions" : "openai-responses",
   );
   stack.cleanups.push(() => session.close());
+  console.log("Starting the Pi workspace...");
   const workspace = await session.create();
   return { api, model, session, workspace };
 }

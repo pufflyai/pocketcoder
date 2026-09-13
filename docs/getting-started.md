@@ -96,6 +96,9 @@ bun run example:pi:resume
 Docker must be running. The command builds the Pi image and remote client, then
 starts a separate PostgreSQL container, API, model gateways, and temporary storage.
 It does not use your existing PocketCoder server, machine key, or database.
+Startup prints each build and setup stage. Ctrl+C stops waiting while the server
+continues starting. Run the same command again to wait for that server. Each
+session directory allows one server, so retrying cannot replace your session.
 
 Ask Pi to write a value to `/workspace/resume-test.txt`. Type `/quit` and wait
 for `Session saved`. Run the same command again. The earlier conversation appears

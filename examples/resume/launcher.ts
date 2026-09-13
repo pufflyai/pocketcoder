@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdir, open } from "node:fs/promises";
+import { chmod, mkdir, open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { waitFor } from "../e2e/local-process";
 import { connectionFile, readConnection, sessionControl } from "./connection";
+import { daemonLock } from "./daemon-lock";
 import { isolatedEnvironment, requiredEnvironment } from "./environment";
 import { resumeInvocation } from "./launch";
 
@@ -19,8 +20,12 @@ async function startSession(directory: string, idleSeconds: number, checkModel: 
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await chmod(directory, 0o700);
     const logPath = join(directory, "daemon.log");
-    const log = await open(logPath, "w", 0o600);
+    const log = await open(logPath, "a", 0o600);
+    let logOffset = (await log.stat()).size;
     console.error(`Starting the isolated session. Build and server log: ${logPath}`);
+    console.error(
+      "Ctrl+C stops waiting. Startup continues; rerunning this command reconnects to it.",
+    );
     const daemon = spawn(
       process.execPath,
       [
@@ -40,16 +45,26 @@ async function startSession(directory: string, idleSeconds: number, checkModel: 
     try {
       await waitFor(
         async () => {
-          if (daemon.exitCode !== null) throw new Error(`Isolated startup failed. See ${logPath}`);
+          const tail = await Bun.file(logPath).slice(logOffset).text();
+          if (tail) {
+            process.stderr.write(tail);
+            logOffset += Buffer.byteLength(tail);
+          }
+          if (daemon.exitCode !== null && daemon.exitCode !== 0) {
+            throw new Error(`Isolated startup failed. See ${logPath}`);
+          }
+          if (
+            daemon.exitCode === 0 &&
+            !(await stat(daemonLock(directory)).catch(() => undefined))
+          ) {
+            throw new Error(`Isolated startup stopped. See ${logPath}`);
+          }
           connection = await readConnection(directory);
           return !!connection;
         },
         600_000,
         "isolated startup",
       );
-    } catch (error) {
-      daemon.kill("SIGTERM");
-      throw error;
     } finally {
       daemon.unref();
     }

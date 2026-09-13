@@ -55,8 +55,9 @@ export class IsolatedStack {
     this.cleanups.push(() => removeRunDirectory(directory));
     const id = randomBytes(6).toString("hex");
     const postgres = `pocketcoder-resume-db-${id}`;
-    console.log("Building the remote client and Pi workspace image...");
+    console.log("Building the remote client...");
     await this.run(["bun", "run", "build"]);
+    console.log("Building the Pi workspace image...");
     const imageTag = `pocketcoder-resume-pi:${id}`;
     this.cleanups.push(() => run(["docker", "image", "rm", "--force", imageTag]));
     const { image } = await buildLocalImage({
@@ -66,6 +67,7 @@ export class IsolatedStack {
       dockerfile: "examples/harnesses/pi/Dockerfile",
       command: (args) => this.run(args),
     });
+    console.log("Starting the isolated database...");
     this.cleanups.push(() => run(["docker", "rm", "--force", postgres]));
     await this.run([
       "docker",
@@ -120,6 +122,7 @@ export class IsolatedStack {
       "--env-file",
       join(directory, ".env"),
     ];
+    console.log("Preparing the database and API credentials...");
     await this.run([...cli, "db", "migrate"], adminEnv);
     await this.run(
       [

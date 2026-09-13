@@ -1,11 +1,15 @@
 import { chmod, rename, rm } from "node:fs/promises";
 import { connectionFile } from "./connection";
+import { claimDaemon } from "./daemon-lock";
 import { endSessionAt } from "./expiry";
 import { IsolatedStack } from "./stack";
 import { startSession } from "./start-session";
 
 const directory = process.argv[2] ?? "";
 if (!directory) throw new Error("State directory is required");
+const owner = await claimDaemon(directory);
+if (!owner) process.exit(0);
+const release = owner.release;
 const idleSeconds = Number(process.argv[3]);
 const check = process.argv.includes("--check-model");
 const stack = new IsolatedStack();
@@ -16,6 +20,7 @@ async function close() {
   closing ??= (async () => {
     await stack.close();
     await rm(connectionFile(directory), { force: true });
+    await release();
   })();
   return closing;
 }
