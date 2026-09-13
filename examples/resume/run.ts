@@ -1,5 +1,6 @@
 import { checkResume } from "./check";
 import { startCheckModel } from "./check-model";
+import { endSessionAt } from "./expiry";
 import { resumeInvocation } from "./launch";
 import { ResumeSession } from "./session";
 import { IsolatedStack } from "./stack";
@@ -20,7 +21,9 @@ if (!check && (!providerKey || !providerModel)) {
 const stack = new IsolatedStack();
 let child: ReturnType<typeof Bun.spawn> | undefined;
 let closing: Promise<void> | undefined;
+let cancelExpiry = () => {};
 function close() {
+  cancelExpiry();
   closing ??= (async () => {
     if (child?.exitCode === null) {
       child.kill("SIGTERM");
@@ -38,6 +41,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   const api = await stack.start(idleSeconds);
+  cancelExpiry = endSessionAt(api.expiresAt, () => {
+    console.log("The two-hour isolated session has ended. Cleaning up...");
+    void close().catch((error) => console.error(error));
+  });
   const model = check ? startCheckModel() : undefined;
   if (model) stack.cleanups.push(async () => model.close());
   const session = new ResumeSession(
@@ -89,7 +96,7 @@ try {
       stderr: "inherit",
     });
     const code = await child.exited;
-    if (code !== 0) throw new Error(`Remote terminal exited with code ${code}`);
+    if (code !== 0 && !closing) throw new Error(`Remote terminal exited with code ${code}`);
   }
 } finally {
   await close();

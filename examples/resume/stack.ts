@@ -142,8 +142,11 @@ export class IsolatedStack {
       adminEnv,
     );
     const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    // The host still needs authority to cancel workspaces and delete checkpoints
+    // after model access ends. This key never enters a workspace.
+    const cleanupExpiresAt = new Date(expiresAt.getTime() + 5 * 60 * 1000);
     const issued = await this.run(
-      [...cli, "keys", "issue", "--principal", id, "--expires", expiresAt.toISOString()],
+      [...cli, "keys", "issue", "--principal", id, "--expires", cleanupExpiresAt.toISOString()],
       adminEnv,
     );
     const key = issued.stdout.split("\n").find((line) => line.startsWith("pkt_"));

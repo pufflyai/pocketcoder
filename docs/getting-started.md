@@ -106,7 +106,8 @@ and recall the earlier conversation to check both forms of persistence.
 
 The host gateway holds the provider key. Each workspace gets a separate bearer
 that the gateway rejects as soon as that execution stops. The local operator key
-and gateways expire after two hours. Exit Pi with Ctrl+D to remove the isolated
+has a five-minute cleanup window after the run ends automatically at two hours.
+Gateway access ends with the run. Exit Pi with Ctrl+D to remove the isolated
 run, including its database and checkpoints. Storage survives workspace resumes
 within the run; a new launcher invocation starts with empty storage.
 
