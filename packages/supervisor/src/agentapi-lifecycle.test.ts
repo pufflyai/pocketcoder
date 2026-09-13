@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PROTOCOL_VERSION } from "@pstdio/pocketcoder-contracts";
+import { startFakeAgentApi } from "@pstdio/pocketcoder-testkit";
 
 test("native checkpoint synchronizes stable messages before gracefully stopping AgentAPI", async () => {
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-native-agentapi-"));
@@ -17,31 +18,11 @@ test("native checkpoint synchronizes stable messages before gracefully stopping 
     resolveQuiesced = resolvePromise;
   });
 
-  const agentapi = Bun.serve({
-    port: 0,
-    fetch(request) {
-      const path = new URL(request.url).pathname;
-      if (path === "/status") return Response.json({ status: "stable" });
-      if (path === "/messages") {
-        return Response.json({
-          messages: [
-            {
-              id: 1,
-              role: "user",
-              content: "preserve this",
-              time: "2026-08-03T12:00:00Z",
-            },
-            {
-              id: 2,
-              role: "agent",
-              content: "saved",
-              time: "2026-08-03T12:01:00Z",
-            },
-          ],
-        });
-      }
-      return new Response("not found", { status: 404 });
-    },
+  const agentapi = startFakeAgentApi({
+    messages: [
+      { id: 1, role: "user", content: "preserve this", time: "2026-08-03T12:00:00Z" },
+      { id: 2, role: "agent", content: "saved", time: "2026-08-03T12:01:00Z" },
+    ],
   });
 
   let serverSeq = 0;
@@ -180,7 +161,7 @@ test("native checkpoint synchronizes stable messages before gracefully stopping 
     if (supervisor.exitCode === null) process.kill(supervisor.pid, "SIGTERM");
     await supervisor.exited;
     await server.stop(true);
-    await agentapi.stop(true);
+    agentapi.stop();
     await rm(root, { recursive: true, force: true });
   }
 }, 10_000);

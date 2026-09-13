@@ -13,7 +13,7 @@ import {
   type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import { page, queryString } from "./common";
-import { WorkspaceTerminalError } from "./errors";
+import { AgentNotReadyError, WorkspaceTerminalError } from "./errors";
 import type { PocketCoderTransport, RequestOptions } from "./transport";
 
 export interface WorkspaceCreateInput {
@@ -122,6 +122,31 @@ export class WorkspacesApi {
       );
       workspace = change.workspace;
       options.onTick?.(workspace);
+    }
+    return workspace;
+  }
+
+  // A workspace turns ready when its services answer health checks, which can
+  // happen while AgentAPI is still starting. Sending then is rejected upstream,
+  // so callers must wait for the agent to be waiting for input.
+  async waitForAgentInput(id: string, timeoutMs: number, options: RequestOptions = {}) {
+    const deadline = Date.now() + timeoutMs;
+    // Read the current state first: `change` blocks until the cursor moves, so
+    // long-polling an already-stable agent would stall for no reason.
+    let workspace = await this.get(id, options);
+    while (workspace.agent_state !== "stable") {
+      if (TERMINAL_STATES.includes(workspace.state)) throw new WorkspaceTerminalError(workspace);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new AgentNotReadyError(workspace.id, workspace.agent_state, timeoutMs);
+      }
+      const change = await this.change(
+        workspace.id,
+        workspace.change_cursor,
+        Math.max(1, Math.min(30, Math.ceil(remainingMs / 1_000))),
+        options,
+      );
+      workspace = change.workspace;
     }
     return workspace;
   }

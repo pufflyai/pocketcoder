@@ -1,4 +1,11 @@
 import { createInterface } from "node:readline";
+import {
+  type ApiRequest,
+  type CliFail,
+  readWorkspaceAgentState,
+  type WorkspaceChatDeps,
+  waitForAgentInput,
+} from "./agent-readiness";
 import { fileFlags, handleAttachmentCommand, uploadAttachments } from "./attachments";
 import {
   advanceCursor,
@@ -12,13 +19,10 @@ import {
 } from "./chat-cursor";
 
 export type ChatFlags = Record<string, unknown>;
-export type ApiRequest = (path: string, init?: RequestInit) => Promise<Response>;
-export type CliFail = (message: string) => never;
+export type { ApiRequest, WorkspaceChatDeps };
 
-export interface WorkspaceChatDeps {
-  api: ApiRequest;
-  fail: CliFail;
-}
+// Used where no per-command timeout flag applies, such as a one-shot attach.
+const DEFAULT_READINESS = { timeoutSeconds: 120, pollIntervalMs: 500 };
 
 function need(flags: ChatFlags, key: string, fail: CliFail): string {
   const value = flags[key];
@@ -62,10 +66,13 @@ async function assertWorkspaceAttachable(
 async function sendWorkspaceMessage(
   id: string,
   message: unknown,
-  { api, fail }: WorkspaceChatDeps,
+  deps: WorkspaceChatDeps,
   attachmentIds: string[] = [],
+  readiness: { timeoutSeconds: number; pollIntervalMs: number } = DEFAULT_READINESS,
 ): Promise<void> {
   if (typeof message !== "string") return;
+  const { api, fail } = deps;
+  await waitForAgentInput(id, readiness, deps);
   const response = await api(`/v1/workspaces/${id}/agent/message`, {
     method: "POST",
     body: JSON.stringify({
@@ -150,25 +157,6 @@ async function readChatMessages(id: string, deps: WorkspaceChatDeps): Promise<un
     deps.fail(`message polling failed (${response.status}): ${JSON.stringify(body)}`);
   }
   return body.messages ?? [];
-}
-
-async function readWorkspaceAgentState(id: string, deps: WorkspaceChatDeps): Promise<string> {
-  const response = await deps.api(`/v1/workspaces/${id}`);
-  const body = (await response.json()) as { state?: unknown; agent_state?: unknown };
-  if (!response.ok) {
-    deps.fail(`workspace lookup failed (${response.status}): ${JSON.stringify(body)}`);
-  }
-  if (body.state !== "ready") {
-    deps.fail(`workspace is ${String(body.state ?? "unavailable")}; it is not live`);
-  }
-  if (
-    body.agent_state !== "unknown" &&
-    body.agent_state !== "running" &&
-    body.agent_state !== "stable"
-  ) {
-    deps.fail(`workspace returned unknown agent state: ${JSON.stringify(body.agent_state)}`);
-  }
-  return typeof body.agent_state === "string" ? body.agent_state : "unknown";
 }
 
 async function pollTurnResponse(
@@ -271,7 +259,10 @@ export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): 
     const before = await readChatMessages(id, deps);
     const baseline = messageBaseline(before);
     advanceCursor(id, cursor, before);
-    await sendWorkspaceMessage(id, message, deps, attachmentIds);
+    await sendWorkspaceMessage(id, message, deps, attachmentIds, {
+      timeoutSeconds: responseTimeoutSeconds,
+      pollIntervalMs,
+    });
     await pollTurnResponse(
       id,
       baseline,

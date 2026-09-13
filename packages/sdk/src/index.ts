@@ -31,6 +31,7 @@ export type { ConversationMessage, ConversationPage } from "./conversations";
 export { ConversationsApi } from "./conversations";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
 export {
+  AgentNotReadyError,
   type ClientErrorCode,
   ConversationGoneError,
   isPocketCoderErrorCode,

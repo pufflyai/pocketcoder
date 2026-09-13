@@ -28,7 +28,7 @@ export class PocketCoderClient {
     this.templates = new TemplatesApi(this.transport);
     this.workspaces = new WorkspacesApi(this.transport);
     this.attachments = new AttachmentsApi(this.transport);
-    this.agent = new AgentApi(this.transport);
+    this.agent = new AgentApi(this.transport, this.workspaces);
     this.conversations = new ConversationsApi(this.transport);
     this.checkpoints = new CheckpointsApi(this.transport);
     this.operations = new OperationsApi(this.transport);

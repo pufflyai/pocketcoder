@@ -7,14 +7,18 @@ import { runCli } from "./cli-test-support";
 const doctorWorkspaceId = "33333333-3333-4333-8333-333333333333";
 const statusOnlyWorkspaceId = "44444444-4444-4444-8444-444444444444";
 
-function doctorWorkspace(id: string, state: "ready" | "canceled") {
+function doctorWorkspace(
+  id: string,
+  state: "ready" | "canceled",
+  agentState: "stable" | "running" | "unknown" = state === "ready" ? "stable" : "unknown",
+) {
   return {
     id,
     external_id: `external-${id}`,
     template: { name: "fixture-echo", version: "1", digest: "sha256:template" },
     state,
     reason_code: null,
-    agent_state: state === "ready" ? "stable" : "unknown",
+    agent_state: agentState,
     change_cursor: 1,
     provider_kind: null,
     provisioning_mode: null,
@@ -47,7 +51,10 @@ describe("pcd doctor", () => {
     async (runningReads) => {
       let diagnosticPrompt = "";
       let canceled = false;
-      let statusReads = 0;
+      let agentReads = 0;
+      // The agent reports itself waiting for input only after `runningReads`
+      // observations, mirroring AgentAPI's startup window.
+      const agentState = () => (agentReads > runningReads ? "stable" : "running");
       const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -59,20 +66,31 @@ describe("pcd doctor", () => {
             return Response.json(doctorWorkspace(doctorWorkspaceId, "ready"), { status: 201 });
           }
           if (request.method === "GET" && url.pathname === `/v1/workspaces/${doctorWorkspaceId}`) {
-            return Response.json(doctorWorkspace(doctorWorkspaceId, "ready"));
+            agentReads += 1;
+            return Response.json(doctorWorkspace(doctorWorkspaceId, "ready", agentState()));
+          }
+          if (
+            request.method === "GET" &&
+            url.pathname === `/v1/workspaces/${doctorWorkspaceId}/changes`
+          ) {
+            agentReads += 1;
+            return Response.json({
+              cursor: agentReads,
+              changed: true,
+              workspace: doctorWorkspace(doctorWorkspaceId, "ready", agentState()),
+            });
           }
           if (
             request.method === "GET" &&
             url.pathname === `/v1/workspaces/${doctorWorkspaceId}/agent/status`
           ) {
-            statusReads += 1;
-            return Response.json({ status: statusReads <= runningReads ? "running" : "stable" });
+            return Response.json({ status: agentState() });
           }
           if (
             request.method === "POST" &&
             url.pathname === `/v1/workspaces/${doctorWorkspaceId}/agent/message`
           ) {
-            if (statusReads <= runningReads) {
+            if (agentState() !== "stable") {
               return new Response(
                 "message can only be sent when the agent is waiting for user input",
                 { status: 500 },
@@ -119,57 +137,70 @@ describe("pcd doctor", () => {
 
   test.each([
     ["stable", "agent message probe failed (404)"],
-    ["running", "agent did not become stable within 1 seconds"],
+    ["running", "was still running after 1000ms"],
     ["unknown", "agent status probe returned unknown status"],
-  ])("doctor rejects a %s status-only harness and still cancels", async (status, error) => {
-    let canceled = false;
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request) {
-        const url = new URL(request.url);
-        if (request.method === "POST" && url.pathname === "/v1/workspaces") {
-          return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "ready"), { status: 201 });
-        }
-        if (
-          request.method === "GET" &&
-          url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}`
-        ) {
-          return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "ready"));
-        }
-        if (
-          request.method === "GET" &&
-          url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}/agent/status`
-        ) {
-          return Response.json({ status });
-        }
-        if (
-          request.method === "POST" &&
-          url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}/cancel`
-        ) {
-          canceled = true;
-          return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "canceled"));
-        }
-        return new Response("not found", { status: 404 });
-      },
-    });
-    try {
-      const result = await runCli(
-        ["doctor", "--template", "status-only", "--turn-timeout-seconds", "1"],
-        {
-          env: {
-            POCKETCODER_URL: server.url.origin,
-            POCKETCODER_KEY: "doctor-key",
-          },
+  ] as const)(
+    "doctor rejects a %s status-only harness and still cancels",
+    async (status, error) => {
+      let canceled = false;
+      const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const url = new URL(request.url);
+          if (request.method === "POST" && url.pathname === "/v1/workspaces") {
+            return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "ready"), { status: 201 });
+          }
+          if (
+            request.method === "GET" &&
+            url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}`
+          ) {
+            return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "ready", status));
+          }
+          if (
+            request.method === "GET" &&
+            url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}/changes`
+          ) {
+            return Response.json({
+              cursor: 1,
+              changed: false,
+              workspace: doctorWorkspace(statusOnlyWorkspaceId, "ready", status),
+            });
+          }
+          if (
+            request.method === "GET" &&
+            url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}/agent/status`
+          ) {
+            return Response.json({ status });
+          }
+          if (
+            request.method === "POST" &&
+            url.pathname === `/v1/workspaces/${statusOnlyWorkspaceId}/cancel`
+          ) {
+            canceled = true;
+            return Response.json(doctorWorkspace(statusOnlyWorkspaceId, "canceled"));
+          }
+          return new Response("not found", { status: 404 });
         },
-      );
-      expect(result.exitCode).toBe(1);
-      expect(result.output).toContain(error);
-      expect(canceled).toBe(true);
-    } finally {
-      await server.stop(true);
-    }
-  });
+      });
+      try {
+        const result = await runCli(
+          ["doctor", "--template", "status-only", "--turn-timeout-seconds", "1"],
+          {
+            env: {
+              POCKETCODER_URL: server.url.origin,
+              POCKETCODER_KEY: "doctor-key",
+            },
+          },
+        );
+        expect(result.exitCode).toBe(1);
+        expect(result.output).toContain(error);
+        expect(canceled).toBe(true);
+      } finally {
+        await server.stop(true);
+      }
+    },
+  );
 });
 
 describe("pcd environment", () => {

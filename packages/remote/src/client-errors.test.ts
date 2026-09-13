@@ -56,7 +56,11 @@ function postAcceptanceFailureFetch(failedPath: "/messages" | "/status") {
       return Response.json({ ok: true });
     }
     if (path.endsWith("/status")) {
-      return failedPath === "/status" ? terminalResponse() : Response.json({ status: "stable" });
+      // The pre-submit readiness probe also reads /status, so only fail the
+      // reply-side read that this fixture is about.
+      return submitted && failedPath === "/status"
+        ? terminalResponse()
+        : Response.json({ status: "stable" });
     }
     return new Response("missing", { status: 404 });
   }) as typeof fetch;
@@ -106,6 +110,7 @@ describe("RemoteAgentClient request errors", () => {
       const path = new URL(request.url).pathname;
       if (path.endsWith("/messages")) return Response.json({ messages: [] });
       if (path.endsWith("/events")) return new Response(null, { status: 404 });
+      if (path.endsWith("/status")) return Response.json({ status: "stable" });
       if (request.method === "POST") return terminalResponse();
       return new Response("missing", { status: 404 });
     }) as typeof fetch;
@@ -142,8 +147,11 @@ describe("RemoteAgentClient request errors", () => {
       const path = new URL(request.url).pathname;
       if (path.endsWith("/messages")) return Response.json({ messages: [] });
       if (path.endsWith("/changes")) {
-        return Response.json({ cursor: 0, workspace: { agent_state: "running" } });
+        // The agent is waiting for input when the turn starts; these fixtures
+        // are about event-stream failures, not reply progress.
+        return Response.json({ cursor: 0, workspace: { agent_state: "stable" } });
       }
+      if (path.endsWith("/status")) return Response.json({ status: "stable" });
       if (path.endsWith("/events")) {
         eventRequests += 1;
         return eventRequests === 1
@@ -177,8 +185,11 @@ describe("RemoteAgentClient request errors", () => {
       const path = new URL(request.url).pathname;
       if (path.endsWith("/messages")) return Response.json({ messages: [] });
       if (path.endsWith("/changes")) {
-        return Response.json({ cursor: 0, workspace: { agent_state: "running" } });
+        // The agent is waiting for input when the turn starts; these fixtures
+        // are about event-stream failures, not reply progress.
+        return Response.json({ cursor: 0, workspace: { agent_state: "stable" } });
       }
+      if (path.endsWith("/status")) return Response.json({ status: "stable" });
       if (path.endsWith("/events")) {
         eventRequests += 1;
         return eventRequests === 1
@@ -237,6 +248,7 @@ describe("RemoteAgentClient error validation and cancellation", () => {
     let postResolved = false;
     let finalReads = 0;
     const encoder = new TextEncoder();
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: This single fixture router keeps the acceptance ordering visible in one place.
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
       const request = requestOf(input, init);
       const path = new URL(request.url).pathname;
@@ -249,6 +261,7 @@ describe("RemoteAgentClient error validation and cancellation", () => {
       if (path.endsWith("/changes")) {
         return Response.json({ cursor: 0, workspace: { agent_state: "stable" } });
       }
+      if (path.endsWith("/status")) return Response.json({ status: "stable" });
       if (path.endsWith("/events")) {
         return new Response(
           new ReadableStream<Uint8Array>({

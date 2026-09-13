@@ -4,6 +4,11 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import { PocketCoderError, responseError } from "./errors";
 import type { PocketCoderTransport } from "./transport";
+import type { WorkspacesApi } from "./workspaces";
+
+// Long enough for a cold coding agent to paint its prompt, short enough that a
+// wedged workspace fails with a clear error instead of hanging.
+const DEFAULT_READY_TIMEOUT_MS = 120_000;
 
 export { splitAttachmentManifest } from "@pstdio/pocketcoder-contracts";
 export type { AttachmentDescriptor };
@@ -24,6 +29,8 @@ export interface AgentMessageInput {
   content: string;
   attachmentIds?: string[];
   signal?: AbortSignal;
+  // How long to wait for the agent to be ready for input before giving up.
+  readyTimeoutMs?: number;
 }
 
 function contentDisposition(name: string): string {
@@ -81,11 +88,21 @@ export class AttachmentsApi {
 }
 
 export class AgentApi {
-  constructor(private readonly transport: PocketCoderTransport) {}
+  constructor(
+    private readonly transport: PocketCoderTransport,
+    private readonly workspaces: WorkspacesApi,
+  ) {}
 
   // Sends an AgentAPI user message; resolves when the workspace accepted it.
   // The harness response body is service-specific and deliberately not modeled.
   async sendMessage(workspaceId: string, input: AgentMessageInput): Promise<void> {
+    // AgentAPI rejects a user message unless it is waiting for input, and the
+    // relay passes that rejection through as an opaque 500.
+    await this.workspaces.waitForAgentInput(
+      workspaceId,
+      input.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
+      input.signal ? { signal: input.signal } : {},
+    );
     const response = await this.transport.raw(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/agent/message`,
       {

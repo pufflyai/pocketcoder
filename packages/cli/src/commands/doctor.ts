@@ -39,6 +39,7 @@ async function runDoctor(flags: Flags) {
     await waitUntilReady(workspace.id);
     console.log("doctor: workspace ready; probing agent status through the relay");
     const timeoutSeconds = turnTimeout(flags);
+    await verifyStatus(workspace.id);
     await waitForInput(workspace.id, timeoutSeconds);
     await runTurn(workspace.id, timeoutSeconds);
     console.log("doctor: correlated agent response received");
@@ -82,13 +83,10 @@ async function waitUntilReady(workspaceId: string) {
 }
 
 async function waitForInput(workspaceId: string, timeoutSeconds: number) {
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  while (Date.now() < deadline) {
-    // A ready workspace can still be inside AgentAPI's startup quiet period.
-    if ((await verifyStatus(workspaceId)) === "stable") return;
-    await Bun.sleep(500);
-  }
-  throw new Error(`agent did not become stable within ${timeoutSeconds} seconds`);
+  // A ready workspace can still be inside AgentAPI's startup quiet period. The
+  // SDK long-polls workspace changes, so this does not busy-poll the relay.
+  console.log("doctor: waiting for the agent to be ready for input");
+  await controlPlaneClient().workspaces.waitForAgentInput(workspaceId, timeoutSeconds * 1000);
 }
 
 async function verifyStatus(workspaceId: string) {
@@ -105,7 +103,6 @@ async function verifyStatus(workspaceId: string) {
   if (body.status !== "running" && body.status !== "stable") {
     throw new Error(`agent status probe returned unknown status: ${JSON.stringify(body.status)}`);
   }
-  return body.status;
 }
 
 async function runTurn(workspaceId: string, timeoutSeconds: number) {

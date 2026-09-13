@@ -15,6 +15,42 @@ function descriptor(id: string, name = "report.pdf") {
   };
 }
 
+// `agent.sendMessage` waits for the agent to be ready for input, so every
+// fixture that sends a message must answer the workspace read behind that wait.
+function readyWorkspace() {
+  return {
+    id: WORKSPACE,
+    external_id: "attachments",
+    template: { name: "pi", version: "1", digest: "sha256:pi" },
+    state: "ready",
+    reason_code: null,
+    agent_state: "stable",
+    change_cursor: 1,
+    provider_kind: "docker",
+    provisioning_mode: "cold",
+    network: { state: "ready" },
+    health: {},
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    connected_at: "2026-01-01T00:00:00Z",
+    ready_at: "2026-01-01T00:00:00Z",
+    deadline_at: "2026-01-01T01:00:00Z",
+    terminal_at: null,
+    metadata: {},
+    origin_workspace_id: null,
+    restored_from_checkpoint_id: null,
+    source: null,
+    persistence: {
+      enabled: true,
+      conversation_restore: "supported",
+      conversation_resume: { status: "supported", reason: null },
+      latest_checkpoint_id: null,
+    },
+    outputs: {},
+    failure: null,
+  };
+}
+
 function fixtureClient(
   respond: (request: Request) => Response | Promise<Response>,
   requests: Request[] = [],
@@ -22,6 +58,9 @@ function fixtureClient(
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const request =
       input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
+    if (new URL(request.url).pathname === `/v1/workspaces/${WORKSPACE}`) {
+      return Response.json(readyWorkspace());
+    }
     requests.push(request);
     return await respond(request);
   }) as typeof fetch;

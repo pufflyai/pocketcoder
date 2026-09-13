@@ -69,8 +69,11 @@ command, mount, network, privilege, or driver.
   `AGENTAPI_ALLOWED_HOSTS` must include `127.0.0.1`. See the
   [transport decision](agent-transport-decision.md) for the cross-agent
   compatibility analysis. PocketCoder
-  waits for AgentAPI's fixed status endpoint, synchronizes complete messages
-  after `stable`, and terminates it safely for preserve. The caller's opaque
+  waits for AgentAPI's fixed status endpoint to answer, synchronizes complete
+  messages after `stable`, and terminates it safely for preserve. That health
+  check only proves the endpoint responds. A workspace can be `ready` while the
+  agent is still starting and cannot accept a message yet, so callers wait for
+  an `agent_state` of `stable` before sending. The caller's opaque
   `launch_input` is delivered to the process in memory as
   `POCKETCODER_LAUNCH_INPUT`; the server erases its copy once the workspace is
   ready.

@@ -144,7 +144,7 @@ describe("attachWorkspace with files", () => {
         return Response.json(descriptorFor(path), { status: 201 });
       if (path.endsWith("/agent/message")) return Response.json({ ok: true });
       if (path.includes("/agent/messages")) return Response.json({ messages: [] });
-      return Response.json({ state: "ready" });
+      return Response.json({ state: "ready", agent_state: "stable" });
     };
     const fail = ((message: string) => {
       throw new Error(message);

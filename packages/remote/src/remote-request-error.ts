@@ -5,6 +5,7 @@ export type RemoteRequestPhase =
   | "initial_messages"
   | "baseline_changes"
   | "initial_events"
+  | "submit_readiness"
   | "submit"
   | "reply_events"
   | "reply_messages"

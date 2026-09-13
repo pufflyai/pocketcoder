@@ -219,12 +219,28 @@ export async function runHarnessE2E(
     );
     const { request, workspaceId, readyInMs } = workspace;
 
-    const statusResponse = await request(`/v1/workspaces/${workspaceId}/agent/status`);
-    if (!statusResponse.ok) {
-      throw new Error(
-        `status relay failed (${statusResponse.status}): ${errorBody(await readBody(statusResponse))}`,
-      );
-    }
+    // A ready workspace can still be inside AgentAPI's startup window, where a
+    // user message is rejected. Wait for the agent to be waiting for input.
+    await waitFor(
+      async () => {
+        const statusResponse = await request(`/v1/workspaces/${workspaceId}/agent/status`);
+        if (!statusResponse.ok) {
+          throw new Error(
+            `status relay failed (${statusResponse.status}): ${errorBody(await readBody(statusResponse))}`,
+          );
+        }
+        const body = (await readBody(statusResponse)) as { status?: unknown };
+        if (body.status !== "running" && body.status !== "stable") {
+          throw new Error(
+            `status relay returned an unknown status: ${JSON.stringify(body.status)}`,
+          );
+        }
+        return body.status === "stable" ? body.status : null;
+      },
+      config.readyTimeoutMs,
+      pollIntervalMs,
+      "the agent to be ready for input",
+    );
 
     const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
     const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];

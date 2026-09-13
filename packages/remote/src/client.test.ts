@@ -23,6 +23,9 @@ describe("local Pi AgentAPI client", () => {
         input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
       const path = new URL(request.url).pathname;
       requests.push(`${request.method} ${path}`);
+      if (request.method === "GET" && path.endsWith("/status")) {
+        return Response.json({ status: "stable" });
+      }
       if (request.method === "GET" && path.endsWith("/events")) {
         return new Response(events, { headers: { "content-type": "text/event-stream" } });
       }
@@ -196,6 +199,7 @@ describe("local Pi AgentAPI stream lifecycle", () => {
       if (path.endsWith("/messages")) {
         return Response.json({ messages: [{ id: 0, role: "agent", content: "ready" }] });
       }
+      if (path.endsWith("/status")) return Response.json({ status: "stable" });
       if (path.endsWith("/changes")) {
         return Response.json({
           cursor: 1,

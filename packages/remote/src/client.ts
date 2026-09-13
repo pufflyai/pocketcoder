@@ -19,6 +19,8 @@ export interface RemoteAgentClientConfig {
   key: string;
   pollIntervalMs?: number;
   timeoutMs?: number;
+  // How long to wait for the agent to be ready for input before giving up.
+  readyTimeoutMs?: number;
 }
 
 interface AgentApiStatus {
@@ -45,6 +47,7 @@ export class RemoteAgentClient {
   readonly key: string;
   readonly pollIntervalMs: number;
   readonly timeoutMs: number;
+  readonly readyTimeoutMs: number;
   readonly fetchImpl: FetchLike;
   private changesUrl: string | undefined;
 
@@ -53,6 +56,8 @@ export class RemoteAgentClient {
     this.key = config.key;
     this.pollIntervalMs = config.pollIntervalMs ?? 250;
     this.timeoutMs = config.timeoutMs ?? 600_000;
+    // Waiting for input longer than the whole turn budget cannot help.
+    this.readyTimeoutMs = Math.min(config.readyTimeoutMs ?? 120_000, this.timeoutMs);
     this.fetchImpl = fetchImpl;
     this.changesUrl = changesUrlFor(this.serviceUrl);
   }
@@ -140,11 +145,46 @@ export class RemoteAgentClient {
     return { cursor: body.cursor, agentState: body.workspace.agent_state };
   }
 
+  // A workspace reports itself ready once its services answer health checks,
+  // which can happen while AgentAPI is still starting. It rejects a user
+  // message until it is waiting for input, so wait rather than fail the turn.
+  private async waitForInput(signal: AbortSignal): Promise<void> {
+    const deadline = Date.now() + this.readyTimeoutMs;
+    let cursor = 0;
+    for (;;) {
+      const remainingMs = deadline - Date.now();
+      // Relay mode long-polls workspace changes; only a direct AgentAPI, which
+      // has no changes endpoint, falls back to polling /status.
+      const change = await this.workspaceChange(
+        cursor,
+        Math.max(1, Math.min(30, Math.ceil(remainingMs / 1000))),
+        "submit_readiness",
+        false,
+        signal,
+      );
+      const state = change
+        ? change.agentState
+        : await this.status("submit_readiness", false, signal);
+      if (state === "stable") return;
+      const advanced = change !== undefined && change.cursor !== cursor;
+      if (change) cursor = change.cursor;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `remote agent was still ${state} after ${this.readyTimeoutMs}ms and cannot accept a message`,
+        );
+      }
+      // Pace the loop whenever the long-poll returned without advancing, so a
+      // stalled cursor cannot spin this into a hot loop.
+      if (!advanced) await delay(this.pollIntervalMs, signal);
+    }
+  }
+
   private async submit(
     prompt: string,
     attachmentIds: string[],
     signal: AbortSignal,
   ): Promise<void> {
+    await this.waitForInput(signal);
     const response = await this.request("/message", {
       method: "POST",
       body: JSON.stringify({

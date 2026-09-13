@@ -1,4 +1,5 @@
 import {
+  type AgentState,
   ERROR_CODES,
   type ErrorCode,
   ErrorEnvelopeSchema,
@@ -47,6 +48,20 @@ export class WorkspaceTerminalError extends Error {
     );
     this.name = "WorkspaceTerminalError";
     this.workspace = workspace;
+  }
+}
+
+export class AgentNotReadyError extends Error {
+  readonly workspaceId: string;
+  readonly agentState: AgentState;
+
+  constructor(workspaceId: string, agentState: AgentState, timeoutMs: number) {
+    super(
+      `agent in workspace ${workspaceId} was still ${agentState} after ${timeoutMs}ms and cannot accept a message`,
+    );
+    this.name = "AgentNotReadyError";
+    this.workspaceId = workspaceId;
+    this.agentState = agentState;
   }
 }
 
