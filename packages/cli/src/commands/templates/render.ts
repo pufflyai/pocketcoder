@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { renderTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { loadTemplateSource } from "@pstdio/pocketcoder-runtime-core";
 import type { Argv } from "yargs";
-import { type Flags, need } from "../../cli-context";
+import { type Flags, need } from "../../command/cli-context";
 import { addAction } from "../command";
 
 export function addRenderCommand(parser: Argv) {
@@ -39,21 +39,15 @@ export function addRenderCommand(parser: Argv) {
 async function renderTemplateFile(flags: Flags) {
   const sourcePath = resolve(need(flags, "manifest"));
   const outputDirectory = resolve(need(flags, "out"));
-  const set = Array.isArray(flags.set)
-    ? flags.set.map(String)
-    : typeof flags.set === "string"
-      ? [flags.set]
-      : [];
+  const singleValue = typeof flags.set === "string" ? [flags.set] : [];
+  const set = Array.isArray(flags.set) ? flags.set.map(String) : singleValue;
   const rendered = renderTemplateManifest(await loadTemplateSource(sourcePath), {
     ...(typeof flags.image === "string" ? { image: flags.image } : {}),
     set,
   });
   const outputPath = join(outputDirectory, `${rendered.manifest.metadata.name}.json`);
-  if (sourcePath === outputPath)
-    throw new Error("render output must not overwrite the source file");
+  if (sourcePath === outputPath) throw new Error("render output must not overwrite the source file");
   await mkdir(outputDirectory, { recursive: true });
   await writeFile(outputPath, `${rendered.canonical}\n`, "utf8");
-  console.log(
-    `wrote ${outputPath} (${rendered.manifest.metadata.name}@${rendered.manifest.spec.version})`,
-  );
+  console.log(`wrote ${outputPath} (${rendered.manifest.metadata.name}@${rendered.manifest.spec.version})`);
 }

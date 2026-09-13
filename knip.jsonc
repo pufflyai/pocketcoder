@@ -19,7 +19,7 @@
       "entry": ["src/**/*.test.ts"]
     },
     "packages/remote": {
-      "entry": ["src/extension.ts", "src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts"]
     },
     "examples/harnesses/*": {
       "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]

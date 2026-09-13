@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Argv } from "yargs";
-import { api, controlPlaneClient, type Flags, fail, need } from "../cli-context";
+import { api, controlPlaneClient, type Flags, fail, need } from "../command/cli-context";
 import { addAction } from "./command";
 
 export function addDoctorCommand(parser: Argv) {
@@ -18,8 +18,7 @@ export function addDoctorCommand(parser: Argv) {
         .option("turn-timeout-seconds", {
           type: "number",
           default: 60,
-          description:
-            "Maximum wait for agent input readiness and, separately, its diagnostic response",
+          description: "Maximum wait for agent input readiness and, separately, its diagnostic response",
         }),
     runDoctor,
   );
@@ -73,9 +72,7 @@ async function waitUntilReady(workspaceId: string) {
     const workspace = await controlPlaneClient().workspaces.get(workspaceId);
     if (workspace.state === "ready") return;
     if (["failed", "canceled", "expired", "preserved", "succeeded"].includes(workspace.state)) {
-      throw new Error(
-        `workspace reached ${workspace.state} (${workspace.reason_code ?? "no reason"})`,
-      );
+      throw new Error(`workspace reached ${workspace.state} (${workspace.reason_code ?? "no reason"})`);
     }
     await Bun.sleep(2000);
   }
@@ -126,9 +123,7 @@ async function runTurn(workspaceId: string, timeoutSeconds: number) {
       `/v1/workspaces/${workspaceId}/agent/messages?after=${encodeURIComponent(after)}`,
     );
     if (!messagesResponse.ok) {
-      throw new Error(
-        `agent messages probe failed (${messagesResponse.status}): ${await messagesResponse.text()}`,
-      );
+      throw new Error(`agent messages probe failed (${messagesResponse.status}): ${await messagesResponse.text()}`);
     }
     const body = (await messagesResponse.json()) as { messages?: Array<Record<string, unknown>> };
     const messages = body.messages ?? [];
@@ -139,9 +134,7 @@ async function runTurn(workspaceId: string, timeoutSeconds: number) {
     }
     await Bun.sleep(500);
   }
-  throw new Error(
-    `agent did not return the correlated diagnostic token within ${timeoutSeconds} seconds`,
-  );
+  throw new Error(`agent did not return the correlated diagnostic token within ${timeoutSeconds} seconds`);
 }
 
 function containsNonce(message: Record<string, unknown>, nonce: string) {

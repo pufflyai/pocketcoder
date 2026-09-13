@@ -1,15 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
@@ -33,9 +24,7 @@ export interface ServerProcessOptions {
 }
 
 function stateRoot(): string {
-  return resolve(
-    process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder"),
-  );
+  return resolve(process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder"));
 }
 
 function statePath(): string {
@@ -123,8 +112,7 @@ async function healthIdentity(url: string): Promise<string | null> {
 }
 
 function configUrl(config: ServerConfig): string {
-  const host =
-    config.listenHost === "0.0.0.0" || config.listenHost === "::" ? "127.0.0.1" : config.listenHost;
+  const host = config.listenHost === "0.0.0.0" || config.listenHost === "::" ? "127.0.0.1" : config.listenHost;
   return `http://${host}:${config.listenPort}`;
 }
 
@@ -229,9 +217,7 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
     if (processIdentityMatches(state)) process.kill(state.pid, "SIGTERM");
     removeState();
     const evidence = logTail(state.logPath);
-    throw new Error(
-      `${error instanceof Error ? error.message : error}${evidence ? `\n${evidence}` : ""}`,
-    );
+    throw new Error(`${error instanceof Error ? error.message : error}${evidence ? `\n${evidence}` : ""}`);
   }
 
   console.log(`pocketcoder-server started (pid ${state.pid})`);
@@ -248,8 +234,9 @@ export async function printManagedServerStatus(json: boolean): Promise<void> {
   if (!state) throw new Error("server is not running (no managed server state)");
   const identityMatches = processIdentityMatches(state);
   const healthy = identityMatches && (await healthIdentity(state.url)) === state.instanceToken;
+  const stoppedState = identityMatches ? "unhealthy" : "stale";
   const result = {
-    state: healthy ? "running" : identityMatches ? "unhealthy" : "stale",
+    state: healthy ? "running" : stoppedState,
     pid: state.pid,
     url: state.url,
     started_at: state.startedAt,
@@ -258,9 +245,7 @@ export async function printManagedServerStatus(json: boolean): Promise<void> {
   };
   if (json) console.log(JSON.stringify(result, null, 2));
   else {
-    console.log(
-      `${result.state}\tpid=${result.pid}\turl=${result.url}\tstarted=${result.started_at}`,
-    );
+    console.log(`${result.state}\tpid=${result.pid}\turl=${result.url}\tstarted=${result.started_at}`);
   }
   if (!healthy) throw new Error(`managed server state is ${result.state}`);
 }

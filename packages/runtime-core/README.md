@@ -21,3 +21,10 @@ PostgreSQL, Docker, and Kubernetes code.
 
 The server supplies implementations of the store, workspace driver, storage
 driver, and secret resolver ports defined by `runtime-contracts`.
+
+## Source layout
+
+`scheduler/` contains the scheduler context, admission, lifecycle, and sweeps.
+The `Scheduler` entry composes them with explicit dependencies. Reconciliation,
+warm pools, the registry, outbox delivery, and metrics have their own feature
+directories. Tests live beside the behavior they cover.

@@ -47,12 +47,8 @@ export function checkClient(child: Subprocess<"pipe", "pipe", "pipe">) {
     async prompt(message: string, expected: string) {
       const start = events.length;
       await send(message);
-      await until(
-        () => events.slice(start).some((event) => event.type === "agent_settled"),
-        "remote turn",
-      );
-      if (!JSON.stringify(events.slice(start)).includes(expected))
-        throw new Error(`Missing response: ${expected}`);
+      await until(() => events.slice(start).some((event) => event.type === "agent_settled"), "remote turn");
+      if (!JSON.stringify(events.slice(start)).includes(expected)) throw new Error(`Missing response: ${expected}`);
     },
     async quit() {
       await send("/quit");

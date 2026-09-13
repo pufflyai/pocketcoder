@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  assertNoLocalInstallDependencies,
-  assertWorkspaceInstallDependencies,
-} from "./check-publishable-manifest";
+import { assertNoLocalInstallDependencies, assertWorkspaceInstallDependencies } from "./check-publishable-manifest";
 
 const workspaces = new Map([
   ["sdk", { version: "1.2.3" }],
@@ -35,19 +32,19 @@ test("accepts compatible public dependencies and local development dependencies"
 });
 
 test("rejects an incompatible SDK range before consumer overrides can hide it", () => {
-  expect(() =>
-    assertWorkspaceInstallDependencies({ dependencies: { sdk: "^2.0.0" } }, workspaces),
-  ).toThrow("does not accept workspace version");
+  expect(() => assertWorkspaceInstallDependencies({ dependencies: { sdk: "^2.0.0" } }, workspaces)).toThrow(
+    "does not accept workspace version",
+  );
 });
 
 test("rejects non-version declarations before consumer overrides can hide them", () => {
-  expect(() =>
-    assertWorkspaceInstallDependencies({ dependencies: { sdk: "banana" } }, workspaces),
-  ).toThrow("is not a semantic version range");
+  expect(() => assertWorkspaceInstallDependencies({ dependencies: { sdk: "banana" } }, workspaces)).toThrow(
+    "is not a semantic version range",
+  );
 });
 
 test("rejects private workspace dependencies even when their version range is valid", () => {
-  expect(() =>
-    assertWorkspaceInstallDependencies({ dependencies: { internal: "^1.0.0" } }, workspaces),
-  ).toThrow("refers to a private workspace");
+  expect(() => assertWorkspaceInstallDependencies({ dependencies: { internal: "^1.0.0" } }, workspaces)).toThrow(
+    "refers to a private workspace",
+  );
 });

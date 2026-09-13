@@ -10,9 +10,7 @@ const prepared = await preparePiRuntime({
   gatewayApi: options.gatewayApi,
 });
 
-console.log(
-  `prepared ${prepared.templateName}@${prepared.templateVersion} (${prepared.templateDigest})`,
-);
+console.log(`prepared ${prepared.templateName}@${prepared.templateVersion} (${prepared.templateDigest})`);
 console.log(`image: ${prepared.image}`);
 console.log(`template: ${prepared.templatePath}`);
 console.log(`secret root: ${prepared.secretRoot}`);

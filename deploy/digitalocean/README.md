@@ -277,7 +277,7 @@ POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH=workspaces \
 POCKETCODER_KUBERNETES_CONFORMANCE_IMAGE='registry.example/conformance@sha256:<64-hex-digest>' \
 POCKETCODER_DIGITALOCEAN_REGION='<region>' \
 POCKETCODER_DIGITALOCEAN_NFS_TIER='<tier>' \
-bun test packages/drivers/src/kubernetes-conformance.test.ts
+bun test packages/drivers/src/kubernetes/kubernetes-conformance.test.ts
 ```
 
 Save its JSON output with the DOKS version, region, NFS tier, path modes, and

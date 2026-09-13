@@ -1,6 +1,6 @@
 import { loadTemplateFile } from "@pstdio/pocketcoder-runtime-core";
 import type { Argv } from "yargs";
-import { type Flags, fail } from "../../cli-context";
+import { type Flags, fail } from "../../command/cli-context";
 import { addAction } from "../command";
 
 function templateFiles(flags: Flags) {

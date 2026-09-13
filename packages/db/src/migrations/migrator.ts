@@ -36,16 +36,13 @@ async function migrationTableExists(
   schema: string,
   name: string,
 ): Promise<boolean> {
-  const rows = (await connection.unsafe("SELECT to_regclass($1) AS relation", [
-    `${schema}.${name}`,
-  ])) as Array<{ relation: string | null }>;
+  const rows = (await connection.unsafe("SELECT to_regclass($1) AS relation", [`${schema}.${name}`])) as Array<{
+    relation: string | null;
+  }>;
   return rows[0]?.relation != null;
 }
 
-async function appliedMigrations(
-  connection: MigrationConnection | SQL,
-  schema: string,
-): Promise<AppliedMigration[]> {
+async function appliedMigrations(connection: MigrationConnection | SQL, schema: string): Promise<AppliedMigration[]> {
   if (!(await migrationTableExists(connection, schema, MIGRATIONS_TABLE))) return [];
   return (await connection.unsafe(
     `SELECT hash, name, applied_at FROM ${table(schema, MIGRATIONS_TABLE)}`,

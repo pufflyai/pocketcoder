@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import {
-  agentApiHarness,
-  parseTemplateManifest,
-  templateServices,
-} from "@pstdio/pocketcoder-contracts";
+import { agentApiHarness, parseTemplateManifest, templateServices } from "@pstdio/pocketcoder-contracts";
 import { OSS_E2E_HARNESSES } from "./oss";
 
 describe("OSS harness E2E matrix", () => {

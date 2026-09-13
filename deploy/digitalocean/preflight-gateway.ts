@@ -1,11 +1,4 @@
-import {
-  at,
-  imageError,
-  type KubeObject,
-  named,
-  namedContainer,
-  object,
-} from "./preflight-objects";
+import { at, imageError, type KubeObject, named, namedContainer, object } from "./preflight-objects";
 
 const SESSION_SECRET = "pocketcoder-pi-gateway-session";
 
@@ -18,12 +11,7 @@ function envEntry(container: KubeObject | undefined, name: string) {
   return environment(container).find((entry) => entry.name === name);
 }
 
-function validateSecretEnv(
-  container: KubeObject | undefined,
-  name: string,
-  key: string,
-  errors: string[],
-) {
+function validateSecretEnv(container: KubeObject | undefined, name: string, key: string, errors: string[]) {
   const entry = envEntry(container, name);
   if (
     at(entry, "valueFrom", "secretKeyRef", "name") !== SESSION_SECRET ||
@@ -34,9 +22,7 @@ function validateSecretEnv(
 }
 
 function piTemplate(documents: KubeObject[], errors: string[]) {
-  const source = object(named(documents, "ConfigMap", "pocketcoder-templates")?.data)?.[
-    "pi-harness.json"
-  ];
+  const source = object(named(documents, "ConfigMap", "pocketcoder-templates")?.data)?.["pi-harness.json"];
   if (typeof source !== "string") {
     errors.push("pocketcoder-templates must contain pi-harness.json");
     return null;
@@ -44,9 +30,7 @@ function piTemplate(documents: KubeObject[], errors: string[]) {
   try {
     return object(JSON.parse(source));
   } catch (error) {
-    errors.push(
-      `pi-harness.json is invalid: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    errors.push(`pi-harness.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
     return null;
   }
 }
@@ -89,9 +73,7 @@ function validateGatewayDeployment(documents: KubeObject[], errors: string[]) {
   if (at(deployment, "spec", "template", "spec", "automountServiceAccountToken") !== false) {
     errors.push("gateway must disable its service account token");
   }
-  if (
-    at(deployment, "spec", "template", "spec", "serviceAccountName") !== "pocketcoder-pi-gateway"
-  ) {
+  if (at(deployment, "spec", "template", "spec", "serviceAccountName") !== "pocketcoder-pi-gateway") {
     errors.push("gateway must use its dedicated ServiceAccount");
   }
   const podSecurity = at(deployment, "spec", "template", "spec", "securityContext");

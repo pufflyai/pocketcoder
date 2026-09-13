@@ -5,8 +5,7 @@ describe("OpenAI gateway", () => {
   test("keeps the provider key on the host and forwards Responses API calls", async () => {
     let upstreamRequest: Request | undefined;
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-      upstreamRequest =
-        input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
+      upstreamRequest = input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
       return Response.json({ id: "resp_example", output: [] });
     }) as typeof fetch;
     const handler = createOpenAIGatewayHandler(
@@ -137,8 +136,7 @@ describe("OpenAI gateway", () => {
         clientBearer: "workspace-bearer",
         maxTotalRequestBytes: 2,
       },
-      (async (_input: string | URL | Request, _init?: RequestInit) =>
-        Response.json({ output: [] })) as typeof fetch,
+      (async (_input: string | URL | Request, _init?: RequestInit) => Response.json({ output: [] })) as typeof fetch,
     );
     const request = () =>
       new Request("http://localhost/v1/responses", {

@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { controlPlaneClient } from "../../cli-context";
+import { controlPlaneClient } from "../../command/cli-context";
 import { addAction } from "../command";
 
 export function addListCommand(parser: Argv) {
@@ -13,9 +13,7 @@ export function addListCommand(parser: Argv) {
       if (flags.json) console.log(JSON.stringify(items, null, 2));
       else {
         for (const item of items) {
-          console.log(
-            `${item.name}@${item.version}\t${item.status}\t${item.digest.slice(0, 19)}...`,
-          );
+          console.log(`${item.name}@${item.version}\t${item.status}\t${item.digest.slice(0, 19)}...`);
         }
       }
     },

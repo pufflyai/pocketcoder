@@ -4,7 +4,5 @@ import { addIssueCommand } from "./issue";
 import { addRevokeCommand } from "./revoke";
 
 export function addKeyCommands(parser: Argv) {
-  return addResource(parser, "keys", "Manage machine keys", (commands) =>
-    addRevokeCommand(addIssueCommand(commands)),
-  );
+  return addResource(parser, "keys", "Manage machine keys", (commands) => addRevokeCommand(addIssueCommand(commands)));
 }

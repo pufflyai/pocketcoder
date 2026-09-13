@@ -3,15 +3,11 @@ import { PocketCoderClient, PocketCoderError } from "./index";
 
 function fixtureClient(response: () => Response, requests: Request[] = []) {
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    const request =
-      input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
+    const request = input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
     requests.push(request);
     return response();
   }) as typeof fetch;
-  return new PocketCoderClient(
-    { baseUrl: "http://pocketcoder.test/", apiKey: "pkt_example" },
-    fetchImpl,
-  );
+  return new PocketCoderClient({ baseUrl: "http://pocketcoder.test/", apiKey: "pkt_example" }, fetchImpl);
 }
 
 describe("PocketCoderClient", () => {
@@ -81,9 +77,7 @@ describe("PocketCoderClient", () => {
   });
 
   test("rejects an invalid base URL at construction time", () => {
-    expect(() => new PocketCoderClient({ baseUrl: "not a URL", apiKey: "pkt_example" })).toThrow(
-      "valid HTTP(S) URL",
-    );
+    expect(() => new PocketCoderClient({ baseUrl: "not a URL", apiKey: "pkt_example" })).toThrow("valid HTTP(S) URL");
   });
 
   test("validates checkpoint and operation resources through first-class APIs", async () => {
@@ -150,11 +144,7 @@ describe("PocketCoderClient", () => {
     await client.workspaces.recreate("workspace", input, "recreate-key").catch(() => {});
     await client.workspaces.resume("workspace", input, "resume-key").catch(() => {});
 
-    expect(await Promise.all(requests.map((request) => request.json()))).toEqual([
-      input,
-      input,
-      input,
-    ]);
+    expect(await Promise.all(requests.map((request) => request.json()))).toEqual([input, input, input]);
   });
 
   test("retries retryable reads and idempotency-key mutations only", async () => {
@@ -165,10 +155,7 @@ describe("PocketCoderClient", () => {
         ? new Response("unavailable", { status: 503, headers: { "retry-after": "0" } })
         : new Response("ok");
     }) as unknown as typeof fetch;
-    const client = new PocketCoderClient(
-      { baseUrl: "http://pocketcoder.test", apiKey: "pkt_example" },
-      retryingFetch,
-    );
+    const client = new PocketCoderClient({ baseUrl: "http://pocketcoder.test", apiKey: "pkt_example" }, retryingFetch);
 
     expect((await client.raw("/livez")).status).toBe(200);
     expect(calls).toBe(2);

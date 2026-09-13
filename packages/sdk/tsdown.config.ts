@@ -4,9 +4,7 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: ["src/index.ts"],
   alias: {
-    "@pstdio/pocketcoder-contracts": fileURLToPath(
-      new URL("../contracts/src/index.ts", import.meta.url),
-    ),
+    "@pstdio/pocketcoder-contracts": fileURLToPath(new URL("../contracts/src/index.ts", import.meta.url)),
   },
   clean: true,
   deps: {

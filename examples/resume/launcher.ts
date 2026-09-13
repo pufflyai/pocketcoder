@@ -23,9 +23,7 @@ async function startSession(directory: string, idleSeconds: number, checkModel: 
     const log = await open(logPath, "a", 0o600);
     let logOffset = (await log.stat()).size;
     console.error(`Starting the isolated session. Build and server log: ${logPath}`);
-    console.error(
-      "Ctrl+C stops waiting. Startup continues; rerunning this command reconnects to it.",
-    );
+    console.error("Ctrl+C stops waiting. Startup continues; rerunning this command reconnects to it.");
     const daemon = spawn(
       process.execPath,
       [
@@ -53,10 +51,7 @@ async function startSession(directory: string, idleSeconds: number, checkModel: 
           if (daemon.exitCode !== null && daemon.exitCode !== 0) {
             throw new Error(`Isolated startup failed. See ${logPath}`);
           }
-          if (
-            daemon.exitCode === 0 &&
-            !(await stat(daemonLock(directory)).catch(() => undefined))
-          ) {
+          if (daemon.exitCode === 0 && !(await stat(daemonLock(directory)).catch(() => undefined))) {
             throw new Error(`Isolated startup stopped. See ${logPath}`);
           }
           connection = await readConnection(directory);
@@ -73,12 +68,7 @@ async function startSession(directory: string, idleSeconds: number, checkModel: 
   return connection;
 }
 
-export async function launchSession(
-  directory: string,
-  idleSeconds: number,
-  rpc: boolean,
-  checkModel: boolean,
-) {
+export async function launchSession(directory: string, idleSeconds: number, rpc: boolean, checkModel: boolean) {
   const connection = await startSession(directory, idleSeconds, checkModel);
   const response = await sessionControl(connection, "attach");
   const workspace = (await response.json()) as { id: string };
@@ -113,10 +103,6 @@ export async function stopSession(directory: string) {
     return;
   }
   await sessionControl(connection, "stop");
-  await waitFor(
-    async () => !(await Bun.file(connectionFile(directory)).exists()),
-    120_000,
-    "isolated cleanup",
-  );
+  await waitFor(async () => !(await Bun.file(connectionFile(directory)).exists()), 120_000, "isolated cleanup");
   console.log("Removed the isolated session, database and checkpoints.");
 }

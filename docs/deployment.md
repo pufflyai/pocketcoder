@@ -199,7 +199,7 @@ context before rollout:
 ```sh
 POCKETCODER_KUBERNETES_CONFORMANCE=1 \
 POCKETCODER_KUBERNETES_NAMESPACE=pocketcoder \
-bun test packages/drivers/src/kubernetes-conformance.test.ts
+bun test packages/drivers/src/kubernetes/kubernetes-conformance.test.ts
 ```
 
 To test a labeled, tainted workspace node pool, also set
@@ -208,7 +208,7 @@ two scheduling variables above. Then run:
 
 ```sh
 POCKETCODER_KUBERNETES_CONFORMANCE=1 \
-bun test packages/drivers/src/kubernetes-scheduling-conformance.test.ts
+bun test packages/drivers/src/kubernetes/kubernetes-scheduling-conformance.test.ts
 ```
 
 With `POCKETCODER_SECRET_PROVIDER=kubernetes`, a template value

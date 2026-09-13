@@ -10,21 +10,14 @@ async function run(command: string[], cwd: string) {
 
 async function pack(packageDir: string, destination: string, label: string) {
   const before = new Set(await readdir(destination));
-  await run(
-    ["bun", "pm", "pack", "--destination", destination, "--ignore-scripts", "--quiet"],
-    resolve(packageDir),
-  );
-  const tarballName = (await readdir(destination)).find(
-    (entry) => entry.endsWith(".tgz") && !before.has(entry),
-  );
+  await run(["bun", "pm", "pack", "--destination", destination, "--ignore-scripts", "--quiet"], resolve(packageDir));
+  const tarballName = (await readdir(destination)).find((entry) => entry.endsWith(".tgz") && !before.has(entry));
   if (!tarballName) throw new Error(`${label} pack did not produce a tarball`);
   return join(destination, tarballName);
 }
 
 export async function installPackedDependencies(tempDir: string, tarballs: Record<string, string>) {
-  const dependencies = Object.fromEntries(
-    Object.entries(tarballs).map(([name, path]) => [name, `file:${path}`]),
-  );
+  const dependencies = Object.fromEntries(Object.entries(tarballs).map(([name, path]) => [name, `file:${path}`]));
   // Manifest checks validate the ranges first. Overrides also use these unpublished tarballs transitively.
   await Bun.write(
     join(tempDir, "package.json"),
@@ -40,10 +33,7 @@ export async function installPackedDependencies(tempDir: string, tarballs: Recor
       2,
     )}\n`,
   );
-  await run(
-    ["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")],
-    tempDir,
-  );
+  await run(["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")], tempDir);
 }
 
 export async function checkSdkPackage(packageDir: string, remotePackageDir?: string) {
@@ -51,9 +41,7 @@ export async function checkSdkPackage(packageDir: string, remotePackageDir?: str
 
   try {
     const sdkTarball = await pack(packageDir, tempDir, "SDK");
-    const remoteTarball = remotePackageDir
-      ? await pack(remotePackageDir, tempDir, "remote")
-      : undefined;
+    const remoteTarball = remotePackageDir ? await pack(remotePackageDir, tempDir, "remote") : undefined;
 
     await Bun.write(
       join(tempDir, "tsconfig.json"),
@@ -165,10 +153,7 @@ try {
         throw new Error("remote extension declaration refers to monorepo-only sources");
       }
     }
-    await run(
-      [join(import.meta.dir, "../node_modules/.bin/tsc"), "--project", "tsconfig.json"],
-      tempDir,
-    );
+    await run([join(import.meta.dir, "../node_modules/.bin/tsc"), "--project", "tsconfig.json"], tempDir);
     await run(["node", "consumer.mjs"], tempDir);
   } finally {
     await rm(tempDir, { recursive: true, force: true });

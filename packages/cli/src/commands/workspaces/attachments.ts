@@ -72,11 +72,7 @@ export async function uploadAttachments(
 
 // Interactive chat commands for the attachment queue. Returns true when the
 // line was a queue command and must not be sent as a message.
-export function handleAttachmentCommand(
-  line: string,
-  queue: string[],
-  print: (line: string) => void,
-): boolean {
+export function handleAttachmentCommand(line: string, queue: string[], print: (line: string) => void): boolean {
   const attach = line.match(/^\/attach\s+(.+)$/);
   if (attach) {
     const path = (attach[1] as string).trim();

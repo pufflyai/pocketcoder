@@ -1,9 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import {
-  digestOpaque,
-  generateOpaqueSecret,
-  verifyEgressAuditToken,
-} from "@pstdio/pocketcoder-auth";
+import { digestOpaque, generateOpaqueSecret, verifyEgressAuditToken } from "@pstdio/pocketcoder-auth";
 import {
   ApiError,
   NetworkEventBatchSchema,
@@ -24,32 +20,25 @@ import {
 } from "@pstdio/pocketcoder-runtime-core";
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
-import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments";
-import { Readiness } from "./health";
-import { Hub } from "./hub";
-import {
-  type AppEnv,
-  errorHandler,
-  machineAuth,
-  requestId,
-  requestLogging,
-  requireScope,
-} from "./middleware";
-import { createStructuredLogger, type StructuredLogger } from "./observability";
-import { type PersistenceLimits, PersistenceService } from "./persistence";
-import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
-import { relayHandler } from "./relay";
-import { registerAdministrationRoutes } from "./routes/administration";
-import { registerCatalogRoutes } from "./routes/catalog";
-import { registerCheckpointRoutes } from "./routes/checkpoints";
-import { registerConversationRoutes } from "./routes/conversations";
-import { registerDiagnosticRoutes } from "./routes/diagnostics";
-import { registerRecoveryRoutes } from "./routes/recovery";
-import { registerWorkspaceRoutes } from "./routes/workspaces";
-import { WorkspaceService } from "./service";
-import type { TerminalBridgeCallbacks } from "./terminal-bridge";
-import { terminalConnectValidator, terminalWsEvents } from "./terminal-ws";
-import { agentConnectValidator, agentWsEvents } from "./ws";
+import { registerAdministrationRoutes } from "./administration/administration-routes";
+import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
+import { Hub } from "./control-channel/hub";
+import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./control-channel/pool-ws";
+import { agentConnectValidator, agentWsEvents } from "./control-channel/ws";
+import { registerConversationRoutes } from "./conversations/conversations-routes";
+import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
+import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
+import { Readiness } from "./observability/health";
+import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
+import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
+import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
+import { registerRecoveryRoutes } from "./persistence/recovery-routes";
+import { relayHandler } from "./relay/relay";
+import { registerCatalogRoutes } from "./templates/catalog-routes";
+import type { TerminalBridgeCallbacks } from "./terminals/terminal-bridge";
+import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
+import { WorkspaceService } from "./workspaces/service";
+import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
   store: Store;
@@ -157,8 +146,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     workspaceServerUrl: deps.workspaceServerUrl,
     metrics,
     ...(warmPool ? { warmPool } : {}),
-    preserveByPolicy: async (row, trigger) =>
-      persistenceHolder.service?.preserveByPolicy(row, trigger) ?? false,
+    preserveByPolicy: async (row, trigger) => persistenceHolder.service?.preserveByPolicy(row, trigger) ?? false,
     onError: (context, err) => log(`scheduler ${context}: ${String(err)}`),
   });
   const service = new WorkspaceService({ store, scheduler, limits });
@@ -221,17 +209,11 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     scheduler,
     pepper,
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
-    ...(driver.cleanupInput
-      ? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() }
-      : {}),
+    ...(driver.cleanupInput ? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() } : {}),
     log,
     persistence,
   };
-  app.get(
-    "/v1/agent/connect",
-    agentConnectValidator(wsDeps),
-    upgradeWebSocket(agentWsEvents(wsDeps)),
-  );
+  app.get("/v1/agent/connect", agentConnectValidator(wsDeps), upgradeWebSocket(agentWsEvents(wsDeps)));
   if (warmPool) {
     app.get(
       "/v1/agent/pool-connect",
@@ -255,9 +237,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     const parsed = NetworkEventBatchSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: "invalid_batch" }, 400);
     const workspaceId =
-      subject.kind === "workspace"
-        ? subject.id
-        : (await store.getWarmPoolRuntime(subject.id))?.workspaceId;
+      subject.kind === "workspace" ? subject.id : (await store.getWarmPoolRuntime(subject.id))?.workspaceId;
     if (!workspaceId || !(await store.getWorkspace(workspaceId))) {
       return c.json({ error: "audit_subject_unassigned" }, 409);
     }

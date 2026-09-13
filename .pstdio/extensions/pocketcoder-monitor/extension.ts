@@ -20,8 +20,7 @@ export default defineExtension({
       title: "Load PocketCoder monitor snapshot",
       async run(ctx: SnapshotCommandContext) {
         const repo = await ctx.repos.getDefault();
-        if (!repo?.path)
-          throw new Error("PocketCoder monitor requires a default project repository.");
+        if (!repo?.path) throw new Error("PocketCoder monitor requires a default project repository.");
         return loadPocketcoderSnapshot({
           process: ctx.process,
           repoPath: repo.path,

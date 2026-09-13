@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { runCli } from "./cli-test-support";
+import { runCli } from "./testing/cli-test-support";
 
 describe("pcd version", () => {
   test("prints the published package version", async () => {
@@ -114,15 +114,12 @@ describe("pcd help", () => {
       usage: "pcd doctor",
       error: "Missing required argument: template",
     },
-  ])(
-    "$usage prints command help when required arguments are missing",
-    async ({ args, usage, error }) => {
-      const result = await runCli(args);
+  ])("$usage prints command help when required arguments are missing", async ({ args, usage, error }) => {
+    const result = await runCli(args);
 
-      expect(result.exitCode).toBe(1);
-      expect(result.output).toContain(usage);
-      expect(result.output).toContain("Options:");
-      expect(result.output).toContain(error);
-    },
-  );
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toContain(usage);
+    expect(result.output).toContain("Options:");
+    expect(result.output).toContain(error);
+  });
 });

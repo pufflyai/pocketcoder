@@ -86,13 +86,9 @@ export async function checkResume(
     assert(third.origin_workspace_id === second.id, "The terminal must follow the new workspace");
     await prompt("Read the saved file again.", token);
     assert(Number(session.generations.length) === 3, "A ready workspace must not resume again");
+    assert(model.prompts.filter((p) => p === "Read the saved file.").length === 1, "Never replay an accepted prompt");
     assert(
-      model.prompts.filter((p) => p === "Read the saved file.").length === 1,
-      "Never replay an accepted prompt",
-    );
-    assert(
-      model.prompts.filter((p) => p === "Recall the original token from our conversation.")
-        .length === 1,
+      model.prompts.filter((p) => p === "Recall the original token from our conversation.").length === 1,
       "Never duplicate a resumed prompt",
     );
     console.log(

@@ -69,10 +69,7 @@ describe("uploadAttachments", () => {
     const file = join(dir, "notes.txt");
     writeFileSync(file, "hello");
     const api = async () =>
-      Response.json(
-        { error: { code: "attachment.conflict", message: "boom", request_id: "r" } },
-        { status: 409 },
-      );
+      Response.json({ error: { code: "attachment.conflict", message: "boom", request_id: "r" } }, { status: 409 });
     expect(uploadAttachments(api, "ws-1", [file], () => {})).rejects.toThrow(/notes.txt.*409/);
   });
 
@@ -82,9 +79,7 @@ describe("uploadAttachments", () => {
       called = true;
       return Response.json({});
     };
-    expect(uploadAttachments(api, "ws-1", ["/does/not/exist.txt"], () => {})).rejects.toThrow(
-      /could not read/,
-    );
+    expect(uploadAttachments(api, "ws-1", ["/does/not/exist.txt"], () => {})).rejects.toThrow(/could not read/);
     expect(called).toBe(false);
   });
 });
@@ -140,8 +135,7 @@ describe("attachWorkspace with files", () => {
     const bodies: Array<{ path: string; body?: string }> = [];
     const api = async (path: string, init: RequestInit = {}) => {
       bodies.push({ path, ...(init.body ? { body: String(init.body) } : {}) });
-      if (path.includes("/attachments/"))
-        return Response.json(descriptorFor(path), { status: 201 });
+      if (path.includes("/attachments/")) return Response.json(descriptorFor(path), { status: 201 });
       if (path.endsWith("/agent/message")) return Response.json({ ok: true });
       if (path.includes("/agent/messages")) return Response.json({ messages: [] });
       return Response.json({ state: "ready", agent_state: "stable" });
@@ -162,10 +156,7 @@ describe("attachWorkspace with files", () => {
       throw new Error(message);
     }) as (message: string) => never;
     expect(
-      attachWorkspace(
-        { id: "ws-1", file: ["x.txt"] },
-        { api: async () => Response.json({}), fail },
-      ),
+      attachWorkspace({ id: "ws-1", file: ["x.txt"] }, { api: async () => Response.json({}), fail }),
     ).rejects.toThrow(/--message/);
   });
 });

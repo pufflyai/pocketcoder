@@ -34,9 +34,7 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres store lifecycle", () => {
     const store = new PostgresStore(url, schema);
     try {
       await expect(store.init()).rejects.toThrow("pending migrations");
-      expect(
-        (await getMigrationStatus(sql, schema)).every((migration) => migration.appliedAt === null),
-      ).toBe(true);
+      expect((await getMigrationStatus(sql, schema)).every((migration) => migration.appliedAt === null)).toBe(true);
       await migrateDatabase(sql, schema);
       await store.init();
     } finally {

@@ -66,10 +66,7 @@ function streamingDeltas(delta: Record<string, unknown>): Record<string, unknown
   if (typeof delta.content !== "string" || delta.content.length < 2) return [delta];
   const midpoint = Math.ceil(delta.content.length / 2);
   const { content, ...metadata } = delta;
-  return [
-    { ...metadata, content: content.slice(0, midpoint) },
-    { content: content.slice(midpoint) },
-  ];
+  return [{ ...metadata, content: content.slice(0, midpoint) }, { content: content.slice(midpoint) }];
 }
 
 export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof Bun.serve> {
@@ -131,10 +128,7 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
           usage: { prompt_tokens: 1, completion_tokens: 4, total_tokens: 5 },
         },
       ];
-      const payloads = [
-        ...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`),
-        "data: [DONE]\n\n",
-      ];
+      const payloads = [...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`), "data: [DONE]\n\n"];
       let canceled = false;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {

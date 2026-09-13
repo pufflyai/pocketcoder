@@ -1,21 +1,4 @@
 export {
-  CheckpointListQuerySchema,
-  CheckpointPageSchema,
-  OutputListQuerySchema,
-  OutputPageSchema,
-  type OutputResource,
-  OutputResourceSchema,
-  PreserveResponseSchema,
-  RestoreResponseSchema,
-  ResumeResponseSchema,
-  StorageInventorySchema,
-  StoragePruneResultSchema,
-  TemplateListQuerySchema,
-  TemplatePageSchema,
-  WarmPoolInventorySchema,
-  WorkspaceChangeSchema,
-} from "./api";
-export {
   type AgentMessageRequest,
   AgentMessageRequestSchema,
   ATTACHMENT_CHUNK_BYTES,
@@ -41,8 +24,19 @@ export {
   AttachmentStartPayload,
   attachmentManifest,
   splitAttachmentManifest,
-} from "./attachment";
-export { canonicalJson, digestOf, sha256Hex } from "./canonical";
+} from "./attachments/attachment";
+export { canonicalJson, digestOf, sha256Hex } from "./common/canonical";
+export { isDuration, parseDurationMs } from "./common/duration";
+export {
+  ApiError,
+  ERROR_CODES,
+  type ErrorCode,
+  type ErrorEnvelope,
+  ErrorEnvelopeSchema,
+  errorEnvelope,
+} from "./common/errors";
+export { CursorPageSchema, CursorQuerySchema, CursorSchema } from "./common/pagination";
+export { hasScope, isScope, SCOPES, type Scope } from "./common/scopes";
 export {
   CONVERSATION_RESUME_REASONS,
   CONVERSATION_ROLES,
@@ -56,26 +50,7 @@ export {
   ConversationResumeOutcomeSchema,
   type ConversationResumeReason,
   type ConversationRole,
-} from "./conversation";
-export { isDuration, parseDurationMs } from "./duration";
-export {
-  ApiError,
-  ERROR_CODES,
-  type ErrorCode,
-  type ErrorEnvelope,
-  ErrorEnvelopeSchema,
-  errorEnvelope,
-} from "./errors";
-export {
-  EVENT_HEADER_ID,
-  EVENT_HEADER_SIGNATURE,
-  EVENT_HEADER_TIMESTAMP,
-  EVENT_TYPES,
-  type EventEnvelope,
-  EventEnvelopeSchema,
-  type EventType,
-} from "./events";
-export { type LogChunk, LogChunkSchema, LogListQuerySchema, LogPageSchema } from "./logs";
+} from "./conversations/conversation";
 export {
   findNetworkRule,
   isPrivateAddress,
@@ -93,8 +68,7 @@ export {
   type NetworkRule,
   NetworkRuleSchema,
   type NetworkState,
-} from "./network";
-export { CursorPageSchema, CursorQuerySchema, CursorSchema } from "./pagination";
+} from "./network/network";
 export {
   CHECKPOINT_STATES,
   type CheckpointManifest,
@@ -131,7 +105,34 @@ export {
   SourceDescriptorSchema,
   STORAGE_STATES,
   type StorageState,
-} from "./persistence";
+} from "./persistence/persistence";
+export {
+  CheckpointListQuerySchema,
+  CheckpointPageSchema,
+  OutputListQuerySchema,
+  OutputPageSchema,
+  type OutputResource,
+  OutputResourceSchema,
+  PreserveResponseSchema,
+  RestoreResponseSchema,
+  ResumeResponseSchema,
+  StorageInventorySchema,
+  StoragePruneResultSchema,
+  TemplateListQuerySchema,
+  TemplatePageSchema,
+  WarmPoolInventorySchema,
+  WorkspaceChangeSchema,
+} from "./protocol/api";
+export {
+  EVENT_HEADER_ID,
+  EVENT_HEADER_SIGNATURE,
+  EVENT_HEADER_TIMESTAMP,
+  EVENT_TYPES,
+  type EventEnvelope,
+  EventEnvelopeSchema,
+  type EventType,
+} from "./protocol/events";
+export { type LogChunk, LogChunkSchema, LogListQuerySchema, LogPageSchema } from "./protocol/logs";
 export {
   type AgentFrame,
   AgentFrameSchema,
@@ -184,7 +185,7 @@ export {
   SourceResolvedPayload,
   SUPPORTED_PROTOCOL_VERSIONS,
   TerminationAckPayload,
-} from "./protocol";
+} from "./protocol/protocol";
 export {
   PROXY_STREAM_CANCEL_REASONS,
   PROXY_STREAM_CHUNK_BYTES,
@@ -199,8 +200,7 @@ export {
   type ProxyStreamStart,
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
-} from "./protocol-stream";
-export { hasScope, isScope, SCOPES, type Scope } from "./scopes";
+} from "./protocol/protocol-stream";
 export {
   type Agent,
   AgentSchema,
@@ -239,11 +239,11 @@ export {
   TimeoutsSchema,
   templateServices,
   timeoutMs,
-} from "./template";
+} from "./templates/template";
 export {
   renderTemplateManifest,
   type TemplateRenderOptions,
-} from "./template-render";
+} from "./templates/template-render";
 export {
   type ClientTerminalMessage,
   ClientTerminalMessageSchema,
@@ -272,7 +272,7 @@ export {
   TerminalSessionListQuerySchema,
   TerminalSessionPageSchema,
   TerminalSessionSchema,
-} from "./terminal";
+} from "./terminals/terminal";
 export {
   AGENT_STATES,
   type AgentState,
@@ -293,4 +293,4 @@ export {
   type WorkspaceResource,
   WorkspaceResourceSchema,
   type WorkspaceState,
-} from "./workspace";
+} from "./workspaces/workspace";

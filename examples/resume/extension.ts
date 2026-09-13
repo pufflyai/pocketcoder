@@ -9,12 +9,7 @@ const client = new PocketCoderClient({
   apiKey: requiredEnvironment("POCKETCODER_KEY"),
 });
 
-async function control(
-  action: string,
-  workspaceId: string,
-  attemptId?: string,
-  signal?: AbortSignal,
-) {
+async function control(action: string, workspaceId: string, attemptId?: string, signal?: AbortSignal) {
   const response = await fetch(`${process.env.POCKETCODER_RESUME_CONTROL_URL}/${action}`, {
     method: "POST",
     headers: {
@@ -53,10 +48,7 @@ export default function (pi: ExtensionAPI) {
     description: "Preserve this workspace. The next message resumes it.",
     handler: async (_args, context) => {
       await control("preserve", currentId);
-      context.ui.notify(
-        "Preservation requested. Your next message will resume the workspace.",
-        "info",
-      );
+      context.ui.notify("Preservation requested. Your next message will resume the workspace.", "info");
     },
   });
 }

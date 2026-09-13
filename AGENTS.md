@@ -24,6 +24,8 @@ Readability and structure matter most — we're happy to make bigger changes to 
 - Prefer pure functions; comment **WHY**, not WHAT
 - Let TypeScript infer return types; avoid nested ternaries
 - No deep relative imports across packages
+- Group package source and adjacent tests by feature. Keep entry points and composition at the package root.
+- Compose services and repositories with explicit dependencies. Do not use inheritance just to split behavior across files.
 
 # Workflow: TDD
 
@@ -48,6 +50,7 @@ Readability and structure matter most — we're happy to make bigger changes to 
 
 ## Database Migrations
 
+- Use schema-backed Drizzle queries for application reads and writes. Pass one transaction through atomic operations; keep PostgreSQL-specific SQL in focused helpers.
 - Never write or edit Drizzle migration SQL by hand — change the schema, then run `bun run db:generate`.
 - One migration entry per PR.
 

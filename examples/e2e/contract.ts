@@ -82,10 +82,7 @@ async function waitFor<T>(
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, description: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`timed out waiting for ${description}`)),
-      timeoutMs,
-    );
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${description}`)), timeoutMs);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -197,10 +194,7 @@ export async function createHarnessWorkspace(
   }
 }
 
-export async function runHarnessE2E(
-  config: HarnessE2EConfig,
-  fetchImpl: FetchLike = fetch,
-): Promise<HarnessE2EReport> {
+export async function runHarnessE2E(config: HarnessE2EConfig, fetchImpl: FetchLike = fetch): Promise<HarnessE2EReport> {
   const messageTimeoutMs = config.messageTimeoutMs ?? 300_000;
   const pollIntervalMs = config.pollIntervalMs ?? 500;
   let workspace: ReadyHarnessWorkspace | null = null;
@@ -231,9 +225,7 @@ export async function runHarnessE2E(
         }
         const body = (await readBody(statusResponse)) as { status?: unknown };
         if (body.status !== "running" && body.status !== "stable") {
-          throw new Error(
-            `status relay returned an unknown status: ${JSON.stringify(body.status)}`,
-          );
+          throw new Error(`status relay returned an unknown status: ${JSON.stringify(body.status)}`);
         }
         return body.status === "stable" ? body.status : null;
       },
@@ -244,10 +236,7 @@ export async function runHarnessE2E(
 
     const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
     const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
-    const baselineId = before.reduce(
-      (maximum, message) => Math.max(maximum, messageId(message)),
-      -1,
-    );
+    const baselineId = before.reduce((maximum, message) => Math.max(maximum, messageId(message)), -1);
     let liveUpdatesPromise: Promise<string[]> | null = null;
     let liveUpdatesController: AbortController | null = null;
     if (config.expectedLiveUpdates) {
@@ -265,9 +254,7 @@ export async function runHarnessE2E(
       body: JSON.stringify({ content: config.prompt, type: "user" }),
     });
     if (!sendResponse.ok) {
-      throw new Error(
-        `message relay failed (${sendResponse.status}): ${errorBody(await readBody(sendResponse))}`,
-      );
+      throw new Error(`message relay failed (${sendResponse.status}): ${errorBody(await readBody(sendResponse))}`);
     }
 
     const observedText = await waitFor(
@@ -298,9 +285,7 @@ export async function runHarnessE2E(
       }
       liveUpdates = updates.length;
       if (updates.length < (config.expectedLiveUpdates ?? 0)) {
-        throw new Error(
-          `expected ${config.expectedLiveUpdates} live updates, observed ${updates.length}`,
-        );
+        throw new Error(`expected ${config.expectedLiveUpdates} live updates, observed ${updates.length}`);
       }
     }
 
@@ -316,8 +301,7 @@ export async function runHarnessE2E(
           const items = body.items ?? [];
           const expected = config.expectedConversation ?? [];
           const matches = expected.every(
-            (message, index) =>
-              items[index]?.role === message.role && items[index]?.content === message.content,
+            (message, index) => items[index]?.role === message.role && items[index]?.content === message.content,
           );
           return matches && items.length >= expected.length ? items : null;
         },

@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { need, withStore } from "../../cli-context";
+import { need, withStore } from "../../command/cli-context";
 import { addAction } from "../command";
 
 export function addRevokeCommand(parser: Argv) {

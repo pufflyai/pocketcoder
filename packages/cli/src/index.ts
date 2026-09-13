@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
-import { createCli } from "./command-tree";
+import { createCli } from "./command/command-tree";
 
-export { createCli } from "./command-tree";
+export { createCli } from "./command/command-tree";
 
 async function main() {
   await createCli(process.argv.slice(2)).parseAsync();

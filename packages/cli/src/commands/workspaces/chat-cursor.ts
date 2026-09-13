@@ -15,8 +15,7 @@ export interface MessageBaseline {
 }
 
 function cursorFile(): string {
-  const root =
-    process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder");
+  const root = process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder");
   return join(root, "message-cursors.json");
 }
 

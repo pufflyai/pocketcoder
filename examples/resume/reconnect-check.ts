@@ -13,13 +13,7 @@ async function verifyCleanup(exited: Promise<number>) {
 
 export async function checkReconnect() {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-reconnect-check-"));
-  const command = [
-    process.execPath,
-    "--no-env-file",
-    join(import.meta.dir, "run.ts"),
-    "--state-dir",
-    directory,
-  ];
+  const command = [process.execPath, "--no-env-file", join(import.meta.dir, "run.ts"), "--state-dir", directory];
   const clients: ReturnType<typeof checkClient>[] = [];
   const launch = () => {
     const client = checkClient(
@@ -55,8 +49,7 @@ export async function checkReconnect() {
     const first = launch();
     await first.prompt(`Save token ${token}`, "Saved.");
     const state = await Bun.file(join(directory, "connection.json")).json();
-    if ((await stat(daemonLock(directory))).ino !== owner.ino)
-      throw new Error("Relaunch replaced the original daemon");
+    if ((await stat(daemonLock(directory))).ino !== owner.ino) throw new Error("Relaunch replaced the original daemon");
     const startupLog = await Bun.file(join(directory, "daemon.log")).text();
     if (startupLog.split("Building the remote client").length !== 2)
       throw new Error("Relaunch started more than one stack");
@@ -71,21 +64,13 @@ export async function checkReconnect() {
       body: "{}",
     });
     const workspace = (await response.json()) as { id: string; state: string };
-    if (workspace.state !== "preserved")
-      throw new Error("Quit must preserve the workspace before returning");
+    if (workspace.state !== "preserved") throw new Error("Quit must preserve the workspace before returning");
     console.log("Reconnect check: starting the second launcher...");
     const second = launch();
-    const history = (await second.entries()).entries.filter(
-      (entry) => entry.customType === "pocketcoder-conversation",
-    );
+    const history = (await second.entries()).entries.filter((entry) => entry.customType === "pocketcoder-conversation");
     const savedTurns = history.filter((entry) => entry.data?.content === `Save token ${token}`);
-    if (savedTurns.length !== 1)
-      throw new Error("Reconnect must show the saved user message exactly once");
-    if (
-      !history.some(
-        (entry) => entry.data?.role === "assistant" && entry.data.content?.includes("Saved."),
-      )
-    )
+    if (savedTurns.length !== 1) throw new Error("Reconnect must show the saved user message exactly once");
+    if (!history.some((entry) => entry.data?.role === "assistant" && entry.data.content?.includes("Saved.")))
       throw new Error(`Reconnect must show the saved assistant reply: ${JSON.stringify(history)}`);
     await second.prompt("Recall the original token from our conversation.", token);
     await second.prompt("Read the saved file.", token);

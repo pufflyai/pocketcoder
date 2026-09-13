@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { api, fail } from "../../cli-context";
+import { api, fail } from "../../command/cli-context";
 import { addAction } from "../command";
 import { chatWorkspace } from "./chat-session";
 import { attachOptions } from "./options";

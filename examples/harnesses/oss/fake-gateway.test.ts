@@ -22,9 +22,7 @@ function authorizedRequest(path: string, body: Record<string, unknown>): Request
 describe("OSS harness E2E fake model gateway", () => {
   test("streams Responses API text for Codex", async () => {
     gateway = startFakeOssGateway("test-bearer", 1);
-    const response = await fetch(
-      authorizedRequest("/v1/responses", { model: "pocketcoder-test", stream: true }),
-    );
+    const response = await fetch(authorizedRequest("/v1/responses", { model: "pocketcoder-test", stream: true }));
     const body = await response.text();
 
     expect(response.status).toBe(200);

@@ -1,33 +1,28 @@
-import {
-  type ExecSpec,
-  type ProviderInput,
-  parseDurationMs,
-  ServerFrameSchema,
-} from "@pstdio/pocketcoder-contracts";
-import { AgentConnection } from "./agent-connection";
-import { AgentHealthMonitor } from "./agent-health";
-import { AttachmentManager } from "./attachments";
-import { prepareCheckpoint } from "./checkpoint-coordinator";
-import { relayProxyRequest } from "./proxy-relay";
-import { ProxyStreamCoordinator } from "./proxy-stream";
-import { loadProviderInput } from "./supervisor-bootstrap";
+import { type ExecSpec, type ProviderInput, parseDurationMs, ServerFrameSchema } from "@pstdio/pocketcoder-contracts";
+import { AgentConnection } from "./agent/agent-connection";
+import { AgentHealthMonitor } from "./agent/agent-health";
+import { AttachmentManager } from "./attachments/attachments";
+import { loadProviderInput } from "./bootstrap/supervisor-bootstrap";
 import {
   EXIT_NETWORK_POLICY_FAILED,
   EXIT_PROTOCOL_ERROR,
   EXIT_REGISTRATION_FAILED,
   EXIT_SETUP_FAILED,
   EXIT_WRITABLE_MEMORY_FAILED,
-} from "./supervisor-constants";
-import { SupervisorLogs } from "./supervisor-logs";
+} from "./bootstrap/supervisor-constants";
 import {
   preflightNetwork,
   probeWritableMemory,
   reportResolvedSource,
   runSetupSteps,
   startNetworkMonitor,
-} from "./supervisor-setup";
-import { enforcedEnvironment } from "./supervisor-utils";
-import { TerminalManager } from "./terminal-manager";
+} from "./bootstrap/supervisor-setup";
+import { enforcedEnvironment } from "./bootstrap/supervisor-utils";
+import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
+import { SupervisorLogs } from "./observability/supervisor-logs";
+import { relayProxyRequest } from "./proxy/proxy-relay";
+import { ProxyStreamCoordinator } from "./proxy/proxy-stream";
+import { TerminalManager } from "./terminals/terminal-manager";
 
 // PID 1 inside every workspace. It registers with pocketcoder-server, then
 // manages setup, the harness, health, logs, relays, and shutdown.
@@ -190,8 +185,7 @@ class Supervisor {
           send: this.sendFrame.bind(this),
           onAgentTurn: () => this.healthMonitor.setAgentState("running"),
           probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
-          relayStream: (request, service, route) =>
-            this.proxyStreams.relay(request, service, route),
+          relayStream: (request, service, route) => this.proxyStreams.relay(request, service, route),
         });
         return;
       case "proxy_stream_ack":
@@ -297,9 +291,7 @@ class Supervisor {
         POCKETCODER_LAUNCH_MODE: exec.launch_mode,
         ...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
         ...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
-        ...(this.input.launch_input
-          ? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(this.input.launch_input) }
-          : {}),
+        ...(this.input.launch_input ? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(this.input.launch_input) } : {}),
       }),
       stdout: "pipe",
       stderr: "pipe",

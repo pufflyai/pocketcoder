@@ -8,21 +8,16 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceTurnResolver } from "@pstdio/pocketcoder-sdk";
-import { captureTurnAttachmentBatch, registerAttachCommand, userTextOf } from "./attachments";
-import { registerWorkspaceCommands } from "./commands";
-import { ControlPlaneClient } from "./control-plane";
-import { replayHistory } from "./history";
-import { LiveSession } from "./live-session";
-import { registerConversationRenderers } from "./renderers";
-import { emitRemoteResponse } from "./response-stream";
-import {
-  relayTarget,
-  type SessionTarget,
-  TargetRef,
-  targetFromEnvironment,
-} from "./session-target";
-import { STATUS_KEY, StatusPoller } from "./status";
-import { executeRemoteTurn } from "./turn";
+import { captureTurnAttachmentBatch, registerAttachCommand, userTextOf } from "./attachments/attachments";
+import { ControlPlaneClient } from "./client/control-plane";
+import { replayHistory } from "./history/history";
+import { registerWorkspaceCommands } from "./session/commands";
+import { LiveSession } from "./session/live-session";
+import { relayTarget, type SessionTarget, TargetRef, targetFromEnvironment } from "./session/session-target";
+import { executeRemoteTurn } from "./session/turn";
+import { emitRemoteResponse } from "./stream/response-stream";
+import { registerConversationRenderers } from "./ui/renderers";
+import { STATUS_KEY, StatusPoller } from "./ui/status";
 
 const PROVIDER = "pocketcoder-agentapi";
 const MODEL = "remote-agent";
@@ -47,10 +42,7 @@ function remoteStream(
   context: Context,
   signal?: AbortSignal,
   onOutputStart?: () => void,
-  onResolved?: (
-    source: SessionTarget,
-    workspace: Parameters<LiveSession["applyResolved"]>[2],
-  ) => Promise<void>,
+  onResolved?: (source: SessionTarget, workspace: Parameters<LiveSession["applyResolved"]>[2]) => Promise<void>,
 ): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
   const source = targets.current;
@@ -116,8 +108,7 @@ async function pickInitialWorkspace(
     return;
   }
   const labels = workspaces.map(
-    (workspace) =>
-      `${workspace.external_id} · ${workspace.template.name} · ${workspace.id.slice(0, 8)}`,
+    (workspace) => `${workspace.external_id} · ${workspace.template.name} · ${workspace.id.slice(0, 8)}`,
   );
   const selection = await context.ui.select("Attach to workspace", labels);
   if (selection === undefined) {
@@ -133,9 +124,7 @@ export function createRemoteExtension(options: RemoteExtensionOptions = {}) {
     const targets = new TargetRef(targetFromEnvironment());
     const initial = targets.current;
     const controlPlane =
-      initial.mode === "direct"
-        ? undefined
-        : new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
+      initial.mode === "direct" ? undefined : new ControlPlaneClient({ baseUrl: initial.baseUrl, key: initial.key });
     const attachmentQueue: string[] = [];
     const liveSession = controlPlane
       ? new LiveSession(targets, (workspace, ui) => new StatusPoller(controlPlane, workspace, ui))

@@ -18,8 +18,8 @@ export type {
   WorkspaceLaunch,
   WorkspaceSecretResolver,
   WorkspaceStorageDriver,
-} from "./driver";
-export { buildEventEnvelope } from "./events";
+} from "./drivers/driver";
+export { buildEventEnvelope } from "./events/events";
 export {
   type ActiveCounts,
   type AuthStore,

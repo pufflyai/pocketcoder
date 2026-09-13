@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
-import {
-  type PocketCoderClient,
-  TERMINAL_WORKSPACE_STATES,
-  type WorkspaceSummary,
-} from "@pstdio/pocketcoder-sdk";
+import { type PocketCoderClient, TERMINAL_WORKSPACE_STATES, type WorkspaceSummary } from "@pstdio/pocketcoder-sdk";
 import type { Argv } from "yargs";
-import { controlPlaneClient, type Flags, fail } from "../../cli-context";
+import { controlPlaneClient, type Flags, fail } from "../../command/cli-context";
 import { addAction } from "../command";
 import { parseLaunchInput } from "./launch-input";
 
@@ -72,7 +68,7 @@ function required(flags: Flags, key: string, failCommand: CliFail): string {
 
 function waitTimeout(flags: Flags, failCommand: CliFail): number {
   const raw = flags["wait-timeout-seconds"];
-  const value = typeof raw === "number" ? raw : raw === undefined ? 300 : Number(raw);
+  const value = raw === undefined ? 300 : Number(raw);
   if (!Number.isInteger(value) || value < 1 || value > 1800) {
     failCommand("--wait-timeout-seconds must be an integer from 1 to 1800");
   }
@@ -114,9 +110,7 @@ async function waitForReady(
       }
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
-        failCommand(
-          `workspace ${workspace.id} did not become ready within ${timeoutSeconds} seconds`,
-        );
+        failCommand(`workspace ${workspace.id} did not become ready within ${timeoutSeconds} seconds`);
       }
       const change = await client.workspaces.change(
         workspace.id,
@@ -134,8 +128,7 @@ async function waitForReady(
 
 async function createWorkspace(flags: Flags, deps: WorkspaceCreateDeps) {
   const template = required(flags, "template", deps.fail);
-  const externalId =
-    typeof flags["external-id"] === "string" ? flags["external-id"] : `pcd-${randomUUID()}`;
+  const externalId = typeof flags["external-id"] === "string" ? flags["external-id"] : `pcd-${randomUUID()}`;
   const launchInput = parseLaunchInput(flags.input, deps.fail);
   const created = await deps.client.workspaces.create({
     externalId,

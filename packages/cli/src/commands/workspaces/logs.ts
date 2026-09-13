@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { controlPlaneClient, need } from "../../cli-context";
+import { controlPlaneClient, need } from "../../command/cli-context";
 import { addAction } from "../command";
 import { pagination, paginationOptions } from "./options";
 

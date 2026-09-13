@@ -39,17 +39,14 @@ function integerFlag(
   fail: CliFail,
 ): number {
   const raw = flags[name];
-  const value = typeof raw === "number" ? raw : raw === undefined ? fallback : Number(raw);
+  const value = raw === undefined ? fallback : Number(raw);
   if (!Number.isInteger(value) || value < minimum || value > maximum) {
     fail(`--${name} must be an integer from ${minimum} to ${maximum}`);
   }
   return value;
 }
 
-async function assertWorkspaceAttachable(
-  id: string,
-  { api, fail }: WorkspaceChatDeps,
-): Promise<void> {
+async function assertWorkspaceAttachable(id: string, { api, fail }: WorkspaceChatDeps): Promise<void> {
   const response = await api(`/v1/workspaces/${id}`);
   const workspace = (await response.json()) as {
     state?: string;
@@ -102,9 +99,7 @@ export async function attachWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps)
   await sendWorkspaceMessage(id, flags.message, deps, attachmentIds);
   const cursor = chatCursor(id, flags);
   const after = cursor.value;
-  const response = await deps.api(
-    `/v1/workspaces/${id}/agent/messages?after=${encodeURIComponent(after)}`,
-  );
+  const response = await deps.api(`/v1/workspaces/${id}/agent/messages?after=${encodeURIComponent(after)}`);
   const body = (await response.json()) as { messages?: unknown[] };
   if (!response.ok) deps.fail(`message polling failed (${response.status})`);
   const messages = body.messages ?? [];
@@ -136,9 +131,7 @@ function chatText(value: unknown): string {
 function isAgentMessage(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const message = value as Record<string, unknown>;
-  return [message.role, message.type, message.sender].some(
-    (kind) => kind === "assistant" || kind === "agent",
-  );
+  return [message.role, message.type, message.sender].some((kind) => kind === "assistant" || kind === "agent");
 }
 
 function printChatMessage(message: unknown, json: boolean): void {
@@ -173,10 +166,7 @@ async function pollTurnResponse(
 ): Promise<void> {
   const deadline = Date.now() + options.timeoutSeconds * 1000;
   while (!options.interrupted()) {
-    const [status, messages] = await Promise.all([
-      readWorkspaceAgentState(id, deps),
-      readChatMessages(id, deps),
-    ]);
+    const [status, messages] = await Promise.all([readWorkspaceAgentState(id, deps), readChatMessages(id, deps)]);
     const replies = messagesAfter(messages, baseline).filter(isAgentMessage);
     advanceCursor(id, cursor, messages);
     const reply = replies.at(-1);
@@ -224,14 +214,7 @@ export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): 
   const id = need(flags, "id", deps.fail);
   await assertWorkspaceAttachable(id, deps);
   const pollIntervalMs = integerFlag(flags, "poll-interval-ms", 500, 100, 10_000, deps.fail);
-  const responseTimeoutSeconds = integerFlag(
-    flags,
-    "response-timeout-seconds",
-    600,
-    1,
-    3600,
-    deps.fail,
-  );
+  const responseTimeoutSeconds = integerFlag(flags, "response-timeout-seconds", 600, 1, 3600, deps.fail);
   const cursor = chatCursor(id, flags);
   let interrupted = false;
   const interrupt = () => {
@@ -246,9 +229,7 @@ export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): 
     let attachmentIds: string[] = [];
     if (attachmentQueue.length > 0) {
       try {
-        attachmentIds = await uploadAttachments(deps.api, id, attachmentQueue, (line) =>
-          console.error(line),
-        );
+        attachmentIds = await uploadAttachments(deps.api, id, attachmentQueue, (line) => console.error(line));
         attachmentQueue.length = 0;
       } catch (error) {
         console.error(error instanceof Error ? error.message : String(error));

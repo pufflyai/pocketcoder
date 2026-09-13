@@ -115,8 +115,7 @@ export class ResumeSession {
             await this.detach();
             return Response.json({ ok: true });
           }
-          if (path === "/resume")
-            return Response.json(await this.resume(body.workspaceId, body.attemptId));
+          if (path === "/resume") return Response.json(await this.resume(body.workspaceId, body.attemptId));
           if (path === "/preserve") {
             await this.preserve(body.workspaceId);
             return Response.json({ ok: true });
@@ -140,9 +139,7 @@ export class ResumeSession {
       await waitFor(
         async () => {
           const current = await this.client.workspaces.get(workspace.id);
-          return ["preserved", "canceled", "expired", "failed", "succeeded"].includes(
-            current.state,
-          );
+          return ["preserved", "canceled", "expired", "failed", "succeeded"].includes(current.state);
         },
         60_000,
         "workspace cleanup",

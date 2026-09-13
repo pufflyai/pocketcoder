@@ -93,10 +93,7 @@ function streamingResponse(payloads: string[], delayMs: number): Response {
   });
 }
 
-export function startFakeOssGateway(
-  expectedBearer: string,
-  delayMs = 350,
-): ReturnType<typeof Bun.serve> {
+export function startFakeOssGateway(expectedBearer: string, delayMs = 350): ReturnType<typeof Bun.serve> {
   return Bun.serve({
     hostname: "0.0.0.0",
     port: 0,

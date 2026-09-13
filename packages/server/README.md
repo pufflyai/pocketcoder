@@ -22,3 +22,13 @@ failures. This application brings those control-plane parts together.
 
 Run it from the repository root with `bun run start`. Deployment and
 configuration details live in [`docs/deployment.md`](../../docs/deployment.md).
+
+## Source layout
+
+Feature directories keep routes beside their services and helpers. `app.ts`
+registers these routes. Shared HTTP code lives in `http/`, startup configuration
+in `config/`, and agent WebSocket handling in `control-channel/`.
+
+`persistence/` composes preserve, restore, checkpoint, and maintenance services
+around a shared context. Dependencies are passed explicitly; these services do
+not inherit each other's methods.

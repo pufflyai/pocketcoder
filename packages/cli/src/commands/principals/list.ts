@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { withStore } from "../../cli-context";
+import { withStore } from "../../command/cli-context";
 import { addAction, unchanged } from "../command";
 
 export function addListCommand(parser: Argv) {

@@ -40,11 +40,7 @@ export function freePort(): number {
   return port;
 }
 
-export async function waitFor(
-  check: () => Promise<boolean>,
-  timeoutMs: number,
-  description: string,
-): Promise<void> {
+export async function waitFor(check: () => Promise<boolean>, timeoutMs: number, description: string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await check()) return;

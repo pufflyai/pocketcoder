@@ -15,7 +15,8 @@ export type {
   WorkspaceResource,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
-export { AdministrationApi } from "./admin";
+export { PocketCoderClient } from "./client";
+export { AdministrationApi } from "./resources/admin/admin";
 export {
   AgentApi,
   type AgentMessageInput,
@@ -23,32 +24,17 @@ export {
   AttachmentsApi,
   type AttachmentUploadInput,
   splitAttachmentManifest,
-} from "./attachments";
-export { CheckpointsApi, OperationsApi } from "./checkpoints";
-export { PocketCoderClient } from "./client";
-export type { CursorListQuery, Page } from "./common";
-export type { ConversationMessage, ConversationPage } from "./conversations";
-export { ConversationsApi } from "./conversations";
-export { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
-export {
-  AgentNotReadyError,
-  type ClientErrorCode,
-  ConversationGoneError,
-  isPocketCoderErrorCode,
-  PocketCoderError,
-  WorkspaceTerminalError,
-} from "./errors";
-export { type TemplateSummary, TemplatesApi } from "./templates";
+} from "./resources/attachments/attachments";
+export { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
+export type { ConversationMessage, ConversationPage } from "./resources/conversations/conversations";
+export { ConversationsApi } from "./resources/conversations/conversations";
+export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
+export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,
   type TerminalConnectOptions,
   TerminalsApi,
-} from "./terminals";
-export type {
-  PocketCoderClientConfig,
-  RequestOptions,
-  WebSocketFactory,
-} from "./transport";
+} from "./resources/terminals/terminals";
 export {
   type ResolvedWorkspaceTurn,
   type ResolveWorkspaceTurnOptions,
@@ -57,11 +43,25 @@ export {
   type WorkspaceTurnResolutionErrorCode,
   WorkspaceTurnResolver,
   type WorkspaceTurnResolverOptions,
-} from "./workspace-turn-resolver";
+} from "./resources/workspaces/workspace-turn-resolver";
 export {
   TERMINAL_WORKSPACE_STATES,
   type WorkspaceCreateInput,
   type WorkspaceListQuery,
   type WorkspaceSummary,
   WorkspacesApi,
-} from "./workspaces";
+} from "./resources/workspaces/workspaces";
+export type { CursorListQuery, Page } from "./transport/common";
+export {
+  AgentNotReadyError,
+  type ClientErrorCode,
+  ConversationGoneError,
+  isPocketCoderErrorCode,
+  PocketCoderError,
+  WorkspaceTerminalError,
+} from "./transport/errors";
+export type {
+  PocketCoderClientConfig,
+  RequestOptions,
+  WebSocketFactory,
+} from "./transport/transport";

@@ -71,16 +71,16 @@ export {
   type WorkspaceStorageRow,
   type WorkspaceStore,
 } from "./driver";
-export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./metrics";
-export { type OutboxDeps, OutboxDispatcher } from "./outbox";
-export { type PersistenceReconcileDeps, reconcilePersistence } from "./persistence-reconcile";
-export { type ReconcileDeps, reconcileProviders } from "./reconcile";
+export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./observability/metrics";
+export { type OutboxDeps, OutboxDispatcher } from "./outbox/outbox";
+export { type PersistenceReconcileDeps, reconcilePersistence } from "./reconciliation/persistence-reconcile";
+export { type ReconcileDeps, reconcileProviders } from "./reconciliation/reconcile";
 export {
   loadTemplateDir,
   loadTemplateFile,
   loadTemplateSource,
   type RegistryLoadResult,
-} from "./registry";
+} from "./registry/registry";
 export {
   type AdmissionLimits,
   type ConnectionHub,
@@ -89,7 +89,7 @@ export {
   Scheduler,
   type SchedulerDeps,
   type SecretFactory,
-} from "./scheduler";
+} from "./scheduler/scheduler";
 export {
   type ResolvedWarmPool,
   resolveWarmPools,
@@ -101,4 +101,4 @@ export {
   WarmPoolManager,
   type WarmPoolMetrics,
   warmPoolFingerprint,
-} from "./warm-pool";
+} from "./warm-pool/warm-pool";

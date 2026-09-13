@@ -64,18 +64,14 @@ export function resolveLocalPiOptions(options: ResolveLocalPiOptions = {}): Loca
     gatewayPort,
     gatewayUrl: env.PI_GATEWAY_URL ?? `http://host.docker.internal:${gatewayPort}/v1`,
     gatewayModel,
-    gatewayProvider:
-      env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
+    gatewayProvider: env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
     gatewayApi:
       (env.PI_GATEWAY_API as "openai-completions" | "openai-responses" | undefined) ??
       (useOpenAI ? "openai-responses" : "openai-completions"),
   };
 }
 
-export function requireOpenAIKey(
-  useOpenAI: boolean,
-  env: Record<string, string | undefined> = process.env,
-): string {
+export function requireOpenAIKey(useOpenAI: boolean, env: Record<string, string | undefined> = process.env): string {
   if (!useOpenAI) throw new Error("the bundled host gateway currently requires --openai");
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is required with --openai");

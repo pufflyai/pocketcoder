@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import {
-  boundaryViolations,
-  projectBoundaryViolations,
-  publishedDependencyViolations,
-} from "./check-boundaries";
+import { boundaryViolations, projectBoundaryViolations, publishedDependencyViolations } from "./check-boundaries";
 
 test("runs without external file discovery tools", async () => {
   const child = Bun.spawn([process.execPath, join(import.meta.dir, "check-boundaries.ts")], {
@@ -32,13 +28,13 @@ test("reports deep source imports and production testkit dependencies", () => {
         text: 'import "../../../packages/server/src/lifecycle";',
       },
       {
-        path: "packages/server/src/lifecycle.ts",
+        path: "packages/server/src/lifecycle/lifecycle.ts",
         text: 'import { MemoryStore } from "@pstdio/pocketcoder-testkit";',
       },
     ]),
   ).toEqual([
     "packages/cli/src/server.ts: deep source import bypasses a package export",
-    "packages/server/src/lifecycle.ts: production code imports testkit",
+    "packages/server/src/lifecycle/lifecycle.ts: production code imports testkit",
   ]);
 });
 
@@ -91,9 +87,7 @@ test("rejects published packages that depend on unpublished ones at runtime", ()
         dependencies: [],
       },
     ]),
-  ).toEqual([
-    "packages/remote/package.json: published package cannot depend on unpublished @example/client",
-  ]);
+  ).toEqual(["packages/remote/package.json: published package cannot depend on unpublished @example/client"]);
 });
 
 test("allows published packages to depend on published ones and bundled dev dependencies", () => {

@@ -1,9 +1,7 @@
 export type KubeObject = Record<string, unknown>;
 
 export function object(value: unknown): KubeObject | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as KubeObject)
-    : null;
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as KubeObject) : null;
 }
 
 export function at(value: unknown, ...keys: string[]) {
@@ -17,9 +15,7 @@ export function at(value: unknown, ...keys: string[]) {
 }
 
 export function named(documents: KubeObject[], kind: string, name: string) {
-  return documents.find(
-    (document) => document.kind === kind && at(document, "metadata", "name") === name,
-  );
+  return documents.find((document) => document.kind === kind && at(document, "metadata", "name") === name);
 }
 
 export function namedContainer(resource: KubeObject | undefined, name: string) {

@@ -40,9 +40,7 @@ export async function createPostgresFixture(prefix: string) {
   await migrateDatabase(sql, schema);
   expect(await migrateDatabase(sql, schema)).toEqual([]);
   const status = await getMigrationStatus(sql, schema);
-  expect(status.every((migration) => migration.appliedAt !== null && !migration.drifted)).toBe(
-    true,
-  );
+  expect(status.every((migration) => migration.appliedAt !== null && !migration.drifted)).toBe(true);
   const store = new PostgresStore(url, schema);
   await store.init();
   const parsed = templateFixture();

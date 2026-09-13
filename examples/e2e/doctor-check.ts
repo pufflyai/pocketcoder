@@ -9,10 +9,7 @@ export interface DoctorCheckOptions {
   turnTimeoutSeconds?: number;
 }
 
-export type DoctorRunner = (
-  args: string[],
-  env: Record<string, string>,
-) => Promise<{ stdout: string }>;
+export type DoctorRunner = (args: string[], env: Record<string, string>) => Promise<{ stdout: string }>;
 
 // Doctor budgets this separately for input readiness and for the reply, so it
 // bounds each half of the probe rather than the whole run.

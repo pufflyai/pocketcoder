@@ -1,9 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
-import {
-  createOpenAIGatewayHandler,
-  type OpenAIGatewayConfig,
-} from "../harnesses/pi/openai-gateway";
+import { createOpenAIGatewayHandler, type OpenAIGatewayConfig } from "../harnesses/pi/openai-gateway";
 
 export function workspaceGateway(
   client: PocketCoderClient,

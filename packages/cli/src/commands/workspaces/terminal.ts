@@ -1,6 +1,6 @@
 import type { PocketCoderClient, TerminalConnection } from "@pstdio/pocketcoder-sdk";
 import type { Argv } from "yargs";
-import { controlPlaneClient, type Flags, need } from "../../cli-context";
+import { controlPlaneClient, type Flags, need } from "../../command/cli-context";
 import { addAction } from "../command";
 import { idOption } from "./options";
 
@@ -90,9 +90,7 @@ async function bridgeTerminal(terminal: TerminalConnection): Promise<number> {
   };
   const detach = () => {
     process.stderr.write(
-      activeSessionId
-        ? `Detached terminal session ${activeSessionId}\n`
-        : "Detached terminal session\n",
+      activeSessionId ? `Detached terminal session ${activeSessionId}\n` : "Detached terminal session\n",
     );
     finish(0);
     terminal.close(1000, "detached");

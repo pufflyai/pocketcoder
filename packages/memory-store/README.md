@@ -19,3 +19,10 @@ implementing the same contract as the production store.
 
 All data disappears when the process exits. Use `@pstdio/pocketcoder-db` when
 state must survive restarts or be shared by a deployment.
+
+## Source layout
+
+`src/modules/` groups store behavior by feature. Each module receives the same
+`MemoryState` from `src/state/`. The public `MemoryStore` composes these modules
+and binds their methods. Shared maps and counters belong to the state object;
+modules do not inherit behavior from one another.

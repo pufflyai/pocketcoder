@@ -164,12 +164,7 @@ const element = <K extends keyof HTMLElementTagNameMap>(
   return node;
 };
 
-const appendCell = (
-  row: HTMLTableRowElement,
-  primary: string,
-  secondary?: string,
-  className?: string,
-) => {
+const appendCell = (row: HTMLTableRowElement, primary: string, secondary?: string, className?: string) => {
   const cell = element("td");
   const value = element("div", `primary${className ? ` ${className}` : ""}`, primary);
   cell.append(value);
@@ -276,10 +271,7 @@ export default defineExtensionView({
     templateCard.append(templatesValue, element("span", "summary__label", "Available versions"));
     const updatedCard = element("div", "summary__card");
     const updatedLabel = element("span", "summary__label");
-    updatedLabel.append(
-      element("span", "live-dot"),
-      document.createTextNode("Auto-refreshes every 10s"),
-    );
+    updatedLabel.append(element("span", "live-dot"), document.createTextNode("Auto-refreshes every 10s"));
     updatedCard.append(updatedValue, updatedLabel);
     summary.append(workspaceCard, templateCard, updatedCard);
 

@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { controlPlaneClient } from "../../cli-context";
+import { controlPlaneClient } from "../../command/cli-context";
 import { addAction } from "../command";
 
 export function addListCommand(parser: Argv) {

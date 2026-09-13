@@ -1,16 +1,10 @@
 import type { Argv } from "yargs";
-import { type Flags, loadProjectEnvironment } from "../cli-context";
+import { type Flags, loadProjectEnvironment } from "../command/cli-context";
 
 type Configure = (command: Argv) => Argv;
 type Run = (flags: Flags) => Promise<void> | void;
 
-export function addAction(
-  parser: Argv,
-  command: string,
-  description: string | false,
-  configure: Configure,
-  run: Run,
-) {
+export function addAction(parser: Argv, command: string, description: string | false, configure: Configure, run: Run) {
   return parser.command({
     command,
     describe: description,

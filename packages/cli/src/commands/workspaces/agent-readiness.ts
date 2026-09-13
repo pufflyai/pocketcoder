@@ -6,10 +6,7 @@ export interface WorkspaceChatDeps {
   fail: CliFail;
 }
 
-export async function readWorkspaceAgentState(
-  id: string,
-  { api, fail }: WorkspaceChatDeps,
-): Promise<string> {
+export async function readWorkspaceAgentState(id: string, { api, fail }: WorkspaceChatDeps): Promise<string> {
   const response = await api(`/v1/workspaces/${id}`);
   const body = (await response.json()) as { state?: unknown; agent_state?: unknown };
   if (!response.ok) {
@@ -18,11 +15,7 @@ export async function readWorkspaceAgentState(
   if (body.state !== "ready") {
     fail(`workspace is ${String(body.state ?? "unavailable")}; it is not live`);
   }
-  if (
-    body.agent_state !== "unknown" &&
-    body.agent_state !== "running" &&
-    body.agent_state !== "stable"
-  ) {
+  if (body.agent_state !== "unknown" && body.agent_state !== "running" && body.agent_state !== "stable") {
     fail(`workspace returned unknown agent state: ${JSON.stringify(body.agent_state)}`);
   }
   return typeof body.agent_state === "string" ? body.agent_state : "unknown";

@@ -41,9 +41,7 @@ if (
   ((process.env.PI_GATEWAY_URL && !process.env.PI_GATEWAY_MODEL) ||
     (!process.env.PI_GATEWAY_URL && process.env.PI_GATEWAY_MODEL))
 ) {
-  throw new Error(
-    "set both PI_GATEWAY_URL and PI_GATEWAY_MODEL, or neither to use the fake gateway",
-  );
+  throw new Error("set both PI_GATEWAY_URL and PI_GATEWAY_MODEL, or neither to use the fake gateway");
 }
 
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
@@ -137,9 +135,7 @@ try {
     imageTag: localImage,
     context: harness === "echo" ? "deploy/image" : ".",
     ...(harness === "pi" ? { dockerfile: "examples/harnesses/pi/Dockerfile" } : {}),
-    ...(harness === "codex" || harness === "opencode"
-      ? { dockerfile: "examples/harnesses/oss/Dockerfile" }
-      : {}),
+    ...(harness === "codex" || harness === "opencode" ? { dockerfile: "examples/harnesses/oss/Dockerfile" } : {}),
     command,
   });
 
@@ -177,15 +173,11 @@ try {
     }
     template.spec.agent.env = {
       ...template.spec.agent.env,
-      PI_GATEWAY_URL:
-        process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
-      PI_GATEWAY_MODEL:
-        process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test"),
+      PI_GATEWAY_URL: process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
+      PI_GATEWAY_MODEL: process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test"),
       PI_GATEWAY_PROVIDER:
-        process.env.PI_GATEWAY_PROVIDER ??
-        (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
-      PI_GATEWAY_API:
-        process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
+        process.env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
+      PI_GATEWAY_API: process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
       PI_GATEWAY_BEARER: gatewayBearer,
     };
   }
@@ -329,9 +321,8 @@ try {
     if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
     if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
     if (harness === "pi") {
-      const doctorOutput = await runDoctorCheck(
-        { baseUrl, key, template: `${harness}-harness` },
-        (args, doctorEnv) => command(args, { env: doctorEnv, quiet: true }),
+      const doctorOutput = await runDoctorCheck({ baseUrl, key, template: `${harness}-harness` }, (args, doctorEnv) =>
+        command(args, { env: doctorEnv, quiet: true }),
       );
       console.log(doctorOutput);
       console.log("PocketCoder doctor passed against Pi through AgentAPI.");

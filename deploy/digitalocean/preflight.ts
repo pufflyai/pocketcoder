@@ -1,13 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { validatePiGateway } from "./preflight-gateway";
-import {
-  at,
-  imageError,
-  type KubeObject,
-  named,
-  namedContainer,
-  object,
-} from "./preflight-objects";
+import { at, imageError, type KubeObject, named, namedContainer, object } from "./preflight-objects";
 
 function parseDocuments(rendered: string, errors: string[]) {
   const documents: KubeObject[] = [];
@@ -17,9 +10,7 @@ function parseDocuments(rendered: string, errors: string[]) {
       const document = object(Bun.YAML.parse(source));
       if (document) documents.push(document);
     } catch (error) {
-      errors.push(
-        `invalid rendered YAML: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      errors.push(`invalid rendered YAML: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   return documents;
@@ -51,14 +42,8 @@ function templateImages(documents: KubeObject[], errors: string[]) {
 }
 
 function validateImages(documents: KubeObject[], errors: string[]) {
-  const deploymentImage = namedContainer(
-    named(documents, "Deployment", "pocketcoder-server"),
-    "server",
-  )?.image;
-  const migrationImage = namedContainer(
-    named(documents, "Job", "pocketcoder-migrate"),
-    "migrate",
-  )?.image;
+  const deploymentImage = namedContainer(named(documents, "Deployment", "pocketcoder-server"), "server")?.image;
+  const migrationImage = namedContainer(named(documents, "Job", "pocketcoder-migrate"), "migrate")?.image;
   const references = [deploymentImage, migrationImage, ...templateImages(documents, errors)];
   for (const reference of references) {
     if (typeof reference !== "string") {
@@ -68,11 +53,7 @@ function validateImages(documents: KubeObject[], errors: string[]) {
     const error = imageError(reference);
     if (error) errors.push(error);
   }
-  if (
-    typeof deploymentImage === "string" &&
-    typeof migrationImage === "string" &&
-    deploymentImage !== migrationImage
-  ) {
+  if (typeof deploymentImage === "string" && typeof migrationImage === "string" && deploymentImage !== migrationImage) {
     errors.push("the migration Job and server Deployment must use the same image digest");
   }
 }
@@ -117,10 +98,7 @@ function validateServiceAccounts(documents: KubeObject[], errors: string[]) {
   for (const name of ["pocketcoder-controller", "pocketcoder-workspace"]) {
     if (!named(documents, "ServiceAccount", name)) errors.push(`${name} ServiceAccount is missing`);
   }
-  if (
-    named(documents, "ServiceAccount", "pocketcoder-workspace")?.automountServiceAccountToken !==
-    false
-  ) {
+  if (named(documents, "ServiceAccount", "pocketcoder-workspace")?.automountServiceAccountToken !== false) {
     errors.push("workspace ServiceAccount must disable token automounting");
   }
   if (documents.some((document) => document.kind === "Secret")) {
@@ -139,9 +117,7 @@ function validateServer(documents: KubeObject[], errors: string[]) {
   if (at(deployment, "spec", "strategy", "type") !== "Recreate") {
     errors.push("server strategy must be Recreate");
   }
-  if (
-    at(deployment, "spec", "template", "spec", "serviceAccountName") !== "pocketcoder-controller"
-  ) {
+  if (at(deployment, "spec", "template", "spec", "serviceAccountName") !== "pocketcoder-controller") {
     errors.push("server must use the controller ServiceAccount");
   }
   const security = at(deployment, "spec", "template", "spec", "securityContext");
@@ -161,9 +137,7 @@ function validateServer(documents: KubeObject[], errors: string[]) {
 }
 
 function migrationEnvironment(container: KubeObject) {
-  return Array.isArray(container.env)
-    ? container.env.map(object).filter((entry) => entry !== null)
-    : [];
+  return Array.isArray(container.env) ? container.env.map(object).filter((entry) => entry !== null) : [];
 }
 
 function validateMigration(documents: KubeObject[], errors: string[]) {
@@ -196,8 +170,7 @@ function validateMigration(documents: KubeObject[], errors: string[]) {
     .filter((name): name is string => typeof name === "string")
     .sort();
   if (
-    JSON.stringify(environmentNames) !==
-    JSON.stringify(["POCKETCODER_DATABASE_SCHEMA", "POCKETCODER_DATABASE_URL"])
+    JSON.stringify(environmentNames) !== JSON.stringify(["POCKETCODER_DATABASE_SCHEMA", "POCKETCODER_DATABASE_URL"])
   ) {
     errors.push("migration Job may receive only the database URL and schema");
   }

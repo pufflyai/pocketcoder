@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { need } from "../../cli-context";
+import { need } from "../../command/cli-context";
 import { addAction } from "../command";
 import { runManagedServer } from "./process";
 

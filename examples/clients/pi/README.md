@@ -22,5 +22,5 @@ read new messages when it advances; a turn is complete when `agent_state`
 returns to `stable`. Durable history is available at
 `GET /v1/workspaces/{id}/conversation` (scope `conversations:read`).
 
-See [`packages/remote/src/client.ts`](../../../packages/remote/src/client.ts) for a
+See [`packages/remote/src/client/client.ts`](../../../packages/remote/src/client/client.ts) for a
 dependency-free reference implementation of this loop.

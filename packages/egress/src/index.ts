@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { NetworkPolicySchema } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
-import { AuditQueue } from "./audit";
-import { configureFirewall } from "./firewall";
-import { startProxy } from "./proxy";
-import { startControlRelay } from "./relay";
+import { AuditQueue } from "./audit/audit";
+import { configureFirewall } from "./firewall/firewall";
+import { startProxy } from "./proxy/proxy";
+import { startControlRelay } from "./proxy/relay";
 
 const ConfigSchema = z.object({
   policy: NetworkPolicySchema,
@@ -24,8 +24,7 @@ async function main() {
   const config = ConfigSchema.parse(JSON.parse(await readFile(configPath, "utf8")));
   if (config.policy.mode !== "restricted") throw new Error("egress requires a restricted policy");
   await configureFirewall(999);
-  if (!process.setgid || !process.setuid)
-    throw new Error("POSIX identity controls are unavailable");
+  if (!process.setgid || !process.setuid) throw new Error("POSIX identity controls are unavailable");
   process.setgid(999);
   process.setuid(999);
 
@@ -43,8 +42,7 @@ async function main() {
     port: 18_082,
     fetch(request) {
       const path = new URL(request.url).pathname;
-      if (path !== "/healthz" && path !== "/readyz")
-        return new Response("not found", { status: 404 });
+      if (path !== "/healthz" && path !== "/readyz") return new Response("not found", { status: 404 });
       return Response.json(
         {
           ok: audit.canAccept(),

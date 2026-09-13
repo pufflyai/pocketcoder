@@ -1,9 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  assertNoLocalInstallDependencies,
-  assertWorkspaceInstallDependencies,
-} from "./check-publishable-manifest";
+import { assertNoLocalInstallDependencies, assertWorkspaceInstallDependencies } from "./check-publishable-manifest";
 import { checkSdkPackage } from "./check-sdk-package";
 
 interface PackageManifest {

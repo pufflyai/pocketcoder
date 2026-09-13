@@ -1,11 +1,6 @@
 export function messageList(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "messages" in value &&
-    Array.isArray(value.messages)
-  ) {
+  if (typeof value === "object" && value !== null && "messages" in value && Array.isArray(value.messages)) {
     return value.messages;
   }
   return [];
@@ -31,9 +26,7 @@ function textContent(value: unknown): string {
 function isAssistantMessage(value: unknown): boolean {
   if (typeof value !== "object" || value === null) return false;
   const message = value as Record<string, unknown>;
-  return [message.role, message.type, message.sender].some(
-    (kind) => kind === "assistant" || kind === "agent",
-  );
+  return [message.role, message.type, message.sender].some((kind) => kind === "assistant" || kind === "agent");
 }
 
 export function responseText(messages: unknown[], baselineLength: number): string {
@@ -59,22 +52,15 @@ function sseEvent(block: string): { event: string; data: Record<string, unknown>
   }
   try {
     const parsed = JSON.parse(data.join("\n")) as unknown;
-    return typeof parsed === "object" && parsed !== null
-      ? { event, data: parsed as Record<string, unknown> }
-      : null;
+    return typeof parsed === "object" && parsed !== null ? { event, data: parsed as Record<string, unknown> } : null;
   } catch {
     return null;
   }
 }
 
-export async function observeLiveUpdates(
-  response: Response,
-  baselineId: number,
-): Promise<string[]> {
+export async function observeLiveUpdates(response: Response, baselineId: number): Promise<string[]> {
   if (!response.ok || !response.body) {
-    throw new Error(
-      `event stream failed (${response.status}): ${errorBody(await readBody(response))}`,
-    );
+    throw new Error(`event stream failed (${response.status}): ${errorBody(await readBody(response))}`);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

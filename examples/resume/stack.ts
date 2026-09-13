@@ -85,22 +85,11 @@ export class IsolatedStack {
       "127.0.0.1::5432",
       "postgres:16-alpine",
     ]);
-    const port = (await this.run(["docker", "port", postgres, "5432/tcp"])).stdout
-      .split(":")
-      .at(-1);
+    const port = (await this.run(["docker", "port", postgres, "5432/tcp"])).stdout.split(":").at(-1);
     await waitFor(
       async () => {
         try {
-          await this.run([
-            "docker",
-            "exec",
-            postgres,
-            "pg_isready",
-            "-h",
-            "127.0.0.1",
-            "-U",
-            "pocketcoder",
-          ]);
+          await this.run(["docker", "exec", postgres, "pg_isready", "-h", "127.0.0.1", "-U", "pocketcoder"]);
           return true;
         } catch {
           return false;
@@ -115,13 +104,7 @@ export class IsolatedStack {
       POCKETCODER_AUTH_PEPPER: randomBytes(32).toString("base64url"),
     };
     await Bun.write(join(directory, ".env"), "");
-    const cli = [
-      "bun",
-      "--no-env-file",
-      "packages/cli/src/index.ts",
-      "--env-file",
-      join(directory, ".env"),
-    ];
+    const cli = ["bun", "--no-env-file", "packages/cli/src/index.ts", "--env-file", join(directory, ".env")];
     console.log("Preparing the database and API credentials...");
     await this.run([...cli, "db", "migrate"], adminEnv);
     await this.run(
@@ -156,10 +139,7 @@ export class IsolatedStack {
     if (!key) throw new Error("Machine key was not issued");
     const templates = join(directory, "templates");
     await mkdir(templates);
-    await Bun.write(
-      join(templates, "pi-resume.json"),
-      JSON.stringify(resumeTemplate(image, idleSeconds)),
-    );
+    await Bun.write(join(templates, "pi-resume.json"), JSON.stringify(resumeTemplate(image, idleSeconds)));
     const serverPort = freePort();
     const logFile = Bun.file(join(directory, "server.log")).writer();
     this.cleanups.push(async () => {

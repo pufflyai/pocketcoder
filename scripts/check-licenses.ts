@@ -21,11 +21,7 @@ type CheckLicenseOptions = {
   clarificationsFile?: string;
 };
 
-export async function checkLicenses({
-  start,
-  excludePackages,
-  clarificationsFile,
-}: CheckLicenseOptions) {
+export async function checkLicenses({ start, excludePackages, clarificationsFile }: CheckLicenseOptions) {
   const packages = await runLicenseCheck({
     start,
     onlyAllow: ALLOWED_LICENSES.join(";"),

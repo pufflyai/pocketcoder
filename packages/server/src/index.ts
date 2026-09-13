@@ -1,11 +1,11 @@
-import { runPocketCoderServerUntilSignal } from "./lifecycle";
+import { runPocketCoderServerUntilSignal } from "./lifecycle/lifecycle";
 
 export {
   type RunningPocketCoderServer,
   runPocketCoderServerUntilSignal,
   type ServerLog,
   startPocketCoderServer,
-} from "./lifecycle";
+} from "./lifecycle/lifecycle";
 
 if (import.meta.main) {
   runPocketCoderServerUntilSignal().catch((error) => {

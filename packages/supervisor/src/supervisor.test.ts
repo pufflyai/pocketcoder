@@ -3,20 +3,16 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import {
-  POOL_PROTOCOL_VERSION,
-  PROTOCOL_VERSION,
-  type ProviderInput,
-} from "@pstdio/pocketcoder-contracts";
-import { waitForPoolLease } from "./pool-lease";
-import { SupervisorLogs } from "./supervisor-logs";
+import { POOL_PROTOCOL_VERSION, PROTOCOL_VERSION, type ProviderInput } from "@pstdio/pocketcoder-contracts";
 import {
   enforcedEnvironment,
   isConversationControlLine,
   pumpLineFramedText,
   splitUtf8Chunks,
   verifyWritableMemoryPaths,
-} from "./supervisor-utils";
+} from "./bootstrap/supervisor-utils";
+import { SupervisorLogs } from "./observability/supervisor-logs";
+import { waitForPoolLease } from "./warm-pool/pool-lease";
 
 test("restricted child environments cannot replace enforced proxy variables", () => {
   const exec = {
@@ -46,9 +42,7 @@ test("setup credentials are redacted from child output", async () => {
   logs.addSecret("short-lived-git-token");
   await logs.pump(new Response("clone failed for short-lived-git-token\n").body, "stderr");
   const content = frames
-    .map((frame) =>
-      frame.type === "log_chunk" ? (frame.payload as { content_b64: string }) : null,
-    )
+    .map((frame) => (frame.type === "log_chunk" ? (frame.payload as { content_b64: string }) : null))
     .filter((payload): payload is { content_b64: string } => payload !== null)
     .map((payload) => Buffer.from(payload.content_b64, "base64").toString("utf8"))
     .join("");
@@ -84,9 +78,7 @@ describe("warm pool bootstrap", () => {
             type: string;
             pool_runtime_id: string;
           };
-          expect(registered).toEqual(
-            expect.objectContaining({ type: "pool_registered", pool_runtime_id: runtimeId }),
-          );
+          expect(registered).toEqual(expect.objectContaining({ type: "pool_registered", pool_runtime_id: runtimeId }));
           ws.send(
             JSON.stringify({
               v: POOL_PROTOCOL_VERSION,
@@ -217,9 +209,7 @@ describe("process signals", () => {
     try {
       await Promise.race([
         running,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("supervisor did not start harness")), 5000),
-        ),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("supervisor did not start harness")), 5000)),
       ]);
       const readyDeadline = Date.now() + 5000;
       while (!(await Bun.file(readyPath).exists())) {
@@ -254,19 +244,13 @@ describe("workspace preflight", () => {
 
   test("identifies the declared path that cannot be written", async () => {
     const missing = join(tmpdir(), `pocketcoder-missing-${crypto.randomUUID()}`);
-    expect(verifyWritableMemoryPaths([missing])).rejects.toThrow(
-      `writable memory preflight failed for ${missing}`,
-    );
+    expect(verifyWritableMemoryPaths([missing])).rejects.toThrow(`writable memory preflight failed for ${missing}`);
   });
 });
 
 describe("log framing", () => {
   test("recognizes conversation control lines so transcript content stays out of logs", () => {
-    expect(
-      isConversationControlLine(
-        'POCKETCODER_CONVERSATION {"message_id":"m-1","content":"secret"}\n',
-      ),
-    ).toBe(true);
+    expect(isConversationControlLine('POCKETCODER_CONVERSATION {"message_id":"m-1","content":"secret"}\n')).toBe(true);
     expect(isConversationControlLine("ordinary harness output\n")).toBe(false);
   });
 
@@ -274,9 +258,7 @@ describe("log framing", () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(
-          new TextEncoder().encode(
-            'POCKETCODER_CONVERSATION {"message_id":"m-1","content":"private"}\nordinary\n',
-          ),
+          new TextEncoder().encode('POCKETCODER_CONVERSATION {"message_id":"m-1","content":"private"}\nordinary\n'),
         );
         controller.close();
       },
@@ -289,9 +271,7 @@ describe("log framing", () => {
   });
 
   test("reassembles split UTF-8 input and emits complete lines", async () => {
-    const source = new TextEncoder().encode(
-      "Traceback (most recent call last):\nPermissionError: café/.pi\npartial",
-    );
+    const source = new TextEncoder().encode("Traceback (most recent call last):\nPermissionError: café/.pi\npartial");
     const frames = [
       source.subarray(0, 17),
       source.subarray(17, source.indexOf(0xc3) + 1),
@@ -307,11 +287,7 @@ describe("log framing", () => {
 
     await pumpLineFramedText(stream, (text) => emitted.push(text));
 
-    expect(emitted).toEqual([
-      "Traceback (most recent call last):\n",
-      "PermissionError: café/.pi\n",
-      "partial",
-    ]);
+    expect(emitted).toEqual(["Traceback (most recent call last):\n", "PermissionError: café/.pi\n", "partial"]);
   });
 
   test("splits oversized lines only at UTF-8 code point boundaries", () => {

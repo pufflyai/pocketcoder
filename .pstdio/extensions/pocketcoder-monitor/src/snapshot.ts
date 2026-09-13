@@ -70,10 +70,7 @@ const query = async <T>(
         items: [],
         error: {
           source,
-          message:
-            result.stderr.trim() ||
-            result.stdout.trim() ||
-            `Command exited with code ${result.exitCode}.`,
+          message: result.stderr.trim() || result.stdout.trim() || `Command exited with code ${result.exitCode}.`,
         },
       };
     }
@@ -103,12 +100,7 @@ export const loadPocketcoderSnapshot = async ({
   now = () => new Date(),
 }: LoadSnapshotInput): Promise<PocketcoderSnapshot> => {
   const [workspaces, templates] = await Promise.all([
-    query<PocketcoderWorkspace>(process, repoPath, "workspaces", [
-      "workspaces",
-      "list",
-      "--active",
-      "--json",
-    ]),
+    query<PocketcoderWorkspace>(process, repoPath, "workspaces", ["workspaces", "list", "--active", "--json"]),
     query<PocketcoderTemplate>(process, repoPath, "templates", ["templates", "list", "--json"]),
   ]);
 
@@ -116,8 +108,6 @@ export const loadPocketcoderSnapshot = async ({
     refreshedAt: now().toISOString(),
     workspaces: workspaces.items,
     templates: templates.items,
-    errors: [workspaces.error, templates.error].filter(
-      (error): error is MonitorError => error !== undefined,
-    ),
+    errors: [workspaces.error, templates.error].filter((error): error is MonitorError => error !== undefined),
   };
 };

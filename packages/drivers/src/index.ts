@@ -12,29 +12,29 @@ export {
   POOL_RUNTIME_LABEL,
   resolveDockerImage,
   WORKSPACE_LABEL,
-} from "./docker";
-export { FileSecretResolver, type FileSecretResolverOptions } from "./file-secrets";
+} from "./docker/docker";
 export {
   FilesystemStorageDriver,
   type FilesystemStorageDriverOptions,
-} from "./filesystem-storage";
+} from "./filesystem/filesystem-storage";
 export {
   KUBERNETES_DIGEST_ANNOTATION,
   KUBERNETES_POOL_LABEL,
   KUBERNETES_WORKSPACE_LABEL,
   KubernetesDriver,
   type KubernetesDriverOptions,
-} from "./kubernetes";
+} from "./kubernetes/kubernetes";
 export {
   type KubernetesSchedulingOptions,
   type KubernetesToleration,
   validateToleration,
-} from "./kubernetes-scheduling";
+} from "./kubernetes/kubernetes-scheduling";
 export {
   KubernetesSecretResolver,
   type KubernetesSecretResolverOptions,
-} from "./kubernetes-secrets";
+} from "./kubernetes/kubernetes-secrets";
 export {
   KubernetesPvcStorageDriver,
   type KubernetesPvcStorageDriverOptions,
-} from "./kubernetes-storage";
+} from "./kubernetes/kubernetes-storage";
+export { FileSecretResolver, type FileSecretResolverOptions } from "./secrets/file-secrets";

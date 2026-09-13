@@ -1,14 +1,14 @@
-export { type FakeAgentApi, startFakeAgentApi } from "./fake-agentapi";
-export { FakeDriver } from "./fake-driver";
+export { type FakeAgentApi, startFakeAgentApi } from "./agentapi/fake-agentapi";
+export { FakeDriver } from "./drivers/fake-driver";
 export {
   fixtureSnapshot,
   fixtureTemplateEcho,
   fixtureTemplatePersistent,
   fixtureTemplateSleep,
   fixtureTemplateTerminal,
-} from "./fixtures";
+} from "./fixtures/fixtures";
 export {
   registerStoreContract,
   type StoreContractHarness,
   type StoreContractInstance,
-} from "./store-contract";
+} from "./stores/store-contract";

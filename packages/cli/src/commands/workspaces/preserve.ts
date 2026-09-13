@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Argv } from "yargs";
-import { controlPlaneClient, need } from "../../cli-context";
+import { controlPlaneClient, need } from "../../command/cli-context";
 import { addAction } from "../command";
 
 export function addPreserveCommand(parser: Argv) {

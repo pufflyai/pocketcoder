@@ -1,5 +1,5 @@
 import { isScope } from "@pstdio/pocketcoder-contracts";
-import { fail, valueList } from "../cli-context";
+import { fail, valueList } from "../command/cli-context";
 
 export function parseScopes(value: string) {
   const items = valueList(value);

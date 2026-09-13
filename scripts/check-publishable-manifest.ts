@@ -1,20 +1,7 @@
 import { satisfies, validRange } from "semver";
 
-const installDependencyFields = [
-  "dependencies",
-  "optionalDependencies",
-  "peerDependencies",
-] as const;
-const localOnlyProtocols = [
-  "workspace:",
-  "catalog:",
-  "file:",
-  "link:",
-  "portal:",
-  "patch:",
-  "exec:",
-  "git+file:",
-];
+const installDependencyFields = ["dependencies", "optionalDependencies", "peerDependencies"] as const;
+const localOnlyProtocols = ["workspace:", "catalog:", "file:", "link:", "portal:", "patch:", "exec:", "git+file:"];
 
 interface PublishableManifest {
   name?: string;
@@ -28,9 +15,7 @@ function isLocalOnlyRange(range: string) {
   return (
     localOnlyProtocols.some((protocol) => value.startsWith(protocol)) ||
     [".", ".."].includes(value) ||
-    ["./", "../", "/", "~/", ".\\", "..\\", "\\", "~\\"].some((prefix) =>
-      value.startsWith(prefix),
-    ) ||
+    ["./", "../", "/", "~/", ".\\", "..\\", "\\", "~\\"].some((prefix) => value.startsWith(prefix)) ||
     /^[A-Za-z]:[\\/]/.test(value)
   );
 }
@@ -45,9 +30,7 @@ export function assertNoLocalInstallDependencies(manifest: PublishableManifest) 
   if (localDependencies.length === 0) return;
 
   throw new Error(
-    `${manifest.name ?? "Publishable package"} has local-only install dependencies: ${localDependencies.join(
-      ", ",
-    )}`,
+    `${manifest.name ?? "Publishable package"} has local-only install dependencies: ${localDependencies.join(", ")}`,
   );
 }
 
@@ -68,9 +51,7 @@ export function assertWorkspaceInstallDependencies(
         throw new Error(`${dependency} (${range}) is not a semantic version range`);
       }
       if (!satisfies(workspace.version, range)) {
-        throw new Error(
-          `${dependency} (${range}) does not accept workspace version ${workspace.version}`,
-        );
+        throw new Error(`${dependency} (${range}) does not accept workspace version ${workspace.version}`);
       }
     }
   }

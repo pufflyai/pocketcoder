@@ -1,11 +1,7 @@
 import { isWorkspaceState, type WorkspaceState } from "@pstdio/pocketcoder-contracts";
-import {
-  TERMINAL_WORKSPACE_STATES,
-  type WorkspaceListQuery,
-  type WorkspaceSummary,
-} from "@pstdio/pocketcoder-sdk";
+import { TERMINAL_WORKSPACE_STATES, type WorkspaceListQuery, type WorkspaceSummary } from "@pstdio/pocketcoder-sdk";
 import type { Argv } from "yargs";
-import { controlPlaneClient, type Flags, fail } from "../../cli-context";
+import { controlPlaneClient, type Flags, fail } from "../../command/cli-context";
 import { addAction } from "../command";
 
 function stateFilter(flags: Flags): WorkspaceState | undefined {

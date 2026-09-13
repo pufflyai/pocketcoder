@@ -72,18 +72,12 @@ describe("principal updates", () => {
       lastUsedAt: null,
     });
 
-    const updated = await store.updatePrincipal(
-      principal.id,
-      ["workspaces:read"],
-      ["new-template"],
-    );
+    const updated = await store.updatePrincipal(principal.id, ["workspaces:read"], ["new-template"]);
 
     expect(updated).toMatchObject({
       scopes: ["workspaces:read"],
       templateNames: ["new-template"],
     });
-    expect((await store.getMachineKeyWithPrincipal(restrictedKeyId))?.key.scopes).toEqual([
-      "templates:read",
-    ]);
+    expect((await store.getMachineKeyWithPrincipal(restrictedKeyId))?.key.scopes).toEqual(["templates:read"]);
   });
 });

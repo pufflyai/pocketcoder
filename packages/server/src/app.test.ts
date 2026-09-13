@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { issueEgressAuditToken } from "@pstdio/pocketcoder-auth";
-import { Readiness } from "./health";
-import {
-  authed,
-  createTestBody,
-  createTestServer,
-  SERVER_TEST_PEPPER as PEPPER,
-} from "./test-server.test";
+import { Readiness } from "./observability/health";
+import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER as PEPPER } from "./testing/test-server.test";
 
 describe("authentication", () => {
   test("rejects missing and invalid keys with the stable envelope", async () => {
@@ -25,19 +20,14 @@ describe("authentication", () => {
   test("propagates a bounded caller request ID on success and errors", async () => {
     const { app, token } = await createTestServer();
     const requestId = "caller-trace-123";
-    const success = await app.request(
-      "/v1/templates",
-      authed(token, { headers: { "x-request-id": requestId } }),
-    );
+    const success = await app.request("/v1/templates", authed(token, { headers: { "x-request-id": requestId } }));
     expect(success.headers.get("x-request-id")).toBe(requestId);
 
     const failure = await app.request("/v1/templates", {
       headers: { "x-request-id": requestId },
     });
     expect(failure.headers.get("x-request-id")).toBe(requestId);
-    expect(((await failure.json()) as { error: { request_id: string } }).error.request_id).toBe(
-      requestId,
-    );
+    expect(((await failure.json()) as { error: { request_id: string } }).error.request_id).toBe(requestId);
   });
 
   test("rejects revoked keys on the next request", async () => {

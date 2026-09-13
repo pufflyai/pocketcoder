@@ -67,9 +67,7 @@ export async function runLocalCommand(
   return { stdout: stdout.trim(), stderr: stderr.trim() };
 }
 
-export async function buildLocalImage(
-  options: BuildLocalImageOptions,
-): Promise<{ imageId: string; image: string }> {
+export async function buildLocalImage(options: BuildLocalImageOptions): Promise<{ imageId: string; image: string }> {
   const command = options.command ?? runLocalCommand;
   const build = [
     "docker",
@@ -114,13 +112,9 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   await rename(temporary, path);
 }
 
-export async function preparePiRuntime(
-  options: PreparePiRuntimeOptions,
-): Promise<PreparedPiRuntime> {
+export async function preparePiRuntime(options: PreparePiRuntimeOptions): Promise<PreparedPiRuntime> {
   const root = resolve(options.root ?? resolve(import.meta.dir, "../.."));
-  const sourceTemplate = resolve(
-    options.sourceTemplate ?? resolve(root, "examples/templates/pi-harness.json"),
-  );
+  const sourceTemplate = resolve(options.sourceTemplate ?? resolve(root, "examples/templates/pi-harness.json"));
   const outputDir = resolve(options.outputDir ?? resolve(root, ".pocketcoder/local/templates"));
   const secretRoot = resolve(options.secretRoot ?? resolve(root, ".pocketcoder/local/secrets"));
   const imageTag = options.imageTag ?? "pocketcoder-pi:local";

@@ -264,10 +264,7 @@ describe("DigitalOcean manifest preflight", () => {
     };
 
     expect(validateRenderedManifest(manifest(documents))).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("certificate"),
-        expect.stringContaining("allow-all"),
-      ]),
+      expect.arrayContaining([expect.stringContaining("certificate"), expect.stringContaining("allow-all")]),
     );
   });
 
@@ -323,8 +320,6 @@ describe("DigitalOcean manifest preflight", () => {
     );
     if (model) model.value = "different-model";
 
-    expect(validateRenderedManifest(manifest(documents))).toContain(
-      "Pi and gateway must use the same allowed model",
-    );
+    expect(validateRenderedManifest(manifest(documents))).toContain("Pi and gateway must use the same allowed model");
   });
 });

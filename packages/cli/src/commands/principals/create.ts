@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { need, valueList, withStore } from "../../cli-context";
+import { need, valueList, withStore } from "../../command/cli-context";
 import { addAction } from "../command";
 import { parseScopes } from "../scopes";
 import { principalOptions } from "./options";

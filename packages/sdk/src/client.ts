@@ -1,12 +1,12 @@
-import { AdministrationApi } from "./admin";
-import { AgentApi, AttachmentsApi } from "./attachments";
-import { CheckpointsApi, OperationsApi } from "./checkpoints";
-import { ConversationsApi } from "./conversations";
-import { LogsApi, NetworkEventsApi, OutputsApi } from "./diagnostics";
-import { TemplatesApi } from "./templates";
-import { TerminalsApi } from "./terminals";
-import { type PocketCoderClientConfig, PocketCoderTransport } from "./transport";
-import { WorkspacesApi } from "./workspaces";
+import { AdministrationApi } from "./resources/admin/admin";
+import { AgentApi, AttachmentsApi } from "./resources/attachments/attachments";
+import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
+import { ConversationsApi } from "./resources/conversations/conversations";
+import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
+import { TemplatesApi } from "./resources/templates/templates";
+import { TerminalsApi } from "./resources/terminals/terminals";
+import { WorkspacesApi } from "./resources/workspaces/workspaces";
+import { type PocketCoderClientConfig, PocketCoderTransport } from "./transport/transport";
 
 export class PocketCoderClient {
   private readonly transport: PocketCoderTransport;
@@ -44,4 +44,4 @@ export class PocketCoderClient {
   }
 }
 
-export type { PocketCoderClientConfig } from "./transport";
+export type { PocketCoderClientConfig } from "./transport/transport";

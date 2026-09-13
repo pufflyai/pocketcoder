@@ -37,16 +37,10 @@ function hasNonTextInput(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   const type = record.type;
-  if (
-    typeof type === "string" &&
-    ["image", "audio", "input_file"].some((kind) => type.includes(kind))
-  ) {
+  if (typeof type === "string" && ["image", "audio", "input_file"].some((kind) => type.includes(kind))) {
     return true;
   }
-  if (
-    Array.isArray(record.modalities) &&
-    record.modalities.some((modality) => modality !== "text")
-  ) {
+  if (Array.isArray(record.modalities) && record.modalities.some((modality) => modality !== "text")) {
     return true;
   }
   return Object.values(record).some(hasNonTextInput);
@@ -93,10 +87,7 @@ async function parseRequestBody(
   if (config.maxRequestBytes !== undefined && bytes.byteLength > config.maxRequestBytes) {
     return error(413, "request body is too large");
   }
-  if (
-    config.maxTotalRequestBytes !== undefined &&
-    totalRequestBytes + bytes.byteLength > config.maxTotalRequestBytes
-  ) {
+  if (config.maxTotalRequestBytes !== undefined && totalRequestBytes + bytes.byteLength > config.maxTotalRequestBytes) {
     return error(429, "gateway session byte limit reached");
   }
   try {
@@ -148,9 +139,7 @@ export function createOpenAIGatewayHandler(
 
     requestCount += 1;
     totalRequestBytes += parsed.byteLength;
-    const forwardedBody = JSON.stringify(
-      cappedBody(url.pathname, parsed.body, config.maxOutputTokens),
-    );
+    const forwardedBody = JSON.stringify(cappedBody(url.pathname, parsed.body, config.maxOutputTokens));
 
     const headers = new Headers({
       authorization: `Bearer ${config.apiKey}`,

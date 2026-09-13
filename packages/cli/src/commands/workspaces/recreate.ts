@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { controlPlaneClient, fail, need } from "../../cli-context";
+import { controlPlaneClient, fail, need } from "../../command/cli-context";
 import { addAction } from "../command";
 import { parseLaunchInput } from "./launch-input";
 

@@ -5,7 +5,7 @@ import {
   POOL_PROTOCOL_VERSION,
   PoolProviderInputSchema,
   PoolRegisteredFrameSchema,
-} from "./protocol";
+} from "./protocol/protocol";
 
 describe("warm pool protocol v3", () => {
   test("unbound provider input cannot contain workspace or caller data", () => {

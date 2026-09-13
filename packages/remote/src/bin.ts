@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { resolvePiInvocation } from "./launch";
+import { resolvePiInvocation } from "./session/launch";
 
 function main(): void {
   let invocation: ReturnType<typeof resolvePiInvocation>;

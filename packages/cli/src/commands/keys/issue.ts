@@ -1,6 +1,6 @@
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import type { Argv } from "yargs";
-import { fail, need, withStore } from "../../cli-context";
+import { fail, need, withStore } from "../../command/cli-context";
 import { addAction } from "../command";
 import { parseScopes } from "../scopes";
 

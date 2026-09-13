@@ -29,8 +29,7 @@ export interface ParsedKey {
 
 // The secret is base64url and may itself contain underscores, so the token
 // is parsed structurally rather than split on "_".
-const KEY_RE =
-  /^pkt_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_([A-Za-z0-9_-]+)$/;
+const KEY_RE = /^pkt_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_([A-Za-z0-9_-]+)$/;
 
 export function parseMachineKey(token: string): ParsedKey | null {
   const match = KEY_RE.exec(token);
@@ -44,12 +43,7 @@ export function digestSecret(pepper: string, keyId: string, secret: string): Uin
   return new Uint8Array(createHmac("sha256", pepper).update(`${keyId}:${secret}`).digest());
 }
 
-export function verifySecret(
-  pepper: string,
-  keyId: string,
-  secret: string,
-  storedDigest: Uint8Array,
-): boolean {
+export function verifySecret(pepper: string, keyId: string, secret: string, storedDigest: Uint8Array): boolean {
   const computed = digestSecret(pepper, keyId, secret);
   if (computed.length !== storedDigest.length) {
     return false;
@@ -81,12 +75,7 @@ export function signEvent(signingKey: string, timestamp: string, body: string): 
   return `sha256=${mac}`;
 }
 
-export function verifyEventSignature(
-  signingKey: string,
-  timestamp: string,
-  body: string,
-  signature: string,
-): boolean {
+export function verifyEventSignature(signingKey: string, timestamp: string, body: string, signature: string): boolean {
   const expected = signEvent(signingKey, timestamp, body);
   const a = Buffer.from(expected);
   const b = Buffer.from(signature);
@@ -104,10 +93,7 @@ export interface EgressAuditSubject {
   id: string;
 }
 
-export function issueEgressAuditToken(
-  signingKey: string,
-  subject: EgressAuditSubject & { expiresAt: Date },
-): string {
+export function issueEgressAuditToken(signingKey: string, subject: EgressAuditSubject & { expiresAt: Date }): string {
   const payload = Buffer.from(
     JSON.stringify({
       v: 1,
@@ -117,32 +103,21 @@ export function issueEgressAuditToken(
       exp: subject.expiresAt.getTime(),
     }),
   ).toString("base64url");
-  const signature = createHmac("sha256", signingKey)
-    .update(`${EGRESS_TOKEN_DOMAIN}${payload}`)
-    .digest("base64url");
+  const signature = createHmac("sha256", signingKey).update(`${EGRESS_TOKEN_DOMAIN}${payload}`).digest("base64url");
   return `${EGRESS_TOKEN_PREFIX}.${payload}.${signature}`;
 }
 
-export function verifyEgressAuditToken(
-  signingKey: string,
-  token: string,
-  now = new Date(),
-): EgressAuditSubject | null {
+export function verifyEgressAuditToken(signingKey: string, token: string, now = new Date()): EgressAuditSubject | null {
   const [prefix, payload, signature, extra] = token.split(".");
   if (prefix !== EGRESS_TOKEN_PREFIX || !payload || !signature || extra) return null;
-  const expected = createHmac("sha256", signingKey)
-    .update(`${EGRESS_TOKEN_DOMAIN}${payload}`)
-    .digest("base64url");
+  const expected = createHmac("sha256", signingKey).update(`${EGRESS_TOKEN_DOMAIN}${payload}`).digest("base64url");
   const actualBytes = Buffer.from(signature);
   const expectedBytes = Buffer.from(expected);
   if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) {
     return null;
   }
   try {
-    const value = JSON.parse(Buffer.from(payload, "base64url").toString()) as Record<
-      string,
-      unknown
-    >;
+    const value = JSON.parse(Buffer.from(payload, "base64url").toString()) as Record<string, unknown>;
     if (
       value.v !== 1 ||
       value.aud !== "egress-audit" ||

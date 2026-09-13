@@ -35,9 +35,7 @@ export function projectBoundaryViolations(projects: ProjectBoundary[]): string[]
       const dependency = byName.get(dependencyName);
       const dependencyType = dependency?.tags.find((tag) => tag.startsWith("type:"));
       if (dependencyType && DISALLOWED_DEPENDENCY_TYPES[type]?.has(dependencyType)) {
-        violations.push(
-          `${project.path}: ${type} cannot depend on ${dependencyType} (${dependencyName})`,
-        );
+        violations.push(`${project.path}: ${type} cannot depend on ${dependencyType} (${dependencyName})`);
       }
     }
   }
@@ -54,9 +52,7 @@ export function publishedDependencyViolations(projects: ProjectBoundary[]): stri
     if (project.private) continue;
     for (const dependencyName of project.dependencies) {
       if (byName.get(dependencyName)?.private) {
-        violations.push(
-          `${project.path}: published package cannot depend on unpublished ${dependencyName}`,
-        );
+        violations.push(`${project.path}: published package cannot depend on unpublished ${dependencyName}`);
       }
     }
   }
@@ -96,12 +92,8 @@ async function filesUnder(root: string, suffix: string): Promise<string[]> {
 }
 
 async function sourceFiles(): Promise<SourceFile[]> {
-  const paths = (
-    await Promise.all(["packages", "examples"].map((root) => filesUnder(root, ".ts")))
-  ).flat();
-  return await Promise.all(
-    paths.map(async (path) => ({ path, text: await Bun.file(path).text() })),
-  );
+  const paths = (await Promise.all(["packages", "examples"].map((root) => filesUnder(root, ".ts")))).flat();
+  return await Promise.all(paths.map(async (path) => ({ path, text: await Bun.file(path).text() })));
 }
 
 async function projectBoundaries(): Promise<ProjectBoundary[]> {
