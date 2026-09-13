@@ -6,7 +6,7 @@
       "type:library"
     ]
   },
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": false,
   "description": "Runtime-validated TypeScript client for the PocketCoder control plane.",
   "type": "module",

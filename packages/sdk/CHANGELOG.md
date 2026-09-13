@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-sdk
 
+## 0.5.0
+
+### Minor Changes
+
+- [#40](https://github.com/pufflyai/pocketcoder/pull/40) [`3c779c2`](https://github.com/pufflyai/pocketcoder/commit/3c779c2d40e6b756d4501069f3fa8d3002b84e9b) Thanks [@au-re](https://github.com/au-re)! - Wait for the agent to be ready for input before sending a user message, so a workspace that is ready but still starting no longer fails with an opaque 500.
+
 ## 0.4.0
 
 ### Minor Changes
