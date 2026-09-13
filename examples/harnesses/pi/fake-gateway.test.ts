@@ -9,6 +9,29 @@ afterEach(() => {
 });
 
 describe("Pi E2E fake model gateway", () => {
+  test.each(["string", "text-parts"])(
+    "returns the doctor's token from %s content",
+    async (format) => {
+      gateway = startFakePiGateway("test-bearer");
+      const token = `pocketcoder-doctor-${crypto.randomUUID()}`;
+      const prompt = `Reply with exactly this diagnostic token: ${token}`;
+      const content = format === "string" ? prompt : [{ type: "text", text: prompt }];
+      const response = await fetch(`http://127.0.0.1:${gateway.port}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer test-bearer",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [{ role: "user", content }],
+        }),
+      });
+      expect(await response.json()).toMatchObject({
+        choices: [{ message: { content: token }, finish_reason: "stop" }],
+      });
+    },
+  );
+
   test("asks Pi to read the fixture, then returns its contents", async () => {
     gateway = startFakePiGateway("test-bearer");
     const first = await fetch(`http://127.0.0.1:${gateway.port}/v1/chat/completions`, {

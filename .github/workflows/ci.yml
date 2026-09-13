@@ -44,7 +44,7 @@ jobs:
         run: |
           bun run typecheck
           bun test
-      - name: Run Pi through AgentAPI full-stack E2E
+      - name: Run Pi through AgentAPI full-stack E2E and pcd doctor
         run: bun run example:e2e:pi
       - name: Validate the Codex and OpenCode AgentAPI fixtures
         working-directory: examples/harnesses/oss

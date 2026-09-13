@@ -6,7 +6,7 @@ export const PI_FIXTURE_CONTENT = "PocketCoder remote workspace fixture: ORBIT-7
 
 interface ChatMessage {
   role?: string;
-  content?: unknown;
+  content?: string | Array<{ type: string; text?: string }>;
 }
 
 interface ChatRequest {
@@ -23,6 +23,20 @@ function completion(body: ChatRequest): {
   delta: Record<string, unknown>;
   finishReason: "stop" | "tool_calls";
 } {
+  const content = body.messages?.findLast((message) => message.role === "user")?.content;
+  const prompt =
+    typeof content === "string"
+      ? content
+      : content
+          ?.filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("");
+  const token = /^Reply with exactly this diagnostic token: (pocketcoder-doctor-[\da-f-]+)$/.exec(
+    prompt?.trim() ?? "",
+  )?.[1];
+  if (token) {
+    return { delta: { role: "assistant", content: token }, finishReason: "stop" };
+  }
   if (hasToolResult(body)) {
     return {
       delta: { role: "assistant", content: PI_FIXTURE_CONTENT },

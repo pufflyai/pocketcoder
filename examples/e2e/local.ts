@@ -8,6 +8,7 @@ import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
+import { piStartupCommand, runDoctorCheck } from "./doctor-check";
 import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
 import { serverOutput } from "./process-output";
 
@@ -171,6 +172,9 @@ try {
       usesFakeGateway = true;
     }
     if (!template.spec.agent) throw new Error("Pi template must use spec.agent");
+    if (usesFakeGateway) {
+      template.spec.agent.command = piStartupCommand(template.spec.agent.command);
+    }
     template.spec.agent.env = {
       ...template.spec.agent.env,
       PI_GATEWAY_URL:
@@ -324,6 +328,14 @@ try {
     let expectedResponse = OSS_FIXTURE_CONTENT;
     if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
     if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
+    if (harness === "pi") {
+      const doctorOutput = await runDoctorCheck(
+        { baseUrl, key, template: `${harness}-harness` },
+        (args, doctorEnv) => command(args, { env: doctorEnv, quiet: true }),
+      );
+      console.log(doctorOutput);
+      console.log("PocketCoder doctor passed against Pi through AgentAPI.");
+    }
     const report = await runHarnessE2E({
       baseUrl,
       key,
