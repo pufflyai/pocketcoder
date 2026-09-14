@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.7.2
+
+### Patch Changes
+
+- [#45](https://github.com/pufflyai/pocketcoder/pull/45) [`2a3e252`](https://github.com/pufflyai/pocketcoder/commit/2a3e252f2de3ff47300e7704fd5ac8809cceacdb) Thanks [@jenshorn](https://github.com/jenshorn)! - Reuse one Kubernetes volume per PVC so workspaces with multiple persistent directories can start.
+
 ## 0.7.1
 
 ### Patch Changes
