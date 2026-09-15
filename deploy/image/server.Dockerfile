@@ -4,7 +4,7 @@
 # Build from the repository root:
 #   docker build -f deploy/image/server.Dockerfile -t pocketcoder-server:dev .
 
-FROM oven/bun:1.3-slim AS build
+FROM oven/bun:1.4-slim AS build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -13,7 +13,7 @@ RUN bun install --frozen-lockfile \
 
 FROM registry.k8s.io/kubectl:v1.34.1 AS kubectl
 
-FROM oven/bun:1.3-slim
+FROM oven/bun:1.4-slim
 COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
 COPY --from=build /out/server/index.js /opt/pocketcoder/server.js

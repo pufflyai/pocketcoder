@@ -1,13 +1,13 @@
 # Build from the PocketCoder repository root:
 #   docker build -f examples/harnesses/oss/Dockerfile -t pocketcoder-oss:dev .
 
-FROM oven/bun:1.3.14-slim AS supervisor-build
+FROM oven/bun:1.4.2-slim AS supervisor-build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
   && bun build packages/supervisor/src/index.ts --target bun --outfile /out/supervisor.js
 
-FROM oven/bun:1.3.14-slim AS agentapi-download
+FROM oven/bun:1.4.2-slim AS agentapi-download
 ARG TARGETARCH
 ARG AGENTAPI_VERSION=0.12.2
 RUN case "$TARGETARCH" in \
@@ -20,7 +20,7 @@ RUN case "$TARGETARCH" in \
   && echo "$AGENTAPI_SHA256  /agentapi" | sha256sum -c - \
   && chmod 0755 /agentapi
 
-FROM oven/bun:1.3.14-slim
+FROM oven/bun:1.4.2-slim
 
 WORKDIR /opt/oss
 COPY examples/harnesses/oss/package.json examples/harnesses/oss/bun.lock ./
