@@ -11,7 +11,7 @@ DigitalOcean cloud resources.
 
 ## Before you start
 
-Use an operator machine with Bash, Bun 1.3.14, `doctl`, and `kubectl`. Keep
+Use an operator machine with Bash, Bun 1.4.2, `doctl`, and `kubectl`. Keep
 `doctl` credentials on that machine. Never run `doctl auth init` in a
 PocketCoder workspace.
 

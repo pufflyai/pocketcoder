@@ -18,7 +18,7 @@ ADD --checksum=sha256:d4f76702f1ce852c4ba2027f51dae1a94d5b27e02b4aee20cd37eda8a8
 
 FROM agentapi-${TARGETARCH} AS agentapi-download
 
-FROM oven/bun:1.3-slim
+FROM oven/bun:1.4-slim
 
 COPY dist/index.js /opt/pocketcoder/supervisor.js
 COPY echo-harness.ts /opt/pocketcoder/echo-harness.ts
