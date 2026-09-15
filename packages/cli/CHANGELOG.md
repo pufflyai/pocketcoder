@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.7.3
+
+### Patch Changes
+
+- [#47](https://github.com/pufflyai/pocketcoder/pull/47) [`7a27b6b`](https://github.com/pufflyai/pocketcoder/commit/7a27b6b985594ea76f63d3d40672c2275a71ae32) Thanks [@jenshorn](https://github.com/jenshorn)! - Wait for initial warm-pool reconciliation before closing the database during server shutdown.
+
+- [#47](https://github.com/pufflyai/pocketcoder/pull/47) [`7a27b6b`](https://github.com/pufflyai/pocketcoder/commit/7a27b6b985594ea76f63d3d40672c2275a71ae32) Thanks [@jenshorn](https://github.com/jenshorn)! - Read legacy JSON-encoded templates, workspace metadata, and checkpoint records after upgrading from 0.7.1.
+
+- [#47](https://github.com/pufflyai/pocketcoder/pull/47) [`7a27b6b`](https://github.com/pufflyai/pocketcoder/commit/7a27b6b985594ea76f63d3d40672c2275a71ae32) Thanks [@jenshorn](https://github.com/jenshorn)! - Release preserved source storage after its last checkpoint is deleted, and retry interrupted cleanup during retention sweeps.
+
 ## 0.7.2
 
 ### Patch Changes
