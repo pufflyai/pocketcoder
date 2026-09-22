@@ -123,6 +123,13 @@ export class PersistencePurgeService {
     let active = false;
     for (const operation of operations) {
       if (operation.kind === "purge") continue;
+      if (operation.kind === "restore" && operation.resultWorkspaceId) {
+        const target = await this.context.deps.store.getWorkspace(operation.resultWorkspaceId);
+        if (target && isTerminal(target.state)) {
+          await this.context.failOperation(operation.id, "restore_failed");
+          continue;
+        }
+      }
       // Admission is fenced and the scheduler has drained. A queued restore
       // target cannot start, so waiting for its copy would deadlock cleanup.
       if (queued && operation.kind === "restore" && operation.resultWorkspaceId === workspaceId) {
