@@ -73,7 +73,7 @@ conformanceTest(
               containers: [
                 {
                   name: "audit",
-                  image: "oven/bun:1.3.14-alpine",
+                  image: "oven/bun:1.4.2-alpine",
                   command: ["bun", "-e", auditScript],
                   ports: [{ containerPort: 8080 }],
                 },

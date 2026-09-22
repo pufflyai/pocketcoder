@@ -8,7 +8,7 @@ deployment without writing control-plane API calls by hand.
 
 ## Install
 
-pcd requires Bun 1.3.14 or newer:
+pcd requires Bun 1.4.2 or newer:
 
 ```sh
 bun add --global @pstdio/pocketcoder-cli

@@ -2,7 +2,7 @@
 
 Use this playbook to validate the durable agent-session history and resume
 changes on a clean checkout. Run commands from the repository root with Bun
-1.3.14 and Docker available.
+1.4.2 and Docker available.
 
 ## 1. Install and run the repository gate
 

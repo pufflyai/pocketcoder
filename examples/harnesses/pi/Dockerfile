@@ -1,7 +1,7 @@
 # Build from the PocketCoder repository root:
 #   docker build -f examples/harnesses/pi/Dockerfile -t pocketcoder-pi:dev .
 
-FROM oven/bun:1.3.14-slim AS supervisor-build
+FROM oven/bun:1.4.2-slim AS supervisor-build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -19,7 +19,7 @@ ADD --checksum=sha256:d4f76702f1ce852c4ba2027f51dae1a94d5b27e02b4aee20cd37eda8a8
 
 FROM agentapi-${TARGETARCH} AS agentapi-download
 
-FROM oven/bun:1.3.14-slim
+FROM oven/bun:1.4.2-slim
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
