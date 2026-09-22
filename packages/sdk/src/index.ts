@@ -1,6 +1,10 @@
 export type {
   CheckpointResource,
   CheckpointState,
+  KeyIssueRequest,
+  KeyIssueResponse,
+  KeyListResponse,
+  KeyResource,
   LogChunk,
   NetworkEvent,
   OperationKind,
@@ -29,6 +33,7 @@ export { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoin
 export type { ConversationMessage, ConversationPage } from "./resources/conversations/conversations";
 export { ConversationsApi } from "./resources/conversations/conversations";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
+export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
 export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,

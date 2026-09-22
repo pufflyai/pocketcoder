@@ -3,13 +3,17 @@ import { MAX_CONVERSATION_BYTES, MAX_CONVERSATION_MESSAGES, type MemoryState } f
 
 export class MemoryConversationStore {
   constructor(
-    private readonly context: Pick<MemoryState, "conversationStates" | "conversations" | "conversationBytes">,
+    private readonly context: Pick<
+      MemoryState,
+      "conversationStates" | "conversations" | "conversationBytes" | "workspaces"
+    >,
   ) {}
   async appendConversationMessage(
     input: Omit<ConversationMessageRow, "seq">,
   ): Promise<{ message: ConversationMessageRow; created: boolean }> {
     const state = this.context.conversationStates.get(input.workspaceId);
     if (state?.status === "deleted") throw new Error("conversation.deleted");
+    if (this.context.workspaces.get(input.workspaceId)?.purgeRequestedAt) throw new Error("conversation.deleted");
     const rows = this.context.conversations.get(input.workspaceId) ?? [];
     const existing = rows.find((row) => row.messageId === input.messageId);
     if (existing) return { message: { ...existing }, created: false };

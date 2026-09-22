@@ -2,16 +2,19 @@ import type { ConversationMessageRow } from "@pstdio/pocketcoder-runtime-contrac
 import { and, asc, count, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { requireContentWritable } from "../persistence/content";
 
 const MAX_CONVERSATION_BYTES = 50 * 1024 * 1024;
 const MAX_CONVERSATION_MESSAGES = 100_000;
-export function createConversations({
-  db,
-  tables: { workspaceConversations: conversations, workspaceConversationMessages: messages },
-}: DatabaseContext) {
+export function createConversations(context: DatabaseContext) {
+  const {
+    db,
+    tables: { workspaceConversations: conversations, workspaceConversationMessages: messages },
+  } = context;
   return {
     async appendConversationMessage(input: Omit<ConversationMessageRow, "seq">) {
       return db.transaction(async (tx) => {
+        await requireContentWritable(tx, context.tables, input.workspaceId);
         await lock(tx, input.workspaceId, 7081);
         const [state] = await tx
           .select({ status: conversations.status })

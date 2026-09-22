@@ -10,6 +10,7 @@ import { addLogsCommand } from "./logs";
 import { addNetworkEventsCommand } from "./network-events";
 import { addOutputsCommand } from "./outputs";
 import { addPreserveCommand } from "./preserve";
+import { addPurgeCommand } from "./purge";
 import { addRecreateCommand } from "./recreate";
 import { addRestoreCommand } from "./restore";
 import { addTerminalCommand } from "./terminal";
@@ -26,6 +27,7 @@ export function addWorkspaceCommands(parser: Argv) {
     addTerminalCommand,
     addCancelCommand,
     addPreserveCommand,
+    addPurgeCommand,
     addRestoreCommand,
     addRecreateCommand,
     addOutputsCommand,

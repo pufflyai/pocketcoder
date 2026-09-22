@@ -22,7 +22,7 @@ afterEach(async () => {
   }
 });
 
-export async function server(options: { maxConcurrentOperations?: number } = {}) {
+export async function server(options: { maxConcurrentOperations?: number; retainFailures?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-persistence-api-"));
   roots.push(root);
   const store = new MemoryStore();
@@ -32,6 +32,7 @@ export async function server(options: { maxConcurrentOperations?: number } = {})
     checkpointRoot: join(root, "checkpoints"),
   });
   const parsed = fixtureTemplatePersistent();
+  if (options.retainFailures) parsed.manifest.spec.persistence.checkpoint.onFailure = "retain-for-recovery";
   await store.upsertTemplate({
     name: parsed.manifest.metadata.name,
     version: parsed.manifest.spec.version,
@@ -44,6 +45,7 @@ export async function server(options: { maxConcurrentOperations?: number } = {})
     "workspaces:create",
     "workspaces:read",
     "workspaces:cancel",
+    "workspaces:purge",
     "workspaces:preserve",
     "workspaces:restore",
     "checkpoints:read",

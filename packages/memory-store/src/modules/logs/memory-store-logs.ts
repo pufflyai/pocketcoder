@@ -7,6 +7,7 @@ export class MemoryLogStore {
     workspaceId: string,
     entries: Array<{ stream: LogRow["stream"]; occurredAt: Date; content: Uint8Array }>,
   ): Promise<void> {
+    if (this.context.workspaces.get(workspaceId)?.purgeRequestedAt) return;
     const list = this.context.logs.get(workspaceId) ?? [];
     let bytes = this.context.logBytes.get(workspaceId) ?? 0;
     let seq = list.length > 0 ? (list[list.length - 1]?.seq ?? 0) : 0;
@@ -56,6 +57,7 @@ export class MemoryLogStore {
     sourceSessionId: string,
     events: Parameters<Store["appendNetworkEvents"]>[2],
   ): Promise<void> {
+    if (this.context.workspaces.get(workspaceId)?.purgeRequestedAt) return;
     const rows = this.context.networkEvents.get(workspaceId) ?? [];
     const seen = new Set(rows.map((row) => `${row.sourceSessionId}:${row.source_seq}`));
     const workspace = this.context.workspaces.get(workspaceId);

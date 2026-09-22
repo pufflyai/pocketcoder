@@ -54,3 +54,8 @@ test("confirmed absence remains idempotent for repeated stop and remove", async 
   await driver.stop(ref, 1);
   await driver.remove(ref);
 });
+
+test("purge propagates input Secret deletion failures", async () => {
+  const driver = await driverWithResponse("delete secret");
+  await expect(driver.purgeInput(crypto.randomUUID())).rejects.toThrow("kubectl");
+});

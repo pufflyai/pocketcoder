@@ -25,6 +25,7 @@ export {
   attachmentManifest,
   splitAttachmentManifest,
 } from "./attachments/attachment";
+export * from "./auth/keys";
 export { canonicalJson, digestOf, sha256Hex } from "./common/canonical";
 export { isDuration, parseDurationMs } from "./common/duration";
 export {

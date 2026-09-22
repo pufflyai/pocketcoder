@@ -221,6 +221,9 @@ export async function startPocketCoderServer(
       async () => {
         try {
           await scheduler.tick();
+          const pendingPurges = await persistence.retryPurges();
+          readiness.set("cleanup", pendingPurges > 0 ? "pending" : "ok");
+          metrics.observe("purge.pending", pendingPurges);
           readiness.set("coordinator", "ok");
         } catch (error) {
           readiness.set("coordinator", "failed");

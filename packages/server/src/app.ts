@@ -22,6 +22,8 @@ import {
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { registerAdministrationRoutes } from "./administration/administration-routes";
+import { registerKeyRoutes } from "./administration/keys-routes";
+import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./control-channel/pool-ws";
@@ -33,6 +35,7 @@ import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
+import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { relayHandler } from "./relay/relay";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
@@ -262,9 +265,12 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   app.use("/v1/*", machineAuth(store, pepper));
 
   registerCatalogRoutes({ app, store });
+  registerKeyRoutes(app, store, pepper);
+  registerOperatorRecoveryRoutes(app, store, persistence);
   registerAdministrationRoutes({ app, persistence, warmPool });
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
+  registerPurgeRoutes(app, persistence);
   registerConversationRoutes({ app, store, service });
   registerWorkspaceRoutes({ app, store, service });
   registerDiagnosticRoutes({ app, store, service });

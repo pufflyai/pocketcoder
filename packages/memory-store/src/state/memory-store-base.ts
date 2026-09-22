@@ -133,6 +133,7 @@ export class MemoryState {
   }
 
   appendWorkspaceEvent(row: WorkspaceRow, at: Date): void {
+    if (row.purgeRequestedAt) return;
     const payload = buildEventEnvelope(row, at);
     this.outbox.push({
       id: payload.id,

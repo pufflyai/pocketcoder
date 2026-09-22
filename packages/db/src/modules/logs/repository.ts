@@ -2,13 +2,19 @@ import type { LogRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, asc, eq, gt, lt, max, sql } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { contentWritable } from "../persistence/content";
 
 const MAX_LOG_BYTES = 10 * 1024 * 1024;
-export function createLogs({ db, tables: { workspaceLogs: logs } }: DatabaseContext) {
+export function createLogs(context: DatabaseContext) {
+  const {
+    db,
+    tables: { workspaceLogs: logs },
+  } = context;
   return {
     async appendLogs(workspaceId: string, entries: Array<Pick<LogRow, "stream" | "occurredAt" | "content">>) {
       if (entries.length === 0) return;
       await db.transaction(async (tx) => {
+        if (!(await contentWritable(tx, context.tables, workspaceId))) return;
         await lock(tx, workspaceId, 7080);
         const [stats] = await tx
           .select({

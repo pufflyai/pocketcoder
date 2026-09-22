@@ -52,6 +52,11 @@ workspace.
 
 ## Credential inventory
 
+Principal-constrained operator keys can enumerate, reconcile, and revoke keys
+and purge disabled principals through public APIs. Their explicit target grants
+and restricted scopes stay outside workspaces. See [verifiable cleanup](cleanup.md)
+for the permission model, content inventory, and backup replay rules.
+
 | Credential | Holder | Lifetime rule |
 |------------|--------|---------------|
 | Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Prefer `--expires <ISO8601>` plus rotation; `--expires never` is for deliberate operational choices, not examples or ephemeral runs |

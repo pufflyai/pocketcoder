@@ -32,7 +32,7 @@ export function createWarmPools(context: DatabaseContext) {
     async claimWarmPoolRuntime(claim: WarmPoolClaim) {
       const result = await db.transaction(async (tx) => {
         const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, claim.workspaceId)).for("update");
-        if (current?.state !== "queued") return null;
+        if (current?.state !== "queued" || current.purgeRequestedAt) return null;
         const [runtime] = await tx
           .select()
           .from(runtimes)

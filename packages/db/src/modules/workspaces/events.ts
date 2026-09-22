@@ -20,6 +20,7 @@ export async function appendTransition(
     reasonCode: reason,
     occurredAt: at,
   });
+  if (row.purgeRequestedAt) return;
   const payload = buildEventEnvelope(row, at);
   await tx.insert(context.tables.eventOutbox).values({
     id: payload.id,

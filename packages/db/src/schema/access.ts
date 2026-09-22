@@ -34,18 +34,25 @@ export function createAccessTables(table: PgTableFn<string | undefined> = pgTabl
     createdAt: timestamptz("created_at").notNull(),
   });
 
-  const machineKeys = table("machine_keys", {
-    id: uuid("id").primaryKey(),
-    principalId: uuid("principal_id")
-      .notNull()
-      .references(() => principals.id),
-    secretDigest: bytea("secret_digest").$type<Uint8Array>().notNull(),
-    scopes: text("scopes").array().notNull(),
-    createdAt: timestamptz("created_at").notNull(),
-    expiresAt: timestamptz("expires_at"),
-    revokedAt: timestamptz("revoked_at"),
-    lastUsedAt: timestamptz("last_used_at"),
-  });
+  const machineKeys = table(
+    "machine_keys",
+    {
+      issuanceRequestId: text("issuance_request_id"),
+      issuanceRequestDigest: text("issuance_request_digest"),
+      managedPrincipalIds: text("managed_principal_ids").array().notNull().default([]),
+      id: uuid("id").primaryKey(),
+      principalId: uuid("principal_id")
+        .notNull()
+        .references(() => principals.id),
+      secretDigest: bytea("secret_digest").$type<Uint8Array>().notNull(),
+      scopes: text("scopes").array().notNull(),
+      createdAt: timestamptz("created_at").notNull(),
+      expiresAt: timestamptz("expires_at"),
+      revokedAt: timestamptz("revoked_at"),
+      lastUsedAt: timestamptz("last_used_at"),
+    },
+    (table) => [unique().on(table.principalId, table.issuanceRequestId)],
+  );
 
   return { templates, principals, machineKeys };
 }

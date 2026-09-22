@@ -9,6 +9,7 @@ import type {
   WorkspaceInsert,
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { fixtureTemplateEcho } from "../fixtures/fixtures";
+import { registerCleanupContract } from "./cleanup-contract";
 
 export interface StoreContractInstance {
   store: Store;
@@ -20,7 +21,7 @@ export interface StoreContractHarness {
   create(): Promise<StoreContractInstance>;
 }
 
-interface PreparedStore extends StoreContractInstance {
+export interface PreparedStore extends StoreContractInstance {
   principal: PrincipalRow;
   machineKey: MachineKeyRow;
   template: TemplateRow;
@@ -47,6 +48,9 @@ async function prepared(harness: StoreContractHarness): Promise<PreparedStore> {
     expiresAt: null,
     revokedAt: null,
     lastUsedAt: null,
+    issuanceRequestId: null,
+    issuanceRequestDigest: null,
+    managedPrincipalIds: [],
   };
   await instance.store.insertMachineKey(machineKey);
   let sequence = 0;
@@ -86,6 +90,7 @@ async function withStore(harness: StoreContractHarness, run: (fixture: PreparedS
 }
 
 export function registerStoreContract(name: string, harness: StoreContractHarness): void {
+  registerCleanupContract(name, harness, () => prepared(harness));
   registerCoreStoreContract(name, harness);
   registerPersistenceStoreContract(name, harness);
   registerTerminalStoreContract(name, harness);

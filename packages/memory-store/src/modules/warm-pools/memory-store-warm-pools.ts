@@ -41,7 +41,7 @@ export class MemoryWarmPoolStore {
     claim: WarmPoolClaim,
   ): Promise<{ runtime: WarmPoolRuntimeRow; workspace: WorkspaceRow } | null> {
     const workspace = this.context.workspaces.get(claim.workspaceId);
-    if (workspace?.state !== "queued") return null;
+    if (workspace?.state !== "queued" || workspace.purgeRequestedAt) return null;
     const runtime = [...this.context.warmPoolRuntimes.values()]
       .filter(
         (row) =>

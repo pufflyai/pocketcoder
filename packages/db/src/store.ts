@@ -8,6 +8,7 @@ import { createNetworkAudit } from "./modules/network-audit/repository";
 import { createOutbox } from "./modules/outbox/repository";
 import { createOutputs } from "./modules/outputs/repository";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
+import { createContentPurge } from "./modules/persistence/content";
 import { createOperations } from "./modules/persistence/operations";
 import { createStorage } from "./modules/persistence/storage";
 import { createTemplates } from "./modules/templates/repository";
@@ -21,6 +22,9 @@ export class PostgresStore implements Store {
   constructor(databaseUrl: string, schema = "pocketcoder", options: { max?: number } = {}) {
     const context = createDatabaseContext(databaseUrl, schema, options);
     const lifecycle = createLifecycle(context);
+    const content = createContentPurge(context);
+    this.listWorkspaceStorage = content.listWorkspaceStorage;
+    this.purgeWorkspaceContent = content.purgeWorkspaceContent;
     this.init = lifecycle.init;
     this.close = lifecycle.close;
     this.acquireCoordinatorLease = lifecycle.acquireCoordinatorLease;
@@ -35,6 +39,10 @@ export class PostgresStore implements Store {
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
     this.setPrincipalDisabled = auth.setPrincipalDisabled;
+    this.getPrincipal = auth.getPrincipal;
+    this.issueMachineKey = auth.issueMachineKey;
+    this.listMachineKeys = auth.listMachineKeys;
+    this.revokePrincipalKeys = auth.revokePrincipalKeys;
     this.insertMachineKey = auth.insertMachineKey;
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
     this.revokeMachineKey = auth.revokeMachineKey;
@@ -107,6 +115,8 @@ export class PostgresStore implements Store {
     this.appendEvent = outbox.appendEvent;
     this.waitForWorkspaceChange = createWorkspaceWaiter(context, workspaces.getWorkspace);
   }
+  readonly listWorkspaceStorage: Store["listWorkspaceStorage"];
+  readonly purgeWorkspaceContent: Store["purgeWorkspaceContent"];
   readonly init: Store["init"];
   readonly close: Store["close"];
   readonly acquireCoordinatorLease: Store["acquireCoordinatorLease"];
@@ -119,6 +129,10 @@ export class PostgresStore implements Store {
   readonly listPrincipals: Store["listPrincipals"];
   readonly updatePrincipal: Store["updatePrincipal"];
   readonly setPrincipalDisabled: Store["setPrincipalDisabled"];
+  readonly getPrincipal: Store["getPrincipal"];
+  readonly issueMachineKey: Store["issueMachineKey"];
+  readonly listMachineKeys: Store["listMachineKeys"];
+  readonly revokePrincipalKeys: Store["revokePrincipalKeys"];
   readonly insertMachineKey: Store["insertMachineKey"];
   readonly getMachineKeyWithPrincipal: Store["getMachineKeyWithPrincipal"];
   readonly revokeMachineKey: Store["revokeMachineKey"];

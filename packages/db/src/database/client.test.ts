@@ -42,6 +42,9 @@ describe.skipIf(!TEST_DATABASE_URL)("typed database behavior", () => {
         expiresAt: null,
         revokedAt: null,
         lastUsedAt: null,
+        issuanceRequestId: null,
+        issuanceRequestDigest: null,
+        managedPrincipalIds: [],
       };
       await a.store.insertMachineKey(key);
       expect((await a.store.getMachineKeyWithPrincipal(key.id))?.key).toEqual(key);

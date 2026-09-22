@@ -1,5 +1,5 @@
 import { canTransition, isTerminal, parseDurationMs } from "@pstdio/pocketcoder-contracts";
-import type { TransitionRequest, WorkspacePatch } from "@pstdio/pocketcoder-runtime-contracts";
+import { purgedContentPatch, type TransitionRequest, type WorkspacePatch } from "@pstdio/pocketcoder-runtime-contracts";
 import { asc, eq, ne, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
@@ -15,21 +15,32 @@ export function createTransitions(context: DatabaseContext) {
   return {
     async updateWorkspace(id: string, patch: WorkspacePatch, at: Date) {
       const bumpsChange = Object.keys(patch).some((key) => CHANGE_PATCH_KEYS.has(key));
-      await db
-        .update(workspaces)
-        .set({ ...patch, updatedAt: at, ...(bumpsChange ? { changeSeq: sql`${workspaces.changeSeq}+1` } : {}) })
-        .where(eq(workspaces.id, id));
+      await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
+        await tx
+          .update(workspaces)
+          .set({
+            ...patch,
+            ...(current?.purgeRequestedAt ? purgedContentPatch() : {}),
+            updatedAt: at,
+            ...(bumpsChange ? { changeSeq: sql`${workspaces.changeSeq}+1` } : {}),
+          })
+          .where(eq(workspaces.id, id));
+      });
       if (bumpsChange) notifyChange(context, id);
     },
     async transition(id: string, req: TransitionRequest) {
       const workspace = await db.transaction(async (tx) => {
         const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
         if (!current || !req.from.includes(current.state) || !canTransition(current.state, req.to)) return null;
+        if (current.purgeRequestedAt && ["provisioning", "connected", "ready", "preserving", "queued"].includes(req.to))
+          return null;
         const terminal = isTerminal(req.to);
         const [row] = await tx
           .update(workspaces)
           .set({
             ...req.patch,
+            ...(current.purgeRequestedAt ? purgedContentPatch() : {}),
             state: req.to,
             reasonCode: req.reason,
             updatedAt: req.at,

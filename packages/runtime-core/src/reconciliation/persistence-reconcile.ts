@@ -1,3 +1,4 @@
+import { isTerminal } from "@pstdio/pocketcoder-contracts";
 import type { CheckpointRef, WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
 import type { MetricSink } from "../observability/metrics";
 import { stopWorkspaceProvider } from "../scheduler/provider-termination";
@@ -126,16 +127,33 @@ async function failPreserve(
   await failOperation(deps, operation, "checkpoint_failed", now);
 }
 
+async function reconcileRestore(deps: PersistenceReconcileDeps, operation: WorkspaceOperationRow, now: Date) {
+  const target = operation.resultWorkspaceId
+    ? await deps.store.getWorkspace(operation.resultWorkspaceId)
+    : await deps.store.getWorkspaceByIdempotency(operation.principalId, `restore:${operation.id}`);
+  if (!target) {
+    await failOperation(deps, operation, "restore_failed", now);
+    return;
+  }
+  // Target insertion and its operation link commit separately. Recover that
+  // link before the scheduler resumes copying or purge checks active copies.
+  if (!operation.resultWorkspaceId) {
+    await deps.store.updateOperation(operation.id, { resultWorkspaceId: target.id }, now);
+  }
+  if (isTerminal(target.state)) await failOperation(deps, operation, "restore_failed", now);
+}
+
 async function reconcileOperation(
   deps: PersistenceReconcileDeps,
   operation: WorkspaceOperationRow,
   now: Date,
 ): Promise<void> {
-  const context = await loadOperationContext(deps, operation);
+  if (operation.kind === "purge") return;
   if (operation.kind === "restore") {
-    if (!context.workspace) await failOperation(deps, operation, "restore_failed", now);
+    await reconcileRestore(deps, operation, now);
     return;
   }
+  const context = await loadOperationContext(deps, operation);
   if (!context.checkpoint) {
     await failOperation(deps, operation, "checkpoint_storage_lost", now);
     return;

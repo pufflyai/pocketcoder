@@ -123,6 +123,8 @@ export type WorkspaceOperationPatch = Partial<
 >;
 
 export interface PersistenceStore {
+  listWorkspaceStorage(workspaceId: string): Promise<WorkspaceStorageRow[]>;
+  purgeWorkspaceContent(workspaceId: string, at: Date): Promise<void>;
   insertWorkspaceStorage(row: WorkspaceStorageRow): Promise<WorkspaceStorageRow>;
   getWorkspaceStorage(workspaceId: string): Promise<WorkspaceStorageRow | null>;
   getStorage(id: string): Promise<WorkspaceStorageRow | null>;

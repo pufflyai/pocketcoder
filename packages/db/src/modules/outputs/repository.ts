@@ -3,11 +3,17 @@ import { asc, eq, sql } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { structuredJsonValue } from "../../schema/structured-json";
+import { requireContentWritable } from "../persistence/content";
 
-export function createOutputs({ db, tables: { workspaceOutputs: outputs, workspaces } }: DatabaseContext) {
+export function createOutputs(context: DatabaseContext) {
+  const {
+    db,
+    tables: { workspaceOutputs: outputs, workspaces },
+  } = context;
   return {
     async appendOutput(input: WorkspaceOutputRow) {
       return db.transaction(async (tx) => {
+        await requireContentWritable(tx, context.tables, input.workspaceId);
         await lock(tx, input.workspaceId, 7081);
         const [latest] = await tx
           .select({ seq: sql`coalesce(max(${outputs.seq}),0)`.mapWith(Number) })

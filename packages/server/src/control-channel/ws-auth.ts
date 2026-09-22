@@ -63,7 +63,7 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     return { error: "Missing workspace credentials." };
   }
   const row = await deps.store.getWorkspace(credentials.workspaceId);
-  if (!row || isTerminal(row.state)) return { error: "Unknown workspace." };
+  if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
   if (sourceCredentialReference(row) && credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION) {
     return { error: "Source credentials require agent protocol version 6." };
   }

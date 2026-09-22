@@ -42,6 +42,10 @@ export class Scheduler {
     return this.context.activeTick;
   }
 
+  async drain(): Promise<void> {
+    await this.context.activeTick;
+  }
+
   private async runTick(): Promise<void> {
     await this.sweeper.sweep();
     await this.admission.admit();

@@ -71,6 +71,7 @@ export {
   type WorkspaceStorageRow,
   type WorkspaceStore,
 } from "./driver";
+export { issuePrincipalKey, keyResource } from "./keys/key-administration";
 export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./observability/metrics";
 export { type OutboxDeps, OutboxDispatcher } from "./outbox/outbox";
 export { type PersistenceReconcileDeps, reconcilePersistence } from "./reconciliation/persistence-reconcile";

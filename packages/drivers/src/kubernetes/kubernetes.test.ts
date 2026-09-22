@@ -113,6 +113,7 @@ function fixtureWorkspace(): WorkspaceRow {
     createdAt: now,
     updatedAt: now,
     terminalAt: null,
+    purgeRequestedAt: null,
     originWorkspaceId: null,
     restoredFromCheckpointId: null,
     sourceDescriptor: null,

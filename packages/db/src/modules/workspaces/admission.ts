@@ -53,7 +53,7 @@ export function createAdmission(context: DatabaseContext) {
       const workspace = await db.transaction(async (tx) => {
         await lock(tx, `${schema}:workspace-admission`, 7351);
         const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, claim.workspaceId)).for("update");
-        if (current?.state !== "queued") return null;
+        if (current?.state !== "queued" || current.purgeRequestedAt) return null;
         const counts = await countActive(tx);
         if (counts.global >= claim.limits.globalActiveWorkspaces) return null;
         if ((counts.byPrincipal[current.principalId] ?? 0) >= claim.limits.perPrincipalActiveWorkspaces) return null;

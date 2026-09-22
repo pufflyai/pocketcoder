@@ -269,8 +269,12 @@ export class DockerDriver implements WorkspaceDriver {
     }
   }
 
-  // Removes the provider input file once registration succeeded; the
-  // one-time secret inside it is spent at that point anyway.
+  async purgeInput(workspaceId: string): Promise<void> {
+    await rm(this.inputPath(workspaceId), { force: true });
+    await rm(this.egressInputPath(workspaceId), { force: true });
+  }
+
+  // The registration secret is spent; the egress token is still live.
   async cleanupInput(workspaceId: string): Promise<void> {
     await rm(this.inputPath(workspaceId), { force: true });
     // The egress input contains the still-live audit token and remains mounted

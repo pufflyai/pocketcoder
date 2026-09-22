@@ -1,4 +1,4 @@
-import type { OperationKind } from "@pstdio/pocketcoder-contracts";
+import { ApiError, type OperationKind } from "@pstdio/pocketcoder-contracts";
 import {
   OperationCapacityExceededError,
   type WorkspaceOperationPatch,
@@ -11,7 +11,7 @@ import { requiredRow } from "../../database/required-row";
 export function createOperations({
   db,
   schema,
-  tables: { workspaceOperations: operations, workspaceCheckpoints: checkpoints },
+  tables: { workspaceOperations: operations, workspaceCheckpoints: checkpoints, workspaces },
 }: DatabaseContext) {
   const incomplete = inArray(operations.state, ["pending", "running"]);
   async function countIncomplete(tx: QueryContext = db) {
@@ -34,6 +34,22 @@ export function createOperations({
           );
         if (existing)
           return { operation: existing, created: false, conflict: existing.requestDigest !== input.requestDigest };
+        if (input.workspaceId) {
+          const [workspace] = await tx
+            .select()
+            .from(workspaces)
+            .where(eq(workspaces.id, input.workspaceId))
+            .for("update");
+          if (workspace?.purgeRequestedAt && input.kind !== "purge") {
+            throw new ApiError("operation.conflict", "Workspace content is being purged.");
+          }
+          if (input.kind === "purge") {
+            await tx
+              .update(workspaces)
+              .set({ purgeRequestedAt: workspace?.purgeRequestedAt ?? input.createdAt })
+              .where(eq(workspaces.id, input.workspaceId));
+          }
+        }
         if (
           options.maxIncompleteOperations !== undefined &&
           (await countIncomplete(tx)) >= options.maxIncompleteOperations
