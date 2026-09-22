@@ -1,5 +1,25 @@
 # @pstdio/pocketcoder-cli
 
+## 0.8.0
+
+### Minor Changes
+
+- [#51](https://github.com/pufflyai/pocketcoder/pull/51) [`6252d15`](https://github.com/pufflyai/pocketcoder/commit/6252d1526e597a8325e9df4126dc93f0e4029c27) Thanks [@jenshorn](https://github.com/jenshorn)! - Add optional external launch admission with durable termination evidence and reservation reconciliation.
+
+- [#54](https://github.com/pufflyai/pocketcoder/pull/54) [`b683aef`](https://github.com/pufflyai/pocketcoder/commit/b683aef78eb471da4ac271895c74b7935c6e82ce) Thanks [@au-re](https://github.com/au-re)! - Add verifiable workspace purge and scoped principal-key cleanup, with unresolved ownership and termination fences and provider input removal.
+
+### Patch Changes
+
+- [#52](https://github.com/pufflyai/pocketcoder/pull/52) [`e7afbce`](https://github.com/pufflyai/pocketcoder/commit/e7afbce70b7da49ba7293357b64f4d606497a4a2) Thanks [@jenshorn](https://github.com/jenshorn)! - Use one database connection for operator commands to avoid shutdown stalls during pool startup.
+
+- [#51](https://github.com/pufflyai/pocketcoder/pull/51) [`6252d15`](https://github.com/pufflyai/pocketcoder/commit/6252d1526e597a8325e9df4126dc93f0e4029c27) Thanks [@jenshorn](https://github.com/jenshorn)! - Retry conflicting Kubernetes pod metadata updates while retaining termination evidence for checkpoints and cleanup.
+
+- [#51](https://github.com/pufflyai/pocketcoder/pull/51) [`6252d15`](https://github.com/pufflyai/pocketcoder/commit/6252d1526e597a8325e9df4126dc93f0e4029c27) Thanks [@jenshorn](https://github.com/jenshorn)! - Retain Kubernetes node identity before autoscaling removes it and capture cancellation evidence for Pods that never received a node.
+
+- [#50](https://github.com/pufflyai/pocketcoder/pull/50) [`d1522d2`](https://github.com/pufflyai/pocketcoder/commit/d1522d21b49d95421d3309493ec59bc3598f2edf) Thanks [@jenshorn](https://github.com/jenshorn)! - Retry incomplete termination after restart, keep recovery storage on process exit, and prevent heartbeats from delaying cleanup.
+
+- [#51](https://github.com/pufflyai/pocketcoder/pull/51) [`6252d15`](https://github.com/pufflyai/pocketcoder/commit/6252d1526e597a8325e9df4126dc93f0e4029c27) Thanks [@jenshorn](https://github.com/jenshorn)! - Keep workspace capacity and provider references until termination cleanup succeeds, and retry failed warm-pool cleanup before requeueing.
+
 ## 0.7.3
 
 ### Patch Changes
