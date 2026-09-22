@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.8.1
+
+### Patch Changes
+
+- [#49](https://github.com/pufflyai/pocketcoder/pull/49) [`8696920`](https://github.com/pufflyai/pocketcoder/commit/86969200834bdf92d7973bc6e77d84d702a1f9bf) Thanks [@au-re](https://github.com/au-re)! - Require Bun 1.4.2 or newer.
+
 ## 0.8.0
 
 ### Minor Changes
