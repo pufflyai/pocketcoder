@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
-import { DEFAULT_LIMITS, Scheduler, type WorkspaceDriver } from "../index";
+import { DEFAULT_LIMITS, reconcileProviders, Scheduler, type WorkspaceDriver } from "../index";
 
-for (const mode of ["finalize", "warm", "retain"] as const) {
-  for (const failure of ["stop", "remove"] as const) {
+for (const mode of ["finalize", "warm", "retain", "process-exit", "heartbeat"] as const) {
+  for (const failure of ["stop", "remove", "secret-cleanup"] as const) {
     test(`${mode}: failed provider ${failure} holds capacity and retries after scheduler restart`, async () => {
       const store = new MemoryStore();
       const provider = new FakeDriver();
@@ -26,11 +26,13 @@ for (const mode of ["finalize", "warm", "retain"] as const) {
         remove: async (ref) => {
           if (failure === "remove" && unavailable) throw new Error("provider unavailable");
           await provider.remove(ref);
+          if (failure === "secret-cleanup" && unavailable) throw new Error("secret cleanup unavailable");
         },
       };
       const principal = await store.createPrincipal("test", ["admin"], ["*"]);
       const parsed = fixtureTemplateEcho();
-      if (mode === "retain") parsed.manifest.spec.persistence.checkpoint.onFailure = "retain-for-recovery";
+      const retainStorage = mode === "retain" || mode === "process-exit";
+      if (retainStorage) parsed.manifest.spec.persistence.checkpoint.onFailure = "retain-for-recovery";
       const template = (
         await store.upsertTemplate({
           name: parsed.manifest.metadata.name,
@@ -99,7 +101,7 @@ for (const mode of ["finalize", "warm", "retain"] as const) {
         expect(await provider.list()).toEqual([]);
         return;
       }
-      if (mode === "retain") {
+      if (retainStorage) {
         await store.insertWorkspaceStorage({
           id: randomUUID(),
           workspaceId: first.id,
@@ -117,18 +119,30 @@ for (const mode of ["finalize", "warm", "retain"] as const) {
           lastErrorCode: null,
         });
       }
-      await scheduler.finalize(active, "failed", "child_exit_failure", now, mode === "retain");
-      if (mode === "retain") expect((await store.getWorkspaceStorage(first.id))?.state).toBe("ready");
+      await scheduler.fail(active, "child_exit_failure", now);
+      if (retainStorage) expect((await store.getWorkspaceStorage(first.id))?.state).toBe("ready");
       expect((await store.getWorkspace(first.id))?.state).toBe("terminating");
       expect((await store.getWorkspace(first.id))?.terminalIntent).toBe("failed");
+      // Startup discovery cannot prove that remove finished cleaning ancillary resources.
+      await reconcileProviders({ store, driver, now: () => now });
+      expect((await store.getWorkspace(first.id))?.state).toBe("terminating");
       const next = await queue();
       await scheduler.admit();
       expect((await store.getWorkspace(next.id))?.state).toBe("queued");
       unavailable = false;
       now = new Date(now.getTime() + 120000);
+      if (mode === "heartbeat") {
+        await store.updateWorkspace(first.id, { lastActivityAt: now }, now);
+      }
+      if (mode === "process-exit") {
+        const terminating = await store.getWorkspace(first.id);
+        if (!terminating) throw new Error("missing workspace");
+        // The control channel retries finalize when a terminating process reports its exit.
+        await new Scheduler(deps).finalize(terminating, "failed", terminating.reasonCode, now);
+      }
       await new Scheduler(deps).tick();
       expect((await store.getWorkspace(first.id))?.state).toBe("failed");
-      if (mode === "retain") expect((await store.getWorkspaceStorage(first.id))?.state).toBe("retained");
+      if (retainStorage) expect((await store.getWorkspaceStorage(first.id))?.state).toBe("retained");
       expect((await store.getWorkspace(first.id))?.reasonCode).toBe("child_exit_failure");
       expect((await store.getWorkspace(next.id))?.state).toBe("provisioning");
       expect((await provider.list()).map((row) => row.workspaceId)).toEqual([next.id]);

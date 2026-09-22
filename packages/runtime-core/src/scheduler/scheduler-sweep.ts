@@ -86,12 +86,12 @@ export class SchedulerSweep {
     // Enforce with the provider if the agent has not exited within a few
     // grace periods.
     const stuckMs = 4 * this.context.timeoutMs(row, "terminateGrace") + 5000;
-    if (now.getTime() - row.updatedAt.getTime() <= stuckMs) return;
+    // Heartbeats and health updates change updatedAt even after termination starts.
+    const history = await this.context.deps.store.listStateHistory(row.id);
+    const termination = history.find((entry) => entry.toState === "terminating");
+    if (!termination || now.getTime() - termination.occurredAt.getTime() <= stuckMs) return;
     const terminalState = (row.terminalIntent ?? "failed") as WorkspaceState;
-    const retainStorage =
-      terminalState === "failed" &&
-      row.templateSnapshot.spec.persistence.checkpoint.onFailure === "retain-for-recovery";
-    await this.lifecycle.finalize(row, terminalState, row.reasonCode, now, retainStorage);
+    await this.lifecycle.finalize(row, terminalState, row.reasonCode, now);
   }
 
   async sweepRow(row: WorkspaceRow, now: Date): Promise<void> {

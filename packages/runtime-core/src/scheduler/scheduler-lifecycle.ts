@@ -38,14 +38,11 @@ export class SchedulerLifecycle {
     return updated;
   }
 
-  async finalize(
-    row: WorkspaceRow,
-    terminalState: WorkspaceState,
-    reason: ReasonCode | null,
-    at: Date,
-    retainStorage = false,
-  ): Promise<void> {
+  async finalize(row: WorkspaceRow, terminalState: WorkspaceState, reason: ReasonCode | null, at: Date): Promise<void> {
     const { store, driver, connections } = this.context.deps;
+    const retainStorage =
+      terminalState === "failed" &&
+      row.templateSnapshot.spec.persistence.checkpoint.onFailure === "retain-for-recovery";
     if (row.providerRef) {
       try {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
@@ -116,7 +113,7 @@ export class SchedulerLifecycle {
     ) {
       return;
     }
-    await this.finalize(row, "failed", reason, at, action === "retain-for-recovery");
+    await this.finalize(row, "failed", reason, at);
   }
 
   async handleProcessExit(row: WorkspaceRow, exitCode: number | null, at: Date): Promise<void> {

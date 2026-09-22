@@ -23,23 +23,14 @@ async function reconcileProviderRow(
   found: Awaited<ReturnType<WorkspaceDriver["list"]>>[number] | undefined,
   now: Date,
 ): Promise<void> {
-  if (row.state === "queued") return;
+  // A missing provider does not prove its secrets and storage were cleaned up.
+  // Let the scheduler finish termination, including after a partial removal.
+  if (row.state === "queued" || row.state === "terminating") return;
   const mismatched = found && found.templateDigest !== row.templateDigest;
   if (mismatched) {
     deps.log?.(`reconcile: template digest mismatch for ${row.id}; failing workspace`);
   }
   const lost = !found || mismatched;
-  if (lost && row.state === "terminating") {
-    // The provider is gone and termination was already requested; honor
-    // the recorded intent (e.g. canceled) instead of failing.
-    await deps.store.transition(row.id, {
-      from: ["terminating"],
-      to: row.terminalIntent ?? "failed",
-      reason: row.reasonCode ?? "provider_lost",
-      at: now,
-    });
-    return;
-  }
   if (lost && (row.state === "connected" || row.state === "ready")) {
     await settleLostStorage(deps, row, now);
     await deps.store.transition(row.id, {
