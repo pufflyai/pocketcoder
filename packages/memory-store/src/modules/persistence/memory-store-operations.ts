@@ -1,4 +1,4 @@
-import type { OperationKind } from "@pstdio/pocketcoder-contracts";
+import { ApiError, type OperationKind } from "@pstdio/pocketcoder-contracts";
 import {
   OperationCapacityExceededError,
   type WorkspaceOperationPatch,
@@ -35,6 +35,11 @@ export class MemoryOperationStore {
       throw new OperationCapacityExceededError();
     }
     this.assertOperationReferences(row);
+    const workspace = row.workspaceId ? this.context.workspaces.get(row.workspaceId) : null;
+    if (workspace?.purgeRequestedAt && row.kind !== "purge") {
+      throw new ApiError("operation.conflict", "Workspace content is being purged.");
+    }
+    if (workspace && row.kind === "purge") workspace.purgeRequestedAt ??= row.createdAt;
     this.context.operations.set(row.id, { ...row });
     return { operation: { ...row }, created: true, conflict: false };
   }
@@ -97,6 +102,7 @@ export class MemoryOperationStore {
   async appendOutput(input: WorkspaceOutputRow): Promise<WorkspaceOutputRow> {
     const workspace = this.context.workspaces.get(input.workspaceId);
     if (!workspace) throw new Error("workspace not found");
+    if (workspace.purgeRequestedAt) throw new ApiError("operation.conflict", "Workspace content is being purged.");
     const list = this.context.outputs.get(input.workspaceId) ?? [];
     const row = { ...input, seq: list.length + 1 };
     list.push(row);

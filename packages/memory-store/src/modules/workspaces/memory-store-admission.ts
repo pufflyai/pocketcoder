@@ -7,6 +7,7 @@ import type {
   WorkspacePatch,
   WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-contracts";
+import { purgedContentPatch } from "@pstdio/pocketcoder-runtime-contracts";
 import { ACTIVE_STATES, CHANGE_PATCH_KEYS, type MemoryState } from "../../state/memory-store-base";
 
 export class MemoryAdmissionStore {
@@ -58,7 +59,7 @@ export class MemoryAdmissionStore {
 
   async claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim): Promise<WorkspaceRow | null> {
     const workspace = this.context.workspaces.get(claim.workspaceId);
-    if (workspace?.state !== "queued") return null;
+    if (workspace?.state !== "queued" || workspace.purgeRequestedAt) return null;
     const counts = this.activeCounts();
     if (counts.global >= claim.limits.globalActiveWorkspaces) return null;
     if ((counts.byPrincipal[workspace.principalId] ?? 0) >= claim.limits.perPrincipalActiveWorkspaces) {
@@ -84,6 +85,7 @@ export class MemoryAdmissionStore {
     const row = this.context.workspaces.get(id);
     if (!row) return;
     Object.assign(row, patch);
+    if (row.purgeRequestedAt) Object.assign(row, purgedContentPatch());
     const changed = Object.keys(patch).some((key) => CHANGE_PATCH_KEYS.has(key));
     if (changed) row.changeSeq += 1;
     row.updatedAt = at;
@@ -125,10 +127,13 @@ export class MemoryAdmissionStore {
     if (!row) return null;
     if (!req.from.includes(row.state)) return null;
     if (!canTransition(row.state, req.to)) return null;
+    if (row.purgeRequestedAt && ["provisioning", "connected", "ready", "preserving", "queued"].includes(req.to))
+      return null;
     const fromState = row.state;
     row.state = req.to;
     if (req.reason !== undefined) row.reasonCode = req.reason;
     if (req.patch) Object.assign(row, req.patch);
+    if (row.purgeRequestedAt) Object.assign(row, purgedContentPatch());
     row.changeSeq += 1;
     row.updatedAt = req.at;
     if (isTerminal(req.to)) {

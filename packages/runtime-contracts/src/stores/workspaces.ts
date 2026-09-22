@@ -51,6 +51,7 @@ export interface WorkspaceRow {
   createdAt: Date;
   updatedAt: Date;
   terminalAt: Date | null;
+  purgeRequestedAt: Date | null;
   originWorkspaceId: string | null;
   restoredFromCheckpointId: string | null;
   sourceDescriptor: SourceDescriptor | null;
@@ -184,4 +185,18 @@ export interface WorkspaceStore {
   // `from`, appends state history and the outbox event in the same commit.
   transition(id: string, req: TransitionRequest): Promise<WorkspaceRow | null>;
   listStateHistory(workspaceId: string): Promise<StateHistoryRow[]>;
+}
+
+export function purgedContentPatch() {
+  return {
+    launchInput: null,
+    health: {},
+    outputs: {},
+    failureLogTail: null,
+    failureLogTailTruncated: false,
+    failureLastLogSeq: null,
+    resolvedSource: null,
+    registrationDigest: null,
+    reconnectDigest: null,
+  };
 }

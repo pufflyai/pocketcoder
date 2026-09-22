@@ -11,11 +11,15 @@ import { PersistenceCheckpointService } from "./persistence-checkpoints";
 import { PersistenceMaintenanceService } from "./persistence-maintenance";
 import { PreservePersistenceService } from "./persistence-preserve";
 import { PersistencePreserveRunner } from "./persistence-preserve-runner";
+import { PersistencePurgeService } from "./persistence-purge";
 import { PersistenceRestoreService } from "./persistence-restore";
 
 export class PersistenceService {
   constructor(deps: PersistenceServiceDeps) {
     this.context = new PersistenceContext(deps);
+    const purge = new PersistencePurgeService(this.context);
+    this.purge = purge.purge.bind(purge);
+    this.retryPurges = purge.retry.bind(purge);
     this.preserveRunner = new PersistencePreserveRunner(this.context);
     this.preservePersistence = new PreservePersistenceService(this.context, this.preserveRunner);
     this.checkpoint = new PersistenceCheckpointService(this.context);
@@ -32,6 +36,8 @@ export class PersistenceService {
     this.delete = this.maintenance.delete.bind(this.maintenance);
     this.restore = this.restoreService.restore.bind(this.restoreService);
   }
+  readonly purge: PersistencePurgeService["purge"];
+  readonly retryPurges: PersistencePurgeService["retry"];
   private readonly restoreService: PersistenceRestoreService;
 
   private readonly maintenance: PersistenceMaintenanceService;

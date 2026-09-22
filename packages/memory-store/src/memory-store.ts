@@ -3,6 +3,7 @@ import { MemoryAuthStore } from "./modules/auth/memory-store-auth";
 import { MemoryConversationStore } from "./modules/conversations/memory-store-conversations";
 import { MemoryLogStore } from "./modules/logs/memory-store-logs";
 import { MemoryOutboxStore } from "./modules/outbox/memory-store-outbox";
+import { createContentPurge } from "./modules/persistence/memory-store-content";
 import { MemoryOperationStore } from "./modules/persistence/memory-store-operations";
 import { MemoryPersistenceStore } from "./modules/persistence/memory-store-persistence";
 import { MemoryTemplateStore } from "./modules/templates/memory-store-templates";
@@ -15,6 +16,9 @@ import { MemoryState } from "./state/memory-store-base";
 export class MemoryStore implements Store {
   constructor() {
     this.context = new MemoryState();
+    const content = createContentPurge(this.context);
+    this.listWorkspaceStorage = content.listWorkspaceStorage;
+    this.purgeWorkspaceContent = content.purgeWorkspaceContent;
     this.persistence = new MemoryPersistenceStore(this.context);
     this.operation = new MemoryOperationStore(this.context);
     this.template = new MemoryTemplateStore(this.context);
@@ -59,6 +63,10 @@ export class MemoryStore implements Store {
     this.listPrincipals = this.auth.listPrincipals.bind(this.auth);
     this.updatePrincipal = this.auth.updatePrincipal.bind(this.auth);
     this.setPrincipalDisabled = this.auth.setPrincipalDisabled.bind(this.auth);
+    this.getPrincipal = this.auth.getPrincipal.bind(this.auth);
+    this.issueMachineKey = this.auth.issueMachineKey.bind(this.auth);
+    this.listMachineKeys = this.auth.listMachineKeys.bind(this.auth);
+    this.revokePrincipalKeys = this.auth.revokePrincipalKeys.bind(this.auth);
     this.insertMachineKey = this.auth.insertMachineKey.bind(this.auth);
     this.getMachineKeyWithPrincipal = this.auth.getMachineKeyWithPrincipal.bind(this.auth);
     this.revokeMachineKey = this.auth.revokeMachineKey.bind(this.auth);
@@ -121,6 +129,8 @@ export class MemoryStore implements Store {
 
   private readonly context: MemoryState;
 
+  readonly listWorkspaceStorage: Store["listWorkspaceStorage"];
+  readonly purgeWorkspaceContent: Store["purgeWorkspaceContent"];
   readonly init: MemoryState["init"];
 
   readonly acquireCoordinatorLease: MemoryState["acquireCoordinatorLease"];
@@ -187,6 +197,10 @@ export class MemoryStore implements Store {
 
   readonly setPrincipalDisabled: MemoryAuthStore["setPrincipalDisabled"];
 
+  readonly getPrincipal: Store["getPrincipal"];
+  readonly issueMachineKey: Store["issueMachineKey"];
+  readonly listMachineKeys: Store["listMachineKeys"];
+  readonly revokePrincipalKeys: Store["revokePrincipalKeys"];
   readonly insertMachineKey: MemoryAuthStore["insertMachineKey"];
 
   readonly getMachineKeyWithPrincipal: MemoryAuthStore["getMachineKeyWithPrincipal"];

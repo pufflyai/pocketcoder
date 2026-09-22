@@ -81,6 +81,7 @@ export class MemoryWorkspaceStore {
       createdAt: row.createdAt,
       updatedAt: row.createdAt,
       terminalAt: null,
+      purgeRequestedAt: null,
       originWorkspaceId: row.originWorkspaceId ?? null,
       restoredFromCheckpointId: row.restoredFromCheckpointId ?? null,
       sourceDescriptor: row.sourceDescriptor ?? null,

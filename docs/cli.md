@@ -77,13 +77,24 @@ pcd principals list
 
 pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
 pcd keys revoke --id <key-id>
+pcd keys issue --principal-id <id> --request-id <id> --scopes a,b --expires <ISO8601>
+pcd keys list --principal-id <id> [--request-id <id>] [--limit 50] [--cursor <id>]
+pcd keys revoke --principal-id <id> --id <key-id>
+pcd keys revoke-all --principal-id <id>
+pcd workspaces purge --id <workspace-id> --request-id <id> [--principal-id <recovery-target>]
 ```
 
 Prefer a bounded `--expires` plus rotation; reserve `never` for deliberate
 operational choices ([security model](security.md)).
 
+Public key commands use `POCKETCODER_URL` and `POCKETCODER_KEY` with an explicit
+target grant. Local issuance also accepts `--request-id`, `--manage-principals`,
+and `--json`. Persist the request ID before issuing a key. See
+[verifiable cleanup](cleanup.md) for one-time secrets and delegated recovery.
+
 Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
-`workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`,
+`workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`, `workspaces:purge`,
+`workspaces:recover`, `keys:read`, `keys:write`,
 `checkpoints:read`, `checkpoints:delete`, `outputs:read`, `conversations:read`,
 `conversations:delete`, `services:relay`, `attachments:write`, `logs:read`,
 `network:read`, `terminal:attach`, `terminal:read`, `admin`. A key issued

@@ -98,7 +98,7 @@ export function isCheckpointState(value: string): value is CheckpointState {
   return CHECKPOINT_STATES.some((state) => state === value);
 }
 
-export const OPERATION_KINDS = ["preserve", "restore", "verify", "delete"] as const;
+export const OPERATION_KINDS = ["preserve", "restore", "verify", "delete", "purge"] as const;
 export type OperationKind = (typeof OPERATION_KINDS)[number];
 
 export const OPERATION_STATES = ["pending", "running", "succeeded", "failed"] as const;

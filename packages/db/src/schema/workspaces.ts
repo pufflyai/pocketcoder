@@ -85,6 +85,7 @@ export function createWorkspaceTables(
       createdAt: timestamptz("created_at").notNull(),
       updatedAt: timestamptz("updated_at").notNull(),
       terminalAt: timestamptz("terminal_at"),
+      purgeRequestedAt: timestamptz("purge_requested_at"),
       originWorkspaceId: uuid("origin_workspace_id"),
       restoredFromCheckpointId: uuid("restored_from_checkpoint_id"),
       sourceDescriptor: structuredJson("source_descriptor").$type<NonNullable<WorkspaceRow["sourceDescriptor"]>>(),

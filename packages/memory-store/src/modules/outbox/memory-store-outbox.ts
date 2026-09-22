@@ -4,7 +4,7 @@ import type { OutboxRow } from "@pstdio/pocketcoder-runtime-contracts";
 import type { MemoryState } from "../../state/memory-store-base";
 
 export class MemoryOutboxStore {
-  constructor(private readonly context: Pick<MemoryState, "outbox" | "claimedEvents">) {}
+  constructor(private readonly context: Pick<MemoryState, "outbox" | "claimedEvents" | "workspaces">) {}
   async claimDueEvents(now: Date, limit: number): Promise<OutboxRow[]> {
     const due = this.context.outbox
       .filter((e) => !e.deliveredAt && e.nextAttemptAt <= now && !this.context.claimedEvents.has(e.id))
@@ -34,6 +34,7 @@ export class MemoryOutboxStore {
   }
 
   async appendEvent(workspaceId: string, eventType: string, payload: unknown, at: Date): Promise<void> {
+    if (this.context.workspaces.get(workspaceId)?.purgeRequestedAt) return;
     this.context.outbox.push({
       id: randomUUID(),
       workspaceId,

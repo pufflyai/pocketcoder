@@ -10,6 +10,7 @@ export interface AppVariables {
   principal: PrincipalRow;
   scopes: string[];
   keyId: string;
+  managedPrincipalIds: string[];
 }
 
 export type AppEnv = { Variables: AppVariables };
@@ -67,6 +68,7 @@ export function machineAuth(store: Store, pepper: string): MiddlewareHandler<App
     c.set("principal", found.principal);
     c.set("scopes", effectiveScopes);
     c.set("keyId", found.key.id);
+    c.set("managedPrincipalIds", found.key.managedPrincipalIds);
     store.touchMachineKey(found.key.id, now).catch(() => {});
     await next();
   };

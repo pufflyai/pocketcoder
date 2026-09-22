@@ -1,4 +1,5 @@
 import {
+  OperationResourceSchema,
   type PreserveRequest,
   PreserveResponseSchema,
   type RestoreRequest,
@@ -152,6 +153,16 @@ export class WorkspacesApi {
       input,
       key,
       PreserveResponseSchema,
+      options,
+    );
+  }
+
+  purge(id: string, key: string, options: RequestOptions = {}) {
+    return this.jsonOperation(
+      `/v1/workspaces/${encodeURIComponent(id)}/purge`,
+      {},
+      key,
+      OperationResourceSchema,
       options,
     );
   }

@@ -1,5 +1,5 @@
 import { ApiError, findRoute, isTerminal } from "@pstdio/pocketcoder-contracts";
-import type { Store } from "@pstdio/pocketcoder-runtime-core";
+import type { Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { Context } from "hono";
 import type { Hub } from "../control-channel/hub";
 import type { AppEnv } from "../http/middleware";
@@ -18,6 +18,12 @@ const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control"];
 type RelayMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type BufferedRelayResponse = Awaited<ReturnType<Hub["relay"]>>;
 type RelayResponseHeaders = { headers: Record<string, string> };
+
+function assertRelayReady(row: WorkspaceRow) {
+  if (row.purgeRequestedAt) throw new ApiError("operation.conflict", "Workspace content is being purged.");
+  if (isTerminal(row.state)) throw new ApiError("workspace.terminal", "This workspace has ended.");
+  if (row.state !== "ready") throw new ApiError("workspace.not_ready", "Workspace is not ready.");
+}
 
 function requestPath(c: Context<AppEnv>, prefix: string): string {
   const rawPath = c.req.path.startsWith(prefix) ? c.req.path.slice(prefix.length) : "";
@@ -141,12 +147,7 @@ export function relayHandler(
     const id = c.req.param("id") ?? "";
     const serviceName = options?.service ?? c.req.param("service") ?? "";
     const row = await deps.service.getOwned(principal, id);
-    if (isTerminal(row.state)) {
-      throw new ApiError("workspace.terminal", "This workspace has ended.");
-    }
-    if (row.state !== "ready") {
-      throw new ApiError("workspace.not_ready", "Workspace is not ready.");
-    }
+    assertRelayReady(row);
 
     const prefix = options?.pathPrefix?.(id) ?? `/v1/workspaces/${id}/services/${serviceName}`;
     const path = requestPath(c, prefix);
@@ -158,6 +159,8 @@ export function relayHandler(
     const query = allowedQuery(c.req.url, match.route.query);
     let bodyB64 = await requestBody(c, method, match.route.maxRequestBytes);
     if (options?.transformBodyB64) bodyB64 = await options.transformBodyB64(c, bodyB64);
+    if ((await deps.store.getWorkspace(id))?.purgeRequestedAt)
+      throw new ApiError("operation.conflict", "Workspace content is being purged.");
 
     if (!deps.hub.isConnected(id)) {
       throw new ApiError("workspace.disconnected", "The workspace supervisor is not currently connected.");

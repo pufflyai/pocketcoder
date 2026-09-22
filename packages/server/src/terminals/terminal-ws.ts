@@ -41,6 +41,7 @@ export function terminalConnectValidator(deps: TerminalWsDeps): MiddlewareHandle
 async function terminalCapability(deps: TerminalWsDeps, c: Context<AppEnv>) {
   const workspaceId = c.req.param("id") ?? "";
   const workspace = await deps.service.getOwned(c.get("principal"), workspaceId);
+  if (workspace.purgeRequestedAt) throw new ApiError("operation.conflict", "Workspace content is being purged.");
   if (isTerminal(workspace.state)) {
     throw new ApiError("workspace.terminal", "This workspace has ended.");
   }

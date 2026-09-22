@@ -306,6 +306,7 @@ export class FilesystemStorageDriver implements WorkspaceStorageDriver {
   async deleteCheckpoint(ref: CheckpointRef): Promise<void> {
     const checkpoint = this.checkpointRef(ref);
     await deleteCheckpointRoot(checkpoint.root);
+    await deleteCheckpointRoot(join(this.checkpointRoot, `.creating-${checkpoint.id}`));
   }
 
   async listStorage() {

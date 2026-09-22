@@ -131,6 +131,7 @@ async function reconcileOperation(
   operation: WorkspaceOperationRow,
   now: Date,
 ): Promise<void> {
+  if (operation.kind === "purge") return;
   const context = await loadOperationContext(deps, operation);
   if (operation.kind === "restore") {
     if (!context.workspace) await failOperation(deps, operation, "restore_failed", now);

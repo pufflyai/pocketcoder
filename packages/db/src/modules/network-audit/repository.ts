@@ -1,12 +1,18 @@
 import type { NetworkEventInput } from "@pstdio/pocketcoder-contracts";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
+import { contentWritable } from "../persistence/content";
 
-export function createNetworkAudit({ db, tables: { workspaceNetworkEvents: events, workspaces } }: DatabaseContext) {
+export function createNetworkAudit(context: DatabaseContext) {
+  const {
+    db,
+    tables: { workspaceNetworkEvents: events, workspaces },
+  } = context;
   return {
     async appendNetworkEvents(workspaceId: string, sourceSessionId: string, inputs: NetworkEventInput[]) {
       if (inputs.length === 0) return;
       await db.transaction(async (tx) => {
+        if (!(await contentWritable(tx, context.tables, workspaceId))) return;
         await lock(tx, workspaceId, 7348);
         for (const event of inputs) {
           const [duplicate] = await tx

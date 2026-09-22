@@ -181,6 +181,7 @@ export function attachmentUploadHandler(deps: RelayDeps) {
     const id = c.req.param("id") ?? "";
     const attachmentId = (c.req.param("attachmentId") ?? "").toLowerCase();
     const row = await deps.service.getOwned(principal, id);
+    if (row.purgeRequestedAt) throw new ApiError("operation.conflict", "Workspace content is being purged.");
     if (isTerminal(row.state)) {
       throw new ApiError("workspace.terminal", "This workspace has ended.");
     }

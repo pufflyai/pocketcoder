@@ -44,7 +44,6 @@
   "devDependencies": {
     "@pstdio/pocketcoder-sdk": "workspace:*",
     "@pstdio/pocketcoder-server": "workspace:*",
-    "@pstdio/pocketcoder-auth": "workspace:*",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-db": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",

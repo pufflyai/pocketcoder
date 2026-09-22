@@ -1,11 +1,20 @@
 import { randomUUID } from "node:crypto";
-import type { MachineKeyRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { createKeyInventory } from "./key-inventory";
 
-export function createAuth({ db, tables: { principals, machineKeys } }: DatabaseContext) {
+export function createAuth(context: DatabaseContext) {
+  const {
+    db,
+    tables: { principals, machineKeys },
+  } = context;
   return {
+    ...createKeyInventory(context),
+    async getPrincipal(id: string) {
+      const [row] = await db.select().from(principals).where(eq(principals.id, id));
+      return row ?? null;
+    },
     async createPrincipal(name: string, scopes: string[], templateNames: string[]) {
       const [row] = await db
         .insert(principals)
@@ -29,9 +38,6 @@ export function createAuth({ db, tables: { principals, machineKeys } }: Database
         .update(principals)
         .set({ disabledAt: disabled ? sql`now()` : null })
         .where(eq(principals.id, id));
-    },
-    async insertMachineKey(row: MachineKeyRow) {
-      await db.insert(machineKeys).values(row);
     },
     async getMachineKeyWithPrincipal(keyId: string) {
       const [row] = await db

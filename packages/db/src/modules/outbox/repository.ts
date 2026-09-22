@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
+import { contentWritable } from "../persistence/content";
 
 const CLAIM_LEASE_MS = 60_000;
-export function createOutbox({ db, tables: { eventOutbox: outbox } }: DatabaseContext) {
+export function createOutbox(context: DatabaseContext) {
+  const {
+    db,
+    tables: { eventOutbox: outbox },
+  } = context;
   return {
     async claimDueEvents(now: Date, limit: number) {
       // The update and locked subquery form one statement, so claims stay disjoint.
@@ -34,13 +39,16 @@ export function createOutbox({ db, tables: { eventOutbox: outbox } }: DatabaseCo
         .where(eq(outbox.id, id));
     },
     async appendEvent(workspaceId: string, eventType: string, payload: unknown, at: Date) {
-      await db.insert(outbox).values({
-        id: randomUUID(),
-        workspaceId,
-        eventType,
-        payload: payload === null ? sql`'null'::jsonb` : payload,
-        occurredAt: at,
-        nextAttemptAt: at,
+      await db.transaction(async (tx) => {
+        if (!(await contentWritable(tx, context.tables, workspaceId))) return;
+        await tx.insert(outbox).values({
+          id: randomUUID(),
+          workspaceId,
+          eventType,
+          payload: payload === null ? sql`'null'::jsonb` : payload,
+          occurredAt: at,
+          nextAttemptAt: at,
+        });
       });
     },
   };

@@ -8,6 +8,8 @@ export const ERROR_CODES = {
   "auth.invalid_key": 401,
   "auth.missing_scope": 403,
   "auth.disabled_principal": 403,
+  "principal.not_found": 404,
+  "key.not_found": 404,
   "validation.invalid": 400,
   "idempotency.conflict": 409,
   "capacity.queue_full": 429,

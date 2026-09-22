@@ -1,4 +1,4 @@
-import { open, readdir, readFile, rm } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { DiscoveredCheckpoint, DiscoveredStorage } from "@pstdio/pocketcoder-runtime-core";
 import { makeWritable } from "./filesystem-checkpoint";
@@ -33,16 +33,14 @@ export async function discoverStorage(rootDirectory: string): Promise<Discovered
 
 export async function discoverCheckpoints(rootDirectory: string): Promise<DiscoveredCheckpoint[]> {
   const result: DiscoveredCheckpoint[] = [];
-  for (const id of await readdir(rootDirectory)) {
+  for (const entry of await readdir(rootDirectory)) {
+    const id = entry.replace(/^\.creating-/, "");
     if (!/^[0-9a-f-]{36}$/i.test(id)) continue;
     const root = childOf(rootDirectory, id);
-    try {
-      const handle = await open(join(root, CHECKPOINT_METADATA_FILE), "r");
-      await handle.close();
+    // Inventory includes interrupted copies. Only the owner may decide whether
+    // to retry or delete them; absence of a manifest is not absence of content.
+    if (!result.some((row) => row.checkpointId === id))
       result.push({ checkpointId: id, ref: { kind: "filesystem", id, root } });
-    } catch {
-      // Incomplete physical content is deliberately not adopted.
-    }
   }
   return result;
 }
