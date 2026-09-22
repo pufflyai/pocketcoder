@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { DEFAULT_LIMITS, reconcilePersistence, type StorageRef } from "@pstdio/pocketcoder-runtime-core";
@@ -195,4 +195,54 @@ test("unknown allocation ownership blocks purge before deleting any recorded con
     [app.storage.id, unknownId].sort(),
   );
   expect(await readFile(app.marker, "utf8")).toBe("synthetic retained content");
+});
+
+for (const kind of ["checkpoint", "storage"] as const) {
+  test(`unattributed physical ${kind} blocks purge until ownership is reconciled`, async () => {
+    const app = await failedAllocation();
+    const id = crypto.randomUUID();
+    const directory = join(
+      String(app.storage.providerRef.root),
+      "..",
+      "..",
+      kind === "checkpoint" ? "checkpoints" : "workspaces",
+      id,
+    );
+    await mkdir(directory, { recursive: true });
+    const marker = join(directory, "unattributed-content");
+    await writeFile(marker, "synthetic content missing from restored database");
+    const operation = (await (await app.purge()).json()) as { id: string };
+    await app.persistence.retryPurges();
+    expect(await app.store.getOperation(operation.id)).toMatchObject({
+      state: "pending",
+      reasonCode: "purge_ownership_unresolved",
+      completedAt: null,
+    });
+    expect(await Bun.file(app.marker).exists()).toBe(true);
+    expect(await Bun.file(marker).exists()).toBe(true);
+    await rm(directory, { recursive: true });
+    await app.persistence.retryPurges();
+    expect(await app.store.getOperation(operation.id)).toMatchObject({ state: "succeeded" });
+  });
+}
+
+test("Kubernetes object absence without durable termination evidence cannot certify purge", async () => {
+  const app = await failedAllocation();
+  Object.assign(app.driver, { kind: "kubernetes" });
+  await app.store.updateWorkspace(
+    app.workspace.id,
+    {
+      providerKind: "kubernetes",
+      providerRef: { id: "missing-job" },
+    },
+    new Date(),
+  );
+  const operation = (await (await app.purge()).json()) as { id: string };
+  await app.persistence.retryPurges();
+  expect(await app.store.getOperation(operation.id)).toMatchObject({
+    state: "pending",
+    reasonCode: "purge_termination_unresolved",
+    completedAt: null,
+  });
+  expect(await Bun.file(app.marker).exists()).toBe(true);
 });

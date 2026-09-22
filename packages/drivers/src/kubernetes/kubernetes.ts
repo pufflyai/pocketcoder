@@ -276,6 +276,18 @@ export class KubernetesDriver implements WorkspaceDriver {
     return readTerminationEvidence((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id);
   }
 
+  async purgeInput(workspaceId: string): Promise<void> {
+    const name = resourceName(workspaceId);
+    await kubectl(this.kubectlBin, this.namespace, [
+      "delete",
+      "secret",
+      `${name}-input`,
+      `${name}-egress`,
+      "--ignore-not-found",
+      "--wait=true",
+    ]);
+  }
+
   async cleanupInput(workspaceId: string): Promise<void> {
     await kubectl(this.kubectlBin, this.namespace, [
       "delete",

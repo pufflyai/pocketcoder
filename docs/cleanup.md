@@ -22,6 +22,12 @@ time. The controller retries it each scheduler interval and after restart. Its
 reason is one of `purge_termination_unresolved`, `purge_operation_in_progress`,
 `purge_storage_unavailable`, or `purge_ownership_unresolved`. The last reason
 requires operator reconciliation; unknown ownership never authorizes deletion.
+An unrecorded object in the storage backend blocks purge, even when its owner
+cannot be identified. Reconcile those objects before claiming complete coverage.
+Kubernetes workspaces that were admitted also require saved termination evidence.
+A missing Job without that proof stays unresolved, including on deployments where
+termination-evidence capture was not enabled. Live Kubernetes acceptance remains
+a release gate.
 `/readyz` reports `cleanup: pending` while a purge remains incomplete. The
 `purge.pending` metric records the pending count without workspace labels.
 
@@ -48,6 +54,7 @@ if (result.state === "succeeded") {
 | Stored transcripts, logs, outputs, network events | Delete database content; reject or discard late writes |
 | Failure tails, launch input, workspace metadata, health, source values | Clear stored values and block later content updates |
 | Stored event payloads | Delete the workspace's outbox records and fence new payloads |
+| Provider input files and Secrets | Remove workspace and egress inputs even when creation never saved a provider reference; retry failures |
 | Runtime registration and reconnect credentials | Clear; the provider is stopped and removed |
 | Workspace, storage, checkpoint, operation identifiers and ownership | Keep as tombstones for authorization, retry, lineage, and restore reconciliation |
 | State history and terminal audit | Keep content-free state, timing, exit status, and byte-count records |

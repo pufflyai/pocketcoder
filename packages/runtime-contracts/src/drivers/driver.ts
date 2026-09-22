@@ -60,6 +60,9 @@ export interface WorkspaceDriver {
   stop(ref: ProviderRef, graceSeconds: number): Promise<void>;
   terminationEvidence?(ref: ProviderRef): Promise<Record<string, unknown> | null>;
   remove(ref: ProviderRef): Promise<void>;
+  // Delete all workspace input artifacts after termination, including inputs
+  // left by a create that never committed its provider reference.
+  purgeInput(workspaceId: string): Promise<void>;
   // Every provider object labeled as a pocketcoder workspace, for
   // restart reconciliation and quarantine of unknown objects.
   list(): Promise<DiscoveredProvider[]>;

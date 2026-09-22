@@ -79,6 +79,8 @@ export class FakeDriver implements WorkspaceDriver {
     for (const [id, p] of this.warm) if (p.ref.id === ref.id) this.warm.delete(id);
   }
 
+  async purgeInput(_workspaceId: string): Promise<void> {}
+
   async list(): Promise<DiscoveredProvider[]> {
     return [...this.live.values()];
   }

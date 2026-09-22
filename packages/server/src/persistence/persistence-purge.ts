@@ -63,7 +63,7 @@ export class PersistencePurgeService {
       );
       // Drain a launch already admitted by this single controller before
       // inspecting its provider and storage references.
-      await scheduler.tick();
+      await scheduler.drain();
       const workspace = await store.getWorkspace(workspaceId);
       if (!workspace) throw new Error("Workspace missing");
       if (await this.hasActiveCopies(workspaceId, workspace.state === "queued")) {
@@ -73,6 +73,13 @@ export class PersistencePurgeService {
       if (workspace.state === "preserving") {
         reason = "purge_operation_in_progress";
         throw new Error(reason);
+      }
+      if (driver.kind === "kubernetes" && (workspace.launchAttempts > 0 || workspace.providerRef)) {
+        // Job disappearance cannot prove a disconnected node stopped. Capture
+        // proof before any removal, or require the proof saved by an earlier stop.
+        await stopWorkspaceProvider(store, driver, workspace, 1, this.context.now(), false);
+        const stopped = await store.getWorkspace(workspaceId);
+        if (!stopped?.providerRef?.terminationEvidence) throw new Error(reason);
       }
       hub.close(workspaceId);
       if (!isTerminal(workspace.state)) {
@@ -96,6 +103,7 @@ export class PersistencePurgeService {
       const providers = (await driver.list()).filter((provider) => provider.workspaceId === workspaceId);
       if (providers.length) throw new Error(reason);
       reason = "purge_storage_unavailable";
+      await driver.purgeInput(workspaceId);
       await purgeStorage(this.context, workspace);
       await store.purgeWorkspaceContent(workspaceId, this.context.now());
       const done = this.context.now();

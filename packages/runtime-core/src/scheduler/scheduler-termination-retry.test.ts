@@ -19,6 +19,7 @@ for (const mode of ["finalize", "warm", "retain", "process-exit", "heartbeat"] a
         inspect: (ref) => provider.inspect(ref),
         list: () => provider.list(),
         listWarm: () => provider.listWarm(),
+        purgeInput: (id) => provider.purgeInput(id),
         stop: async (ref) => {
           if (failure === "stop" && unavailable) throw new Error("provider unavailable");
           await provider.stop(ref);

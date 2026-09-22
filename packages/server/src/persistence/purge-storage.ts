@@ -56,6 +56,16 @@ export async function purgeStorage(context: PersistenceContext, workspace: Works
   }
   const physicalStorage = await storageDriver.listStorage();
   const physicalCheckpoints = await storageDriver.listCheckpoints();
+  // A restored database can lag physical storage. Without an ownership row,
+  // we cannot exclude an object from this workspace's retained copies.
+  for (const physical of physicalStorage) {
+    if (!(await store.getStorage(physical.storageId)))
+      throw new PurgeOwnershipError("Unrecorded storage requires reconciliation");
+  }
+  for (const physical of physicalCheckpoints) {
+    if (!(await store.getCheckpoint(physical.checkpointId)))
+      throw new PurgeOwnershipError("Unrecorded checkpoint requires reconciliation");
+  }
   const allocationIds = new Set(allocations.map((row) => row.id));
   // Resolve and check every owned target before deleting anything. Independent
   // descendants keep their separate allocations and must be purged by the owner.
