@@ -55,6 +55,12 @@ jobs:
           bun test
       - name: Run Codex and OpenCode through AgentAPI full-stack E2E
         run: bun run example:e2e:oss
+      - name: Verify private Docker egress config admission
+        env:
+          POCKETCODER_EGRESS_CONFORMANCE_IMAGE: ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
+        run: |
+          docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
+          bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
       - name: Unit, route, e2e, and PostgreSQL integration tests
         run: bun run test
         env:
