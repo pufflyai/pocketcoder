@@ -129,23 +129,25 @@ directory when reconnecting or stopping it.
 
 ## 2. Create a principal and machine key
 
-There are no human accounts. Callers are **principals** (e.g. your backend)
-holding **machine keys** with explicit scopes and a template allowlist:
+The isolated examples above bootstrap their own bounded owner credentials. For
+an existing running server, use its bounded owner key in `POCKETCODER_KEY` and
+set `POCKETCODER_URL`. Principal and key commands use HTTP. Use the ID returned
+by create for later administration:
 
 ```sh
 bun run pcd principals create --name my-backend \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
-  --templates '*'
-bun run pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z
+  --templates '*' --json
+bun run pcd keys issue --principal-id <returned-id> --request-id <operation-id> \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
+  --templates '*' --expires <ISO8601-within-owner-expiry> --json
 ```
 
-Give keys a bounded expiry and rotate them; `--expires never` exists for
-deliberate operational choices, not defaults ([security model](security.md)).
-The key (`pkt_…`) is printed once. Store it; the database keeps only a keyed
-digest. Because it was issued without `--scopes`, it follows later scope changes
-made with `principals update`. Pass `keys issue --scopes ...` only when one key
-must be narrower than its principal. Revoke anytime with `keys revoke --id
-<key-id>` (takes effect on the next request).
+Choose scopes for the workload and an expiry within the owner's remaining
+lifetime. The key is returned once; the database keeps only its keyed digest.
+Scope and template grants intersect the principal's current grants. Revoke with
+`keys revoke --principal-id <principal-id> --id <key-id>`; it takes effect on the
+next request. Keep owner and backend keys outside every workspace.
 
 ## 3. Launch a workspace
 

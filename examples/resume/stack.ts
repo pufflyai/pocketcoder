@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { loadConfig } from "@pstdio/pocketcoder-server/config";
 import { startPocketCoderServer } from "@pstdio/pocketcoder-server/lifecycle";
+import { bootstrapExampleOwner, issueExampleAccess } from "../e2e/administration";
 import { freePort } from "../e2e/local-process";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
@@ -70,39 +71,14 @@ export class IsolatedStack {
       POCKETCODER_DIR: join(directory, "pc_data"),
       POCKETCODER_AUTH_PEPPER: randomBytes(32).toString("base64url"),
     };
-    await Bun.write(join(directory, ".env"), "");
-    const cli = ["bun", "--no-env-file", "packages/cli/src/index.ts", "--env-file", join(directory, ".env")];
-    console.log("Preparing the database and API credentials...");
-    await this.run(
-      [
-        ...cli,
-        "principals",
-        "create",
-        "--name",
-        id,
-        "--scopes",
-        [
-          ...LOCAL_PI_PRINCIPAL_SCOPES,
-          "workspaces:preserve",
-          "workspaces:restore",
-          "checkpoints:read",
-          "checkpoints:delete",
-        ].join(","),
-        "--templates",
-        "pi-resume",
-      ],
-      adminEnv,
-    );
     const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    // The host still needs authority to cancel workspaces and delete checkpoints
-    // after model access ends. This key never enters a workspace.
+    // Cleanup authority stays in this host process after model access ends.
     const cleanupExpiresAt = new Date(expiresAt.getTime() + 5 * 60 * 1000);
-    const issued = await this.run(
-      [...cli, "keys", "issue", "--principal", id, "--expires", cleanupExpiresAt.toISOString()],
-      adminEnv,
+    const ownerKey = await bootstrapExampleOwner(
+      adminEnv.POCKETCODER_DIR,
+      adminEnv.POCKETCODER_AUTH_PEPPER,
+      cleanupExpiresAt,
     );
-    const key = issued.stdout.split("\n").find((line) => line.startsWith("pkt_"));
-    if (!key) throw new Error("Machine key was not issued");
     const templates = join(directory, "templates");
     await mkdir(templates);
     await Bun.write(join(templates, "pi-resume.json"), JSON.stringify(resumeTemplate(image, idleSeconds)));
@@ -131,6 +107,18 @@ export class IsolatedStack {
     );
     this.cleanups.push(() => server.stop());
     const baseUrl = `http://127.0.0.1:${serverPort}`;
+    const key = await issueExampleAccess(baseUrl, ownerKey, {
+      name: id,
+      scopes: [
+        ...LOCAL_PI_PRINCIPAL_SCOPES,
+        "workspaces:preserve",
+        "workspaces:restore",
+        "checkpoints:read",
+        "checkpoints:delete",
+      ],
+      templates: ["pi-resume"],
+      expiresAt: cleanupExpiresAt,
+    });
     const client = new PocketCoderClient({ baseUrl, apiKey: key });
     console.log(`Isolated API: ${baseUrl}`);
     console.log(`Temporary storage: ${directory}`);
