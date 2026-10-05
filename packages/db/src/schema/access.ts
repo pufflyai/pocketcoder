@@ -1,9 +1,8 @@
 import type { TemplateRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { TEMPLATE_STATUSES } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
-import { bytea, check, type PgTableFn, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import { bytea, check, jsonb, type PgTableFn, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
 import { sqlValues, timestamptz } from "./columns";
-import { structuredJson } from "./structured-json";
 
 export function createAccessTables(table: PgTableFn<string | undefined> = pgTable) {
   const templates = table(
@@ -14,7 +13,7 @@ export function createAccessTables(table: PgTableFn<string | undefined> = pgTabl
       version: text("version").notNull(),
       digest: text("digest").notNull().unique(),
       description: text("description"),
-      spec: structuredJson("spec").$type<NonNullable<TemplateRow["spec"]>>().notNull(),
+      spec: jsonb("spec").$type<NonNullable<TemplateRow["spec"]>>().notNull(),
       status: text("status").$type<NonNullable<TemplateRow["status"]>>().notNull(),
       createdAt: timestamptz("created_at").notNull(),
       retiredAt: timestamptz("retired_at"),

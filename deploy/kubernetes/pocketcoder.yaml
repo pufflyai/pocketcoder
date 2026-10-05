@@ -36,6 +36,18 @@ roleRef:
   kind: Role
   name: pocketcoder-controller
 ---
+# Use local disk or a block storage class. Never place PGlite on NFS/EFS.
+# Fence a failed node before moving this volume; RWO is not a writer lock.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pocketcoder-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
 # Replace the storage class/size as needed. Multi-node clusters should use an
 # RWX-capable class because the server and workspace Jobs mount the same claim.
 apiVersion: v1
@@ -101,11 +113,8 @@ spec:
               value: /etc/pocketcoder/templates
             - name: POCKETCODER_SECRET_PROVIDER
               value: kubernetes
-            - name: POCKETCODER_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: pocketcoder-server
-                  key: database-url
+            - name: POCKETCODER_DIR
+              value: /var/lib/pocketcoder-controller/pc_data
             - name: POCKETCODER_AUTH_PEPPER
               valueFrom:
                 secretKeyRef:
@@ -120,12 +129,17 @@ spec:
               path: /livez
               port: http
           volumeMounts:
+            - name: controller-data
+              mountPath: /var/lib/pocketcoder-controller
             - name: data
               mountPath: /var/lib/pocketcoder
             - name: templates
               mountPath: /etc/pocketcoder/templates
               readOnly: true
       volumes:
+        - name: controller-data
+          persistentVolumeClaim:
+            claimName: pocketcoder-data
         - name: data
           persistentVolumeClaim:
             claimName: pocketcoder-workspaces

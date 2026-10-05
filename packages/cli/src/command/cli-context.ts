@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { PostgresStore } from "@pstdio/pocketcoder-db";
+import { PGliteStore } from "@pstdio/pocketcoder-db";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { parse as parseDotenv } from "dotenv";
@@ -64,12 +64,6 @@ export function loadProjectEnvironment(flags: Flags): void {
   }
 }
 
-export function dbConfig() {
-  const url = process.env.POCKETCODER_DATABASE_URL;
-  if (!url) fail("POCKETCODER_DATABASE_URL is required for this command");
-  return { url, schema: process.env.POCKETCODER_DATABASE_SCHEMA ?? "pocketcoder" };
-}
-
 export function controlPlaneClient() {
   const url = process.env.POCKETCODER_URL ?? "http://127.0.0.1:7080";
   const apiKey = process.env.POCKETCODER_KEY;
@@ -82,10 +76,7 @@ export async function api(path: string, init: RequestInit = {}) {
 }
 
 export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
-  const { url, schema } = dbConfig();
-  // Short commands can finish while Bun's other pool connections are still starting,
-  // making pool shutdown wait for their connection timeout.
-  const store = new PostgresStore(url, schema, { max: 1 });
+  const store = await PGliteStore.create(process.env.POCKETCODER_DIR ?? "./pc_data");
   try {
     return await fn(store);
   } finally {

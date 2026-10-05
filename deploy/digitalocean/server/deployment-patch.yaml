@@ -20,7 +20,5 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            - name: POCKETCODER_DATABASE_SCHEMA
-              value: pocketcoder
             - name: POCKETCODER_WORKSPACE_SERVER_URL
               value: http://pocketcoder-server.pocketcoder.svc.cluster.local:7080

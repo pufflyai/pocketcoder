@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createPostgresFixture, insertTestWorkspace, TEST_DATABASE_URL } from "../../test-fixtures";
+import { createPGliteFixture, insertTestWorkspace } from "../../test-fixtures";
 
-describe.skipIf(!TEST_DATABASE_URL)("PostgreSQL outbox claims", () => {
+describe.each(["memory", "disk"] as const)("PGlite outbox claims (%s)", (mode) => {
   test("concurrent claims are disjoint and expired leases can be retried", async () => {
-    const fixture = await createPostgresFixture("pc40_outbox");
+    const fixture = await createPGliteFixture("pc40_outbox", mode);
     try {
       const workspace = await insertTestWorkspace(fixture, "outbox");
       const at = new Date(Date.now() + 1000);
@@ -30,7 +30,7 @@ describe.skipIf(!TEST_DATABASE_URL)("PostgreSQL outbox claims", () => {
   });
 
   test("JSON values retain their type in outputs, workspace state, and events", async () => {
-    const fixture = await createPostgresFixture("pc40_json");
+    const fixture = await createPGliteFixture("pc40_json", mode);
     try {
       const workspace = await insertTestWorkspace(fixture, "json");
       const at = new Date();

@@ -43,18 +43,14 @@ function templateImages(documents: KubeObject[], errors: string[]) {
 
 function validateImages(documents: KubeObject[], errors: string[]) {
   const deploymentImage = namedContainer(named(documents, "Deployment", "pocketcoder-server"), "server")?.image;
-  const migrationImage = namedContainer(named(documents, "Job", "pocketcoder-migrate"), "migrate")?.image;
-  const references = [deploymentImage, migrationImage, ...templateImages(documents, errors)];
+  const references = [deploymentImage, ...templateImages(documents, errors)];
   for (const reference of references) {
     if (typeof reference !== "string") {
-      errors.push("server, migration, echo, and Pi images are required");
+      errors.push("server, echo, and Pi images are required");
       continue;
     }
     const error = imageError(reference);
     if (error) errors.push(error);
-  }
-  if (typeof deploymentImage === "string" && typeof migrationImage === "string" && deploymentImage !== migrationImage) {
-    errors.push("the migration Job and server Deployment must use the same image digest");
   }
 }
 
@@ -136,55 +132,41 @@ function validateServer(documents: KubeObject[], errors: string[]) {
   }
 }
 
-function migrationEnvironment(container: KubeObject) {
-  return Array.isArray(container.env) ? container.env.map(object).filter((entry) => entry !== null) : [];
-}
-
-function validateMigration(documents: KubeObject[], errors: string[]) {
-  const migration = named(documents, "Job", "pocketcoder-migrate");
-  const migrationContainer = namedContainer(migration, "migrate");
-  if (!migration || !migrationContainer) {
-    errors.push("pocketcoder-migrate Job is missing");
-    return;
-  }
-  if (at(migration, "spec", "template", "spec", "automountServiceAccountToken") !== false) {
-    errors.push("migration Job must disable its service account token");
-  }
-  const migrationSecurity = at(migration, "spec", "template", "spec", "securityContext");
+function validateControllerData(documents: KubeObject[], errors: string[]) {
+  const claim = named(documents, "PersistentVolumeClaim", "pocketcoder-data");
+  const modes = at(claim, "spec", "accessModes");
+  const storageClass = at(claim, "spec", "storageClassName");
   if (
-    at(migrationSecurity, "runAsUser") !== 10_001 ||
-    at(migrationSecurity, "runAsGroup") !== 10_001 ||
-    at(migrationSecurity, "runAsNonRoot") !== true
-  ) {
-    errors.push("migration Job must run as non-root uid/gid 10001");
-  }
+    !Array.isArray(modes) ||
+    modes.length !== 1 ||
+    modes[0] !== "ReadWriteOnce" ||
+    storageClass !== "do-block-storage"
+  )
+    errors.push("pocketcoder-data must use a block volume with ReadWriteOnce");
+  const server = namedContainer(named(documents, "Deployment", "pocketcoder-server"), "server");
+  const environment = Array.isArray(server?.env) ? server.env.map(object) : [];
   if (
-    JSON.stringify(migrationContainer.command) !== JSON.stringify(["pcd"]) ||
-    JSON.stringify(migrationContainer.args) !== JSON.stringify(["db", "migrate"])
-  ) {
-    errors.push("migration Job must run pcd db migrate");
-  }
-  const environment = migrationEnvironment(migrationContainer);
-  const environmentNames = environment
-    .map((entry) => entry.name)
-    .filter((name): name is string => typeof name === "string")
-    .sort();
+    !environment.some(
+      (entry) => entry?.name === "POCKETCODER_DIR" && entry.value === "/var/lib/pocketcoder-controller/pc_data",
+    )
+  )
+    errors.push("server POCKETCODER_DIR must use /var/lib/pocketcoder-controller/pc_data");
+  const mounts = Array.isArray(server?.volumeMounts) ? server.volumeMounts.map(object) : [];
   if (
-    JSON.stringify(environmentNames) !== JSON.stringify(["POCKETCODER_DATABASE_SCHEMA", "POCKETCODER_DATABASE_URL"])
-  ) {
-    errors.push("migration Job may receive only the database URL and schema");
-  }
-  const databaseUrl = environment.find((entry) => entry.name === "POCKETCODER_DATABASE_URL");
+    !mounts.some((entry) => entry?.name === "controller-data" && entry.mountPath === "/var/lib/pocketcoder-controller")
+  )
+    errors.push("server must mount controller-data at /var/lib/pocketcoder-controller");
+  const deployment = named(documents, "Deployment", "pocketcoder-server");
+  const volumes = at(deployment, "spec", "template", "spec", "volumes");
   if (
-    at(databaseUrl, "valueFrom", "secretKeyRef", "name") !== "pocketcoder-server" ||
-    at(databaseUrl, "valueFrom", "secretKeyRef", "key") !== "database-url"
-  ) {
-    errors.push("migration database URL must come from pocketcoder-server/database-url");
-  }
-  const volumes = at(migration, "spec", "template", "spec", "volumes");
-  if (Array.isArray(volumes) && volumes.length > 0) {
-    errors.push("migration Job must not mount deployment Secrets or storage");
-  }
+    !Array.isArray(volumes) ||
+    !volumes.some(
+      (entry) =>
+        at(entry, "name") === "controller-data" &&
+        at(entry, "persistentVolumeClaim", "claimName") === "pocketcoder-data",
+    )
+  )
+    errors.push("controller-data must reference the pocketcoder-data claim");
 }
 
 function validateService(documents: KubeObject[], errors: string[]) {
@@ -227,7 +209,7 @@ export function validateRenderedManifest(rendered: string) {
   validateStorage(documents, errors);
   validateServiceAccounts(documents, errors);
   validateServer(documents, errors);
-  validateMigration(documents, errors);
+  validateControllerData(documents, errors);
   validateService(documents, errors);
   validatePiGateway(documents, errors);
   return [...new Set(errors)];
