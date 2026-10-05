@@ -187,18 +187,40 @@ async function retainNodes(run: Command, pods: Resource[], nodes: Record<string,
   }
 }
 
+function matchingProof(job: Resource, uid: string) {
+  const annotation = job.metadata.annotations?.[EVIDENCE_ANNOTATION];
+  if (!annotation || job.metadata.uid !== uid) return false;
+  const proof = JSON.parse(annotation) as { job?: { metadata?: { uid?: string } } };
+  return proof.job?.metadata?.uid === uid;
+}
+
+async function retainedProof(run: Command, name: string, uid: string) {
+  const output = await run(["get", "job", name, "--ignore-not-found", "-o", "json"]);
+  return Boolean(output && matchingProof(JSON.parse(output) as Resource, uid));
+}
+
+function notFound(error: unknown) {
+  return error instanceof Error && error.message.includes("Error from server (NotFound)");
+}
+
 async function releasePods(run: Command, name: string, jobUid: string) {
   for (const pod of await podsFor(run, name)) {
     if (!owned(pod, jobUid) || !pod.metadata.finalizers?.includes(EVIDENCE_FINALIZER)) continue;
-    await updatePod(run, pod, (current) =>
-      patch(run, "pod", current.metadata.name as string, {
-        metadata: {
-          uid: current.metadata.uid,
-          resourceVersion: current.metadata.resourceVersion,
-          finalizers: current.metadata.finalizers?.filter((item) => item !== EVIDENCE_FINALIZER) ?? [],
-        },
-      }),
-    );
+    try {
+      await updatePod(run, pod, (current) =>
+        patch(run, "pod", current.metadata.name as string, {
+          metadata: {
+            uid: current.metadata.uid,
+            resourceVersion: current.metadata.resourceVersion,
+            finalizers: current.metadata.finalizers?.filter((item) => item !== EVIDENCE_FINALIZER) ?? [],
+          },
+        }),
+      );
+    } catch (error) {
+      if (!notFound(error)) throw error;
+      const current = await run(["get", "pod", pod.metadata.name as string, "--ignore-not-found", "-o", "json"]);
+      if (current || !(await retainedProof(run, name, jobUid))) throw error;
+    }
   }
 }
 
@@ -218,20 +240,37 @@ async function stoppedJob(run: Command, name: string, uid: string, deadline: num
 
 export async function captureTermination(run: Command, name: string, graceSeconds: number) {
   const output = await run(["get", "job", name, "--ignore-not-found", "-o", "json"]);
-  if (!output) return; // An earlier durable proof may already be on the workspace.
+  if (!output) throw new Error("Termination evidence unavailable");
   const job = JSON.parse(output) as Resource;
   if (!job.metadata.uid) throw new Error("Termination evidence unavailable");
   if (job.metadata.annotations?.[EVIDENCE_ANNOTATION]) {
+    if (!matchingProof(job, job.metadata.uid)) throw new Error("Termination provider changed");
     await releasePods(run, name, job.metadata.uid);
     return;
   }
+  try {
+    await captureJobTermination(run, name, graceSeconds, job, job.metadata.uid);
+  } catch (error) {
+    const disappeared =
+      error instanceof Error &&
+      ["Termination provider disappeared without evidence", "Termination provider changed"].includes(error.message);
+    if (!(notFound(error) || disappeared) || !(await retainedProof(run, name, job.metadata.uid))) throw error;
+    await releasePods(run, name, job.metadata.uid);
+  }
+}
+
+async function captureJobTermination(run: Command, name: string, graceSeconds: number, job: Resource, jobUid: string) {
   const initial = await podsFor(run, name);
-  if (!initial.length || initial.some((pod) => !owned(pod, job.metadata.uid as string)))
-    throw new Error("Termination evidence unavailable");
+  if (!initial.length) {
+    if (!(await retainedProof(run, name, jobUid))) throw new Error("Termination evidence unavailable");
+    await releasePods(run, name, jobUid);
+    return;
+  }
+  if (initial.some((pod) => !owned(pod, jobUid))) throw new Error("Termination evidence unavailable");
   const nodes: Record<string, unknown> = {};
   await retainNodes(run, initial, nodes);
   await patch(run, "job", name, { metadata: { uid: job.metadata.uid }, spec: { suspend: true } });
-  const confirmed = await stoppedJob(run, name, job.metadata.uid, Date.now() + (graceSeconds + 5) * 1000);
+  const confirmed = await stoppedJob(run, name, jobUid, Date.now() + (graceSeconds + 5) * 1000);
   const retained = await podsFor(run, name);
   if (
     retained.length !== initial.length ||
@@ -270,7 +309,7 @@ export async function captureTermination(run: Command, name: string, graceSecond
       await patch(run, "job", name, {
         metadata: { uid: job.metadata.uid, annotations: { [EVIDENCE_ANNOTATION]: JSON.stringify(proof) } },
       });
-      await releasePods(run, name, job.metadata.uid);
+      await releasePods(run, name, jobUid);
       return;
     }
     if (Date.now() >= deadline) throw new Error("Termination evidence unavailable");
