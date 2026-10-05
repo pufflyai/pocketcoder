@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { digestOf, EventEnvelopeSchema, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import type { Store, WarmPoolClaim, WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { createPGliteFixture, insertTestWorkspace, workspaceOf } from "../../test-fixtures";
 
 async function insertReadyRuntime(fixture: Awaited<ReturnType<typeof createPGliteFixture>>) {
@@ -27,6 +28,31 @@ async function insertReadyRuntime(fixture: Awaited<ReturnType<typeof createPGlit
     failureCode: null,
   });
   return runtimeId;
+}
+
+async function expectWarmAdmission(
+  store: Store,
+  warmWorkspace: WorkspaceRow,
+  claim: WarmPoolClaim,
+  admitted: WorkspaceRow | undefined,
+) {
+  expect(admitted).toMatchObject({
+    state: "provisioning",
+    provisioningMode: "warm",
+    changeSeq: warmWorkspace.changeSeq + 1,
+    providerRef: { kind: "docker", id: "warm-provider" },
+    registrationDigest: claim.registrationDigest,
+    registrationExpiresAt: claim.registrationExpiresAt,
+    launchAttempts: 1,
+  });
+  expect(await store.listStateHistory(warmWorkspace.id)).toHaveLength(2);
+  const events = (await store.claimDueEvents(new Date(), 20)).filter((event) => event.workspaceId === warmWorkspace.id);
+  expect(events.map((event) => event.eventType)).toEqual(["workspace.queued", "workspace.provisioning"]);
+  expect(EventEnvelopeSchema.parse(events[1]?.payload).workspace).toMatchObject({
+    state: "provisioning",
+    provisioning_mode: "warm",
+    change_cursor: admitted?.changeSeq,
+  });
 }
 
 describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
@@ -130,7 +156,10 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
         registrationExpiresAt: new Date(Date.now() + 60_000),
         at: new Date(),
       };
+      const warmChanged = store.waitForWorkspaceChange(warmWorkspace.id, warmWorkspace.changeSeq, 1000);
       const claims = await Promise.all([store.claimWarmPoolRuntime(claim), store.claimWarmPoolRuntime(claim)]);
+      await warmChanged;
+      await expectWarmAdmission(store, warmWorkspace, claim, claims.find(Boolean)?.workspace);
       expect(claims.filter(Boolean)).toHaveLength(1);
       expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
       expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);

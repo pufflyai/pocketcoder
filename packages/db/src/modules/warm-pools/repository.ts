@@ -1,5 +1,5 @@
 import type { WarmPoolClaim, WarmPoolRuntimePatch, WarmPoolRuntimeRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, getColumns, isNotNull, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { appendTransition } from "../workspaces/events";
@@ -48,31 +48,41 @@ export function createWarmPools(context: DatabaseContext) {
           .orderBy(asc(runtimes.readyAt))
           .limit(1)
           .for("update", { skipLocked: true });
-        const [leased] = await tx
-          .update(runtimes)
-          .set({ state: "leasing", workspaceId: current.id, leasedAt: claim.at, updatedAt: claim.at })
-          .where(and(eq(runtimes.id, ready), eq(runtimes.state, "ready")))
-          .returning();
-        if (!leased) return null;
-        const [row] = await tx
-          .update(workspaces)
-          .set({
-            state: "provisioning",
-            provisioningMode: "warm",
-            providerKind: leased.driverKind,
-            providerRef: leased.providerRef,
-            registrationDigest: claim.registrationDigest,
-            registrationExpiresAt: claim.registrationExpiresAt,
-            launchAttempts: sql`${workspaces.launchAttempts}+1`,
-            updatedAt: claim.at,
-            changeSeq: sql`${workspaces.changeSeq}+1`,
-          })
-          .where(and(eq(workspaces.id, current.id), eq(workspaces.state, "queued")))
-          .returning();
-        if (!row) throw new Error("warm_pool.claim_workspace_race");
-        const workspace = workspaceFromRow(row);
+        const leased = tx.$with("leased_runtime").as(
+          tx
+            .update(runtimes)
+            .set({ state: "leasing", workspaceId: current.id, leasedAt: claim.at, updatedAt: claim.at })
+            .where(and(eq(runtimes.id, ready), eq(runtimes.state, "ready")))
+            .returning(),
+        );
+        const admitted = tx.$with("admitted_workspace").as(
+          tx
+            .update(workspaces)
+            .set({
+              state: "provisioning",
+              provisioningMode: "warm",
+              providerKind: sql`${leased.driverKind}`,
+              providerRef: sql`${leased.providerRef}`,
+              registrationDigest: claim.registrationDigest,
+              registrationExpiresAt: claim.registrationExpiresAt,
+              launchAttempts: sql`${workspaces.launchAttempts}+1`,
+              updatedAt: claim.at,
+              changeSeq: sql`${workspaces.changeSeq}+1`,
+            })
+            .from(leased)
+            .where(and(eq(workspaces.id, current.id), eq(workspaces.state, "queued")))
+            .returning(getColumns(workspaces)),
+        );
+        const [result] = await tx
+          .with(leased, admitted)
+          .select({ runtime: getColumns(leased), workspace: getColumns(admitted) })
+          .from(leased)
+          .leftJoin(admitted, eq(admitted.id, leased.workspaceId));
+        if (!result) return null;
+        if (!result.workspace) throw new Error("warm_pool.claim_workspace_race");
+        const workspace = workspaceFromRow(result.workspace);
         await appendTransition(context, tx, workspace, "queued", null, claim.at);
-        return { runtime: leased, workspace };
+        return { runtime: result.runtime, workspace };
       });
       if (result) notifyChange(context, claim.workspaceId);
       return result;

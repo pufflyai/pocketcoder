@@ -12,17 +12,24 @@ export async function appendTransition(
   reason: ReasonCode | null,
   at: Date,
 ) {
-  await tx.insert(context.tables.workspaceStateHistory).values({
-    id: randomUUID(),
-    workspaceId: row.id,
-    fromState: from,
-    toState: row.state,
-    reasonCode: reason,
-    occurredAt: at,
-  });
-  if (row.purgeRequestedAt) return;
+  const history = tx
+    .insert(context.tables.workspaceStateHistory)
+    .values({
+      id: randomUUID(),
+      workspaceId: row.id,
+      fromState: from,
+      toState: row.state,
+      reasonCode: reason,
+      occurredAt: at,
+    })
+    .returning({ id: context.tables.workspaceStateHistory.id });
+  if (row.purgeRequestedAt) {
+    await history;
+    return;
+  }
+  const recorded = tx.$with("recorded_transition").as(history);
   const payload = buildEventEnvelope(row, at);
-  await tx.insert(context.tables.eventOutbox).values({
+  await tx.with(recorded).insert(context.tables.eventOutbox).values({
     id: payload.id,
     workspaceId: row.id,
     eventType: payload.type,
