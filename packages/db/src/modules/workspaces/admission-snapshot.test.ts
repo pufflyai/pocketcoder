@@ -10,8 +10,21 @@ test.each(["memory", "disk"] as const)(
       const first = await insertTestWorkspace(fixture, "first");
       const second = await insertTestWorkspace(fixture, "second");
       const third = await insertTestWorkspace(fixture, "third");
+      const expiresAt = new Date("2030-01-02T03:04:05.006Z");
+      const registrationDigest = new Uint8Array([0, 255, 92, 34]);
+      await fixture.store.updateWorkspace(
+        first.id,
+        { registrationDigest, registrationExpiresAt: expiresAt },
+        new Date(),
+      );
       let snapshot = await fixture.store.readAdmissionSnapshot();
       expect(snapshot.queued.map((row) => row.id)).toEqual([first.id]);
+      expect(snapshot.queued[0]).toMatchObject({
+        createdAt: first.createdAt,
+        registrationDigest,
+        registrationExpiresAt: expiresAt,
+        terminalAt: null,
+      });
       expect(snapshot.queuedCount).toBe(3);
       expect(snapshot.counts).toEqual({ global: 0, byPrincipal: {}, byTemplate: {} });
       for (const row of [first, second, third]) {
