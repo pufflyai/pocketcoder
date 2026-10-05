@@ -33,8 +33,8 @@ export function createWarmPools(context: DatabaseContext) {
       const result = await db.transaction(async (tx) => {
         const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, claim.workspaceId)).for("update");
         if (current?.state !== "queued" || current.purgeRequestedAt) return null;
-        const [runtime] = await tx
-          .select()
+        const ready = tx
+          .select({ id: runtimes.id })
           .from(runtimes)
           .where(
             and(
@@ -48,11 +48,10 @@ export function createWarmPools(context: DatabaseContext) {
           .orderBy(asc(runtimes.readyAt))
           .limit(1)
           .for("update", { skipLocked: true });
-        if (!runtime) return null;
         const [leased] = await tx
           .update(runtimes)
           .set({ state: "leasing", workspaceId: current.id, leasedAt: claim.at, updatedAt: claim.at })
-          .where(and(eq(runtimes.id, runtime.id), eq(runtimes.state, "ready")))
+          .where(and(eq(runtimes.id, ready), eq(runtimes.state, "ready")))
           .returning();
         if (!leased) return null;
         const [row] = await tx
@@ -60,8 +59,8 @@ export function createWarmPools(context: DatabaseContext) {
           .set({
             state: "provisioning",
             provisioningMode: "warm",
-            providerKind: runtime.driverKind,
-            providerRef: runtime.providerRef,
+            providerKind: leased.driverKind,
+            providerRef: leased.providerRef,
             registrationDigest: claim.registrationDigest,
             registrationExpiresAt: claim.registrationExpiresAt,
             launchAttempts: sql`${workspaces.launchAttempts}+1`,

@@ -3,6 +3,32 @@ import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { createPGliteFixture, insertTestWorkspace, workspaceOf } from "../../test-fixtures";
 
+async function insertReadyRuntime(fixture: Awaited<ReturnType<typeof createPGliteFixture>>) {
+  const { store, template } = fixture;
+  const runtimeId = randomUUID();
+  const now = new Date();
+  await store.insertWarmPoolRuntime({
+    id: runtimeId,
+    templateId: template.id,
+    templateName: template.name,
+    templateVersion: template.version,
+    templateDigest: template.digest,
+    driverKind: "docker",
+    eligibilityFingerprint: "sha256:eligible",
+    state: "ready",
+    providerRef: { kind: "docker", id: "warm-provider" },
+    enrollmentDigest: null,
+    enrollmentExpiresAt: null,
+    workspaceId: null,
+    createdAt: now,
+    updatedAt: now,
+    readyAt: now,
+    leasedAt: null,
+    failureCode: null,
+  });
+  return runtimeId;
+}
+
 describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
   test("round-trips identity, templates, workspaces, and conversations", async () => {
     const fixture = await createPGliteFixture("pkt_workspace", mode);
@@ -92,27 +118,9 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
     const { store, template } = fixture;
     try {
       const warmWorkspace = await insertTestWorkspace(fixture, "pg-warm-task");
-      const runtimeId = randomUUID();
-      const now = new Date();
-      await store.insertWarmPoolRuntime({
-        id: runtimeId,
-        templateId: template.id,
-        templateName: template.name,
-        templateVersion: template.version,
-        templateDigest: template.digest,
-        driverKind: "docker",
-        eligibilityFingerprint: "sha256:eligible",
-        state: "ready",
-        providerRef: { kind: "docker", id: "warm-provider" },
-        enrollmentDigest: null,
-        enrollmentExpiresAt: null,
-        workspaceId: null,
-        createdAt: now,
-        updatedAt: now,
-        readyAt: now,
-        leasedAt: null,
-        failureCode: null,
-      });
+      const runtimeId = await insertReadyRuntime(fixture);
+      const nextRuntimeId = await insertReadyRuntime(fixture);
+      await store.updateWarmPoolRuntime(nextRuntimeId, { readyAt: new Date(Date.now() + 1000) }, new Date());
       const claim = {
         workspaceId: warmWorkspace.id,
         templateDigest: template.digest,
@@ -126,6 +134,14 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       expect(claims.filter(Boolean)).toHaveLength(1);
       expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
       expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);
+
+      expect(claims.find(Boolean)?.runtime).toMatchObject({ id: runtimeId, state: "leasing" });
+      expect(await store.getWarmPoolRuntime(nextRuntimeId)).toMatchObject({ state: "ready", workspaceId: null });
+      await store.updateWarmPoolRuntime(nextRuntimeId, { state: "failed" }, new Date());
+      const miss = await insertTestWorkspace(fixture, "pg-warm-miss");
+      expect(await store.claimWarmPoolRuntime({ ...claim, workspaceId: miss.id })).toBeNull();
+      expect(await store.getWorkspace(miss.id)).toMatchObject({ state: "queued", providerRef: null });
+      expect(await store.listStateHistory(miss.id)).toHaveLength(1);
 
       const workspace = await insertTestWorkspace(fixture, "pg-state-task");
       const provisioning = await store.transition(workspace.id, {
@@ -196,4 +212,29 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       await fixture.dispose();
     }
   }, 30_000);
+
+  test("a failed warm transition rolls back the runtime claim", async () => {
+    const fixture = await createPGliteFixture("pkt_warm_rollback", mode);
+    try {
+      const workspace = await insertTestWorkspace(fixture, "warm-rollback");
+      const runtimeId = await insertReadyRuntime(fixture);
+      await fixture.query('DROP TABLE "pocketcoder"."event_outbox"');
+      await expect(
+        fixture.store.claimWarmPoolRuntime({
+          workspaceId: workspace.id,
+          templateDigest: fixture.template.digest,
+          driverKind: "docker",
+          eligibilityFingerprint: "sha256:eligible",
+          registrationDigest: new TextEncoder().encode("rollback"),
+          registrationExpiresAt: new Date(Date.now() + 60_000),
+          at: new Date(),
+        }),
+      ).rejects.toThrow();
+      expect(await fixture.store.getWorkspace(workspace.id)).toMatchObject({ state: "queued", providerRef: null });
+      expect(await fixture.store.getWarmPoolRuntime(runtimeId)).toMatchObject({ state: "ready", workspaceId: null });
+      expect(await fixture.store.listStateHistory(workspace.id)).toHaveLength(1);
+    } finally {
+      await fixture.dispose();
+    }
+  });
 });
