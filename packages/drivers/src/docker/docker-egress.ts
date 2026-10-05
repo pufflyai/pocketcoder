@@ -35,6 +35,9 @@ export async function createDockerEgress(
     "SETUID",
     "--cap-add",
     "SETGID",
+    // Read the host server's private config before the egress process drops its UID.
+    "--cap-add",
+    "DAC_OVERRIDE",
     "--security-opt",
     "no-new-privileges",
     "--read-only",
