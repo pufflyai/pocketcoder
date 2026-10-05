@@ -65,14 +65,30 @@ test.each(["source", "compiled", "bundle"] as const)(
       expect(await build.exited).toBe(0);
     }
     const invocation = mode === "compiled" ? [binary] : [process.execPath, mode === "bundle" ? binary : fixture];
+    // Linux exec preserves the parent's RSS peak. Fork from a small shell first.
+    const cold = Bun.spawn(
+      [
+        "sh",
+        "-c",
+        '"$@"; result=$?; exit "$result"',
+        "pc-cold-start",
+        ...invocation,
+        "inspect",
+        join(dir, "cold-data"),
+      ],
+      { cwd: dir, stdout: "pipe", stderr: "pipe" },
+    );
+    const coldOutput = await new Response(cold.stdout).text();
+    const coldErrors = await new Response(cold.stderr).text();
+    expect(coldErrors).toBe("");
+    expect(await cold.exited).toBe(0);
+    expect(JSON.parse(coldOutput).peakKiB * 1024).toBeLessThan(512 * 1024 ** 2);
     const data = join(dir, "data");
     const child = Bun.spawn([...invocation, "write", data], { cwd: dir, stdout: "pipe", stderr: "inherit" });
     try {
       const lines = await acknowledgedLines(child, 33);
       child.kill("SIGKILL");
       await child.exited;
-      const start = JSON.parse(lines[0] ?? "");
-      expect(start.peakKiB * 1024).toBeLessThan(512 * 1024 ** 2);
       const acknowledged = lines.slice(1).map((line) => JSON.parse(line));
       const reopened = Bun.spawn([...invocation, "inspect", data], { cwd: dir, stdout: "pipe", stderr: "pipe" });
       const output = await new Response(reopened.stdout).text();
