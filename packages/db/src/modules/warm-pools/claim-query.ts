@@ -1,17 +1,36 @@
-import { and, asc, eq, getColumns, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, getColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { DatabaseContext, Transaction } from "../../database/context";
 
-export function createWarmClaimQuery({
+export function buildWarmClaimQuery({
   db,
   tables: { warmPoolRuntimes: runtimes, workspaces, workspaceStateHistory: history, eventOutbox: outbox },
 }: DatabaseContext) {
-  const ready = db
+  const locked = db.$with("locked_workspace").as(
+    db
+      .select({
+        id: workspaces.id,
+        state: workspaces.state,
+        purgeRequestedAt: workspaces.purgeRequestedAt,
+        templateDigest: workspaces.templateDigest,
+        changeSeq: workspaces.changeSeq,
+        outputs: workspaces.outputs,
+      })
+      .from(workspaces)
+      .where(eq(workspaces.id, sql.placeholder("workspaceId")))
+      .for("update"),
+  );
+  const fresh = and(
+    eq(locked.changeSeq, sql.placeholder("expectedChangeSeq")),
+    eq(locked.outputs, sql`${sql.param(sql.placeholder("expectedOutputs"), workspaces.outputs)}`),
+  );
+  const eligible = and(eq(locked.state, "queued"), isNull(locked.purgeRequestedAt));
+  const candidate = db
     .select({ id: runtimes.id })
     .from(runtimes)
     .where(
       and(
-        eq(runtimes.templateDigest, sql.placeholder("templateDigest")),
+        eq(runtimes.templateDigest, locked.templateDigest),
         eq(runtimes.driverKind, sql.placeholder("driverKind")),
         eq(runtimes.eligibilityFingerprint, sql.placeholder("eligibilityFingerprint")),
         eq(runtimes.state, "ready"),
@@ -20,7 +39,14 @@ export function createWarmClaimQuery({
     )
     .orderBy(asc(runtimes.readyAt))
     .limit(1)
-    .for("update", { skipLocked: true });
+    .for("update", { skipLocked: true })
+    .as("candidate");
+  // A locking CTE freezes one candidate even when the planner chooses nested loops.
+  const ready = db
+    .$with("ready_runtime")
+    .as(
+      db.select({ id: candidate.id }).from(locked).innerJoinLateral(candidate, sql`true`).where(and(eligible, fresh)),
+    );
   const leased = db.$with("leased_runtime").as(
     db
       .update(runtimes)
@@ -30,8 +56,9 @@ export function createWarmClaimQuery({
         leasedAt: sql`${sql.param(sql.placeholder("at"), runtimes.leasedAt)}`,
         updatedAt: sql`${sql.param(sql.placeholder("at"), runtimes.updatedAt)}`,
       })
-      .where(and(eq(runtimes.id, ready), eq(runtimes.state, "ready")))
-      .returning(),
+      .from(ready)
+      .where(and(eq(runtimes.id, ready.id), eq(runtimes.state, "ready")))
+      .returning(getColumns(runtimes)),
   );
   const admitted = db.$with("admitted_workspace").as(
     db
@@ -85,18 +112,30 @@ export function createWarmClaimQuery({
       )
       .returning({ id: outbox.id }),
   );
-  const query = db
-    .with(leased, admitted, recorded, emitted)
-    .select({ runtime: getColumns(leased), workspace: getColumns(admitted) })
-    .from(leased)
-    .leftJoin(admitted, eq(admitted.id, leased.workspaceId));
+  return db
+    .with(locked, ready, leased, admitted, recorded, emitted)
+    .select({
+      runtime: getColumns(leased),
+      workspace: getColumns(admitted),
+      stale: sql<boolean>`(${eligible}) and not (${fresh})`.mapWith(Boolean),
+    })
+    .from(locked)
+    .leftJoin(leased, eq(leased.workspaceId, locked.id))
+    .leftJoin(admitted, eq(admitted.id, locked.id));
+}
+
+export function createWarmClaimQuery(context: DatabaseContext) {
+  const query = buildWarmClaimQuery(context);
   type Rows = Awaited<ReturnType<typeof query.execute>>;
   const compiled = query.toSQL();
   // toSQL fills this field list with the schema's date, bytea and JSON decoders.
-  const mapper = new PgDialect({ useJitMappers: false }).mapperGenerators.rows<Rows[number]>(
-    query._.config.fieldsFlat!,
-    { leased_runtime: true, admitted_workspace: false },
-  );
+  const fields = query._.config.fieldsFlat;
+  if (!fields) throw new Error("warm claim query has no compiled fields");
+  const mapper = new PgDialect({ useJitMappers: false }).mapperGenerators.rows<Rows[number]>(fields, {
+    locked_workspace: true,
+    leased_runtime: false,
+    admitted_workspace: false,
+  });
   // Rebind the compiled statement to this transaction instead of retaining another session's executor.
   return (tx: Transaction, bindings: Record<string, unknown>) =>
     tx._.session.prepareQuery<{ execute: Rows }>(compiled, "arrays", false, mapper).execute(bindings);

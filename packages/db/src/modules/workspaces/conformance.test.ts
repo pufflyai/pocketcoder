@@ -4,6 +4,12 @@ import { digestOf, EventEnvelopeSchema, snapshotOf } from "@pstdio/pocketcoder-c
 import type { Store, WarmPoolClaim, WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { createPGliteFixture, insertTestWorkspace, workspaceOf } from "../../test-fixtures";
 
+function findLease(claims: Awaited<ReturnType<Store["claimWarmPoolRuntime"]>>[]) {
+  for (const result of claims) {
+    if (result && !("kind" in result)) return result;
+  }
+}
+
 async function insertReadyRuntime(fixture: Awaited<ReturnType<typeof createPGliteFixture>>) {
   const { store, template } = fixture;
   const runtimeId = randomUUID();
@@ -67,12 +73,12 @@ async function expectNextWarmClaim(
   await store.updateWorkspace(nextInserted.id, { outputs: nextWorkspace.outputs }, new Date());
   const nextClaim = {
     ...claim,
-    workspaceId: nextWorkspace.id,
+    workspace: nextWorkspace,
     registrationDigest: new TextEncoder().encode("next-secret"),
     registrationExpiresAt: new Date(claim.registrationExpiresAt.getTime() + 1000),
     at: new Date(),
   };
-  const nextAdmission = await store.claimWarmPoolRuntime(nextClaim);
+  const nextAdmission = findLease([await store.claimWarmPoolRuntime(nextClaim)]);
   expect(nextAdmission?.runtime).toMatchObject({ id: nextRuntimeId, workspaceId: nextWorkspace.id });
   await expectWarmAdmission(store, nextWorkspace, nextClaim, nextAdmission?.workspace);
 }
@@ -80,8 +86,8 @@ async function expectNextWarmClaim(
 async function expectFreshPurgeFence(fixture: Awaited<ReturnType<typeof createPGliteFixture>>, claim: WarmPoolClaim) {
   const { store } = fixture;
   expect(await store.claimWarmPoolRuntime(claim)).toBeNull();
-  expect(await store.getWorkspace(claim.workspaceId)).toMatchObject({ state: "queued", providerRef: null });
-  expect(await store.listStateHistory(claim.workspaceId)).toHaveLength(1);
+  expect(await store.getWorkspace(claim.workspace.id)).toMatchObject({ state: "queued", providerRef: null });
+  expect(await store.listStateHistory(claim.workspace.id)).toHaveLength(1);
   const runtimeId = await insertReadyRuntime(fixture);
   const now = new Date();
   await store.insertOperation({
@@ -91,7 +97,7 @@ async function expectFreshPurgeFence(fixture: Awaited<ReturnType<typeof createPG
     state: "pending",
     idempotencyKey: "fresh-purge-fence",
     requestDigest: "fresh-purge-fence",
-    workspaceId: claim.workspaceId,
+    workspaceId: claim.workspace.id,
     checkpointId: null,
     resultWorkspaceId: null,
     reasonCode: null,
@@ -102,7 +108,7 @@ async function expectFreshPurgeFence(fixture: Awaited<ReturnType<typeof createPG
   });
   expect(await store.claimWarmPoolRuntime(claim)).toBeNull();
   expect(await store.getWarmPoolRuntime(runtimeId)).toMatchObject({ state: "ready", workspaceId: null });
-  expect(await store.listStateHistory(claim.workspaceId)).toHaveLength(1);
+  expect(await store.listStateHistory(claim.workspace.id)).toHaveLength(1);
 }
 
 describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
@@ -191,7 +197,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
 
   test("round-trips warm claims, transitions, logs, and network events", async () => {
     const fixture = await createPGliteFixture("pkt_runtime", mode);
-    const { store, template } = fixture;
+    const { store } = fixture;
     try {
       const inserted = await insertTestWorkspace(fixture, "pg-warm-task");
       const warmWorkspace = { ...inserted, outputs: { artifact: "retained" }, changeSeq: inserted.changeSeq + 1 };
@@ -199,9 +205,9 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       const runtimeId = await insertReadyRuntime(fixture);
       const nextRuntimeId = await insertReadyRuntime(fixture);
       await store.updateWarmPoolRuntime(nextRuntimeId, { readyAt: new Date(Date.now() + 1000) }, new Date());
+      await fixture.context.client.exec("SET enable_hashjoin=off; SET enable_mergejoin=off");
       const claim = {
-        workspaceId: warmWorkspace.id,
-        templateDigest: template.digest,
+        workspace: warmWorkspace,
         driverKind: "docker",
         eligibilityFingerprint: "sha256:eligible",
         registrationDigest: new TextEncoder().encode("one-time"),
@@ -211,17 +217,20 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       const warmChanged = store.waitForWorkspaceChange(warmWorkspace.id, warmWorkspace.changeSeq, 1000);
       const claims = await Promise.all([store.claimWarmPoolRuntime(claim), store.claimWarmPoolRuntime(claim)]);
       await warmChanged;
-      await expectWarmAdmission(store, warmWorkspace, claim, claims.find(Boolean)?.workspace);
+      await expectWarmAdmission(store, warmWorkspace, claim, findLease(claims)?.workspace);
       expect(claims.filter(Boolean)).toHaveLength(1);
       expect((await store.getWorkspace(warmWorkspace.id))?.provisioningMode).toBe("warm");
       expect((await store.getWarmPoolRuntime(runtimeId))?.workspaceId).toBe(warmWorkspace.id);
 
-      expect(claims.find(Boolean)?.runtime).toMatchObject({ id: runtimeId, state: "leasing" });
+      expect(findLease(claims)?.runtime).toMatchObject({
+        id: runtimeId,
+        state: "leasing",
+      });
       expect(await store.getWarmPoolRuntime(nextRuntimeId)).toMatchObject({ state: "ready", workspaceId: null });
       await expectNextWarmClaim(fixture, claim, nextRuntimeId);
       await store.updateWarmPoolRuntime(nextRuntimeId, { state: "failed" }, new Date());
       const miss = await insertTestWorkspace(fixture, "pg-warm-miss");
-      await expectFreshPurgeFence(fixture, { ...claim, workspaceId: miss.id });
+      await expectFreshPurgeFence(fixture, { ...claim, workspace: miss });
 
       const workspace = await insertTestWorkspace(fixture, "pg-state-task");
       const provisioning = await store.transition(workspace.id, {
@@ -301,8 +310,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       await fixture.query('DROP TABLE "pocketcoder"."event_outbox"');
       await expect(
         fixture.store.claimWarmPoolRuntime({
-          workspaceId: workspace.id,
-          templateDigest: fixture.template.digest,
+          workspace,
           driverKind: "docker",
           eligibilityFingerprint: "sha256:eligible",
           registrationDigest: new TextEncoder().encode("rollback"),

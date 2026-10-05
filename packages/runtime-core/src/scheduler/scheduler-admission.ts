@@ -134,7 +134,8 @@ export class SchedulerAdmission {
     };
     if (this.context.deps.warmPool) {
       const hit = await this.context.deps.warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
-      if (hit) return true;
+      if (hit === "leased") return true;
+      if (hit === "deferred") return false;
       if (this.context.deps.warmPool.missDecision(row) === "wait") return false;
     }
     const claimed = await store.claimWorkspaceAdmission({
