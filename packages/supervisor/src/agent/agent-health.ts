@@ -4,8 +4,24 @@ import { agentApiConversationMessages } from "./agentapi";
 type AgentState = "unknown" | "stable" | "running";
 type SendFrame = (type: AgentFrame["type"], payload: unknown) => boolean;
 
+async function waitForSync(pending: Promise<void>, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  if (!signal) return await pending;
+  let abort!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    await Promise.race([pending, aborted]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 export class AgentHealthMonitor {
   private currentState: AgentState = "unknown";
+  private stateRevision = 0;
   private lastMessageId = -1;
   private transcriptSync: Promise<void> | null = null;
   private readonly serviceHealth = new Map<string, string>();
@@ -26,6 +42,7 @@ export class AgentHealthMonitor {
   setAgentState(state: "running" | "stable") {
     if (this.currentState === state) return;
     this.currentState = state;
+    this.stateRevision += 1;
     this.callbacks.send("agent_state", { state });
   }
 
@@ -57,7 +74,7 @@ export class AgentHealthMonitor {
         const body = (await response.json().catch(() => null)) as { status?: string } | null;
         if (body?.status === "running" || body?.status === "stable") {
           this.setAgentState(body.status);
-          if (body.status === "stable" && exec.agentapi_native) void this.syncMessages();
+          if (exec.agentapi_native) void this.syncMessages().catch(() => {});
         }
       }
     } catch {
@@ -86,30 +103,48 @@ export class AgentHealthMonitor {
     }
   }
 
-  syncMessages(): Promise<void> {
+  syncMessages(options: { fresh?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+    if (options.fresh) return this.syncFreshMessages(options.signal);
     if (this.transcriptSync) return this.transcriptSync;
-    this.transcriptSync = this.performMessageSync().finally(() => {
+    this.transcriptSync = this.performMessageSync(options.signal).finally(() => {
       this.transcriptSync = null;
     });
     return this.transcriptSync;
+  }
+
+  private async syncFreshMessages(signal?: AbortSignal) {
+    // A read that started before Stop can miss the last accepted prompt.
+    while (this.transcriptSync)
+      await waitForSync(
+        this.transcriptSync.catch(() => {}),
+        signal,
+      );
+    signal?.throwIfAborted();
+    await this.syncMessages({ signal });
   }
 
   private async probeAll(exec: ExecSpec, force: boolean) {
     for (const name of Object.keys(exec.services)) await this.probeService(exec, name, force);
   }
 
-  private async performMessageSync() {
+  private async performMessageSync(signal?: AbortSignal) {
     const service = this.callbacks.exec()?.services.agent;
-    if (!service || this.currentState !== "stable") return;
+    if (!service) return;
+    const wasStable = this.currentState === "stable";
+    const revision = this.stateRevision;
     try {
       const response = await fetch(new URL("/messages", service.baseUrl), {
-        signal: AbortSignal.timeout(3000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
       });
       if (!response.ok) throw new Error(`AgentAPI messages returned ${response.status}`);
-      for (const message of agentApiConversationMessages(await response.json())) {
+      const messages = agentApiConversationMessages(await response.json());
+      const completeTail = wasStable && this.currentState === "stable" && revision === this.stateRevision;
+      for (const [index, message] of messages.entries()) {
+        // AgentAPI mutates its last assistant message until the turn settles.
+        if (index === messages.length - 1 && message.role === "assistant" && !completeTail) break;
         const id = Number(message.message_id.slice("agentapi:".length));
         if (id <= this.lastMessageId) continue;
-        if (!this.callbacks.send("conversation_message", message)) return;
+        if (!this.callbacks.send("conversation_message", message)) throw new Error("workspace connection closed");
         this.lastMessageId = id;
       }
     } catch (error) {
