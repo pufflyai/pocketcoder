@@ -52,6 +52,7 @@ async function expectWarmAdmission(
     state: "provisioning",
     provisioning_mode: "warm",
     change_cursor: admitted?.changeSeq,
+    outputs: { artifact: "retained" },
   });
 }
 
@@ -143,7 +144,9 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
     const fixture = await createPGliteFixture("pkt_runtime", mode);
     const { store, template } = fixture;
     try {
-      const warmWorkspace = await insertTestWorkspace(fixture, "pg-warm-task");
+      const inserted = await insertTestWorkspace(fixture, "pg-warm-task");
+      const warmWorkspace = { ...inserted, outputs: { artifact: "retained" }, changeSeq: inserted.changeSeq + 1 };
+      await store.updateWorkspace(inserted.id, { outputs: warmWorkspace.outputs }, new Date());
       const runtimeId = await insertReadyRuntime(fixture);
       const nextRuntimeId = await insertReadyRuntime(fixture);
       await store.updateWarmPoolRuntime(nextRuntimeId, { readyAt: new Date(Date.now() + 1000) }, new Date());
