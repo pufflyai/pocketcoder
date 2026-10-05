@@ -77,6 +77,34 @@ async function expectNextWarmClaim(
   await expectWarmAdmission(store, nextWorkspace, nextClaim, nextAdmission?.workspace);
 }
 
+async function expectFreshPurgeFence(fixture: Awaited<ReturnType<typeof createPGliteFixture>>, claim: WarmPoolClaim) {
+  const { store } = fixture;
+  expect(await store.claimWarmPoolRuntime(claim)).toBeNull();
+  expect(await store.getWorkspace(claim.workspaceId)).toMatchObject({ state: "queued", providerRef: null });
+  expect(await store.listStateHistory(claim.workspaceId)).toHaveLength(1);
+  const runtimeId = await insertReadyRuntime(fixture);
+  const now = new Date();
+  await store.insertOperation({
+    id: randomUUID(),
+    principalId: fixture.principal.id,
+    kind: "purge",
+    state: "pending",
+    idempotencyKey: "fresh-purge-fence",
+    requestDigest: "fresh-purge-fence",
+    workspaceId: claim.workspaceId,
+    checkpointId: null,
+    resultWorkspaceId: null,
+    reasonCode: null,
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  });
+  expect(await store.claimWarmPoolRuntime(claim)).toBeNull();
+  expect(await store.getWarmPoolRuntime(runtimeId)).toMatchObject({ state: "ready", workspaceId: null });
+  expect(await store.listStateHistory(claim.workspaceId)).toHaveLength(1);
+}
+
 describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
   test("round-trips identity, templates, workspaces, and conversations", async () => {
     const fixture = await createPGliteFixture("pkt_workspace", mode);
@@ -193,9 +221,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       await expectNextWarmClaim(fixture, claim, nextRuntimeId);
       await store.updateWarmPoolRuntime(nextRuntimeId, { state: "failed" }, new Date());
       const miss = await insertTestWorkspace(fixture, "pg-warm-miss");
-      expect(await store.claimWarmPoolRuntime({ ...claim, workspaceId: miss.id })).toBeNull();
-      expect(await store.getWorkspace(miss.id)).toMatchObject({ state: "queued", providerRef: null });
-      expect(await store.listStateHistory(miss.id)).toHaveLength(1);
+      await expectFreshPurgeFence(fixture, { ...claim, workspaceId: miss.id });
 
       const workspace = await insertTestWorkspace(fixture, "pg-state-task");
       const provisioning = await store.transition(workspace.id, {

@@ -6,12 +6,14 @@ import { type DatabaseContext, notifyChange } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { workspaceFromRow } from "../workspaces/mapping";
 import { createWarmClaimQuery } from "./claim-query";
+import { createLockedWorkspaceQuery } from "./locked-workspace-query";
 
 export function createWarmPools(context: DatabaseContext) {
   const {
     db,
-    tables: { warmPoolRuntimes: runtimes, workspaces },
+    tables: { warmPoolRuntimes: runtimes },
   } = context;
+  let lockedWorkspaceQuery: ReturnType<typeof createLockedWorkspaceQuery> | undefined;
   let claimQuery: ReturnType<typeof createWarmClaimQuery> | undefined;
   async function getWarmPoolRuntime(id: string) {
     const [row] = await db.select().from(runtimes).where(eq(runtimes.id, id));
@@ -34,30 +36,8 @@ export function createWarmPools(context: DatabaseContext) {
     },
     async claimWarmPoolRuntime(claim: WarmPoolClaim) {
       const result = await db.transaction(async (tx) => {
-        const [current] = await tx
-          .select({
-            id: workspaces.id,
-            state: workspaces.state,
-            purgeRequestedAt: workspaces.purgeRequestedAt,
-            externalId: workspaces.externalId,
-            reasonCode: workspaces.reasonCode,
-            agentState: workspaces.agentState,
-            provisioningMode: workspaces.provisioningMode,
-            changeSeq: workspaces.changeSeq,
-            failureLogTail: workspaces.failureLogTail,
-            failureLogTailTruncated: workspaces.failureLogTailTruncated,
-            failureLastLogSeq: workspaces.failureLastLogSeq,
-            templateName: workspaces.templateName,
-            templateVersion: workspaces.templateVersion,
-            templateDigest: workspaces.templateDigest,
-            originWorkspaceId: workspaces.originWorkspaceId,
-            restoredFromCheckpointId: workspaces.restoredFromCheckpointId,
-            latestCheckpointId: workspaces.latestCheckpointId,
-            outputs: workspaces.outputs,
-          })
-          .from(workspaces)
-          .where(eq(workspaces.id, claim.workspaceId))
-          .for("update");
+        lockedWorkspaceQuery ??= createLockedWorkspaceQuery(context);
+        const [current] = await lockedWorkspaceQuery(tx, claim.workspaceId);
         if (current?.state !== "queued" || current.purgeRequestedAt) return null;
         const payload = buildEventEnvelope(
           { ...current, state: "provisioning", provisioningMode: "warm", changeSeq: current.changeSeq + 1 },
