@@ -11,7 +11,7 @@ export async function prepareCheckpoint(
     send: SendFrame;
     pump(stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr"): Promise<void>;
     readAgentApiStatus(timeoutMs: number): Promise<"running" | "stable" | null>;
-    syncAgentApiMessages(): Promise<void>;
+    syncAgentApiMessages(options: { fresh: boolean; signal: AbortSignal }): Promise<void>;
     child(): { kill(signal: "SIGTERM" | "SIGKILL"): void; exited: Promise<number> } | null;
     childExited(): boolean;
     closeTerminals(): Promise<void>;
@@ -82,7 +82,9 @@ async function prepareAgentApiCheckpoint(
       await Bun.sleep(100);
     }
     if (!stable) throw new Error("AgentAPI did not become stable");
-    await callbacks.syncAgentApiMessages();
+    const syncTime = deadline - Date.now();
+    if (syncTime <= 0) throw new Error("AgentAPI shutdown deadline exceeded");
+    await callbacks.syncAgentApiMessages({ fresh: true, signal: AbortSignal.timeout(syncTime) });
     const child = callbacks.child();
     if (!child || callbacks.childExited()) throw new Error("AgentAPI is not running");
     child.kill("SIGTERM");

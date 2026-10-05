@@ -70,7 +70,8 @@ command, mount, network, privilege, or driver.
   [transport decision](agent-transport-decision.md) for the cross-agent
   compatibility analysis. PocketCoder
   waits for AgentAPI's fixed status endpoint to answer, synchronizes complete
-  messages after `stable`, and terminates it safely for preserve. That health
+  accepted input while running, and terminates it safely for preserve. The last
+  assistant entry is captured after a read under unchanged `stable` health. That health
   check only proves the endpoint responds. A workspace can be `ready` while the
   agent is still starting and cannot accept a message yet, so callers wait for
   an `agent_state` of `stable` before sending. The caller's opaque
@@ -196,6 +197,11 @@ filesystem checkpoint. Native workspaces project complete AgentAPI messages
 into the durable transcript using stable `agentapi:<id>` ids. Legacy harness
 adapters may still write bounded `POCKETCODER_CONVERSATION <json>` lines to
 stdout. Operational log text is never inferred into conversation history.
+
+Cooperative Stop and shutdown perform a fresh transcript read before TERM,
+within the existing termination grace period. Read failures are reported and
+termination continues. KILL skips that read. A disconnected control channel
+or forced kill can still prevent delivery of the latest input.
 
 A template may define repository aliases under `source.repositories`. The
 caller selects only an alias and validated revision:
