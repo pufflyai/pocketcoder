@@ -52,8 +52,29 @@ async function expectWarmAdmission(
     state: "provisioning",
     provisioning_mode: "warm",
     change_cursor: admitted?.changeSeq,
-    outputs: { artifact: "retained" },
+    outputs: warmWorkspace.outputs,
   });
+}
+
+async function expectNextWarmClaim(
+  fixture: Awaited<ReturnType<typeof createPGliteFixture>>,
+  claim: WarmPoolClaim,
+  nextRuntimeId: string,
+) {
+  const { store } = fixture;
+  const nextInserted = await insertTestWorkspace(fixture, "pg-warm-next");
+  const nextWorkspace = { ...nextInserted, outputs: { artifact: "next" }, changeSeq: nextInserted.changeSeq + 1 };
+  await store.updateWorkspace(nextInserted.id, { outputs: nextWorkspace.outputs }, new Date());
+  const nextClaim = {
+    ...claim,
+    workspaceId: nextWorkspace.id,
+    registrationDigest: new TextEncoder().encode("next-secret"),
+    registrationExpiresAt: new Date(claim.registrationExpiresAt.getTime() + 1000),
+    at: new Date(),
+  };
+  const nextAdmission = await store.claimWarmPoolRuntime(nextClaim);
+  expect(nextAdmission?.runtime).toMatchObject({ id: nextRuntimeId, workspaceId: nextWorkspace.id });
+  await expectWarmAdmission(store, nextWorkspace, nextClaim, nextAdmission?.workspace);
 }
 
 describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
@@ -169,6 +190,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
 
       expect(claims.find(Boolean)?.runtime).toMatchObject({ id: runtimeId, state: "leasing" });
       expect(await store.getWarmPoolRuntime(nextRuntimeId)).toMatchObject({ state: "ready", workspaceId: null });
+      await expectNextWarmClaim(fixture, claim, nextRuntimeId);
       await store.updateWarmPoolRuntime(nextRuntimeId, { state: "failed" }, new Date());
       const miss = await insertTestWorkspace(fixture, "pg-warm-miss");
       expect(await store.claimWarmPoolRuntime({ ...claim, workspaceId: miss.id })).toBeNull();
