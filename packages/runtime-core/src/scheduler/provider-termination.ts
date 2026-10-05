@@ -3,6 +3,16 @@ import type { WorkspaceRow, WorkspaceStore } from "../types";
 
 type TerminationWorkspace = Pick<WorkspaceRow, "id" | "providerKind" | "providerRef">;
 
+function sameProvider(current: TerminationWorkspace | null, expected: TerminationWorkspace) {
+  return (
+    current?.providerKind === expected.providerKind &&
+    current?.providerRef?.id === expected.providerRef?.id &&
+    current?.providerRef?.kind === expected.providerRef?.kind &&
+    current?.providerRef?.namespace === expected.providerRef?.namespace &&
+    current?.providerRef?.poolRuntimeId === expected.providerRef?.poolRuntimeId
+  );
+}
+
 export async function stopWorkspaceProvider(
   store: Pick<WorkspaceStore, "updateWorkspace"> & { getWorkspace(id: string): Promise<TerminationWorkspace | null> },
   driver: Pick<WorkspaceDriver, "stop" | "remove" | "terminationEvidence">,
@@ -13,12 +23,18 @@ export async function stopWorkspaceProvider(
 ) {
   if (!workspace.providerRef) return;
   const ref = { kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef };
-  await driver.stop(ref, graceSeconds);
-  const evidence = await driver.terminationEvidence?.(ref);
+  let evidence: Record<string, unknown> | null | undefined;
+  try {
+    await driver.stop(ref, graceSeconds);
+    evidence = await driver.terminationEvidence?.(ref);
+  } catch (error) {
+    // Another finalizer may have saved proof and removed its provider already.
+    const current = await store.getWorkspace(workspace.id);
+    if (!sameProvider(current, workspace) || !current?.providerRef?.terminationEvidence) throw error;
+  }
   if (evidence) {
     const current = await store.getWorkspace(workspace.id);
-    if (!current?.providerRef || current.providerRef.id !== workspace.providerRef.id)
-      throw new Error("Termination provider changed");
+    if (!current?.providerRef || !sameProvider(current, workspace)) throw new Error("Termination provider changed");
     await store.updateWorkspace(
       workspace.id,
       {

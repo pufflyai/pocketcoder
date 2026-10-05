@@ -15,6 +15,7 @@ import { createTemplates } from "./modules/templates/repository";
 import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
 import { createAdmission } from "./modules/workspaces/admission";
+import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 
@@ -56,7 +57,7 @@ export class PGliteStore implements Store {
     this.getWorkspace = workspaces.getWorkspace;
     this.listWorkspaces = workspaces.listWorkspaces;
     const admission = createAdmission(context);
-    this.listQueuedHeads = admission.listQueuedHeads;
+    this.readAdmissionSnapshot = createAdmissionSnapshot(context);
     this.listNonterminal = admission.listNonterminal;
     this.countActive = admission.countActive;
     this.countQueued = admission.countQueued;
@@ -144,7 +145,7 @@ export class PGliteStore implements Store {
   readonly getWorkspaceByIdempotency: Store["getWorkspaceByIdempotency"];
   readonly getWorkspace: Store["getWorkspace"];
   readonly listWorkspaces: Store["listWorkspaces"];
-  readonly listQueuedHeads: Store["listQueuedHeads"];
+  readonly readAdmissionSnapshot: Store["readAdmissionSnapshot"];
   readonly listNonterminal: Store["listNonterminal"];
   readonly countActive: Store["countActive"];
   readonly countQueued: Store["countQueued"];

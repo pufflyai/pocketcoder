@@ -28,6 +28,17 @@ Kubernetes workspaces that were admitted also require saved termination evidence
 A missing Job without that proof stays unresolved, including on deployments where
 termination-evidence capture was not enabled. Live Kubernetes acceptance remains
 a release gate.
+
+Concurrent Kubernetes cleanup re-reads retained Job evidence after a Pod
+disappears. It accepts that evidence only when the current Job UID and the
+recorded proof UID match the original Job. If another finalizer already removed
+the provider, the scheduler can use the proof saved on the same workspace
+provider reference. A changed provider kind, ID, namespace or warm-pool identity
+is rejected. Proof is saved before provider removal, and other controllers'
+finalizers are preserved. Missing objects alone never authorize cleanup or
+capacity release. Boundary race tests do not replace live cancellation,
+controller-restart and node-loss validation.
+
 `/readyz` reports `cleanup: pending` while a purge remains incomplete. The
 `purge.pending` metric records the pending count without workspace labels.
 

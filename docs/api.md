@@ -159,14 +159,28 @@ bounded redacted string metadata. Responses include `next_cursor` and the
 retention deadline. Each workspace is capped at 100,000 messages and 50 MiB
 of canonical content/metadata; each message is capped at 256 KiB.
 
-AgentAPI-native workspaces capture complete `/messages` entries whenever the
-agent is stable. The numeric AgentAPI id becomes `agentapi:<id>`, and AgentAPI's
+AgentAPI-native workspaces capture accepted user input and earlier completed
+`/messages` entries while the agent is running. The final assistant entry stays
+pending until a read starts and finishes under the same stable health revision.
+The numeric AgentAPI id becomes `agentapi:<id>`, and AgentAPI's
 `agent` role becomes `assistant`; replay is idempotent. Legacy harness adapters
 may still write one canonical line per complete message:
 
 ```text
 POCKETCODER_CONVERSATION {"message_id":"provider-7","role":"assistant","content":"Done","occurred_at":"2026-08-03T08:00:00.000Z","metadata":{"provider":"agentapi"}}
 ```
+
+Before cooperative Stop or shutdown, the supervisor waits for an older history
+read and starts a fresh one before forwarding TERM. This shares the existing
+termination grace period. A failed read is reported and physical termination
+continues; a slow read cannot extend the deadline. KILL bypasses this final read.
+Frames remain ordered on the control channel; a disconnected channel or forced
+kill cannot guarantee delivery of the latest input.
+The server saves transcript frames already received even if provider cleanup
+finishes before queued writes. Deleted or purged history stays deleted.
+Stop responses and terminal state do not acknowledge queued transcript writes;
+an immediate history read can lag.
+Checkpoint preparation also starts a fresh stable read within its deadline.
 
 The supervisor validates and forwards the event over its ordered protocol;
 replaying a message id is idempotent. Adapters must redact secrets and

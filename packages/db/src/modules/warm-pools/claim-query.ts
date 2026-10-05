@@ -1,6 +1,6 @@
 import { and, asc, eq, getColumns, isNotNull, isNull, sql } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
-import type { DatabaseContext, Transaction } from "../../database/context";
+import { compileSelect } from "../../database/compiled-select";
+import type { DatabaseContext } from "../../database/context";
 
 export function buildWarmClaimQuery({
   db,
@@ -125,18 +125,9 @@ export function buildWarmClaimQuery({
 }
 
 export function createWarmClaimQuery(context: DatabaseContext) {
-  const query = buildWarmClaimQuery(context);
-  type Rows = Awaited<ReturnType<typeof query.execute>>;
-  const compiled = query.toSQL();
-  // toSQL fills this field list with the schema's date, bytea and JSON decoders.
-  const fields = query._.config.fieldsFlat;
-  if (!fields) throw new Error("warm claim query has no compiled fields");
-  const mapper = new PgDialect({ useJitMappers: false }).mapperGenerators.rows<Rows[number]>(fields, {
+  return compileSelect(buildWarmClaimQuery(context), {
     locked_workspace: true,
     leased_runtime: false,
     admitted_workspace: false,
   });
-  // Rebind the compiled statement to this transaction instead of retaining another session's executor.
-  return (tx: Transaction, bindings: Record<string, unknown>) =>
-    tx._.session.prepareQuery<{ execute: Rows }>(compiled, "arrays", false, mapper).execute(bindings);
 }

@@ -4,6 +4,10 @@ import { enforcedEnvironment, verifyWritableMemoryPaths } from "./supervisor-uti
 
 type SendFrame = (type: AgentFrame["type"], payload: unknown) => boolean;
 
+export function clearSourceCredential(exec: ExecSpec) {
+  if (exec.source) exec.source.credential = null;
+}
+
 export async function preflightNetwork(exec: ExecSpec, send: SendFrame, flushAndClose: () => Promise<void>) {
   if (exec.network.mode !== "restricted") return true;
   send("network_state", { state: "starting" });
@@ -88,6 +92,23 @@ export async function runSetupSteps(
     return step.name;
   }
   return null;
+}
+
+export async function runSetupWithCredentials(
+  exec: ExecSpec,
+  callbacks: Parameters<typeof runSetupSteps>[1] & {
+    addSecret(secret: string): void;
+    removeSecret(secret: string): void;
+  },
+) {
+  const credential = exec.source?.credential;
+  if (credential) callbacks.addSecret(credential);
+  try {
+    return await runSetupSteps(exec, callbacks);
+  } finally {
+    if (credential) callbacks.removeSecret(credential);
+    clearSourceCredential(exec);
+  }
 }
 
 export async function reportResolvedSource(exec: ExecSpec, send: SendFrame, log: (message: string) => void) {

@@ -194,7 +194,8 @@ export async function handleConnectedFrame(
       return;
     case "conversation_message": {
       const workspace = await deps.store.getWorkspace(frame.workspace_id);
-      if (!workspace || isTerminal(workspace.state)) return;
+      // Provider cleanup can finish while a received frame waits for earlier writes.
+      if (!workspace) return;
       try {
         await deps.store.appendConversationMessage({
           workspaceId: frame.workspace_id,

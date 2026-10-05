@@ -20,7 +20,7 @@ neither callers nor templates can select them.
 | Component | Package | Responsibility |
 |-----------|---------|----------------|
 | pocketcoder-server | `packages/server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
-| pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, AgentAPI launch, stable transcript capture, health, relay, checkpoint quiescing, TERM/KILL |
+| pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, AgentAPI launch, accepted-input capture, health, relay, checkpoint quiescing, TERM/KILL |
 | pocketcoder-egress | `packages/egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
 | pcd | `packages/cli` | Published bundled operator CLI: principals/keys, template validation, workspace inspection, chat, doctor |
 | remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
@@ -351,5 +351,8 @@ labeled provider objects and supervisors simply reconnect.
 - Lifecycle events are HMAC-signed; consumers verify, deduplicate, and poll.
 - Conversation events are contract-bounded and principal-scoped, expire by
   template policy, and support explicit content deletion. Native workspaces
-  project only stable AgentAPI history; legacy adapters retain responsibility
+  capture accepted input while running, defer a mutable assistant tail until a
+  read under unchanged stable health, and perform a fresh bounded read before
+  cooperative termination. KILL or a lost control channel can prevent final
+  delivery. Legacy adapters retain responsibility
   for semantic redaction.

@@ -1,6 +1,7 @@
 import { type ExecSpec, type ProviderInput, parseDurationMs, ServerFrameSchema } from "@pstdio/pocketcoder-contracts";
 import { AgentConnection } from "./agent/agent-connection";
 import { AgentHealthMonitor } from "./agent/agent-health";
+import { shutdownAgent } from "./agent/agent-shutdown";
 import { AttachmentManager } from "./attachments/attachments";
 import { loadProviderInput } from "./bootstrap/supervisor-bootstrap";
 import {
@@ -11,10 +12,11 @@ import {
   EXIT_WRITABLE_MEMORY_FAILED,
 } from "./bootstrap/supervisor-constants";
 import {
+  clearSourceCredential,
   preflightNetwork,
   probeWritableMemory,
   reportResolvedSource,
-  runSetupSteps,
+  runSetupWithCredentials,
   startNetworkMonitor,
 } from "./bootstrap/supervisor-setup";
 import { enforcedEnvironment } from "./bootstrap/supervisor-utils";
@@ -35,7 +37,6 @@ export async function supervise(inputPath: string): Promise<number> {
 }
 
 class Supervisor {
-  private readonly input: ProviderInput;
   private readonly connection: AgentConnection;
   private readonly logs: SupervisorLogs;
   private readonly healthMonitor: AgentHealthMonitor;
@@ -54,8 +55,7 @@ class Supervisor {
   private execReady!: () => void;
   private readonly execReadyPromise: Promise<void>;
 
-  constructor(input: ProviderInput) {
-    this.input = input;
+  constructor(private readonly input: ProviderInput) {
     this.connection = new AgentConnection(input, {
       services: () => (this.exec ? Object.keys(this.exec.services) : []),
       onMessage: (raw) => void this.handleMessage(raw),
@@ -105,7 +105,7 @@ class Supervisor {
     const exec = this.exec;
     if (!exec) return EXIT_PROTOCOL_ERROR;
     if (!(await preflightNetwork(exec, this.sendFrame.bind(this), this.flushAndClose.bind(this)))) {
-      this.clearSourceCredential(exec);
+      clearSourceCredential(exec);
       return EXIT_NETWORK_POLICY_FAILED;
     }
 
@@ -117,22 +117,30 @@ class Supervisor {
     }
     const memoryOk = await probeWritableMemory(exec, this.logs.log.bind(this.logs));
     if (!memoryOk) {
-      this.clearSourceCredential(exec);
-      this.failedSetupStep = "writable-memory-preflight";
+      clearSourceCredential(exec);
       this.sendFrame("process_state", {
         phase: "exited",
         exit_code: EXIT_WRITABLE_MEMORY_FAILED,
-        setup_step: this.failedSetupStep ?? "writable-memory-preflight",
+        setup_step: "writable-memory-preflight",
       });
       await this.flushAndClose();
       return EXIT_WRITABLE_MEMORY_FAILED;
     }
-    this.failedSetupStep = await this.runSetup(exec);
-    if (this.failedSetupStep) {
+    const failedSetupStep = await runSetupWithCredentials(exec, {
+      send: this.sendFrame.bind(this),
+      log: this.logs.log.bind(this.logs),
+      pump: this.logs.pump.bind(this.logs),
+      addSecret: this.logs.addSecret.bind(this.logs),
+      removeSecret: this.logs.removeSecret.bind(this.logs),
+      setSetupPhase: () => {
+        this.childPhase = "setup";
+      },
+    });
+    if (failedSetupStep) {
       this.sendFrame("process_state", {
         phase: "exited",
         exit_code: EXIT_SETUP_FAILED,
-        setup_step: this.failedSetupStep ?? "setup",
+        setup_step: failedSetupStep,
       });
       await this.flushAndClose();
       return EXIT_SETUP_FAILED;
@@ -207,8 +215,12 @@ class Supervisor {
         await this.terminals.close(frame.payload);
         return;
       case "signal": {
-        this.forwardSignal(frame.payload.signal === "KILL" ? "SIGKILL" : "SIGTERM");
-        this.sendFrame("termination_ack", { phase: "term_sent" });
+        if (frame.payload.signal === "KILL") {
+          this.forwardSignal("SIGKILL");
+          this.sendFrame("termination_ack", { phase: "killed" });
+        } else {
+          await this.gracefulShutdown();
+        }
         return;
       }
       case "health_probe": {
@@ -254,30 +266,6 @@ class Supervisor {
     }
   }
 
-  private failedSetupStep: string | null = null;
-
-  private async runSetup(exec: ExecSpec): Promise<string | null> {
-    const credential = exec.source?.credential ?? null;
-    if (credential) this.logs.addSecret(credential);
-    try {
-      return await runSetupSteps(exec, {
-        send: this.sendFrame.bind(this),
-        log: this.logs.log.bind(this.logs),
-        pump: this.logs.pump.bind(this.logs),
-        setSetupPhase: () => {
-          this.childPhase = "setup";
-        },
-      });
-    } finally {
-      if (credential) this.logs.removeSecret(credential);
-      this.clearSourceCredential(exec);
-    }
-  }
-
-  private clearSourceCredential(exec: ExecSpec): void {
-    if (exec.source) exec.source.credential = null;
-  }
-
   private startHarness(exec: ExecSpec): void {
     this.childPhase = "running";
     this.sendFrame("process_state", { phase: "running" });
@@ -303,7 +291,7 @@ class Supervisor {
       this.childExit = code;
       await Promise.all(pumps);
       this.sendFrame("process_state", { phase: "exited", exit_code: code });
-      if (this.quiescing) return;
+      if (this.quiescing && !this.shuttingDown) return;
       await this.flushAndClose();
       this.exitWith(code);
     });
@@ -323,22 +311,22 @@ class Supervisor {
   private async gracefulShutdown(): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
-    await this.proxyStreams.cancelAll();
-    await this.terminals.closeAll("workspace_ended");
+    this.quiescing = true;
     const exec = this.exec;
     const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
-    this.forwardSignal("SIGTERM");
-    if (this.child && this.childExit === null) {
-      const timer = setTimeout(() => {
-        if (this.childExit === null) {
-          this.sendFrame("termination_ack", { phase: "killed" });
-          this.child?.kill("SIGKILL");
-        }
-      }, graceMs);
-      await this.child.exited;
-      clearTimeout(timer);
-    }
-    this.sendFrame("termination_ack", { phase: "exited" });
+    await shutdownAgent(graceMs, {
+      closeSessions: async () => {
+        await this.proxyStreams.cancelAll();
+        await this.terminals.closeAll("workspace_ended");
+      },
+      syncMessages: async (signal) => {
+        if (exec?.agentapi_native) await this.healthMonitor.syncMessages({ fresh: true, signal });
+      },
+      signal: this.forwardSignal.bind(this),
+      exited: () => this.child?.exited ?? Promise.resolve(0),
+      send: this.sendFrame.bind(this),
+      log: this.logs.log.bind(this.logs),
+    });
   }
 
   private async flushAndClose(): Promise<void> {
