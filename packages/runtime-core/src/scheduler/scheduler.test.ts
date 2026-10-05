@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import {
   FakeDriver,
   fixtureTemplateEcho,
@@ -16,6 +16,8 @@ import {
   Scheduler,
   type Store,
 } from "../index";
+
+const createStore = createTestStoreFactory();
 
 const noHub: ConnectionHub = {
   isConnected: () => false,
@@ -103,7 +105,7 @@ describe("failure log summary", () => {
 
 describe("scheduler admission", () => {
   test("launches queued workspaces through the driver with provider input", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { principal, echo, echoRow } = await seed(store);
     const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
@@ -125,7 +127,7 @@ describe("scheduler admission", () => {
   });
 
   test("respects the global active limit and preserves FIFO", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { principal, echo, echoRow } = await seed(store);
     const t0 = Date.now();
@@ -139,7 +141,7 @@ describe("scheduler admission", () => {
   });
 
   test("rotates admission fairly across principals", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { echo, echoRow } = await seed(store);
     const a = await store.createPrincipal("a", ["admin"], ["*"]);
@@ -156,7 +158,7 @@ describe("scheduler admission", () => {
   });
 
   test("does not exceed active limits when ticks overlap", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     driver.createDelayMs = 25;
     const { echo, echoRow } = await seed(store);
@@ -177,7 +179,7 @@ describe("scheduler admission", () => {
   });
 
   test("does not exceed active limits across scheduler coordinators", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     driver.createDelayMs = 25;
     const { echo, echoRow } = await seed(store);
@@ -195,7 +197,7 @@ describe("scheduler admission", () => {
   });
 
   test("admits an eligible principal beyond a blocked global queue prefix", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { echo, echoRow } = await seed(store);
     const a = await store.createPrincipal("backlogged", ["admin"], ["*"]);
@@ -216,7 +218,7 @@ describe("scheduler admission", () => {
   });
 
   test("bounded launch retry, then failed", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { principal, echo, echoRow } = await seed(store);
     const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
@@ -241,7 +243,7 @@ describe("scheduler admission", () => {
 
 describe("scheduler sweeps", () => {
   test("delegates deadline preservation to the durable policy path", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const principal = await store.createPrincipal("persistent", ["admin"], ["*"]);
     const parsed = fixtureTemplatePersistent();
@@ -298,7 +300,7 @@ describe("scheduler sweeps", () => {
   });
 
   test("queue age expiry", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { principal, echo, echoRow } = await seed(store);
     const old = new Date(Date.now() - 60 * 60_000);
@@ -311,7 +313,7 @@ describe("scheduler sweeps", () => {
   });
 
   test("registration timeout fails a provisioning workspace and cleans the provider", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const { principal, echo, echoRow } = await seed(store);
     const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
@@ -327,7 +329,7 @@ describe("scheduler sweeps", () => {
   });
 
   test("cancellation without a provider goes straight to canceled", async () => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const { principal, echo, echoRow } = await seed(store);
     const ws = await queueWorkspace(store, principal.id, echoRow.id, echo);
     const queued = await store.transition(ws.id, {

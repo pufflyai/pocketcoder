@@ -120,7 +120,6 @@ function configFingerprint(config: ServerConfig): string {
   const safeConfig = {
     listenHost: config.listenHost,
     listenPort: config.listenPort,
-    storeKind: config.storeKind,
     dataDir: config.dataDir,
     templateDir: config.templateDir,
     driverKind: config.driverKind,

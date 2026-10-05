@@ -17,6 +17,7 @@ import { PersistenceRestoreService } from "./persistence-restore";
 export class PersistenceService {
   constructor(deps: PersistenceServiceDeps) {
     this.context = new PersistenceContext(deps);
+    this.drain = this.context.drain.bind(this.context);
     const purge = new PersistencePurgeService(this.context);
     this.purge = purge.purge.bind(purge);
     this.retryPurges = purge.retry.bind(purge);
@@ -36,6 +37,7 @@ export class PersistenceService {
     this.delete = this.maintenance.delete.bind(this.maintenance);
     this.restore = this.restoreService.restore.bind(this.restoreService);
   }
+  readonly drain: PersistenceContext["drain"];
   readonly purge: PersistencePurgeService["purge"];
   readonly retryPurges: PersistencePurgeService["retry"];
   private readonly restoreService: PersistenceRestoreService;

@@ -247,7 +247,6 @@ together while the server is stopped. Live copy is not a consistent backup.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
-| `POCKETCODER_STORE` | `pglite` | `memory` for temporary development only |
 | `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |

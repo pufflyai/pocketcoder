@@ -23,7 +23,8 @@
     "!src/**/*.test.ts"
   ],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/test-fixtures.ts"
   },
   "engines": {
     "bun": ">=1.4.2"

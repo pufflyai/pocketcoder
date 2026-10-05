@@ -2,11 +2,14 @@ import { expect, test } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { waitFor } from "./persistence-support.test";
 import { failedAllocation } from "./purge-support.test";
 
+const createStore = createTestStoreFactory();
+
 test("purge removes failed allocations without checkpoints and covered database content before teardown", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const response = await app.purge();
   expect(response.status).toBe(202);
   const operation = (await response.json()) as { id: string };
@@ -21,7 +24,7 @@ test("purge removes failed allocations without checkpoints and covered database 
 });
 
 test("purge keeps failed deletion pending, preserves its target and retries the same operation", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   await app.store.updateWorkspaceStorage(
     app.storage.id,
     { providerRef: { ...app.storage.providerRef, root: "/invalid-allocation" } },
@@ -40,7 +43,7 @@ test("purge keeps failed deletion pending, preserves its target and retries the 
 });
 
 test("accepted purge fences delayed content and new copies while deletion is pending", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   await app.store.updateWorkspaceStorage(
     app.storage.id,
     { providerRef: { ...app.storage.providerRef, root: "/invalid-allocation" } },
@@ -81,7 +84,7 @@ test("accepted purge fences delayed content and new copies while deletion is pen
 });
 
 test("new recovery identity rechecks restored physical storage instead of replaying old success", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const operation = (await (await app.purge()).json()) as { id: string };
   await waitFor(async () => (await app.store.getOperation(operation.id))?.state === "succeeded");
   await app.storageDriver.allocate({
@@ -101,7 +104,7 @@ test("new recovery identity rechecks restored physical storage instead of replay
 });
 
 test("purge removes an interrupted checkpoint copy with no published reference", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const now = new Date();
   const id = crypto.randomUUID();
   await app.store.insertCheckpoint({

@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { DEFAULT_LIMITS, Scheduler } from "../index";
 
+const createStore = createTestStoreFactory();
+
 test("scheduler observes provisioning providers before cancellation and still enforces deadlines when inspection fails", async () => {
-  const store = new MemoryStore();
+  const store = await createStore();
   const provider = new FakeDriver();
   let inspected = 0;
   let unavailable = false;

@@ -2,11 +2,14 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import type { StorageRef } from "@pstdio/pocketcoder-runtime-core";
 import { server, waitFor } from "./persistence-support.test";
 
+const createStore = createTestStoreFactory();
+
 async function preservedSource(failPreserve = false) {
-  const app = await server();
+  const app = await server(await createStore());
   const response = await app.request("/v1/workspaces", {
     method: "POST",
     headers: { "idempotency-key": "cleanup-source" },
