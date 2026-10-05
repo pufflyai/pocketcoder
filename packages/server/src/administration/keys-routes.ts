@@ -6,24 +6,14 @@ import {
   KeyListResponseSchema,
 } from "@pstdio/pocketcoder-contracts";
 import { issuePrincipalKey, keyResource, type Store } from "@pstdio/pocketcoder-runtime-core";
-import { bodyLimit } from "hono/body-limit";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
-import { managedPrincipal } from "./principal-authority";
+import { keyAdministrationPrincipal } from "./principal-authority";
 
 const principalParams = z.object({ principalId: z.uuid() });
 const revokedSchema = z.object({ revoked: z.literal(true) });
 
 export function registerKeyRoutes(app: OpenAPIHono<AppEnv>, store: Store, pepper: string) {
-  app.use(
-    "/v1/principals/*",
-    bodyLimit({
-      maxSize: 16_384,
-      onError: () => {
-        throw new ApiError("validation.invalid", "Request body exceeds 16384 bytes.");
-      },
-    }),
-  );
   app.openapi(
     createRoute({
       method: "get",
@@ -48,7 +38,7 @@ export function registerKeyRoutes(app: OpenAPIHono<AppEnv>, store: Store, pepper
       },
     }),
     async (c) => {
-      const principal = await managedPrincipal(c, store, c.req.valid("param").principalId);
+      const principal = await keyAdministrationPrincipal(c, store, c.req.valid("param").principalId);
       const query = c.req.valid("query");
       const keys = await store.listMachineKeys(principal.id, {
         limit: query.limit + 1,
@@ -83,8 +73,10 @@ export function registerKeyRoutes(app: OpenAPIHono<AppEnv>, store: Store, pepper
       },
     }),
     async (c) => {
-      const principal = await managedPrincipal(c, store, c.req.valid("param").principalId);
-      const result = await issuePrincipalKey(store, pepper, principal, c.req.valid("json"));
+      const principal = await keyAdministrationPrincipal(c, store, c.req.valid("param").principalId);
+      const result = await issuePrincipalKey(store, pepper, principal, c.req.valid("json"), {
+        actorKeyId: c.get("keyId"),
+      });
       return c.json({ key: result.key, token: result.token }, result.created ? 201 : 200);
     },
   );
@@ -103,7 +95,7 @@ export function registerKeyRoutes(app: OpenAPIHono<AppEnv>, store: Store, pepper
     }),
     async (c) => {
       const { principalId, keyId } = c.req.valid("param");
-      await managedPrincipal(c, store, principalId);
+      await keyAdministrationPrincipal(c, store, principalId);
       const found = await store.getMachineKeyWithPrincipal(keyId);
       if (!found || found.key.principalId !== principalId) throw new ApiError("key.not_found", "Unknown key.");
       await store.revokeMachineKey(keyId, new Date());
@@ -127,7 +119,7 @@ export function registerKeyRoutes(app: OpenAPIHono<AppEnv>, store: Store, pepper
       },
     }),
     async (c) => {
-      const principal = await managedPrincipal(c, store, c.req.valid("param").principalId);
+      const principal = await keyAdministrationPrincipal(c, store, c.req.valid("param").principalId);
       await store.revokePrincipalKeys(principal.id, new Date());
       return c.json({ revoked: true as const }, 200);
     },

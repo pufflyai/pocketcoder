@@ -43,7 +43,7 @@ async function fixture() {
   const body = {
     request_id: "issue-1",
     scopes: ["workspaces:read"],
-    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    expires_at: new Date(Date.now() + 30_000).toISOString(),
   };
   const issue = (value = body) =>
     request(`/v1/principals/${target.id}/keys`, { method: "POST", body: JSON.stringify(value) });

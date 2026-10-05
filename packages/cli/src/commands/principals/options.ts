@@ -1,15 +1,11 @@
 import type { Argv } from "yargs";
 
-export function principalOptions(command: Argv) {
-  return command
-    .option("name", { type: "string", demandOption: true, description: "Principal name" })
-    .option("scopes", {
-      type: "string",
-      demandOption: true,
-      description: "Comma-separated scopes",
-    })
-    .option("templates", {
-      type: "string",
-      description: "Comma-separated template names, or * for all templates",
-    });
+export function principalOutputOptions(command: Argv) {
+  return command.option("json", { type: "boolean", default: false, description: "Print principal metadata as JSON" });
+}
+
+export function principalGrantOptions(command: Argv) {
+  return principalOutputOptions(command)
+    .option("scopes", { type: "string", description: "Comma-separated scopes" })
+    .option("templates", { type: "string", description: "Comma-separated template names, or * for all templates" });
 }

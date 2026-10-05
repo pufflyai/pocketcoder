@@ -38,7 +38,10 @@ export class PGliteStore implements Store {
     this.getTemplate = templates.getTemplate;
     this.setTemplateStatus = templates.setTemplateStatus;
     const auth = createAuth(context);
+    this.bootstrapOwnerKey = auth.bootstrapOwnerKey;
     this.createPrincipal = auth.createPrincipal;
+    this.createManagedPrincipal = auth.createManagedPrincipal;
+    this.updateManagedPrincipal = auth.updateManagedPrincipal;
     this.getPrincipalByName = auth.getPrincipalByName;
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
@@ -128,6 +131,9 @@ export class PGliteStore implements Store {
   readonly listTemplates: Store["listTemplates"];
   readonly getTemplate: Store["getTemplate"];
   readonly setTemplateStatus: Store["setTemplateStatus"];
+  readonly createManagedPrincipal: Store["createManagedPrincipal"];
+  readonly updateManagedPrincipal: Store["updateManagedPrincipal"];
+  readonly bootstrapOwnerKey: Store["bootstrapOwnerKey"];
   readonly createPrincipal: Store["createPrincipal"];
   readonly getPrincipalByName: Store["getPrincipalByName"];
   readonly listPrincipals: Store["listPrincipals"];

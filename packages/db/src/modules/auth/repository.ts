@@ -3,6 +3,8 @@ import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { createKeyInventory } from "./key-inventory";
+import { createOwnerBootstrap } from "./owner-bootstrap";
+import { createPrincipalAdministration } from "./principal-administration";
 
 export function createAuth(context: DatabaseContext) {
   const {
@@ -11,6 +13,8 @@ export function createAuth(context: DatabaseContext) {
   } = context;
   return {
     ...createKeyInventory(context),
+    bootstrapOwnerKey: createOwnerBootstrap(context),
+    ...createPrincipalAdministration(context),
     async getPrincipal(id: string) {
       const [row] = await db.select().from(principals).where(eq(principals.id, id));
       return row ?? null;
