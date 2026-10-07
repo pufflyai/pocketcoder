@@ -73,6 +73,7 @@ export {
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
 export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./observability/metrics";
+export { RuntimeOperations } from "./operations";
 export { type OutboxDeps, OutboxDispatcher } from "./outbox/outbox";
 export { type PersistenceReconcileDeps, reconcilePersistence } from "./reconciliation/persistence-reconcile";
 export { type ReconcileDeps, reconcileProviders } from "./reconciliation/reconcile";

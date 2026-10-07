@@ -151,9 +151,11 @@ export class PreservePersistenceService {
       await this.context.failOperation(operationId, "operation_conflict");
       throw new ApiError("operation.conflict", "Another workspace lifecycle operation won.");
     }
-    void this.preserveRunner.runPreserve(preserving.id, checkpoint.id, operationId).catch((error) => {
-      this.context.deps.log?.(`preserve ${operationId}: ${String(error)}`);
-    });
+    void this.context.deps.operations
+      .run(() => this.preserveRunner.runPreserve(preserving.id, checkpoint.id, operationId))
+      .catch((error) => {
+        this.context.deps.log?.(`preserve ${operationId}: ${String(error)}`);
+      });
     return {
       workspaceId,
       checkpoint,

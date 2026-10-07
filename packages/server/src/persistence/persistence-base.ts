@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ApiError, type ErrorCode, type OperationKind } from "@pstdio/pocketcoder-contracts";
 import type {
   AuthStore,
+  RuntimeOperations as ControllerOperations,
   ConversationStore,
   OutboxStore,
   OutputStore,
@@ -20,6 +21,7 @@ import type { Hub } from "../control-channel/hub";
 import type { WorkspaceService } from "../workspaces/service";
 
 export interface PersistenceServiceDeps {
+  operations: ControllerOperations;
   store: AuthStore & TemplateStore & WorkspaceStore & PersistenceStore & OutputStore & ConversationStore & OutboxStore;
   scheduler: Scheduler;
   driver: WorkspaceDriver;

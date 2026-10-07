@@ -19,12 +19,12 @@ export class Scheduler {
     this.lifecycle = new SchedulerLifecycle(this.context);
     this.sweeper = new SchedulerSweep(this.context, this.lifecycle);
     this.admission = new SchedulerAdmission(this.context);
-    this.beginTermination = this.lifecycle.beginTermination.bind(this.lifecycle);
-    this.finalize = this.lifecycle.finalize.bind(this.lifecycle);
-    this.fail = this.lifecycle.fail.bind(this.lifecycle);
-    this.handleProcessExit = this.lifecycle.handleProcessExit.bind(this.lifecycle);
-    this.sweep = this.sweeper.sweep.bind(this.sweeper);
-    this.admit = this.admission.admit.bind(this.admission);
+    this.beginTermination = (...args) => this.context.operations.run(() => this.lifecycle.beginTermination(...args));
+    this.finalize = (...args) => this.context.operations.run(() => this.lifecycle.finalize(...args));
+    this.fail = (...args) => this.context.operations.run(() => this.lifecycle.fail(...args));
+    this.handleProcessExit = (...args) => this.context.operations.run(() => this.lifecycle.handleProcessExit(...args));
+    this.sweep = (...args) => this.context.operations.run(() => this.sweeper.sweep(...args));
+    this.admit = (...args) => this.context.operations.run(() => this.admission.admit(...args));
   }
   private readonly admission: SchedulerAdmission;
 
@@ -35,15 +35,21 @@ export class Scheduler {
   private readonly context: SchedulerContext;
 
   tick(): Promise<void> {
-    if (this.context.activeTick) return this.context.activeTick;
-    this.context.activeTick = this.runTick().finally(() => {
-      this.context.activeTick = null;
+    return this.context.operations.run(() => {
+      if (this.context.activeTick) return this.context.activeTick;
+      this.context.activeTick = this.runTick().finally(() => {
+        this.context.activeTick = null;
+      });
+      return this.context.activeTick;
     });
-    return this.context.activeTick;
   }
 
   async drain(): Promise<void> {
     await this.context.activeTick;
+  }
+
+  close(): Promise<void> {
+    return this.context.operations.close();
   }
 
   private async runTick(): Promise<void> {

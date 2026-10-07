@@ -182,9 +182,11 @@ export function agentWsEvents(deps: WsDeps) {
             closeProtocol(ws, "internal error");
           }
         });
+        return pipeline;
       },
-      onClose: () => {
-        void detachConnection(deps, auth, conn);
+      onClose: async () => {
+        await pipeline;
+        await detachConnection(deps, auth, conn);
       },
     };
   };

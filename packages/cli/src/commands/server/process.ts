@@ -1,101 +1,27 @@
-import { spawn, spawnSync } from "node:child_process";
+// Starts and stops the exact CLI-owned controller process.
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
 import { runPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/lifecycle";
-
-interface ServerState {
-  version: 1;
-  pid: number;
-  instanceToken: string;
-  url: string;
-  startedAt: string;
-  configFingerprint: string;
-  logPath: string;
-}
+import { runControlledPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/maintenance";
+import {
+  logPath,
+  processExists,
+  processIdentityMatches,
+  readState,
+  removeState,
+  type ServerState,
+  stateRoot,
+  writeState,
+} from "./state";
 
 export interface ServerProcessOptions {
   foreground?: boolean;
   json?: boolean;
   timeoutSeconds?: number;
   instanceToken?: string;
-}
-
-function stateRoot(): string {
-  return resolve(process.env.POCKETCODER_STATE_DIR ?? join(homedir(), ".local", "state", "pocketcoder"));
-}
-
-function statePath(): string {
-  return join(stateRoot(), "server.json");
-}
-
-function logPath(): string {
-  return join(stateRoot(), "server.log");
-}
-
-function stateFromJson(value: unknown): ServerState | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Partial<ServerState>;
-  if (
-    row.version !== 1 ||
-    typeof row.pid !== "number" ||
-    !Number.isSafeInteger(row.pid) ||
-    row.pid <= 0 ||
-    typeof row.instanceToken !== "string" ||
-    typeof row.url !== "string" ||
-    typeof row.startedAt !== "string" ||
-    typeof row.configFingerprint !== "string" ||
-    typeof row.logPath !== "string"
-  ) {
-    return null;
-  }
-  return row as ServerState;
-}
-
-function readState(): ServerState | null {
-  try {
-    return stateFromJson(JSON.parse(readFileSync(statePath(), "utf8")));
-  } catch {
-    return null;
-  }
-}
-
-function writeState(state: ServerState): void {
-  const path = statePath();
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temporary, path);
-}
-
-function removeState(): void {
-  rmSync(statePath(), { force: true });
-}
-
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function processCommand(pid: number): string | null {
-  const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], {
-    encoding: "utf8",
-    timeout: 2000,
-  });
-  if (result.status !== 0) return null;
-  const command = result.stdout.trim();
-  return command || null;
-}
-
-function processIdentityMatches(state: ServerState): boolean {
-  if (!processExists(state.pid)) return false;
-  return processCommand(state.pid)?.includes(state.instanceToken) ?? false;
 }
 
 async function healthIdentity(url: string): Promise<string | null> {
@@ -226,7 +152,7 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
 }
 
 export async function runManagedServer(instanceToken: string): Promise<void> {
-  await runPocketCoderServerUntilSignal(loadConfig(), { instanceId: instanceToken });
+  await runControlledPocketCoderServerUntilSignal(loadConfig(), { root: stateRoot(), instanceId: instanceToken });
 }
 
 export async function printManagedServerStatus(json: boolean): Promise<void> {

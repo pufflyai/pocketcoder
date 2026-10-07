@@ -47,7 +47,9 @@ export class PersistencePurgeService {
     if (!workspaceId) return Promise.resolve();
     const active = this.running.get(workspaceId);
     if (active) return active;
-    const task = this.attempt(operation, workspaceId).finally(() => this.running.delete(workspaceId));
+    const task = this.context.deps.operations
+      .run(() => this.attempt(operation, workspaceId))
+      .finally(() => this.running.delete(workspaceId));
     this.running.set(workspaceId, task);
     return task;
   }

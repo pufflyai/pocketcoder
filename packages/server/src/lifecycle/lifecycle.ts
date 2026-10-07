@@ -22,17 +22,15 @@ import { buildServer } from "../app";
 import { configSummary, loadConfig, type ServerConfig } from "../config/config";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
-import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
+import { type RunningPocketCoderServer, startControllerListener } from "./controller-listener";
+
+export type { RunningPocketCoderServer } from "./controller-listener";
+
+import { startExclusiveTimer } from "./exclusive-timer";
 import { loadLaunchPolicy } from "./launch-policy";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
 
 export type ServerLog = (message: string) => void;
-
-export interface RunningPocketCoderServer {
-  config: ServerConfig;
-  url: string;
-  stop(): Promise<void>;
-}
 
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
 
@@ -138,24 +136,6 @@ async function reconcileStartup(
   }
 }
 
-function startExclusiveTimer(
-  intervalMs: number,
-  task: () => Promise<void>,
-  errorContext: string,
-  log: ServerLog,
-): ReturnType<typeof setInterval> {
-  let busy = false;
-  return setInterval(() => {
-    if (busy) return;
-    busy = true;
-    task()
-      .catch((error) => log(`${errorContext}: ${String(error)}`))
-      .finally(() => {
-        busy = false;
-      });
-  }, intervalMs);
-}
-
 export async function startPocketCoderServer(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
@@ -185,7 +165,7 @@ export async function startPocketCoderServer(
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const { app, websocket, scheduler, persistence, warmPool } = buildServer({
+    const built = buildServer({
       ...(authorizeLaunch ? { authorizeLaunch } : {}),
       store,
       driver,
@@ -202,6 +182,8 @@ export async function startPocketCoderServer(
       warmPools,
       readiness,
     });
+
+    const { scheduler, persistence, warmPool, operations } = built;
 
     readiness.set(
       "reconciliation",
@@ -220,8 +202,8 @@ export async function startPocketCoderServer(
       config.schedulerIntervalMs,
       async () => {
         try {
-          await scheduler.tick();
-          const pendingPurges = await persistence.retryPurges();
+          await operations.run(() => scheduler.tick());
+          const pendingPurges = await operations.run(() => persistence.retryPurges());
           readiness.set("cleanup", pendingPurges > 0 ? "pending" : "ok");
           metrics.observe("purge.pending", pendingPurges);
           readiness.set("coordinator", "ok");
@@ -233,13 +215,18 @@ export async function startPocketCoderServer(
       "scheduler tick failed",
       log,
     );
-    const outboxTimer = startExclusiveTimer(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed", log);
+    const outboxTimer = startExclusiveTimer(
+      config.outboxIntervalMs,
+      () => operations.run(() => outbox.tick()),
+      "outbox tick failed",
+      log,
+    );
     const policyTimer = policyReconciliation
       ? startExclusiveTimer(
           config.schedulerIntervalMs,
           async () => {
             try {
-              await policyReconciliation.tick();
+              await operations.run(() => policyReconciliation.tick());
               readiness.set("policy-reconciliation", "ok");
             } catch (error) {
               readiness.set("policy-reconciliation", "failed");
@@ -254,7 +241,7 @@ export async function startPocketCoderServer(
       warmPool && warmPoolContinuously
         ? startExclusiveTimer(
             config.schedulerIntervalMs,
-            () => warmPool.reconcile(),
+            () => operations.run(() => warmPool.reconcile()),
             "warm pool reconciliation failed",
             log,
           )
@@ -262,7 +249,7 @@ export async function startPocketCoderServer(
     const retentionTimer = startExclusiveTimer(
       60_000,
       async () => {
-        const { deleted, skipped } = await persistence.pruneExpired();
+        const { deleted, skipped } = await operations.run(() => persistence.pruneExpired());
         if (deleted > 0 || skipped > 0) {
           log(`retention: deleted=${deleted} skipped=${skipped}`);
         }
@@ -271,55 +258,36 @@ export async function startPocketCoderServer(
       log,
     );
 
-    let server: ReturnType<typeof Bun.serve>;
+    const initialWarmPool = warmPool ? operations.run(() => warmPool.reconcile()) : undefined;
     try {
-      server = Bun.serve({
-        hostname: config.listenHost,
-        port: config.listenPort,
-        idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
-        fetch: app.fetch,
-        websocket,
+      const running = startControllerListener(config, built, {
+        store,
+        timers: [
+          schedulerTimer,
+          outboxTimer,
+          retentionTimer,
+          ...[policyTimer, warmPoolTimer].filter((timer) => timer !== null),
+        ],
+        ...(policyReconciliation ? { policyDrain: () => policyReconciliation.drain() } : {}),
+        ...(initialWarmPool ? { initialWork: initialWarmPool } : {}),
       });
+      void initialWarmPool?.catch((error) => log(`warm pool initial reconcile failed: ${String(error)}`));
+      log(`listening at ${running.url}`);
+      log(`workspaces reach this server at ${config.workspaceServerUrl}`);
+      return running;
     } catch (error) {
-      clearInterval(schedulerTimer);
-      clearInterval(outboxTimer);
-      clearInterval(retentionTimer);
-      if (policyTimer) clearInterval(policyTimer);
-      await policyReconciliation?.drain();
-      if (warmPoolTimer) clearInterval(warmPoolTimer);
+      await Promise.allSettled([
+        schedulerTimer.stop(),
+        outboxTimer.stop(),
+        retentionTimer.stop(),
+        policyTimer?.stop(),
+        warmPoolTimer?.stop(),
+        initialWarmPool,
+        operations.close(),
+        policyReconciliation?.drain(),
+      ]);
       throw error;
     }
-
-    const healthHost = config.listenHost === "0.0.0.0" || config.listenHost === "::" ? "127.0.0.1" : config.listenHost;
-    const url = `http://${healthHost}:${server.port}`;
-    log(`listening on http://${config.listenHost}:${server.port}`);
-    log(`workspaces reach this server at ${config.workspaceServerUrl}`);
-    const initialWarmPool = warmPool
-      ?.reconcile()
-      .catch((error) => log(`warm pool initial reconcile failed: ${String(error)}`));
-
-    let stopPromise: Promise<void> | null = null;
-    return {
-      config,
-      url,
-      stop() {
-        if (stopPromise) return stopPromise;
-        stopPromise = (async () => {
-          log("shutting down");
-          clearInterval(schedulerTimer);
-          clearInterval(outboxTimer);
-          clearInterval(retentionTimer);
-          if (policyTimer) clearInterval(policyTimer);
-          await policyReconciliation?.drain();
-          if (warmPoolTimer) clearInterval(warmPoolTimer);
-          await server.stop(true);
-          // Initial reconciliation still owns store queries after listen succeeds.
-          await initialWarmPool;
-          await store.close();
-        })();
-        return stopPromise;
-      },
-    };
   } catch (error) {
     await store.close().catch(() => {});
     throw error;

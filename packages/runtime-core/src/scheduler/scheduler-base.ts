@@ -2,6 +2,7 @@ import { redact } from "@pstdio/pocketcoder-auth";
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { StorageRef, WorkspaceDriver, WorkspaceSecretResolver, WorkspaceStorageDriver } from "../driver";
 import type { MetricSink } from "../observability/metrics";
+import { RuntimeOperations } from "../operations";
 import type { LogStore, PersistenceStore, WorkspacePatch, WorkspaceRow, WorkspaceStore } from "../types";
 import type { WarmPoolManager } from "../warm-pool/warm-pool";
 
@@ -68,6 +69,7 @@ export interface SecretFactory {
 }
 
 export interface SchedulerDeps {
+  operations?: RuntimeOperations;
   store: WorkspaceStore & PersistenceStore & LogStore;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
@@ -87,6 +89,7 @@ export interface SchedulerDeps {
 
 export class SchedulerContext {
   readonly deps: SchedulerDeps;
+  readonly operations: RuntimeOperations;
 
   lastAdmittedPrincipal: string | null = null;
 
@@ -94,6 +97,7 @@ export class SchedulerContext {
 
   constructor(deps: SchedulerDeps) {
     this.deps = deps;
+    this.operations = deps.operations ?? new RuntimeOperations();
   }
 
   now(): Date {

@@ -90,7 +90,7 @@ export function poolWsEvents(deps: {
     let registered = false;
     return {
       onMessage: (event, ws) => {
-        void (async () => {
+        return (async () => {
           if (registered) {
             ws.close(1008, "pool runtime already registered");
             return;
@@ -120,7 +120,7 @@ export function poolWsEvents(deps: {
       },
       onClose: (_event, ws) => {
         deps.hub.detach(auth.runtimeId, ws);
-        void deps.manager.disconnected(auth.runtimeId);
+        return deps.manager.disconnected(auth.runtimeId);
       },
     };
   };

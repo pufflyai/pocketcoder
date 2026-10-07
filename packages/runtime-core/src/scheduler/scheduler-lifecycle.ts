@@ -29,9 +29,9 @@ export class SchedulerLifecycle {
     }
     if (updated.providerRef) {
       // docker stop / Job deletion performs TERM, grace, KILL.
-      this.finalize(updated, terminalState, reason, this.context.now()).catch((err) =>
-        this.context.report(`terminate.${row.id}`, err),
-      );
+      void this.context.operations
+        .run(() => this.finalize(updated, terminalState, reason, this.context.now()))
+        .catch((err) => this.context.report(`terminate.${row.id}`, err));
     } else {
       await this.finalize(updated, terminalState, reason, at);
     }
