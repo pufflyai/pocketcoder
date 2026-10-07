@@ -12,6 +12,7 @@ API drives the whole lifecycle.
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
 | [Source layout](source-layout.md) | Feature directories, dependencies, and contributor workflow |
+| [Workspace supervisor shutdown](supervisor-lifetime.md) | Admitted setup, messages, background work, and actual transport closure |
 | [Architecture](architecture.md) | Components, database schema, workspace state machine, agent protocol |
 | [Agent transport decision](agent-transport-decision.md) | Why templates keep PTY/ACP and what must be true before another transport is added |
 | [Deployment](deployment.md) | Container images, docker compose, Kubernetes, PostgreSQL placement, configuration reference |

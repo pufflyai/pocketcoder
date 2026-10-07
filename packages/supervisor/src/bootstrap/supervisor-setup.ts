@@ -1,4 +1,5 @@
 import type { AgentFrame, ExecSpec } from "@pstdio/pocketcoder-contracts";
+import type { SupervisorWork } from "../lifecycle/supervisor-work";
 import { EXIT_NETWORK_POLICY_FAILED } from "./supervisor-constants";
 import { enforcedEnvironment, verifyWritableMemoryPaths } from "./supervisor-utils";
 
@@ -8,11 +9,13 @@ export function clearSourceCredential(exec: ExecSpec) {
   if (exec.source) exec.source.credential = null;
 }
 
-export async function preflightNetwork(exec: ExecSpec, send: SendFrame, flushAndClose: () => Promise<void>) {
+export async function preflightNetwork(exec: ExecSpec, send: SendFrame, signal: AbortSignal) {
   if (exec.network.mode !== "restricted") return true;
   send("network_state", { state: "starting" });
   try {
-    const response = await fetch(exec.network.health_url, { signal: AbortSignal.timeout(3000) });
+    const response = await fetch(exec.network.health_url, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+    });
     if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
     send("network_state", { state: "ready" });
     return true;
@@ -21,31 +24,41 @@ export async function preflightNetwork(exec: ExecSpec, send: SendFrame, flushAnd
       state: "degraded",
       detail: error instanceof Error ? error.message.slice(0, 512) : "firewall unavailable",
     });
-    await flushAndClose();
     return false;
   }
 }
 
-export function startNetworkMonitor(exec: ExecSpec, send: SendFrame, terminate: (code: number) => void) {
+export function startNetworkMonitor(
+  exec: ExecSpec,
+  send: SendFrame,
+  terminate: (code: number) => void,
+  work: SupervisorWork,
+  signal: AbortSignal,
+) {
   if (exec.network.mode !== "restricted") return null;
   const network = exec.network;
   let failures = 0;
   return setInterval(() => {
-    void (async () => {
-      try {
-        const response = await fetch(network.health_url, { signal: AbortSignal.timeout(3000) });
-        if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
-        failures = 0;
-      } catch {
-        failures += 1;
-        if (failures < 3) return;
-        send("network_state", {
-          state: "degraded",
-          detail: "firewall health failed three consecutive probes",
-        });
-        terminate(EXIT_NETWORK_POLICY_FAILED);
-      }
-    })();
+    void work
+      .run(async () => {
+        try {
+          const response = await fetch(network.health_url, {
+            signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+          });
+          if (!response.ok) throw new Error(`firewall health returned ${response.status}`);
+          failures = 0;
+        } catch {
+          if (signal.aborted) return;
+          failures += 1;
+          if (failures < 3) return;
+          send("network_state", {
+            state: "degraded",
+            detail: "firewall health failed three consecutive probes",
+          });
+          terminate(EXIT_NETWORK_POLICY_FAILED);
+        }
+      })
+      .catch(() => {});
   }, 5000);
 }
 
@@ -66,9 +79,13 @@ export async function runSetupSteps(
     log(message: string): void;
     pump(stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr"): Promise<void>;
     setSetupPhase(): void;
+    setChild(child: ReturnType<typeof Bun.spawn> | null): void;
+    isStopped(): boolean;
+    signal: AbortSignal;
   },
 ) {
   for (const step of exec.setup) {
+    if (callbacks.isStopped()) return null;
     callbacks.setSetupPhase();
     callbacks.send("process_state", { phase: "setup", setup_step: step.name });
     const proc = Bun.spawn(step.command, {
@@ -82,11 +99,13 @@ export async function runSetupSteps(
       stdout: "pipe",
       stderr: "pipe",
     });
+    callbacks.setChild(proc);
     const pumps = [callbacks.pump(proc.stdout, "stdout"), callbacks.pump(proc.stderr, "stderr")];
     const timeout = setTimeout(() => proc.kill("SIGKILL"), step.timeoutSeconds * 1000);
     const code = await proc.exited;
     clearTimeout(timeout);
     await Promise.all(pumps);
+    callbacks.setChild(null);
     if (code === 0) continue;
     callbacks.log(`setup step ${step.name} failed with exit code ${code}`);
     return step.name;
@@ -118,7 +137,11 @@ export async function reportResolvedSource(exec: ExecSpec, send: SendFrame, log:
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    const [stdout, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      proc.exited,
+      new Response(proc.stderr).text(),
+    ]);
     const commit = stdout.trim().toLowerCase();
     if (code !== 0 || !/^[0-9a-f]{40,64}$/.test(commit)) {
       throw new Error("git did not return an immutable commit");

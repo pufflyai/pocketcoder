@@ -1,4 +1,5 @@
 import type { AgentFrame, ExecSpec } from "@pstdio/pocketcoder-contracts";
+import { SupervisorWork } from "../lifecycle/supervisor-work";
 import { agentApiConversationMessages } from "./agentapi";
 
 type AgentState = "unknown" | "stable" | "running";
@@ -20,6 +21,7 @@ async function waitForSync(pending: Promise<void>, signal?: AbortSignal) {
 }
 
 export class AgentHealthMonitor {
+  private readonly background = new AbortController();
   private currentState: AgentState = "unknown";
   private stateRevision = 0;
   private lastMessageId = -1;
@@ -33,6 +35,7 @@ export class AgentHealthMonitor {
       send: SendFrame;
       log(message: string): void;
     },
+    private readonly work = new SupervisorWork(),
   ) {}
 
   get state() {
@@ -46,9 +49,16 @@ export class AgentHealthMonitor {
     this.callbacks.send("agent_state", { state });
   }
 
+  stopBackground(): void {
+    this.background.abort(new Error("supervisor_health_admission_closed"));
+  }
+
   start(exec: ExecSpec) {
-    const timer = setInterval(() => void this.probeAll(exec, false), 5000);
-    void this.probeAll(exec, true);
+    const probe = (force: boolean) => {
+      void this.work.run(() => this.probeAll(exec, force)).catch((error) => this.callbacks.log(String(error)));
+    };
+    const timer = setInterval(() => probe(false), 5000);
+    probe(true);
     return timer;
   }
 
@@ -67,14 +77,19 @@ export class AgentHealthMonitor {
     let health: "healthy" | "unhealthy" | "starting" = "starting";
     try {
       const response = await fetch(new URL(service.healthPath, service.baseUrl), {
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.any([this.background.signal, AbortSignal.timeout(3000)]),
       });
       health = response.ok ? "healthy" : "unhealthy";
       if (response.ok && name === "agent") {
         const body = (await response.json().catch(() => null)) as { status?: string } | null;
         if (body?.status === "running" || body?.status === "stable") {
           this.setAgentState(body.status);
-          if (exec.agentapi_native) void this.syncMessages().catch(() => {});
+          if (exec.agentapi_native) {
+            // A closed read failure remains logged. Joining it must not invent a successful transcript.
+            void this.work.run(async () => {
+              await this.syncMessages({ signal: this.background.signal }).catch(() => {});
+            });
+          }
         }
       }
     } catch {

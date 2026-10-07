@@ -14,12 +14,13 @@ export interface AgentConnectionCallbacks {
   services(): string[];
   onMessage(raw: string): void;
   onRegistrationFailure(): void;
-  onDisconnect(): void;
+  onDisconnect(): void | Promise<void>;
   isStopped(): boolean;
 }
 
 export class AgentConnection {
   private socket: WebSocket | null = null;
+  private closed: Promise<void> = Promise.resolve();
   private connectionId = "";
   private sequence = 0;
   private reconnectCredential: string | null = null;
@@ -59,17 +60,27 @@ export class AgentConnection {
     socket.onerror = () => {
       // onclose owns retry behavior.
     };
-    socket.onclose = () => {
-      this.callbacks.onDisconnect();
-      if (this.callbacks.isStopped()) return;
-      if (!this.reconnectCredential) {
-        this.callbacks.onRegistrationFailure();
-        return;
-      }
-      setTimeout(() => {
-        if (!this.callbacks.isStopped()) this.connect(false);
-      }, 2000);
-    };
+    this.closed = new Promise<void>((resolve, reject) => {
+      socket.onclose = () => {
+        Promise.resolve()
+          .then(() => this.callbacks.onDisconnect())
+          .then(resolve, reject);
+        this.reconnect();
+      };
+    });
+    // Retain failure for close() without an unhandled event-callback rejection.
+    void this.closed.catch(() => {});
+  }
+
+  private reconnect() {
+    if (this.callbacks.isStopped()) return;
+    if (!this.reconnectCredential) {
+      this.callbacks.onRegistrationFailure();
+      return;
+    }
+    setTimeout(() => {
+      if (!this.callbacks.isStopped()) this.connect(false);
+    }, 2000);
   }
 
   setReconnectCredential(value: string) {
@@ -93,8 +104,9 @@ export class AgentConnection {
     return true;
   }
 
-  close() {
+  async close() {
     this.socket?.close(1000, "supervisor exiting");
+    await this.closed;
   }
 
   private url() {
