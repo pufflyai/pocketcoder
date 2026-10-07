@@ -27,6 +27,16 @@ Readability and structure matter most — we're happy to make bigger changes to 
 - Group package source and adjacent tests by feature. Keep entry points and composition at the package root.
 - Compose services and repositories with explicit dependencies. Do not use inheritance just to split behavior across files.
 
+# Delivery: Smallest Functional Slice First
+
+- Keep the target features. Start with the smallest complete user flow through the real system that can be tested and shown.
+- Give each slice a clear outcome, a repeatable demonstration, and a short set of completion checks. Finish and submit that slice before expanding it.
+- Reuse working code. Build only the missing connections needed for the flow; passing helper tests do not prove the flow works.
+- Defer broader hardening, extra platforms and providers, stress tests, performance work, and general refactors to named follow-up tickets with acceptance criteria.
+- Fix confirmed issues that break the slice, its authority checks, credential lifetime, data integrity, or normal cleanup before calling it complete. Keep existing security rules, limits, and passing tests.
+- Use focused tests while building. Freeze the revision for review and the required full checks below. Track failures; do not hide them or widen unrelated deadlines.
+- Keep one product slice active. Record what works, what blocks completion, and the next action in its saved ticket. Parent feature and release tickets stay open until their full scope is complete.
+
 # Workflow: TDD
 
 1. **Red** — write the smallest failing test first (reproduce bugs before fixing them). Skip only for config/docs-only changes.
