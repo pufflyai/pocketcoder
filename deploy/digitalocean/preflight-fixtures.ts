@@ -177,6 +177,12 @@ export function validDocuments() {
     },
     {
       apiVersion: "v1",
+      kind: "Pod",
+      metadata: { name: "pocketcoder-admin" },
+      spec: { containers: [{ name: "admin", image: serverImage }] },
+    },
+    {
+      apiVersion: "v1",
       kind: "PersistentVolumeClaim",
       metadata: { name: "pocketcoder-data" },
       spec: { accessModes: ["ReadWriteOnce"], storageClassName: "do-block-storage" },

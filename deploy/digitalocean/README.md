@@ -71,10 +71,12 @@ Render and check every phase before applying anything:
 
 ```bash
 kubectl kustomize .pocketcoder/digitalocean/storage >/tmp/pocketcoder-storage.yaml
+kubectl kustomize .pocketcoder/digitalocean/bootstrap >/tmp/pocketcoder-bootstrap.yaml
 kubectl kustomize .pocketcoder/digitalocean/server >/tmp/pocketcoder-server.yaml
 kubectl kustomize .pocketcoder/digitalocean/pi-gateway >/tmp/pocketcoder-pi-gateway.yaml
 bun run example:digitalocean:check \
   /tmp/pocketcoder-storage.yaml \
+  /tmp/pocketcoder-bootstrap.yaml \
   /tmp/pocketcoder-server.yaml \
   /tmp/pocketcoder-pi-gateway.yaml
 ```

@@ -19,7 +19,10 @@ export function named(documents: KubeObject[], kind: string, name: string) {
 }
 
 export function namedContainer(resource: KubeObject | undefined, name: string) {
-  const containers = at(resource, "spec", "template", "spec", "containers");
+  const containers =
+    resource?.kind === "Pod"
+      ? at(resource, "spec", "containers")
+      : at(resource, "spec", "template", "spec", "containers");
   if (!Array.isArray(containers)) return undefined;
   return containers.map(object).find((container) => container?.name === name) ?? undefined;
 }

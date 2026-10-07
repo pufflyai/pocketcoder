@@ -10,6 +10,10 @@ interface ConfigMapFixture {
   data: Record<string, string>;
 }
 
+interface PodFixture {
+  spec: { containers: Array<{ image: string }> };
+}
+
 interface ServiceFixture {
   metadata: { name: string; annotations?: Record<string, string> };
   spec: Record<string, unknown>;
@@ -27,6 +31,41 @@ describe("DigitalOcean manifest preflight", () => {
   });
   test("accepts the private, digest-pinned deployment contract", () => {
     expect(validateRenderedManifest(manifest(validDocuments()))).toEqual([]);
+  });
+
+  test("requires the bootstrap admin Pod", () => {
+    const documents = validDocuments().filter((document) => document.kind !== "Pod");
+    expect(validateRenderedManifest(manifest(documents))).toContain("bootstrap admin image is required");
+  });
+
+  test("rejects a mutable bootstrap admin image", () => {
+    const documents = validDocuments();
+    const admin = documents.find((document) => document.kind === "Pod") as PodFixture;
+    admin.spec.containers[0].image = "registry.example/server:latest";
+    expect(validateRenderedManifest(manifest(documents))).toContain(
+      "image registry.example/server:latest must use repo@sha256:<64 lowercase hex>",
+    );
+  });
+
+  test("rejects a bootstrap admin image with a different valid digest", () => {
+    const documents = validDocuments();
+    const admin = documents.find((document) => document.kind === "Pod") as PodFixture;
+    const server = documents[4] as DeploymentFixture;
+    admin.spec.containers[0].image = server.spec.template.spec.containers[0].image.replace(
+      "1234567890abcdef".repeat(4),
+      "abcdef0123456789".repeat(4),
+    );
+    expect(validateRenderedManifest(manifest(documents))).toContain(
+      "bootstrap admin image must match the server image",
+    );
+  });
+
+  test("accepts a bootstrap admin image matching the server digest", () => {
+    const documents = validDocuments();
+    const admin = documents.find((document) => document.kind === "Pod") as PodFixture;
+    const server = documents[4] as DeploymentFixture;
+    expect(admin.spec.containers[0].image).toBe(server.spec.template.spec.containers[0].image);
+    expect(validateRenderedManifest(manifest(documents))).toEqual([]);
   });
 
   test("rejects mutable and obvious placeholder image references", () => {

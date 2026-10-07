@@ -43,6 +43,14 @@ function templateImages(documents: KubeObject[], errors: string[]) {
 
 function validateImages(documents: KubeObject[], errors: string[]) {
   const deploymentImage = namedContainer(named(documents, "Deployment", "pocketcoder-server"), "server")?.image;
+  const adminImage = namedContainer(named(documents, "Pod", "pocketcoder-admin"), "admin")?.image;
+  if (typeof adminImage !== "string") {
+    errors.push("bootstrap admin image is required");
+  } else {
+    const error = imageError(adminImage);
+    if (error) errors.push(error);
+    if (adminImage !== deploymentImage) errors.push("bootstrap admin image must match the server image");
+  }
   const references = [deploymentImage, ...templateImages(documents, errors)];
   for (const reference of references) {
     if (typeof reference !== "string") {
