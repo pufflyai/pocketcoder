@@ -55,7 +55,7 @@ test("a disconnected change poll settles before controller lease release", async
     await poll;
     await finished;
 
-    await expect(running.quiesce(AbortSignal.timeout(1000))).resolves.toBeUndefined();
+    expect(await running.quiesce(AbortSignal.timeout(1000))).toBeUndefined();
   } finally {
     caller.abort();
     await running.stop();
