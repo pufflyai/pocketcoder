@@ -2,6 +2,14 @@
 
 A lightweight control plane for coding agents in isolated workspaces.
 
+The development `pocketcoder` executable embeds PGlite, its seed and migrations.
+It needs no Bun install or source checkout. With Docker running, `pocketcoder
+serve` starts at `127.0.0.1:8090` and keeps private state in `./pc_data`.
+Follow the [commit-pinned download and workspace round trip](docs/getting-started.md#standalone-development-download).
+CI measures startup, peak memory and executable size. Development builds are
+Actions artifacts named by full commit; they do not publish stable releases or
+change `latest`.
+
 - a **template** is a reviewed, versioned definition of a coding-agent
   environment;
 - a **workspace** is one isolated instance of a template and the lifecycle
@@ -92,7 +100,7 @@ start|status|stop`; see the [getting-started guide](docs/getting-started.md).
 Then add the machine key to `.env` in the repository root:
 
 ```dotenv
-POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_URL=http://127.0.0.1:8090
 POCKETCODER_KEY=pkt_…
 ```
 
@@ -222,7 +230,7 @@ trusted publisher. Do not keep a publish token in the repository.
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
-| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1:7080` | Listen address |
+| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1:8090` | Listen address |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |

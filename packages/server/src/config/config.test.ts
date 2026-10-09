@@ -63,7 +63,7 @@ describe("portable persistence configuration", () => {
     expect(config.secretProvider).toBe("kubernetes");
     expect(config.kubernetesNodeSelector).toEqual({ dedicated: "workspace" });
     expect(config.kubernetesTolerations).toEqual([{ operator: "Exists", effect: "NoSchedule" }]);
-    expect(config.workspaceServerUrl).toBe("http://pocketcoder-agent.agents.svc:7081");
+    expect(config.workspaceServerUrl).toBe("http://pocketcoder-agent.agents.svc:8091");
   });
 
   test("fails closed when a persistence backend is only partially configured", () => {
@@ -165,7 +165,7 @@ test("local defaults need no supplied keys and callback uses the separate agent 
   const config = loadConfig({});
   expect(config.pepper).toBe("");
   expect(config.listenHost).toBe("127.0.0.1");
-  expect(config.workspaceServerUrl).toBe("http://host.docker.internal:7081");
-  expect(() => loadConfig({ POCKETCODER_HTTP: "127.0.0.1:7081" })).toThrow("different ports");
+  expect(config.workspaceServerUrl).toBe("http://host.docker.internal:8091");
+  expect(() => loadConfig({ POCKETCODER_HTTP: "127.0.0.1:8091" })).toThrow("different ports");
   expect(() => loadConfig({ POCKETCODER_AGENT_HTTP: "host:0" })).toThrow("port");
 });

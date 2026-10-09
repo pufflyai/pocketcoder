@@ -65,7 +65,7 @@ export function loadProjectEnvironment(flags: Flags): void {
 }
 
 export function controlPlaneClient() {
-  const url = process.env.POCKETCODER_URL ?? "http://127.0.0.1:7080";
+  const url = process.env.POCKETCODER_URL ?? "http://127.0.0.1:8090";
   const apiKey = process.env.POCKETCODER_KEY;
   if (!apiKey) fail("POCKETCODER_KEY is required for this command");
   return new PocketCoderClient({ baseUrl: url, apiKey });

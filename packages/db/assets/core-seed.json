@@ -2,7 +2,17 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "3677b2e8216f5b5888882be464a9ab46129b7e976032c109d209be75e07af20d",
+  "checksum": "81843de562f6af8ced14dc69d48134f9bf3c6b7288a124655b461cf19f6a56d2",
+  "engine": {
+    "wasm": {
+      "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
+      "sourceChecksum": "356b89f6fcb2ab3a397bec4128327b67b7137ec2a900b13251dade81bcbc0ef0"
+    },
+    "data": {
+      "checksum": "99a0564dfcb7cbb0755aedde5d2b4f177f3f50369c978183cfb13badb38d0629",
+      "sourceChecksum": "c574cc331d96e33311470ec57bf58c579d972c111dbd9c0ab54bb42d79ec4c0d"
+    }
+  },
   "migrations": [
     {
       "name": "20260730103433_initial",

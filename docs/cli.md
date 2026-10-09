@@ -8,7 +8,7 @@ repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
 the server container.
 
 Principal and key commands use HTTP against the running server. Set
-`POCKETCODER_URL` (default `http://127.0.0.1:7080`) and `POCKETCODER_KEY`.
+`POCKETCODER_URL` (default `http://127.0.0.1:8090`) and `POCKETCODER_KEY`.
 Workspaces, checkpoints, storage, pools, template catalog and doctor commands
 use the same settings. `templates import <directory>` publishes immutable versions
 over HTTP. `superuser create` uses the private local socket in `POCKETCODER_DIR`.
@@ -39,7 +39,7 @@ copied to `.env`, which is already ignored by Git.
 ## Server process
 
 ```sh
-pcd serve --dir ./pc_data --http 127.0.0.1:7080
+pcd serve --dir ./pc_data --http 127.0.0.1:8090
 pcd superuser create --dir ./pc_data --json
 pcd superuser create --dir ./pc_data --automation --expires <future-ISO8601> --json
 ```
@@ -48,7 +48,7 @@ pcd superuser create --dir ./pc_data --automation --expires <future-ISO8601> --j
 Owner keys default to 24 hours and plaintext is shown once. Save a
 `--request-id` to retry a lost response without issuing another key.
 `--replace` revokes earlier owner keys. Only the fixed `owner` principal is
-supported here. The agent listener defaults to `0.0.0.0:7081`; configure it
+supported here. The agent listener defaults to `0.0.0.0:8091`; configure it
 with `POCKETCODER_AGENT_HTTP` and point `POCKETCODER_WORKSPACE_SERVER_URL`
 at that listener. Operator and agent routes are separate.
 

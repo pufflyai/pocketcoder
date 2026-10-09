@@ -9,7 +9,7 @@ export function addServeCommand(parser: Argv) {
     (command) =>
       command
         .option("dir", { type: "string", description: "Data folder (default: ./pc_data)" })
-        .option("http", { type: "string", description: "Operator bind address (default: 127.0.0.1:7080)" })
+        .option("http", { type: "string", description: "Operator bind address (default: 127.0.0.1:8090)" })
         .option("driver", {
           choices: ["docker", "kubernetes"] as const,
           description: "Workspace driver (default: docker)",

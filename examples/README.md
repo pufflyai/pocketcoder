@@ -161,7 +161,7 @@ example never selects a provider model implicitly.
 When PocketCoder and a template are already deployed:
 
 ```sh
-POCKETCODER_URL=http://127.0.0.1:7080 \
+POCKETCODER_URL=http://127.0.0.1:8090 \
 POCKETCODER_KEY=pkt_... \
 POCKETCODER_EXAMPLE_TEMPLATE=my-harness \
 bun run example:e2e

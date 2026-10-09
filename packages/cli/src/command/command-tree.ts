@@ -5,7 +5,7 @@ import { addCommands } from "../commands";
 
 export function createCli(argv: string[]): Argv {
   const root = yargs(argv)
-    .scriptName("pcd")
+    .scriptName("pocketcoder")
     .usage("$0 <command>")
     .parserConfiguration({ "camel-case-expansion": false })
     .option("workdir", {

@@ -1,5 +1,93 @@
 # Getting started
 
+## Standalone development download
+
+Use Docker Engine, the authenticated [GitHub CLI](https://cli.github.com), and `jq`. The controller needs no Bun install, checkout, external database or SQL files.
+CI keeps development downloads as artifacts for a passing commit. They expire under GitHub's artifact retention policy and never update stable/latest.
+
+Copy the full 40-character commit from a passing PocketCoder PR. Run this in an empty directory. The prompt pins the download to that commit:
+
+```sh
+umask 077
+mkdir pc-native && cd pc-native
+printf 'Full commit from a passing PR: '
+read -r PC_COMMIT
+test "${#PC_COMMIT}" -eq 40 || exit 1
+case "$(uname -s)" in Darwin) PC_PLATFORM=darwin ;; Linux) PC_PLATFORM=linux ;; *) exit 1 ;; esac
+case "$(uname -m)" in arm64|aarch64) PC_ARCH=arm64 ;; x86_64) PC_ARCH=x64 ;; *) exit 1 ;; esac
+PC_RUN=$(gh run list --repo pufflyai/pocketcoder --workflow ci.yml \
+  --commit "$PC_COMMIT" --status success --json databaseId --jq '.[0].databaseId')
+test -n "$PC_RUN" && test "$PC_RUN" != null || exit 1
+gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
+  --name "pocketcoder-$PC_COMMIT-$PC_PLATFORM-$PC_ARCH" --dir .
+gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
+  --name "pocketcoder-fixture-$PC_COMMIT-$PC_ARCH" --dir fixture
+test "$(jq -r .commit native.json)" = "$PC_COMMIT" || exit 1
+PC_SHA=$(if command -v sha256sum >/dev/null; then sha256sum pocketcoder; else shasum -a 256 pocketcoder; fi)
+test "${PC_SHA%% *}" = "$(jq -r .sha256 native.json)" || exit 1
+chmod 755 pocketcoder
+docker load --input fixture/echo-image.tar
+rm fixture/echo-image.tar
+PC_IMAGE_TAG=$(jq -r '.spec.image | split("@")[0]' fixture/templates/echo.json)
+PC_IMAGE_ID=$(docker image inspect "$PC_IMAGE_TAG" --format '{{.Id}}')
+jq --arg image "$PC_IMAGE_TAG@$PC_IMAGE_ID" '.spec.image = $image' \
+  fixture/templates/echo.json > fixture/echo.loaded.json
+mv fixture/echo.loaded.json fixture/templates/echo.json
+export POCKETCODER_STORAGE_BACKEND=filesystem
+export POCKETCODER_WORKSPACE_DATA_DIR="$PWD/live"
+export POCKETCODER_CHECKPOINT_DIR="$PWD/checkpoints"
+./pocketcoder serve
+```
+
+The second download contains the tested, credential-free echo runtime and its digest-pinned template. Docker loads that image locally.
+It uses bounded 1 MiB workspace storage and needs no registry or provider key. The operator API listens on `127.0.0.1:8090`; the separate agent listener uses port 8091.
+Docker image stores can assign a different digest when loading an archive. The recipe pins the loaded image's local digest before importing its template.
+
+In another terminal in `pc-native`, create a finite owner and run the round trip:
+
+```sh
+umask 077
+./pocketcoder superuser create --json > owner.json
+export POCKETCODER_URL=http://127.0.0.1:8090
+export POCKETCODER_KEY=$(jq -r .token owner.json)
+./pocketcoder templates import fixture/templates
+PC_WORKSPACE=$(./pocketcoder workspaces create --template echo-harness --wait --json | jq -r .id)
+./pocketcoder workspaces chat --id "$PC_WORKSPACE" --message 'hello from the native executable'
+docker exec "pocketcoder-ws-$PC_WORKSPACE" bun -e "await Bun.write('/work/remember.txt', 'kept across restart')"
+./pocketcoder workspaces preserve --id "$PC_WORKSPACE" > preserved.json
+pc_wait_operation() {
+  PC_STATE=running
+  while test "$PC_STATE" != succeeded; do
+    PC_RESULT=$(curl -fsS -H "Authorization: Bearer $POCKETCODER_KEY" \
+      "$POCKETCODER_URL/v1/operations/$1") || return 1
+    PC_STATE=$(printf '%s' "$PC_RESULT" | jq -r .state)
+    test "$PC_STATE" != failed || return 1
+    sleep 1
+  done
+}
+pc_wait_operation "$(jq -r .operation.id preserved.json)" || exit 1
+```
+
+Stop the controller with Ctrl+C in its terminal, then run `./pocketcoder serve` there again.
+Its exported storage settings, owner, keys, template and checkpoint remain. In the second terminal:
+
+```sh
+PC_CHECKPOINT=$(jq -r .checkpoint.id preserved.json)
+./pocketcoder checkpoints verify --id "$PC_CHECKPOINT"
+./pocketcoder workspaces restore --checkpoint "$PC_CHECKPOINT" \
+  --external-id native-resume > restored.json
+PC_RESUMED=$(jq -r .workspace.id restored.json)
+pc_wait_operation "$(jq -r .operation.id restored.json)" || exit 1
+./pocketcoder workspaces chat --id "$PC_RESUMED" --message 'hello after resume'
+docker exec "pocketcoder-ws-$PC_RESUMED" cat /work/remember.txt
+./pocketcoder workspaces cancel --id "$PC_RESUMED"
+```
+
+Both messages return an echo. The restored file contains `kept across restart`. Keep `owner.json` outside workspaces; the owner expires after 24 hours and its plaintext is returned once.
+Stop the controller before deleting this disposable demo directory, after `workspaces get --id "$PC_RESUMED"` shows `canceled`.
+Remove the echo image using the image reference in the template when finished.
+For a source-based check of binary size, readiness, peak memory, restart and exact restored bytes, run `bun run example:e2e:native`.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) 1.4.2+
@@ -20,14 +108,14 @@ directory; materialize or deploy a digest-pinned runtime template first.
 Start with an empty private folder. The controller creates and keeps its keys:
 
 ```sh
-bun run pcd -- serve --dir ./pc_data --http 127.0.0.1:7080
+bun run pcd -- serve --dir ./pc_data --http 127.0.0.1:8090
 ```
 
-The operator API uses port 7080. The agent listener uses port 7081. Set
+The operator API uses port 8090. The agent listener uses port 8091. Set
 `POCKETCODER_AGENT_HTTP=0.0.0.0:<port>` to change its bind address, and
 `POCKETCODER_WORKSPACE_SERVER_URL` to the agent origin reachable from workspaces.
 Keep it separate from the operator port. The API contract is at
-`http://127.0.0.1:7080/v1/openapi.json`.
+`http://127.0.0.1:8090/v1/openapi.json`.
 
 In another terminal, create the owner key through the private local socket:
 
@@ -38,7 +126,7 @@ bun run pcd -- superuser create --dir ./pc_data --json
 
 The key defaults to a 24-hour expiry and is returned once. Save it outside
 workspaces. A repeated `--request-id` returns metadata without the plaintext.
-Set `POCKETCODER_URL=http://127.0.0.1:7080` and `POCKETCODER_KEY` to the returned
+Set `POCKETCODER_URL=http://127.0.0.1:8090` and `POCKETCODER_KEY` to the returned
 owner key, then publish a reviewed, digest-pinned template:
 
 ```sh
@@ -191,7 +279,7 @@ next request. Keep owner and backend keys outside every workspace.
 Add the issued key to `.env` in the project root:
 
 ```dotenv
-POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_URL=http://127.0.0.1:8090
 POCKETCODER_KEY=pkt_…
 ```
 
