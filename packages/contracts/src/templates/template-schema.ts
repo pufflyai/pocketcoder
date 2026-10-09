@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isDuration } from "../common/duration";
 import { NetworkPolicySchema } from "../network/network";
 import { LAUNCH_MODES, OutputDeclarationSchema, PersistenceSpecSchema } from "../persistence/persistence";
+import { SecretNameSchema } from "../secrets/secret";
 import { isAbsolutePath, SECRET_REFERENCE_PREFIX } from "./template-constants";
 
 // Template manifests (`pocketcoder.dev/v1alpha1 Template`) are reviewed
@@ -169,6 +170,13 @@ const TemplateSpecInputSchema = z
     image: z.string().regex(IMAGE_DIGEST_RE, {
       message: "image must be digest-pinned (repo@sha256:<64 hex>)",
     }),
+    imagePullSecret: z
+      .string()
+      .refine(
+        (value) => value.startsWith("secretRef:") && SecretNameSchema.safeParse(value.slice(10)).success,
+        "imagePullSecret must name a stored secret",
+      )
+      .optional(),
     command: CommandSchema.default([
       "/usr/local/bin/pocketcoder-supervisor",
       "supervise",

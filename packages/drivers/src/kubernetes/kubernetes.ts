@@ -7,7 +7,8 @@ import type {
   WorkspaceDriver,
   WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
-import { type EgressDriverOptions, egressConfig, poolInput, workspaceInput } from "../egress/egress";
+import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
+import type { RegistryResolver } from "../registry/registry";
 import { isKubernetesName, kubectl, resourceName } from "./kubernetes-command";
 import { discoveredWarmRuntimes, discoveredWorkspaces } from "./kubernetes-discovery";
 import {
@@ -17,13 +18,15 @@ import {
   retainNodeIdentities,
 } from "./kubernetes-evidence";
 import { KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
-import { warmJobManifest, workspaceJobManifest } from "./kubernetes-manifests";
+import { workspaceJobManifest } from "./kubernetes-manifests";
+import { applyRegistrySecret } from "./kubernetes-registry";
 import {
   type KubernetesSchedulingOptions,
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes-scheduling";
 import { stopKubernetesJob } from "./kubernetes-stop";
+import { createKubernetesWarm } from "./kubernetes-warm";
 
 export {
   KUBERNETES_DIGEST_ANNOTATION,
@@ -37,6 +40,7 @@ export interface KubernetesDriverOptions extends EgressDriverOptions, Kubernetes
   serviceAccountName?: string;
   imagePullPolicy?: "Always" | "IfNotPresent" | "Never";
   captureTerminationEvidence?: boolean;
+  resolveRegistry?: RegistryResolver;
 }
 
 export class KubernetesDriver implements WorkspaceDriver {
@@ -50,8 +54,10 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly egress: EgressDriverOptions;
   private sidecarsSupported = false;
   private readonly captureEvidence: boolean;
+  private readonly resolveRegistry?: RegistryResolver;
 
   constructor(options: KubernetesDriverOptions = {}) {
+    this.resolveRegistry = options.resolveRegistry;
     this.captureEvidence = options.captureTerminationEvidence ?? false;
     this.namespace = options.namespace ?? "default";
     if (!isKubernetesName(this.namespace)) {
@@ -92,53 +98,67 @@ export class KubernetesDriver implements WorkspaceDriver {
     const restricted = spec.network.mode === "restricted";
     if (restricted) await this.requireNativeSidecars();
     const egressSecret = `${name}-egress`;
-    const inputManifest = {
-      apiVersion: "v1",
-      kind: "Secret",
-      metadata: {
-        name: inputSecret,
-        labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
-      },
-      type: "Opaque",
-      stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
-    };
-    await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(inputManifest));
-    if (restricted) {
-      await kubectl(
-        this.kubectlBin,
-        this.namespace,
-        ["apply", "-f", "-"],
-        JSON.stringify({
-          apiVersion: "v1",
-          kind: "Secret",
-          metadata: { name: egressSecret, labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id } },
-          type: "Opaque",
-          stringData: {
-            "egress.json": JSON.stringify(egressConfig(this.egress, input, spec.network, workspace.deadlineAt)),
-          },
-        }),
-      );
-    }
-
-    const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
-      serviceAccountName: this.serviceAccountName,
-      nodeSelector: this.nodeSelector,
-      tolerations: this.tolerations,
-      imagePullPolicy: this.imagePullPolicy,
-      ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
-      egressImage: this.egress.egressImage,
-    });
+    const registrySecret = `${name}-registry`;
     try {
+      if (spec.imagePullSecret) {
+        if (!this.resolveRegistry) throw new Error("Stored registry credentials are unavailable");
+        await applyRegistrySecret(
+          this.kubectlBin,
+          this.namespace,
+          registrySecret,
+          workspace.id,
+          await this.resolveRegistry(spec.imagePullSecret, spec.image),
+        );
+      }
+      const inputManifest = {
+        apiVersion: "v1",
+        kind: "Secret",
+        metadata: {
+          name: inputSecret,
+          labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
+        },
+        type: "Opaque",
+        stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
+      };
+      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(inputManifest));
+      if (restricted) {
+        await kubectl(
+          this.kubectlBin,
+          this.namespace,
+          ["apply", "-f", "-"],
+          JSON.stringify({
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: { name: egressSecret, labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id } },
+            type: "Opaque",
+            stringData: {
+              "egress.json": JSON.stringify(egressConfig(this.egress, input, spec.network, workspace.deadlineAt)),
+            },
+          }),
+        );
+      }
+
+      const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
+        serviceAccountName: this.serviceAccountName,
+        nodeSelector: this.nodeSelector,
+        tolerations: this.tolerations,
+        imagePullPolicy: this.imagePullPolicy,
+        ...(spec.imagePullSecret ? { imagePullSecret: registrySecret } : {}),
+        ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
+        egressImage: this.egress.egressImage,
+      });
       await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
       return {
         kind: this.kind,
         id: name,
         name,
         inputSecret,
+        ...(spec.imagePullSecret ? { registrySecret } : {}),
         ...(restricted ? { egressSecret } : {}),
         namespace: this.namespace,
       };
     } catch (error) {
+      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", registrySecret, "--ignore-not-found"]);
       await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]).catch(
         () => {},
       );
@@ -152,72 +172,18 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
-    const spec = launch.template.spec;
-    const name = `pocketcoder-pool-${launch.runtimeId}`;
-    const inputSecret = `${name}-input`;
-    const restricted = spec.network.mode === "restricted";
-    if (restricted) await this.requireNativeSidecars();
-    const egressSecret = `${name}-egress`;
-    await kubectl(
-      this.kubectlBin,
-      this.namespace,
-      ["apply", "-f", "-"],
-      JSON.stringify({
-        apiVersion: "v1",
-        kind: "Secret",
-        metadata: { name: inputSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
-        type: "Opaque",
-        stringData: {
-          "input.json": JSON.stringify(restricted ? poolInput(launch.input) : launch.input),
-        },
-      }),
-    );
-    if (restricted) {
-      await kubectl(
-        this.kubectlBin,
-        this.namespace,
-        ["apply", "-f", "-"],
-        JSON.stringify({
-          apiVersion: "v1",
-          kind: "Secret",
-          metadata: { name: egressSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
-          type: "Opaque",
-          stringData: {
-            "egress.json": JSON.stringify(egressConfig(this.egress, launch.input, spec.network, launch.expiresAt)),
-          },
-        }),
-      );
-    }
-    const manifest = warmJobManifest(launch, name, inputSecret, egressSecret, {
+    if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
+    if (launch.template.spec.network.mode === "restricted") await this.requireNativeSidecars();
+    return createKubernetesWarm(launch, {
+      namespace: this.namespace,
+      kubectlBin: this.kubectlBin,
       serviceAccountName: this.serviceAccountName,
       nodeSelector: this.nodeSelector,
       tolerations: this.tolerations,
       imagePullPolicy: this.imagePullPolicy,
-      ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
-      egressImage: this.egress.egressImage,
+      captureEvidence: this.captureEvidence,
+      egress: this.egress,
     });
-    try {
-      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
-      return {
-        kind: this.kind,
-        id: name,
-        name,
-        inputSecret,
-        namespace: this.namespace,
-        poolRuntimeId: launch.runtimeId,
-        ...(restricted ? { egressSecret } : {}),
-      };
-    } catch (error) {
-      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]).catch(
-        () => {},
-      );
-      if (restricted) {
-        await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", egressSecret, "--ignore-not-found"]).catch(
-          () => {},
-        );
-      }
-      throw error;
-    }
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
@@ -264,6 +230,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       "--cascade=foreground",
       "--wait=true",
     ]);
+    await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", `${ref.id}-registry`, "--ignore-not-found"]);
     const inputSecret = typeof ref.inputSecret === "string" ? ref.inputSecret : `${ref.id}-input`;
     await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]);
     if (typeof ref.egressSecret === "string") {
@@ -283,6 +250,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       "secret",
       `${name}-input`,
       `${name}-egress`,
+      `${name}-registry`,
       "--ignore-not-found",
       "--wait=true",
     ]);
@@ -293,6 +261,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       "delete",
       "secret",
       `${resourceName(workspaceId)}-input`,
+      `${resourceName(workspaceId)}-registry`,
       "--ignore-not-found",
     ]).catch(() => {});
   }

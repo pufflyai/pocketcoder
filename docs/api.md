@@ -65,6 +65,25 @@ and `token: null`. To recover a lost response, list with `request_id`, revoke,
 then issue a fresh request ID. Plaintext secrets never appear in inventory.
 The SDK exposes `client.principals.create/list/get/update` and `client.keys`.
 
+## Registry secrets
+
+```text
+PUT    /v1/secrets/{name}   scope secrets:write → { name, type, updated_at, retired_at }
+GET    /v1/secrets          scope secrets:write → { items: [...] }
+DELETE /v1/secrets/{name}   scope secrets:write → retired metadata
+```
+
+PUT accepts `{ type: "registry", value: { server, username, password } }`, up to
+64 KiB. Names contain 1–128 letters, digits, dots, underscores or hyphens and
+start with a letter or digit. The server encrypts values with its private data
+folder key. Read APIs return metadata only. DELETE blocks future resolution;
+a new PUT replaces the active configuration. Authority is checked again inside
+the database transaction. Setup and runtime issuer types are unavailable.
+
+A template uses `spec.imagePullSecret: "secretRef:<name>"`. Publishing such a
+template also requires `secrets:write`; launching it uses the caller's normal
+template grants. See [private images](templates.md#private-images).
+
 ## Templates
 
 ```text

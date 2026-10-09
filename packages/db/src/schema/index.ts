@@ -4,6 +4,7 @@ import { createAccessTables } from "./access";
 import { createActivityTables } from "./activity";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
 import { createPersistenceTables } from "./persistence";
+import { createSecretTables } from "./secrets";
 import { createStorageReservationTables } from "./storage-reservations";
 import { createTransferControllerTable } from "./transfer-controller";
 import { createWorkspaceTables } from "./workspaces";
@@ -16,6 +17,7 @@ export function createSchema(schema?: string) {
   const reservations = createStorageReservationTables(table, access, workspaces, persistence);
   return {
     ...access,
+    ...createSecretTables(table),
     ...workspaces,
     ...createActivityTables(table, workspaces, access),
     ...persistence,
@@ -28,6 +30,8 @@ export function createSchema(schema?: string) {
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
   conversationRequests,
+  secrets,
+  secretVersions,
   templates,
   principals,
   machineKeys,

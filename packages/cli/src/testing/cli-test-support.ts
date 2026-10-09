@@ -9,6 +9,7 @@ interface RunCliOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
   keepStdinOpen?: boolean;
+  input?: string;
 }
 
 const pocketcoderEnvironment = [
@@ -37,10 +38,14 @@ export async function runCli(args: readonly string[], options: RunCliOptions = {
   const child = Bun.spawn([process.execPath, "--no-env-file", resolve(import.meta.dir, "../index.ts"), ...args], {
     cwd: options.cwd ?? resolve(import.meta.dir, "../.."),
     env,
-    ...(options.keepStdinOpen ? { stdin: "pipe" } : {}),
+    ...(options.keepStdinOpen || options.input !== undefined ? { stdin: "pipe" as const } : {}),
     stdout: "pipe",
     stderr: "pipe",
   });
+  if (options.input !== undefined && child.stdin) {
+    child.stdin.write(options.input);
+    child.stdin.end();
+  }
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),

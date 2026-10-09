@@ -6,6 +6,7 @@ import type { NetworkAuditStore } from "./network-audit";
 import type { OutboxStore } from "./outbox";
 import type { OutputStore } from "./outputs";
 import type { PersistenceStore } from "./persistence";
+import type { SecretStore } from "./secrets";
 import type { TemplateStore } from "./templates";
 import type { TerminalAuditStore } from "./terminals";
 import type { WarmPoolStore } from "./warm-pools";
@@ -16,6 +17,7 @@ import type { WorkspaceStore } from "./workspaces";
 export interface Store
   extends StoreLifecycle,
     TemplateStore,
+    SecretStore,
     WarmPoolStore,
     AuthStore,
     WorkspaceStore,
@@ -39,6 +41,7 @@ export * from "./network-audit";
 export * from "./outbox";
 export * from "./outputs";
 export * from "./persistence";
+export * from "./secrets";
 export * from "./storage-reservations";
 export * from "./templates";
 export * from "./terminals";

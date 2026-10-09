@@ -17,6 +17,64 @@ Removing a file does not retire its published version. Use the retirement API;
 a startup file cannot reactivate an explicitly retired version. The local
 HTTP echo path is described in [Getting started](getting-started.md).
 
+## Private images
+
+Store registry authority on the controller, then name it in a reviewed template.
+The default `pocketcoder serve --dir ./pc_data` creates a private encryption key
+under `pc_data/keys/secret-key`. Keep that folder outside all workspace mounts.
+The HTTP API and CLI return secret metadata only.
+
+Prepare a protected JSON file on the operator machine, outside workspace files:
+
+```json
+{
+  "type": "registry",
+  "value": {
+    "server": "registry.example",
+    "username": "operator",
+    "password": "<registry-password>"
+  }
+}
+```
+
+With `POCKETCODER_URL` and `POCKETCODER_KEY` set for the controller:
+
+```sh
+pocketcoder secrets put private-image --file /operator/registry.json
+pocketcoder templates render templates/agent.json \
+  --image 'registry.example/agent@sha256:<64-hex-digest>' \
+  --set '/spec/imagePullSecret="secretRef:private-image"' \
+  --out /operator/templates
+pocketcoder templates import /operator/templates
+pocketcoder workspaces create --template <template-name> --wait --json
+pocketcoder secrets list --json
+pocketcoder secrets retire private-image
+```
+
+`secrets:write` or `admin` is required to store, list or retire a reference.
+Publishing a template that uses it also requires that scope and the usual
+`templates:write` and template name grant. Workspace callers need only their
+normal template and workspace grants. Missing or retired references and a
+registry host that differs from the image fail the launch. The image stays
+pinned to its digest. Private templates use cold launches; warm pools reject them.
+Retirement stops new pulls and does not stop an already running workspace.
+
+Docker sends authentication directly to the selected local Unix socket. It
+creates no pull configuration file and rejects remote Docker endpoints.
+Kubernetes creates a pull Secret for the kubelet. It never mounts that Secret
+in the workspace, and service account token mounting stays disabled. Registration,
+failed launch, removal and purge delete the owned pull Secret. An interrupted
+launch uses the same workspace name so later cleanup can remove its Secret.
+
+Only registry storage is enabled here. Setup and runtime issuer configuration
+remain unavailable until their lease flows are implemented. A server configured
+with an explicit authentication pepper also needs a controller-only
+`POCKETCODER_SECRET_KEY` (32 bytes encoded as base64url) to enable secret storage.
+
+Run the synthetic private-image echo flow with `bun run example:e2e:private-image`.
+Run real Kubernetes pulls with `bun run test:kind:registry`; Bun, Docker, kubectl
+and kind v0.33.0 must be installed. The command deletes its disposable cluster.
+
 ## Full example
 
 ```json

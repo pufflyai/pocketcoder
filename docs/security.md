@@ -109,6 +109,22 @@ The residual risk no gateway removes: data the model legitimately reads can
 leave inside legitimate turns. Size, rate, and budget limits bound it; audit
 exposes it; nothing eliminates it.
 
+## Controller registry authority
+
+Registry passwords stay on the controller. The secret API stores authenticated
+encryption bound to the secret name, type and immutable version. It returns
+metadata only, including after updates and retirement. Templates carry a named
+reference and a pinned image, never the password. Binding a reference to a
+published template requires `secrets:write` as well as template authority.
+
+Docker passes registry authentication only to its local daemon socket and
+writes no pull config. Kubernetes passes it to the kubelet through an owned
+pull Secret, never through a workspace volume or environment. Workspaces have
+no Kubernetes service account token. Registration and all launch cleanup paths
+remove the pull Secret. Runtime and source references cannot read controller
+pull Secrets, including those owned by other workspaces. Retiring a name blocks
+future resolution.
+
 ## Handling secrets a template needs
 
 Classify by when the secret's authority is exercised, and by whom:

@@ -12,6 +12,7 @@ interface ManifestOptions {
   serviceAccountName?: string;
   imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   egressImage?: string;
+  imagePullSecret?: string;
   nodeSelector?: Record<string, string>;
   tolerations?: KubernetesToleration[];
 }
@@ -149,6 +150,7 @@ export function workspaceJobManifest(
         metadata: { labels, annotations, ...(options.podFinalizers ? { finalizers: options.podFinalizers } : {}) },
         spec: {
           restartPolicy: "Never",
+          ...(options.imagePullSecret ? { imagePullSecrets: [{ name: options.imagePullSecret }] } : {}),
           automountServiceAccountToken: false,
           ...schedulingFields(options),
           ...(options.serviceAccountName ? { serviceAccountName: options.serviceAccountName } : {}),
@@ -225,6 +227,7 @@ export function warmJobManifest(
         metadata: { labels, annotations, ...(options.podFinalizers ? { finalizers: options.podFinalizers } : {}) },
         spec: {
           restartPolicy: "Never",
+          ...(options.imagePullSecret ? { imagePullSecrets: [{ name: options.imagePullSecret }] } : {}),
           automountServiceAccountToken: false,
           ...schedulingFields(options),
           ...(options.serviceAccountName ? { serviceAccountName: options.serviceAccountName } : {}),

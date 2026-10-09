@@ -191,5 +191,16 @@
     "folderMillis": 1791407358000,
     "hash": "88f1798d438de732a450ba343a6efaf482816b3bd69991756f1021c050b751cd",
     "name": "20261007210918_abnormal_outlaw_kid"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"secret_versions\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"name\" text NOT NULL,\n\t\"type\" text NOT NULL,\n\t\"nonce\" bytea NOT NULL UNIQUE,\n\t\"ciphertext\" bytea NOT NULL,\n\t\"tag\" bytea NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"secret_versions_id_name_type_unique\" UNIQUE(\"id\",\"name\",\"type\"),\n\tCONSTRAINT \"secret_versions_type_check\" CHECK (\"type\" IN ('registry')),\n\tCONSTRAINT \"secret_versions_nonce_length\" CHECK (octet_length(\"nonce\") = 12),\n\tCONSTRAINT \"secret_versions_tag_length\" CHECK (octet_length(\"tag\") = 16)\n);\n",
+      "\nCREATE TABLE \"secrets\" (\n\t\"name\" text PRIMARY KEY,\n\t\"type\" text NOT NULL,\n\t\"version_id\" uuid NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"retired_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"secrets\" ADD CONSTRAINT \"secrets_version_id_name_type_secret_versions_id_name_type_fkey\" FOREIGN KEY (\"version_id\",\"name\",\"type\") REFERENCES \"secret_versions\"(\"id\",\"name\",\"type\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791535912000,
+    "hash": "0e96f2f636d4df623abdbf2330067ae1a00dfbc5a49f66ebf920fa9668c8a31f",
+    "name": "20261009085152_cheerful_the_spike"
   }
 ]

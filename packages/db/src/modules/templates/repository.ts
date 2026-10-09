@@ -20,6 +20,7 @@ export function createTemplates({ db, tables: { templates, principals, machineKe
     if (!authority.templateNames.includes("*") && !authority.templateNames.includes(name)) {
       throw new ApiError("template.not_authorized", "This key cannot administer this template name.");
     }
+    return authority;
   }
   async function upsert(tx: Transaction, input: TemplateUpsert) {
     const [existing] = await tx
@@ -46,7 +47,8 @@ export function createTemplates({ db, tables: { templates, principals, machineKe
       const parsed = parseTemplateManifest(manifest);
       return db.transaction(async (tx) => {
         const { metadata, spec } = parsed.manifest;
-        await authorize(tx, actorKeyId, metadata.name);
+        const authority = await authorize(tx, actorKeyId, metadata.name);
+        if (spec.imagePullSecret) assertAuthorityScope(authority, "secrets:write");
         const result = await upsert(tx, {
           name: metadata.name,
           version: spec.version,
