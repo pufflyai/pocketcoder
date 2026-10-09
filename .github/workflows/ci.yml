@@ -49,6 +49,8 @@ jobs:
           bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
       - name: Unit, route, e2e, and PGlite integration tests
         run: bun run test
+      - name: Verify the private-image workspace flow
+        run: bun run example:e2e:private-image
       - name: Verify Docker checkpoint round trips
         run: |
           bun run example:e2e:docker-checkpoint
@@ -129,3 +131,27 @@ jobs:
           name: pocketcoder-fixture-${{ env.NATIVE_COMMIT }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/native-fixture
           if-no-files-found: error
+
+  kind-private-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo /tmp/kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  /tmp/kind\n' | sha256sum --check
+          chmod 0755 /tmp/kind
+      - name: Prepare pinned cluster and registry images
+        run: |
+          docker pull kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          docker pull registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+      - name: Verify real kubelet private pulls and credential cleanup
+        env:
+          POCKETCODER_KIND_BIN: /tmp/kind
+        run: bun run test:kind:registry

@@ -4,6 +4,7 @@
 export const SCOPES = [
   "templates:read",
   "templates:write",
+  "secrets:write",
   "workspaces:create",
   "workspaces:read",
   "workspaces:cancel",

@@ -47,3 +47,18 @@ export async function stopWorkspaceProvider(
   // the proof; once removed, the runtime row is the durable source.
   if (remove) await driver.remove(ref);
 }
+
+export async function cleanupUncommittedProvider(
+  driver: WorkspaceDriver,
+  workspace: WorkspaceRow,
+  graceSeconds: number,
+) {
+  // A provider may exist even when its create response or database write was lost.
+  for (const found of await driver.list()) {
+    if (found.workspaceId !== workspace.id) continue;
+    if (found.templateDigest !== workspace.templateDigest) throw new Error("Uncommitted provider template mismatch");
+    await driver.stop(found.ref, graceSeconds);
+    await driver.remove(found.ref);
+  }
+  await driver.purgeInput(workspace.id);
+}

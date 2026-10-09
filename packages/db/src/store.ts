@@ -18,6 +18,7 @@ import { createOperations } from "./modules/persistence/operations";
 import { createStorageReservations } from "./modules/persistence/reservations";
 import { createStorage } from "./modules/persistence/storage";
 import { createCheckpointTransfers } from "./modules/persistence/transfers";
+import { createSecrets } from "./modules/secrets/repository";
 import { createTemplates } from "./modules/templates/repository";
 import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
@@ -50,6 +51,12 @@ export class PGliteStore implements Store {
     this.getTemplate = templates.getTemplate;
     this.publishTemplate = templates.publishTemplate;
     this.retireTemplate = templates.retireTemplate;
+    const secrets = createSecrets(context);
+    this.writeSecret = secrets.writeSecret;
+    this.listSecrets = secrets.listSecrets;
+    this.retireSecret = secrets.retireSecret;
+    this.readSecret = secrets.readSecret;
+    this.readSecretVersion = secrets.readSecretVersion;
     const auth = createAuth(context);
     this.bootstrapOwnerKey = auth.bootstrapOwnerKey;
     this.createPrincipal = auth.createPrincipal;
@@ -137,6 +144,11 @@ export class PGliteStore implements Store {
   }
   readonly listWorkspaceStorage: Store["listWorkspaceStorage"];
   readonly purgeWorkspaceContent: Store["purgeWorkspaceContent"];
+  readonly writeSecret: Store["writeSecret"];
+  readonly listSecrets: Store["listSecrets"];
+  readonly retireSecret: Store["retireSecret"];
+  readonly readSecret: Store["readSecret"];
+  readonly readSecretVersion: Store["readSecretVersion"];
   readonly init: Store["init"];
   readonly close: Store["close"];
   readonly acquireCoordinatorLease: Store["acquireCoordinatorLease"];

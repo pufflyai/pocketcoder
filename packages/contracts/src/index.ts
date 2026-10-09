@@ -221,6 +221,7 @@ export {
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
 export * from "./recovery/source-writer";
+export * from "./secrets/secret";
 export {
   type Agent,
   AgentSchema,

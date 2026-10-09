@@ -50,7 +50,7 @@ export function assertPrincipalWithinAuthority(
 }
 
 const RECOVERY_SCOPES = ["keys:read", "keys:write", "workspaces:recover"];
-const ADMINISTRATION_SCOPES = ["admin", "principals:admin", ...RECOVERY_SCOPES];
+const ADMINISTRATION_SCOPES = ["admin", "principals:admin", "secrets:write", ...RECOVERY_SCOPES];
 
 export function assertKeyIssueAuthority(
   authority: KeyAuthority,

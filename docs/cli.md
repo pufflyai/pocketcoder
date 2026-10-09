@@ -122,6 +122,19 @@ Scopes include `principals:admin`, `templates:read`, workspace, checkpoint,
 conversation, attachment, output, relay, log, network and terminal scopes, plus
 explicit owner `admin`. See the generated OpenAPI schemas for the complete list.
 
+## Registry secrets
+
+```sh
+pocketcoder secrets put <name> --file <protected-json-file>
+pocketcoder secrets put <name> --file=-  # read JSON from stdin
+pocketcoder secrets list [--json]
+pocketcoder secrets retire <name>
+```
+
+These commands use HTTP and require `secrets:write` or `admin`. Input is bounded
+at 64 KiB. Responses contain metadata only. Keep the input outside workspace
+files and mounts. See the [private-image recipe](templates.md#private-images).
+
 ## Templates
 
 ```sh

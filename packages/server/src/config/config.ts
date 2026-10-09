@@ -16,6 +16,7 @@ export interface ServerConfig {
   agentPort: number;
   dataDir: string;
   pepper: string;
+  secretKey?: string;
   eventSigningKey: string;
   eventSinkUrl: string | null;
   egressImage: string | null;
@@ -297,6 +298,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     listenPort,
     dataDir: env.POCKETCODER_DIR ?? "./pc_data",
     pepper,
+    ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),
     eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,
     eventSinkUrl: httpUrlEnv(env, "POCKETCODER_EVENT_SINK_URL", null),
     egressImage,

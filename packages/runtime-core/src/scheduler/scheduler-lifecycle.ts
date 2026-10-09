@@ -1,6 +1,6 @@
 import { parseDurationMs, type ReasonCode, type WorkspaceState } from "@pstdio/pocketcoder-contracts";
 import type { WorkspacePatch, WorkspaceRow } from "../types";
-import { stopWorkspaceProvider } from "./provider-termination";
+import { cleanupUncommittedProvider, stopWorkspaceProvider } from "./provider-termination";
 import { decodeFailureLogTail, FAILURE_LOG_TAIL_BYTES, type SchedulerContext } from "./scheduler-base";
 
 export class SchedulerLifecycle {
@@ -52,22 +52,24 @@ export class SchedulerLifecycle {
     const retainStorage =
       terminalState === "failed" &&
       row.templateSnapshot.spec.persistence.checkpoint.onFailure === "retain-for-recovery";
-    if (row.providerRef) {
-      try {
+    try {
+      if (row.providerRef) {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
-      } catch (err) {
-        this.context.report(`finalize.terminate.${row.id}`, err);
-        // Keep the provider reference and capacity until a later sweep can
-        // finish termination. Storage may still be mounted by this provider.
-        await store.transition(row.id, {
-          from: ["provisioning", "connected", "ready"],
-          to: "terminating",
-          reason,
-          at,
-          patch: { terminalIntent: terminalState, registrationDigest: null },
-        });
-        return;
+        await driver.purgeInput(row.id);
+      } else {
+        await cleanupUncommittedProvider(driver, row, this.context.graceSeconds(row));
       }
+    } catch (err) {
+      this.context.report(`finalize.terminate.${row.id}`, err);
+      // Keep the workspace active until removal and input cleanup can be retried.
+      await store.transition(row.id, {
+        from: ["provisioning", "connected", "ready"],
+        to: "terminating",
+        reason,
+        at,
+        patch: { terminalIntent: terminalState, registrationDigest: null },
+      });
+      return;
     }
     if (retainStorage && !this.context.deps.transferRuntime) {
       const storage = await store.getWorkspaceStorage(row.id);

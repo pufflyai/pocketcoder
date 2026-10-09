@@ -229,3 +229,14 @@ test("restricted publication succeeds when the controller has a pinned egress im
   expect((await f.publish(restricted)).status).toBe(201);
   expect((await f.store.getTemplate("fixture-echo"))?.spec.network.mode).toBe("restricted");
 });
+
+test("binding registry authority to a published template requires secrets administration", async () => {
+  const manifest = fixtureTemplateEcho().manifest;
+  const privateImage = { ...manifest, spec: { ...manifest.spec, imagePullSecret: "secretRef:pull" } };
+  const publisher = await fixture();
+  expect((await publisher.publish(privateImage)).status).toBe(403);
+  expect(await publisher.store.listTemplates(null)).toEqual([]);
+  const operator = await fixture(["templates:write", "secrets:write"]);
+  expect((await operator.publish(privateImage)).status).toBe(201);
+  expect((await operator.store.getTemplate("fixture-echo"))?.spec.imagePullSecret).toBe("secretRef:pull");
+});

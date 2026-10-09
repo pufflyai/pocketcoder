@@ -35,6 +35,8 @@ import { type PersistenceLimits, PersistenceService } from "./persistence/persis
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { relayHandler } from "./relay/relay";
+import { registerSecretRoutes } from "./secrets/secret-routes";
+import { createSecretVault } from "./secrets/secret-vault";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import type { TerminalBridgeCallbacks } from "./terminals/terminal-bridge";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
@@ -50,6 +52,7 @@ export interface BuildDeps {
   persistenceLimits?: PersistenceLimits;
   checkpointTransferOptions?: CheckpointTransferOptions;
   pepper: string;
+  secretKey?: string;
   eventSigningKey?: string;
   egressImage?: string | null;
   limits: AdmissionLimits;
@@ -255,6 +258,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   app.use("/v1/*", machineAuth(store, pepper));
 
+  if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);

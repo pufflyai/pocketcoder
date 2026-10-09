@@ -30,6 +30,9 @@
     "test": "bun test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
+  "devDependencies": {
+    "@pstdio/pocketcoder-db": "workspace:*"
+  },
   "dependencies": {
     "@pstdio/pocketcoder-auth": "workspace:*",
     "@pstdio/pocketcoder-contracts": "workspace:*",
