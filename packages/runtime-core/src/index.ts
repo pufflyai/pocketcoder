@@ -72,6 +72,15 @@ export {
   type WorkspaceStore,
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
+export { bootstrapLocalOwnerKey, bootstrapLocalRecoveryKey } from "./keys/local-bootstrap";
+export {
+  assertAuthorityScope,
+  assertKeyIssueAuthority,
+  assertPrincipalWithinAuthority,
+  intersectTemplateGrants,
+  keyAuthority,
+  principalWithinAuthority,
+} from "./keys/principal-authority";
 export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./observability/metrics";
 export { type OutboxDeps, OutboxDispatcher } from "./outbox/outbox";
 export { type PersistenceReconcileDeps, reconcilePersistence } from "./reconciliation/persistence-reconcile";

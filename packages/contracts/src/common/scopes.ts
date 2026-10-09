@@ -8,6 +8,7 @@ export const SCOPES = [
   "workspaces:cancel",
   "workspaces:purge",
   "workspaces:recover",
+  "principals:admin",
   "keys:read",
   "keys:write",
   "workspaces:preserve",

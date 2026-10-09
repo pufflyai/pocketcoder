@@ -60,19 +60,22 @@
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.1",
     "@earendil-works/pi-coding-agent": "0.83.0",
+    "@electric-sql/pglite": "0.5.8",
     "@lizenz/checker": "0.0.1",
     "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-db": "workspace:*",
     "@pstdio/pocketcoder-remote": "workspace:*",
+    "@pstdio/pocketcoder-runtime-core": "workspace:*",
     "@pstdio/pocketcoder-sdk": "workspace:*",
     "@pstdio/pocketcoder-server": "workspace:*",
+    "@pstdio/pocketcoder-testkit": "workspace:*",
     "@types/bun": "1.4.2",
     "@types/semver": "^7",
+    "drizzle-orm": "1.0.0-rc.4",
     "knip": "^6.29.0",
     "lerna": "^9.0.7",
     "nx": "^23.1.0",
     "semver": "7.8.4",
-    "typescript": "5.9.3",
-    "@electric-sql/pglite": "0.5.8",
-    "drizzle-orm": "1.0.0-rc.4"
+    "typescript": "5.9.3"
   }
 }

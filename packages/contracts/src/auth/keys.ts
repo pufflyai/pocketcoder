@@ -8,6 +8,8 @@ export const KeyIssueRequestSchema = z.strictObject({
     .max(128)
     .regex(/^[A-Za-z0-9._:-]+$/),
   scopes: z.array(z.enum(SCOPES)).min(1).max(SCOPES.length),
+  templates: z.array(z.string().min(1).max(128)).max(100).optional(),
+  managed_principal_ids: z.array(z.uuid()).max(100).optional(),
   expires_at: z.iso.datetime(),
 });
 export type KeyIssueRequest = z.infer<typeof KeyIssueRequestSchema>;
@@ -17,6 +19,8 @@ export const KeyResourceSchema = z.object({
   principal_id: z.uuid(),
   scopes: z.array(z.string()),
   effective_scopes: z.array(z.string()),
+  templates: z.array(z.string()).nullable(),
+  effective_templates: z.array(z.string()),
   managed_principal_ids: z.array(z.uuid()),
   issuance_request_id: z.string().nullable(),
   created_at: z.iso.datetime(),

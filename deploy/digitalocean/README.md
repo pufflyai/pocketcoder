@@ -145,30 +145,13 @@ kubectl apply -k .pocketcoder/digitalocean/bootstrap
 kubectl -n pocketcoder wait pod/pocketcoder-admin --for=condition=Ready --timeout=5m
 ```
 
-## Issue a one-hour operator key
+## Start the controller and issue a bounded backend key
 
-Create a principal before starting the server. Local admin commands hold the
-same data-folder lock as the controller. Keep the key only in the operator shell.
-
-```bash
-kubectl -n pocketcoder exec pod/pocketcoder-admin -- \
-  pcd principals create \
-  --name digitalocean-example \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
-  --templates persistent-echo,pi-harness
-
-key_expiry="$(bun -e 'console.log(new Date(Date.now() + 3_600_000).toISOString())')"
-export POCKETCODER_KEY="$(
-  kubectl -n pocketcoder exec pod/pocketcoder-admin -- \
-    pcd keys issue --principal digitalocean-example --expires "$key_expiry" | tail -n 1
-)"
-unset key_expiry
-export POCKETCODER_URL=http://127.0.0.1:7080
-```
-
-Never use `--expires never` for this example.
-
-Delete the admin Pod before starting the controller so the volume has one user:
+Principal and key commands now use HTTP against the running controller. This
+cookbook requires a bounded owner credential from the deployment's protected
+bootstrap setup. The local socket and bootstrap envelope are part of PC-60;
+complete that setup before using a fresh account. Do not reopen the data folder
+from an admin Pod to issue keys while the controller runs.
 
 ```bash
 kubectl -n pocketcoder delete pod pocketcoder-admin --wait=true
@@ -176,6 +159,22 @@ kubectl apply -k .pocketcoder/digitalocean/server
 kubectl -n pocketcoder rollout status deployment/pocketcoder-server --timeout=5m
 kubectl -n pocketcoder port-forward service/pocketcoder-server 7080:7080
 ```
+
+With the bounded owner key in `POCKETCODER_KEY`, create the backend and record its
+returned ID. Set the key expiry within the owner's remaining lifetime:
+
+```bash
+export POCKETCODER_URL=http://127.0.0.1:7080
+pcd principals create --name digitalocean-example \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
+  --templates persistent-echo,pi-harness --json
+pcd keys issue --principal-id "$BACKEND_PRINCIPAL_ID" --request-id "$ISSUANCE_ID" \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
+  --templates persistent-echo,pi-harness --expires "$SHORT_EXPIRY" --json
+```
+
+Use the returned backend key for the workload checks below. Keep it and the owner
+key outside every workspace.
 
 Keep one server replica with the `Recreate` strategy. Startup loads the seed or
 opens the existing database, checks history and applies pending migrations.

@@ -57,12 +57,12 @@ describe("pcd help", () => {
     {
       args: ["principals", "update"],
       usage: "pcd principals update",
-      error: "Missing required arguments: name, scopes",
+      error: "Missing required argument: id",
     },
     {
       args: ["keys", "issue"],
       usage: "pcd keys issue",
-      error: "Missing required argument: principal",
+      error: "Missing required arguments: principal-id, request-id, scopes, expires",
     },
     {
       args: ["keys", "revoke"],

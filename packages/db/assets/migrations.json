@@ -159,5 +159,12 @@
     "folderMillis": 1790058121000,
     "hash": "1c918bc027e6af6be581400607beaf8547a2fba53dffca74e1490b79177b1a0a",
     "name": "20260922062201_brave_the_spike"
+  },
+  {
+    "sql": ["ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"],
+    "bps": true,
+    "folderMillis": 1791218323000,
+    "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155",
+    "name": "20261005163843_tan_galactus"
   }
 ]

@@ -41,6 +41,7 @@ export {
   type OutboxStore,
   type OutputStore,
   type PersistenceStore,
+  type PrincipalPatch,
   type PrincipalRow,
   purgedContentPatch,
   type StateHistoryRow,

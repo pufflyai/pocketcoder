@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "2dc6b37ffb4e03feda0759a7dd72a7f16e7c34cc6a8279928fad08b8a8dbd0af",
+  "checksum": "36e8f2ca524628ba16516f93390cbd39dd825d9dc4217733cf2a7155aa03f6b4",
   "migrations": [
     {
       "name": "20260730103433_initial",
@@ -35,6 +35,10 @@
     {
       "name": "20260922062201_brave_the_spike",
       "hash": "1c918bc027e6af6be581400607beaf8547a2fba53dffca74e1490b79177b1a0a"
+    },
+    {
+      "name": "20261005163843_tan_galactus",
+      "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155"
     }
   ]
 }

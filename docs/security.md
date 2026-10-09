@@ -50,6 +50,25 @@ agent the same authority with less friction — the channel is the capability,
 not the token. Scope the channel; assume the token is public within the
 workspace.
 
+## Principal and key administration
+
+`admin` is explicit owner authority. A restricted key on an admin principal has
+only its effective grants. `principals:admin` permits management within those
+grants, without self-edit or access to stronger targets. Scope and template
+reductions take effect on the next request. Disabling atomically revokes all keys;
+re-enable requires new keys.
+
+Owner and operator keys stay outside workspaces. Public owner issuance creates
+bounded admin credentials or recovery keys for exact target IDs. Recovery keys
+may reconcile disabled targets, but cannot mint administrative credentials.
+The issuer's remaining lifetime bounds public issuance. Secrets are returned
+once; lost responses require inventory, revocation and a fresh request ID.
+
+Controller-only local bootstrap services create a bounded first owner, replace
+owner credentials atomically, and issue the same constrained recovery keys. They
+are intended for the protected local admin socket. PC-60 supplies that socket and
+its mode 0600 boundary; no HTTP route exposes local bootstrap authority.
+
 ## Credential inventory
 
 Principal-constrained operator keys can enumerate, reconcile, and revoke keys
@@ -59,7 +78,7 @@ for the permission model, content inventory, and backup replay rules.
 
 | Credential | Holder | Lifetime rule |
 |------------|--------|---------------|
-| Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Prefer `--expires <ISO8601>` plus rotation; `--expires never` is for deliberate operational choices, not examples or ephemeral runs |
+| Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Require a future `--expires <ISO8601>` within the issuer lifetime; rotate before expiry |
 | Workspace registration secret | Supervisor | Single-use, spent at connect |
 | Reconnect credential | Supervisor | Memory-only, never touches the workspace filesystem |
 | Git/source credentials (`secretRef:`) | Setup process (memory-only) | Delivered at registration, consumed during create-time setup, cleared before the harness starts |
