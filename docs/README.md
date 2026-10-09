@@ -43,7 +43,7 @@ and key; see [getting started](getting-started.md). Callers then use that backen
 key through the CLI or SDK. Keep every operator key outside workspaces.
 
 ```sh
-export POCKETCODER_URL=http://127.0.0.1:7080 POCKETCODER_KEY=pkt_…
+export POCKETCODER_URL=http://127.0.0.1:8090 POCKETCODER_KEY=pkt_…
 pcd workspaces create --template claude-code-agent
 pcd workspaces list --active
 pcd workspaces logs --id <uuid>

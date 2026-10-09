@@ -17,7 +17,7 @@ if (!key || !template) {
 }
 
 const report = await runHarnessE2E({
-  baseUrl: process.env.POCKETCODER_URL ?? "http://127.0.0.1:7080",
+  baseUrl: process.env.POCKETCODER_URL ?? "http://127.0.0.1:8090",
   key,
   template,
   templateVersion: process.env.POCKETCODER_EXAMPLE_TEMPLATE_VERSION,

@@ -271,11 +271,11 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     ? parseHttpAddress(env.POCKETCODER_HTTP)
     : {
         listenHost: env.POCKETCODER_HOST ?? "127.0.0.1",
-        listenPort: intEnv(env, "POCKETCODER_PORT", 7080),
+        listenPort: intEnv(env, "POCKETCODER_PORT", 8090),
       };
   const agent = env.POCKETCODER_AGENT_HTTP
     ? parseHttpAddress(env.POCKETCODER_AGENT_HTTP, "POCKETCODER_AGENT_HTTP")
-    : { listenHost: "0.0.0.0", listenPort: 7081 };
+    : { listenHost: "0.0.0.0", listenPort: 8091 };
   const listenPort = operator.listenPort;
   if (agent.listenPort === listenPort) throw new Error("Operator and agent listeners must use different ports");
   if (listenPort > 65_535) throw new Error("POCKETCODER_PORT must be at most 65535");

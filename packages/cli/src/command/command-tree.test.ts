@@ -6,22 +6,22 @@ describe("yargs command tree", () => {
   test.each([
     {
       args: ["--help"],
-      usage: "pcd <command>",
+      usage: "pocketcoder <command>",
       details: ["workspaces", "templates", "server"],
     },
     {
       args: ["workspaces", "--help"],
-      usage: "pcd workspaces <command>",
+      usage: "pocketcoder workspaces <command>",
       details: ["create", "chat", "terminal"],
     },
     {
       args: ["workspaces", "chat", "--help"],
-      usage: "pcd workspaces chat",
+      usage: "pocketcoder workspaces chat",
       details: ["--id", "--message", "--follow", "--response-timeout-seconds"],
     },
     {
       args: ["templates", "render", "--help"],
-      usage: "pcd templates render <manifest>",
+      usage: "pocketcoder templates render <manifest>",
       details: ["--image", "--set", "--out"],
     },
   ])("shows scoped help for $usage", async ({ args, usage, details }) => {
@@ -68,7 +68,7 @@ describe("yargs command tree", () => {
     ]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.output).toContain("pcd workspaces chat");
+    expect(result.output).toContain("pocketcoder workspaces chat");
     expect(result.output).not.toContain("work directory does not exist");
   });
 });
