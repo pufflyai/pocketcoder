@@ -29,19 +29,19 @@ Two clients sit on top of the same machine API:
 
 ## The short version
 
+For a fresh disposable development environment, run the isolated echo example:
+
 ```sh
-# 1. Choose a private temporary development data folder
-export POCKETCODER_DIR="$(mktemp -d)"
-export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
+bun run example:e2e:local
+```
 
-# 2. Operators manage principals/keys/templates with pcd
-pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,conversations:read,services:relay,attachments:write,logs:read,terminal:attach,terminal:read --templates '*'
-pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z   # shown once; bounded — rotate, don't reissue forever
+It bootstraps a bounded owner, starts the server, creates workload authority over
+HTTP, checks the workspace lifecycle, and removes its data afterward. On an
+existing running server, use a bounded owner key to create a backend principal
+and key; see [getting started](getting-started.md). Callers then use that backend
+key through the CLI or SDK. Keep every operator key outside workspaces.
 
-# 3. Start the server after local administration
-bun run pcd -- server start
-
-# 4. Callers (your backend, or the CLI) drive workspaces
+```sh
 export POCKETCODER_URL=http://127.0.0.1:7080 POCKETCODER_KEY=pkt_…
 pcd workspaces create --template claude-code-agent
 pcd workspaces list --active

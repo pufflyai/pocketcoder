@@ -38,6 +38,7 @@ describe.each(["memory", "disk"] as const)("typed database behavior (%s)", (mode
         principalId: left.id,
         secretDigest: new Uint8Array([0, 255, 92, 34]),
         scopes,
+        templateNames: null,
         createdAt: new Date(),
         expiresAt: null,
         revokedAt: null,
