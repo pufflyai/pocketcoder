@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { parseMachineKey, verifySecret } from "@pstdio/pocketcoder-auth";
 import { ApiError, errorEnvelope, hasScope, type Scope } from "@pstdio/pocketcoder-contracts";
-import type { PrincipalRow, Store } from "@pstdio/pocketcoder-runtime-core";
+import { keyAuthority, type PrincipalRow, type Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Context, MiddlewareHandler } from "hono";
 import type { StructuredLogger } from "../observability/observability";
 
@@ -55,18 +55,9 @@ export function machineAuth(store: Store, pepper: string): MiddlewareHandler<App
       throw new ApiError("auth.invalid_key", "A valid machine key is required.");
     }
     const now = new Date();
-    if (found.key.revokedAt || (found.key.expiresAt && found.key.expiresAt <= now)) {
-      throw new ApiError("auth.invalid_key", "This machine key is revoked or expired.");
-    }
-    if (found.principal.disabledAt) {
-      throw new ApiError("auth.disabled_principal", "This principal is disabled.");
-    }
-    const keyScopes = found.key.scopes.length === 0 ? found.principal.scopes : found.key.scopes;
-    const effectiveScopes = keyScopes.filter(
-      (s) => found.principal.scopes.includes(s) || found.principal.scopes.includes("admin"),
-    );
-    c.set("principal", found.principal);
-    c.set("scopes", effectiveScopes);
+    const authority = keyAuthority(found.principal, found.key, now);
+    c.set("principal", { ...found.principal, templateNames: authority.templateNames });
+    c.set("scopes", authority.scopes);
     c.set("keyId", found.key.id);
     c.set("managedPrincipalIds", found.key.managedPrincipalIds);
     store.touchMachineKey(found.key.id, now).catch(() => {});

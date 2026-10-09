@@ -23,6 +23,7 @@ import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { registerAdministrationRoutes } from "./administration/administration-routes";
 import { registerKeyRoutes } from "./administration/keys-routes";
+import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
 import { Hub } from "./control-channel/hub";
@@ -265,6 +266,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   app.use("/v1/*", machineAuth(store, pepper));
 
   registerCatalogRoutes({ app, store });
+  registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
   registerOperatorRecoveryRoutes(app, store, persistence);
   registerAdministrationRoutes({ app, persistence, warmPool });

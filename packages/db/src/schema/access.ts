@@ -45,6 +45,7 @@ export function createAccessTables(table: PgTableFn<string | undefined> = pgTabl
         .references(() => principals.id),
       secretDigest: bytea("secret_digest").$type<Uint8Array>().notNull(),
       scopes: text("scopes").array().notNull(),
+      templateNames: text("template_names").array(),
       createdAt: timestamptz("created_at").notNull(),
       expiresAt: timestamptz("expires_at"),
       revokedAt: timestamptz("revoked_at"),

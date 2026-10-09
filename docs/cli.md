@@ -7,15 +7,11 @@ repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
 (`bun run --filter '@pstdio/pocketcoder-cli' compile`), or invoke `pcd` inside
 the server container.
 
-Commands use one of two access paths:
-
-- **Local data commands** (principals, keys, `templates list-database`) use
-  `POCKETCODER_DIR` (default `./pc_data`) and, for key issuance,
-  `POCKETCODER_AUTH_PEPPER`. Run them while the server is stopped; they take
-  the same folder lock.
-- **REST commands** (workspaces, checkpoints, storage, pools, `templates list`,
-  doctor) need `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and
-  `POCKETCODER_KEY` (a machine key).
+Principal and key commands use HTTP against the running server. Set
+`POCKETCODER_URL` (default `http://127.0.0.1:7080`) and `POCKETCODER_KEY`.
+Workspaces, checkpoints, storage, pools, template catalog and doctor commands
+use the same settings. `templates list-database` still opens `POCKETCODER_DIR`
+(default `./pc_data`); run it while the server is stopped.
 
 `pcd --version` prints the installed `@pstdio/pocketcoder-cli` version, and
 `pcd --help` lists the command tree. Neither needs credentials.
@@ -66,45 +62,50 @@ select the private data folder. Use local disk or a block volume, never NFS.
 
 ## Principals and machine keys
 
+Use an explicit owner admin key, or a key with `principals:admin` and enough
+scope and template grants for the target. The server hides stronger principals
+and rejects self-edit. Principal IDs and names remain immutable.
+
 ```sh
 pcd principals create --name example-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,attachments:write,logs:read \
-  --templates echo-harness,pi-harness    # or '*' for all templates
-pcd principals update --name example-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,services:relay,attachments:write,logs:read
-pcd principals list
+  --scopes templates:read,workspaces:create,workspaces:read \
+  --templates echo-harness --json
+pcd principals list --json
+pcd principals get --id <principal-id> --json
+pcd principals update --id <principal-id> --scopes workspaces:read --json
+pcd principals update --id <principal-id> --disabled --json
+pcd principals update --id <principal-id> --disabled=false --json
 
-pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
-pcd keys revoke --id <key-id>
-pcd keys issue --principal-id <id> --request-id <id> --scopes a,b --expires <ISO8601>
-pcd keys list --principal-id <id> [--request-id <id>] [--limit 50] [--cursor <id>]
-pcd keys revoke --principal-id <id> --id <key-id>
-pcd keys revoke-all --principal-id <id>
-pcd workspaces purge --id <workspace-id> --request-id <id> [--principal-id <recovery-target>]
+pcd keys issue --principal-id <principal-id> --request-id <operation-id> \
+  --scopes workspaces:read --templates echo-harness --expires <ISO8601> --json
+pcd keys list --principal-id <principal-id> --request-id <operation-id>
+pcd keys revoke --principal-id <principal-id> --id <key-id>
+pcd keys revoke-all --principal-id <principal-id>
 ```
 
-Prefer a bounded `--expires` plus rotation; reserve `never` for deliberate
-operational choices ([security model](security.md)).
+Issuance requires explicit scopes, a request ID and a future expiry within the
+calling key's remaining lifetime. Requested grants must fit both caller and
+target. Template grants also intersect the principal's live allowlist on every
+request. Omitting `--templates` during issuance snapshots the target's current
+grants. Omitting it during a principal update preserves the current grants.
+Disabling a principal revokes all its keys before returning. Re-enabling it does
+not revive those keys.
 
-Public key commands use `POCKETCODER_URL` and `POCKETCODER_KEY` with an explicit
-target grant. Local issuance also accepts `--request-id`, `--manage-principals`,
-and `--json`. Persist the request ID before issuing a key. See
-[verifiable cleanup](cleanup.md) for one-time secrets and delegated recovery.
+An explicit admin key can issue recovery keys on a dedicated recovery principal with
+`--scopes keys:read,keys:write,workspaces:recover`,
+`--manage-principals <target-uuid,...>`, `--templates`, `--expires` and
+`--request-id`. Delegated keys only manage their exact targets. They can list
+and revoke credentials for disabled targets. They cannot issue administrative
+credentials or credentials for administrative targets.
 
-Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
-`workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`, `workspaces:purge`,
-`workspaces:recover`, `keys:read`, `keys:write`,
-`checkpoints:read`, `checkpoints:delete`, `outputs:read`, `conversations:read`,
-`conversations:delete`, `services:relay`, `attachments:write`, `logs:read`,
-`network:read`, `terminal:attach`, `terminal:read`, `admin`. A key issued
-without `--scopes` inherits its principal's
-current scopes, including later changes made by `principals update`. Passing
-`--scopes` creates a permanently narrower key whose effective scopes are the
-intersection of that restriction and its principal's current scopes. Omitting
-`--templates` from `principals update` preserves the current allowlist. Keys are
-displayed once and stored as keyed digests; revocation applies on the next request.
-Keys issued by older releases retain their stored restriction; reissue them once
-without `--scopes` to opt into live inheritance.
+Persist the request ID before issuing. The secret is returned once and is never
+stored for replay. If the response is lost, list by request ID, revoke that key,
+then issue with a fresh request ID. See [verifiable cleanup](cleanup.md).
+Never give a workspace an operator or owner key.
+
+Scopes include `principals:admin`, `templates:read`, workspace, checkpoint,
+conversation, attachment, output, relay, log, network and terminal scopes, plus
+explicit owner `admin`. See the generated OpenAPI schemas for the complete list.
 
 ## Templates
 
