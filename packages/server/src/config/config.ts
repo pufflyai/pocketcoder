@@ -3,6 +3,7 @@ import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
+import { parseHttpAddress } from "./http-address";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 
 type Environment = Record<string, string | undefined>;
@@ -11,6 +12,8 @@ export interface ServerConfig {
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
   listenHost: string;
   listenPort: number;
+  agentHost: string;
+  agentPort: number;
   dataDir: string;
   pepper: string;
   eventSigningKey: string;
@@ -146,8 +149,7 @@ function bytesEnv(env: Environment, key: string, fallback: number): number {
 
 function resolvePepper(env: Environment) {
   const pepper = env.POCKETCODER_AUTH_PEPPER;
-  if (!pepper) throw new Error("POCKETCODER_AUTH_PEPPER is required");
-  return pepper;
+  return pepper ?? "";
 }
 
 function resolveStorage(
@@ -265,7 +267,17 @@ export function configSummary(config: ServerConfig) {
 export function loadConfig(env: Environment = process.env): ServerConfig {
   if (env.POCKETCODER_DIR === "") throw new Error("POCKETCODER_DIR must not be empty");
   const pepper = resolvePepper(env);
-  const listenPort = intEnv(env, "POCKETCODER_PORT", 7080);
+  const operator = env.POCKETCODER_HTTP
+    ? parseHttpAddress(env.POCKETCODER_HTTP)
+    : {
+        listenHost: env.POCKETCODER_HOST ?? "127.0.0.1",
+        listenPort: intEnv(env, "POCKETCODER_PORT", 7080),
+      };
+  const agent = env.POCKETCODER_AGENT_HTTP
+    ? parseHttpAddress(env.POCKETCODER_AGENT_HTTP, "POCKETCODER_AGENT_HTTP")
+    : { listenHost: "0.0.0.0", listenPort: 7081 };
+  const listenPort = operator.listenPort;
+  if (agent.listenPort === listenPort) throw new Error("Operator and agent listeners must use different ports");
   if (listenPort > 65_535) throw new Error("POCKETCODER_PORT must be at most 65535");
   const driverKind = enumEnv(env, "POCKETCODER_DRIVER", ["docker", "kubernetes"] as const, "docker");
   const kubernetesNamespace = env.POCKETCODER_KUBERNETES_NAMESPACE ?? "default";
@@ -278,7 +290,9 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     throw new Error("POCKETCODER_EGRESS_IMAGE must be an immutable sha256 digest reference");
   }
   return {
-    listenHost: env.POCKETCODER_HOST ?? "127.0.0.1",
+    listenHost: operator.listenHost,
+    agentHost: agent.listenHost,
+    agentPort: agent.listenPort,
     launchPolicy: launchPolicyConfig(env),
     listenPort,
     dataDir: env.POCKETCODER_DIR ?? "./pc_data",
@@ -300,8 +314,8 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
       env,
       "POCKETCODER_WORKSPACE_SERVER_URL",
       driverKind === "kubernetes"
-        ? `http://pocketcoder-server.${kubernetesNamespace}.svc:${listenPort}`
-        : `http://host.docker.internal:${listenPort}`,
+        ? `http://pocketcoder-agent.${kubernetesNamespace}.svc:${agent.listenPort}`
+        : `http://host.docker.internal:${agent.listenPort}`,
     ) as string,
     limits: resolveAdmissionLimits(env),
     schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
@@ -310,3 +324,5 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     warmPools: resolveWarmPools(env),
   };
 }
+
+export { listenerOrigin } from "./http-address";

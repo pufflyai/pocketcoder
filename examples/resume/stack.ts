@@ -83,6 +83,7 @@ export class IsolatedStack {
     await mkdir(templates);
     await Bun.write(join(templates, "pi-resume.json"), JSON.stringify(resumeTemplate(image, idleSeconds)));
     const serverPort = freePort();
+    const agentPort = freePort();
     const logFile = Bun.file(join(directory, "server.log")).writer();
     this.cleanups.push(async () => {
       await logFile.end();
@@ -92,9 +93,10 @@ export class IsolatedStack {
         ...adminEnv,
         POCKETCODER_HOST: "0.0.0.0",
         POCKETCODER_PORT: String(serverPort),
+        POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
         POCKETCODER_TEMPLATE_DIR: templates,
         POCKETCODER_INPUT_DIR: join(directory, "inputs"),
-        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${serverPort}`,
+        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
         POCKETCODER_STORAGE_BACKEND: "filesystem",
         POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "workspaces"),
         POCKETCODER_CHECKPOINT_DIR: join(directory, "checkpoints"),

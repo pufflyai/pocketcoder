@@ -242,6 +242,7 @@ export {
   templateServices,
   timeoutMs,
 } from "./templates/template";
+export { TemplatePublishRequestSchema, TemplateVersionParamsSchema } from "./templates/template-api";
 export {
   renderTemplateManifest,
   type TemplateRenderOptions,

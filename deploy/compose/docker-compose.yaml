@@ -9,6 +9,7 @@ services:
     environment:
       POCKETCODER_HOST: 0.0.0.0
       POCKETCODER_PORT: "7080"
+      POCKETCODER_AGENT_HTTP: 0.0.0.0:7081
       POCKETCODER_DIR: /var/lib/pocketcoder-controller/pc_data
       POCKETCODER_AUTH_PEPPER: ${POCKETCODER_AUTH_PEPPER:-}
       POCKETCODER_TEMPLATE_DIR: /etc/pocketcoder/templates
@@ -17,9 +18,10 @@ services:
       POCKETCODER_INPUT_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/input
       POCKETCODER_WORKSPACE_DATA_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/workspaces
       POCKETCODER_CHECKPOINT_DIR: ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}/checkpoints
-      POCKETCODER_WORKSPACE_SERVER_URL: http://host.docker.internal:7080
+      POCKETCODER_WORKSPACE_SERVER_URL: http://host.docker.internal:7081
     ports:
       - "127.0.0.1:7080:7080"
+      - "7081:7081"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

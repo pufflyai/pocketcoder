@@ -5,23 +5,24 @@ import {
   TemplateListQuerySchema,
   TemplatePageSchema,
 } from "@pstdio/pocketcoder-contracts";
-import type { Store, TemplateRow } from "@pstdio/pocketcoder-runtime-core";
+import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { decodeStringCursor, encodeCursor } from "../http/pagination";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 import { templateAuthorized } from "../workspaces/service";
+import { safeTemplateItem } from "./template-item";
+import { registerTemplateMutations } from "./template-mutations";
 
-function safeTemplateItem(row: TemplateRow) {
-  return {
-    name: row.name,
-    version: row.version,
-    digest: row.digest,
-    ...(row.description ? { description: row.description } : {}),
-    status: row.status,
-  };
-}
-
-export function registerCatalogRoutes({ app, store }: { app: OpenAPIHono<AppEnv>; store: Store }) {
+export function registerCatalogRoutes({
+  app,
+  store,
+  egressImage,
+}: {
+  app: OpenAPIHono<AppEnv>;
+  store: Store;
+  egressImage?: string | null;
+}) {
+  registerTemplateMutations(app, store, egressImage);
   app.openapi(
     createRoute({
       method: "get",
@@ -50,7 +51,7 @@ export function registerCatalogRoutes({ app, store }: { app: OpenAPIHono<AppEnv>
       const rows = (await store.listTemplates(names)).toSorted((left, right) => {
         const leftKey = `${left.name}\0${left.version}`;
         const rightKey = `${right.name}\0${right.version}`;
-        return leftKey.localeCompare(rightKey);
+        return leftKey < rightKey ? -1 : Number(leftKey > rightKey);
       });
       const remaining = after ? rows.filter((row) => `${row.name}\0${row.version}` > after) : rows;
       const hasMore = remaining.length > limit;

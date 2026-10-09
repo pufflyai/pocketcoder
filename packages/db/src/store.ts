@@ -1,5 +1,10 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
-import { createDatabaseContext, createLifecycle, type DatabaseContext } from "./database/context";
+import {
+  createDatabaseContext,
+  createLifecycle,
+  type DatabaseContext,
+  type DatabaseOpenOptions,
+} from "./database/context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import { createAuth } from "./modules/auth/repository";
 import { createConversations } from "./modules/conversations/repository";
@@ -20,8 +25,8 @@ import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 
 export class PGliteStore implements Store {
-  static async create(dataDir?: string) {
-    return new PGliteStore(await createDatabaseContext(dataDir));
+  static async create(dataDir?: string, options?: DatabaseOpenOptions) {
+    return new PGliteStore(await createDatabaseContext(dataDir, options));
   }
 
   constructor(context: DatabaseContext) {
@@ -36,7 +41,8 @@ export class PGliteStore implements Store {
     this.upsertTemplate = templates.upsertTemplate;
     this.listTemplates = templates.listTemplates;
     this.getTemplate = templates.getTemplate;
-    this.setTemplateStatus = templates.setTemplateStatus;
+    this.publishTemplate = templates.publishTemplate;
+    this.retireTemplate = templates.retireTemplate;
     const auth = createAuth(context);
     this.bootstrapOwnerKey = auth.bootstrapOwnerKey;
     this.createPrincipal = auth.createPrincipal;
@@ -130,7 +136,8 @@ export class PGliteStore implements Store {
   readonly upsertTemplate: Store["upsertTemplate"];
   readonly listTemplates: Store["listTemplates"];
   readonly getTemplate: Store["getTemplate"];
-  readonly setTemplateStatus: Store["setTemplateStatus"];
+  readonly publishTemplate: Store["publishTemplate"];
+  readonly retireTemplate: Store["retireTemplate"];
   readonly createManagedPrincipal: Store["createManagedPrincipal"];
   readonly updateManagedPrincipal: Store["updateManagedPrincipal"];
   readonly bootstrapOwnerKey: Store["bootstrapOwnerKey"];

@@ -1,11 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { digestOpaque, generateOpaqueSecret, verifyEgressAuditToken } from "@pstdio/pocketcoder-auth";
-import {
-  ApiError,
-  NetworkEventBatchSchema,
-  type TerminalClosed,
-  type TerminalCloseReason,
-} from "@pstdio/pocketcoder-contracts";
+import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
+import { ApiError, type TerminalClosed, type TerminalCloseReason } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
   type MetricSink,
@@ -26,9 +21,9 @@ import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
+import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
-import { PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./control-channel/pool-ws";
-import { agentConnectValidator, agentWsEvents } from "./control-channel/ws";
+import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
@@ -54,6 +49,7 @@ export interface BuildDeps {
   persistenceLimits?: PersistenceLimits;
   pepper: string;
   eventSigningKey?: string;
+  egressImage?: string | null;
   limits: AdmissionLimits;
   workspaceServerUrl: string;
   instanceId?: string;
@@ -65,6 +61,7 @@ export interface BuildDeps {
 
 export interface BuiltServer {
   app: OpenAPIHono<AppEnv>;
+  agentApp: ReturnType<typeof createAgentApp>;
   websocket: ReturnType<typeof createBunWebSocket<ServerWebSocket>>["websocket"];
   hub: Hub;
   scheduler: Scheduler;
@@ -220,37 +217,16 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     log,
     persistence,
   };
-  app.get("/v1/agent/connect", agentConnectValidator(wsDeps), upgradeWebSocket(agentWsEvents(wsDeps)));
-  if (warmPool) {
-    app.get(
-      "/v1/agent/pool-connect",
-      poolConnectValidator({ store, pepper }),
-      upgradeWebSocket(poolWsEvents({ store, hub: poolHub, manager: warmPool, log })),
-    );
-  }
-  app.post("/v1/internal/egress/events", async (c) => {
-    const authorization = c.req.header("authorization") ?? "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    const subject = verifyEgressAuditToken(deps.eventSigningKey ?? pepper, token);
-    if (!subject) return c.json({ error: "invalid_audit_token" }, 401);
-    const raw = await c.req.text();
-    if (Buffer.byteLength(raw) > 4 * 1024 * 1024) return c.json({ error: "batch_too_large" }, 413);
-    let body: unknown = null;
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      // Stable invalid_batch response below.
-    }
-    const parsed = NetworkEventBatchSchema.safeParse(body);
-    if (!parsed.success) return c.json({ error: "invalid_batch" }, 400);
-    const workspaceId =
-      subject.kind === "workspace" ? subject.id : (await store.getWarmPoolRuntime(subject.id))?.workspaceId;
-    if (!workspaceId || !(await store.getWorkspace(workspaceId))) {
-      return c.json({ error: "audit_subject_unassigned" }, 409);
-    }
-    await store.appendNetworkEvents(workspaceId, parsed.data.source_session_id, parsed.data.events);
-    return c.json({ accepted: parsed.data.events.length }, 202);
+  const agentApp = createAgentApp({
+    connection: wsDeps,
+    poolHub,
+    warmPool,
+    eventSigningKey: deps.eventSigningKey ?? pepper,
+    logger,
+    upgradeWebSocket,
   });
+  app.all("/v1/agent/*", (c) => c.notFound());
+  app.all("/v1/internal/*", (c) => c.notFound());
 
   // The generated OpenAPI document is served without machine auth so
   // tooling can consume the contract; it contains no secrets.
@@ -265,7 +241,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   app.use("/v1/*", machineAuth(store, pepper));
 
-  registerCatalogRoutes({ app, store });
+  registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
   registerOperatorRecoveryRoutes(app, store, persistence);
@@ -336,6 +312,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   return {
     app,
+    agentApp,
     websocket,
     hub,
     scheduler,
