@@ -12,6 +12,7 @@ export interface PersistenceReconcileDeps {
   now?: () => Date;
   log?: (message: string) => void;
   metrics?: MetricSink;
+  reconcileCheckpointOperation?: (operation: WorkspaceOperationRow) => Promise<boolean>;
 }
 
 interface OperationContext {
@@ -148,6 +149,7 @@ async function reconcileOperation(
   operation: WorkspaceOperationRow,
   now: Date,
 ): Promise<void> {
+  if (await deps.reconcileCheckpointOperation?.(operation)) return;
   if (operation.kind === "purge") return;
   if (operation.kind === "restore") {
     await reconcileRestore(deps, operation, now);

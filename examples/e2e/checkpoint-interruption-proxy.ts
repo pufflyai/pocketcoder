@@ -5,7 +5,7 @@ interface ProxySocket {
   pending: Array<string | Buffer>;
 }
 
-async function interruptUpload(request: Request, port: number) {
+async function interruptUpload(request: Request, port: number, restart?: () => Promise<void>) {
   const reader = request.body?.getReader();
   if (!reader) throw new Error("Expected a real checkpoint upload body");
   const first = await reader.read();
@@ -24,7 +24,12 @@ async function interruptUpload(request: Request, port: number) {
           socket.write(head);
           socket.write(first.value.subarray(0, 64));
           // Closing a real TCP upload before Content-Length is an interrupted transfer.
-          socket.end();
+          if (restart) {
+            void Bun.sleep(100)
+              .then(restart)
+              .then(() => socket.end())
+              .catch(reject);
+          } else socket.end();
         },
         data() {},
         close() {
@@ -42,6 +47,7 @@ async function interruptUpload(request: Request, port: number) {
 
 export function createCheckpointInterruptionProxy(port: number, upstreamPort: number) {
   let interrupt = false;
+  let restart: (() => Promise<void>) | undefined;
   const server = Bun.serve<ProxySocket>({
     hostname: "0.0.0.0",
     port,
@@ -62,7 +68,9 @@ export function createCheckpointInterruptionProxy(port: number, upstreamPort: nu
       }
       if (interrupt && request.method === "PUT" && url.pathname.endsWith("/archive")) {
         interrupt = false;
-        return interruptUpload(request, upstreamPort);
+        const onInterrupted = restart;
+        restart = undefined;
+        return interruptUpload(request, upstreamPort, onInterrupted);
       }
       return fetch(upstream, {
         method: request.method,
@@ -93,8 +101,9 @@ export function createCheckpointInterruptionProxy(port: number, upstreamPort: nu
     },
   });
   return {
-    interruptNextUpload() {
+    interruptNextUpload(onInterrupted?: () => Promise<void>) {
       interrupt = true;
+      restart = onInterrupted;
     },
     close: () => server.stop(true),
   };

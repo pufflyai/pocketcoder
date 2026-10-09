@@ -7,42 +7,13 @@ import type {
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
-import { checkpointDownloadAuthority } from "./download-authority";
 import { lockStorageCapacity } from "./reservation-capacity";
-import { checkpointUploadAuthority, checkpointUploadReservation, transferDeadline } from "./transfer-authority";
+import { checkpointUploadReservation, transferDeadline } from "./transfer-authority";
 import { completeCheckpointStorage } from "./transfer-installation";
 import { assertCheckpointRetention } from "./transfer-retention";
 import { createCheckpointRestoreSettlement } from "./transfer-settlement";
-
-async function active(context: DatabaseContext, tx: Transaction, id: string, check: () => void) {
-  check();
-  context.validateStorage?.();
-  const [found] = await tx
-    .select()
-    .from(context.tables.checkpointTransfers)
-    .where(eq(context.tables.checkpointTransfers.id, id))
-    .for("update");
-  const row = requiredRow(found);
-  if (!["granted", "streaming", "validated"].includes(row.state)) throw new Error("Checkpoint transfer is not active.");
-  const authority =
-    row.direction === "upload"
-      ? await checkpointUploadAuthority(context, tx, row, check)
-      : await checkpointDownloadAuthority(context, tx, row, check);
-  if (row.principalId !== authority.workspace.principalId)
-    throw new Error("Checkpoint transfer principal authority changed.");
-  if (row.direction === "upload") await checkpointUploadReservation(context, tx, row, check);
-  else if (
-    "publication" in authority &&
-    (row.archiveDigest !== authority.publication.archiveDigest ||
-      row.storedBytes !== authority.publication.storedBytes ||
-      row.expectedArchiveBytes !== authority.publication.storedBytes ||
-      canonicalJson(row.declaredHeader) !== canonicalJson(authority.publication.declaredHeader) ||
-      canonicalJson(row.summary) !== canonicalJson(authority.publication.summary))
-  )
-    throw new Error("Checkpoint download publication binding changed.");
-  transferDeadline(row.expiresAt, check);
-  return row;
-}
+import { createCheckpointTransferStaging } from "./transfer-staging";
+import { validateCheckpointTransfer } from "./transfer-validation";
 
 export function createCheckpointTransferLifecycle(context: DatabaseContext) {
   const {
@@ -56,9 +27,10 @@ export function createCheckpointTransferLifecycle(context: DatabaseContext) {
     });
   }
   return {
+    ...createCheckpointTransferStaging(context),
     completeRestore: createCheckpointRestoreSettlement(context),
     validate(id: string, check: () => void) {
-      return transaction((tx) => active(context, tx, id, check));
+      return transaction((tx) => validateCheckpointTransfer(context, tx, id, check));
     },
     publish(id: string, input: CheckpointPublication, check: () => void, retentionLimits: CheckpointRetentionLimits) {
       const receipt = {
@@ -67,10 +39,16 @@ export function createCheckpointTransferLifecycle(context: DatabaseContext) {
         stageIdentity: { ...input.stageIdentity },
       };
       return transaction(async (tx) => {
-        const row = await active(context, tx, id, check);
+        const row = await validateCheckpointTransfer(context, tx, id, check);
         if (
           row.direction !== "upload" ||
-          row.state !== "streaming" ||
+          row.state !== "publishing" ||
+          !row.stageIdentity ||
+          ["device", "inode", "uid", "gid", "mode"].some(
+            (key) =>
+              row.stageIdentity?.[key as keyof typeof row.stageIdentity] !==
+              receipt.stageIdentity[key as keyof typeof receipt.stageIdentity],
+          ) ||
           !row.declaredHeader ||
           receipt.storedBytes !== row.expectedArchiveBytes ||
           !receipt.stagePath ||
@@ -130,7 +108,7 @@ export function createCheckpointTransferLifecycle(context: DatabaseContext) {
     },
     downloaded(id: string, check: () => void) {
       return transaction(async (tx) => {
-        const row = await active(context, tx, id, check);
+        const row = await validateCheckpointTransfer(context, tx, id, check);
         if (row.direction !== "download" || row.state !== "streaming")
           throw new Error("Checkpoint download is not streaming.");
         const [updated] = await tx
@@ -144,7 +122,7 @@ export function createCheckpointTransferLifecycle(context: DatabaseContext) {
     },
     installed(id: string, check: () => void) {
       return transaction(async (tx) => {
-        const row = await active(context, tx, id, check);
+        const row = await validateCheckpointTransfer(context, tx, id, check);
         if (row.direction !== "download" || row.state !== "validated")
           throw new Error("Checkpoint download has not completed.");
         const at = new Date();

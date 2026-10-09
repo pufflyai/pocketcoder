@@ -103,11 +103,52 @@ trigger the real deadline policy. It checks the edited binary bytes and a harnes
 response after each restore, then verifies all source containers and temporary
 storage are gone and the three retained archives have exact settled charges.
 
+## Controller restart
+
+Restart with the same private data and checkpoint folders:
+
+```sh
+pocketcoder serve --dir ./pc_data
+```
+
+Startup revokes old transfer grants and checks recorded publication files before
+normal traffic. A committed archive must match its saved native identity, size
+and digest. Recovery then finishes the original preserve and source cleanup.
+A missing or changed archive becomes failed and cannot be restored.
+
+An upload interrupted before its metadata commit is rejected. Recovery removes
+only files whose saved device and inode still match. Anonymous spool and index
+files disappear when the old process exits. Storage stays charged until owned
+removal is proven; a replaced file or an unrecorded named file leaves cleanup
+pending for operator inspection. The same applies when a recorded inode is
+already absent: it may have moved, so absence alone does not prove removal.
+Unrelated files are left alone.
+
+The original idempotency key keeps its original operation and outcome. It does
+not start another upload. A rejected preserve retains source files for the
+existing 60-second recovery window. Recover those files or cancel the source
+before that window ends. A committed checkpoint can be restored into a fresh
+workspace after restart; the supervisor still verifies it before setup and readiness.
+
+Prove controller SIGKILL during a real Docker upload, exact surviving source
+bytes, idempotent rejection, and restore after a second controller restart:
+
+```sh
+bun run example:e2e:docker-checkpoint-restart
+```
+
+Process-kill regressions also cover partial publication, final rename, rollback
+during metadata commit and restart after a completed commit:
+
+```sh
+bun test packages/server/src/persistence/checkpoint-transfer-crash.test.ts
+```
+
 ## Support boundary
 
 This check covers one principal, one ordinary mount, a small regular-file and
-directory tree and the available local architecture. PC-88 owns broader publication
-crash recovery, concurrent purge, full writer accounting and fault stress. PC-89
+directory tree and the available local architecture. Restart recovery covers the
+existing transfer path. PC-100 owns workspace purge. PC-89
 owns cross-node Kubernetes transfer. PC-61 retains multiple mounts, the full file
 corpus, platform limits and final removal of legacy shared storage.
 

@@ -142,6 +142,11 @@ export function createCheckpointTransferHttp(
             context.check,
             reservation.reservedBytes - verified.receipt.allocatedBytes,
           );
+          await store.checkpointTransfers.stage(
+            context.row.id,
+            { stagePath: name, stageIdentity: owner.identity() },
+            owner.validate,
+          );
           await owner.write(verified);
           await context.validate();
           const identity = owner.publish();

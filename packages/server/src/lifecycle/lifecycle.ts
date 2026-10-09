@@ -11,6 +11,7 @@ import { createIssuerClient } from "../secrets/issuer-client";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
+import { createCoordinatorTick } from "./coordinator-tick";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
   createSecretResolver,
@@ -18,6 +19,7 @@ import {
   createWorkspaceDriver,
   initializeController,
   loadConfiguredTemplates,
+  reconcileCheckpointPreserves,
   reconcileStartup,
   requireEgressImageForRestrictedTemplates,
   startExclusiveTimer,
@@ -104,10 +106,18 @@ export async function startPocketCoderServer(
       });
 
     const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
-    readiness.set("cleanup", cleanupState(pendingSetup));
+    const pendingTransfers = await reconcileCheckpointPreserves(
+      store,
+      persistence.reconcileCheckpointOperation,
+      checkpointTransfers,
+      true,
+    );
+    readiness.set("cleanup", cleanupState(pendingSetup + pendingTransfers));
     readiness.set(
       "reconciliation",
-      (await reconcileStartup(store, driver, storageDriver, log, metrics)) ? "ok" : "failed",
+      (await reconcileStartup(store, driver, storageDriver, log, metrics, persistence.reconcileCheckpointOperation))
+        ? "ok"
+        : "failed",
     );
 
     const outbox = new OutboxDispatcher({
@@ -120,20 +130,15 @@ export async function startPocketCoderServer(
 
     const schedulerTimer = startExclusiveTimer(
       config.schedulerIntervalMs,
-      async () => {
-        try {
-          await scheduler.tick();
-          const pendingLeases = await reconcileSetupLeases(store, workspaceLeases, scheduler);
-          const pendingPreserves = await persistence.retryPreserves();
-          const pendingPurges = await persistence.retryPurges();
-          readiness.set("cleanup", cleanupState(pendingPurges + pendingLeases + pendingPreserves));
-          metrics.observe("purge.pending", pendingPurges);
-          readiness.set("coordinator", "ok");
-        } catch (error) {
-          readiness.set("coordinator", "failed");
-          throw error;
-        }
-      },
+      createCoordinatorTick({
+        store,
+        scheduler,
+        persistence,
+        workspaceLeases,
+        checkpointTransfers,
+        readiness,
+        metrics,
+      }),
       "scheduler tick failed",
       log,
     );
