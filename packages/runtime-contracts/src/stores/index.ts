@@ -1,5 +1,6 @@
 import type { AuthStore } from "./auth";
 import type { ConversationStore } from "./conversations";
+import type { WorkspaceLeaseStore } from "./leases";
 import type { StoreLifecycle } from "./lifecycle";
 import type { LogStore } from "./logs";
 import type { NetworkAuditStore } from "./network-audit";
@@ -18,6 +19,7 @@ export interface Store
   extends StoreLifecycle,
     TemplateStore,
     SecretStore,
+    WorkspaceLeaseStore,
     WarmPoolStore,
     AuthStore,
     WorkspaceStore,
@@ -35,6 +37,7 @@ export interface Store
 export * from "./auth";
 export * from "./checkpoint-transfers";
 export * from "./conversations";
+export * from "./leases";
 export * from "./lifecycle";
 export * from "./logs";
 export * from "./network-audit";

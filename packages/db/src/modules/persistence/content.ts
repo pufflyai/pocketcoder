@@ -1,5 +1,5 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import type { DatabaseContext, QueryContext } from "../../database/context";
 
 // Writers and purge admission take the same row lock. A delayed write cannot
@@ -32,6 +32,18 @@ export function createContentPurge({ db, tables }: DatabaseContext) {
           .where(eq(tables.workspaces.id, workspaceId))
           .for("update");
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
+        const [pending] = await tx
+          .select({ id: tables.workspaceLeases.id })
+          .from(tables.workspaceLeases)
+          .where(
+            and(
+              eq(tables.workspaceLeases.workspaceId, workspaceId),
+              notInArray(tables.workspaceLeases.state, ["revoked", "expired"]),
+            ),
+          )
+          .limit(1);
+        if (pending) throw new Error("Workspace leases remain pending");
+        await tx.delete(tables.workspaceLeases).where(eq(tables.workspaceLeases.workspaceId, workspaceId));
         for (const table of [
           tables.workspaceLogs,
           tables.workspaceOutputs,

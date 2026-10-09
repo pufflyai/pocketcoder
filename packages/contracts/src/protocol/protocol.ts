@@ -70,10 +70,10 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
-export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 6;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, PROTOCOL_VERSION] as const;
+export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, 7, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -94,6 +94,7 @@ const EnvelopeBase = z.object({
     z.literal(4),
     z.literal(5),
     z.literal(6),
+    z.literal(7),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -187,6 +188,7 @@ export const RestoreStatusPayload = z.object({
 export const ConversationMessagePayload = ConversationMessageInputSchema;
 
 export const AgentFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
   EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
   EnvelopeBase.extend({ type: z.literal("process_state"), payload: ProcessStatePayload }),
@@ -266,6 +268,7 @@ export const PrepareCheckpointPayload = z.object({
 });
 
 export const ServerFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("setup_complete_ack"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_stream_ack"), payload: ProxyStreamAckPayload }),

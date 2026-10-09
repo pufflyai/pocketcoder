@@ -66,9 +66,11 @@ export async function runSetupSteps(
     log(message: string): void;
     pump(stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr"): Promise<void>;
     setSetupPhase(): void;
+    signal?: AbortSignal;
   },
 ) {
   for (const step of exec.setup) {
+    if (callbacks.signal?.aborted) return step.name;
     callbacks.setSetupPhase();
     callbacks.send("process_state", { phase: "setup", setup_step: step.name });
     const proc = Bun.spawn(step.command, {
@@ -81,12 +83,22 @@ export async function runSetupSteps(
       }),
       stdout: "pipe",
       stderr: "pipe",
+      detached: true,
     });
     const pumps = [callbacks.pump(proc.stdout, "stdout"), callbacks.pump(proc.stderr, "stderr")];
-    const timeout = setTimeout(() => proc.kill("SIGKILL"), step.timeoutSeconds * 1000);
+    const abort = () => {
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    };
+    callbacks.signal?.addEventListener("abort", abort, { once: true });
+    const timeout = setTimeout(abort, step.timeoutSeconds * 1000);
     const code = await proc.exited;
     clearTimeout(timeout);
     await Promise.all(pumps);
+    callbacks.signal?.removeEventListener("abort", abort);
     if (code === 0) continue;
     callbacks.log(`setup step ${step.name} failed with exit code ${code}`);
     return step.name;
@@ -114,10 +126,23 @@ export async function runSetupWithCredentials(
 export async function reportResolvedSource(exec: ExecSpec, send: SendFrame, log: (message: string) => void) {
   if (!exec.source) return;
   try {
-    const proc = Bun.spawn(["git", "-C", exec.source.destination, "rev-parse", "--verify", "HEAD"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    // Kubernetes owns the volume root; the template fixes the path we trust.
+    const proc = Bun.spawn(
+      [
+        "git",
+        "-c",
+        `safe.directory=${exec.source.destination}`,
+        "-C",
+        exec.source.destination,
+        "rev-parse",
+        "--verify",
+        "HEAD",
+      ],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     const commit = stdout.trim().toLowerCase();
     if (code !== 0 || !/^[0-9a-f]{40,64}$/.test(commit)) {

@@ -47,6 +47,9 @@ export const ExecSpecSchema = z.object({
   source: SourceDescriptorSchema.extend({
     url: z.url(),
     destination: z.string(),
+    max_bytes: z.number().int().positive().optional(),
+    max_files: z.number().int().positive().optional(),
+    credential_expires_at: z.iso.datetime().nullable().default(null),
     credential: z
       .string()
       .min(1)

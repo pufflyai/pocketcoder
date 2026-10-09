@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { randomBytes } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,9 @@ import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { supervise } from "@pstdio/pocketcoder-supervisor";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
+import { createIssuerClient } from "../secrets/issuer-client";
+import { createTestIssuer } from "../secrets/issuer-test-server";
+import { createSecretVault } from "../secrets/secret-vault";
 import {
   createSourceFixture,
   e2eTemplate,
@@ -24,13 +28,13 @@ const createStore = createTestStoreFactory();
 const PEPPER = "e2e-pepper";
 
 describe("end-to-end workspace lifecycle", () => {
-  const cleanups: Array<() => void> = [];
+  const cleanups: Array<() => void | Promise<void>> = [];
   // Ensures the supervisor and its harness child are stopped even when an
   // assertion fails mid-flight, so no process leaks across runs.
   let teardown: (() => Promise<void>) | null = null;
   afterAll(async () => {
     await teardown?.().catch(() => {});
-    for (const fn of cleanups) fn();
+    for (const fn of cleanups) await fn();
   });
 
   test(
@@ -38,7 +42,8 @@ describe("end-to-end workspace lifecycle", () => {
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "pocketcoder-e2e-"));
       const harnessPath = join(dir, "harness.ts");
-      const sourceCredential = "short-lived-git-token";
+      const issuer = await createTestIssuer({ sourceUrl: "https://github.com/example/app.git" });
+      cleanups.push(() => issuer.close());
       const { setupPath, setupMarker, harnessEnvironment, worktree } = await createSourceFixture(dir);
       await writeFile(harnessPath, HARNESS_SCRIPT);
 
@@ -70,15 +75,17 @@ describe("end-to-end workspace lifecycle", () => {
         workspaceRoot: join(dir, "storage"),
         checkpointRoot: join(dir, "checkpoints"),
       });
-      const secretResolver = {
-        resolve: async () => [],
-        resolveSourceCredential: async () => sourceCredential,
-      };
+      const encryptionKey = randomBytes(32);
+      await createSecretVault(store, encryptionKey).put(key.id, "git-clone", {
+        type: "setup-issuer",
+        value: { url: issuer.url, authorization: issuer.authorization, policy: issuer.policy },
+      });
       const built = buildServer({
         store,
         driver,
         storageDriver,
-        secretResolver,
+        secretKey: encryptionKey.toString("base64url"),
+        issuerClient: createIssuerClient({ ca: issuer.ca }),
         pepper: PEPPER,
         limits: DEFAULT_LIMITS,
         workspaceServerUrl: "placeholder",
@@ -142,7 +149,7 @@ describe("end-to-end workspace lifecycle", () => {
 
       // 4. The workspace becomes ready after setup + harness health.
       await waitFor(async () => (await store.getWorkspace(ws.id))?.state === "ready", 15_000, "workspace ready");
-      await verifySourceSecretBoundary(store, ws.id, setupMarker, harnessEnvironment, sourceCredential);
+      await verifySourceSecretBoundary(store, ws.id, setupMarker, harnessEnvironment, issuer.controls.captured);
 
       // 5. Converse through the relay.
       const post = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/message`, {

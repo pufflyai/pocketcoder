@@ -3,6 +3,7 @@ import { assertValidSchema } from "../database-schema";
 import { createAccessTables } from "./access";
 import { createActivityTables } from "./activity";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
+import { createLeaseTables } from "./leases";
 import { createPersistenceTables } from "./persistence";
 import { createSecretTables } from "./secrets";
 import { createStorageReservationTables } from "./storage-reservations";
@@ -13,11 +14,13 @@ export function createSchema(schema?: string) {
   const table = schema === undefined ? pgTable : pgSchema(assertValidSchema(schema)).table;
   const access = createAccessTables(table);
   const workspaces = createWorkspaceTables(table, access);
+  const secrets = createSecretTables(table);
   const persistence = createPersistenceTables(table, access, workspaces);
   const reservations = createStorageReservationTables(table, access, workspaces, persistence);
   return {
     ...access,
-    ...createSecretTables(table),
+    ...secrets,
+    ...createLeaseTables(table, workspaces, secrets),
     ...workspaces,
     ...createActivityTables(table, workspaces),
     ...persistence,
@@ -29,6 +32,8 @@ export function createSchema(schema?: string) {
 
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
+  workspaceLeases,
+  workspaceLeaseFences,
   secrets,
   secretVersions,
   templates,

@@ -36,7 +36,7 @@ export function addSecretCommands(parser: Argv) {
     const put = addAction(
       commands,
       "put <name>",
-      "Store registry configuration; return metadata only",
+      "Store controller registry or setup issuer configuration",
       (command) =>
         command
           .positional("name", { type: "string", demandOption: true })
@@ -62,7 +62,7 @@ export function addSecretCommands(parser: Argv) {
     return addAction(
       list,
       "retire <name>",
-      "Stop new pulls using this reference",
+      "Stop new use of this reference",
       (command) => command.positional("name", { type: "string", demandOption: true }),
       async (flags) => {
         console.log(JSON.stringify(await controlPlaneClient().secrets.retire(need(flags, "name"))));

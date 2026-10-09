@@ -240,3 +240,28 @@ test("binding registry authority to a published template requires secrets admini
   expect((await operator.publish(privateImage)).status).toBe(201);
   expect((await operator.store.getTemplate("fixture-echo"))?.spec.imagePullSecret).toBe("secretRef:pull");
 });
+
+test("binding a source issuer requires secrets administration", async () => {
+  const manifest = fixtureTemplateEcho().manifest;
+  const source = {
+    kind: "git",
+    destinationMount: "worktree",
+    repositories: { app: { url: "https://source.example/app.git", credential: "secretRef:source" } },
+  };
+  const privateSource = {
+    ...manifest,
+    spec: {
+      ...manifest.spec,
+      source,
+      persistence: {
+        ...manifest.spec.persistence,
+        mounts: [{ name: "worktree", target: "/worktree", maxBytes: 1048576, maxFiles: 100 }],
+      },
+    },
+  };
+  const publisher = await fixture();
+  expect((await publisher.publish(privateSource)).status).toBe(403);
+  expect(await publisher.store.listTemplates(null)).toEqual([]);
+  const operator = await fixture(["templates:write", "secrets:write"]);
+  expect((await operator.publish(privateSource)).status).toBe(201);
+});
