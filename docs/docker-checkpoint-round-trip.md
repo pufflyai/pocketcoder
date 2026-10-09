@@ -148,7 +148,8 @@ bun test packages/server/src/persistence/checkpoint-transfer-crash.test.ts
 
 This check covers one principal, one ordinary mount, a small regular-file and
 directory tree and the available local architecture. Restart recovery covers the
-existing transfer path. PC-100 owns workspace purge. PC-89
+existing transfer path. Purge during a transfer is described in
+[workspace cleanup](cleanup.md#purge-during-a-checkpoint-transfer). PC-89
 owns cross-node Kubernetes transfer. PC-61 retains multiple mounts, the full file
 corpus, platform limits and final removal of legacy shared storage.
 
