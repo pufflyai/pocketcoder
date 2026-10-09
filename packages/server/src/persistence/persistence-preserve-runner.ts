@@ -18,6 +18,10 @@ export class PersistencePreserveRunner {
     return this.running.has(workspaceId);
   }
 
+  async settled(workspaceId: string) {
+    await this.running.get(workspaceId)?.catch(() => {});
+  }
+
   async retry() {
     const operations = await this.context.deps.store.listIncompleteOperations();
     const pending = operations.filter((operation) => operation.kind === "preserve" && operation.state === "pending");

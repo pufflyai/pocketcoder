@@ -13,9 +13,37 @@ fields. The caller must own the workspace. The response is an operation with
 
 Admission commits a permanent deletion fence with the operation. New provider
 admission, relay, uploads, preserve, restore, and content writes are blocked.
-Already admitted copies finish before deletion. The controller drains an active
-launch, proves provider termination, removes the owned storage, and checks the
-backend inventory before marking the operation `succeeded`.
+With filesystem checkpoints, already admitted copies finish before deletion.
+The controller drains an active launch, proves provider termination, removes the
+owned storage, and checks the backend inventory before marking the operation
+`succeeded`.
+
+### Purge during a checkpoint transfer
+
+With Docker checkpoint transfers, purge does not wait for an active transfer to
+reach its deadline. It cancels the source upload and every restore download of
+the workspace's checkpoints, then waits for that work to stop. The canceled
+preserve fails and the source is stopped. A restore that was copying from the
+purged workspace can never become ready, so its destination fails with
+`restore_failed`. Purging a restore destination cancels only its own download;
+the source keeps its checkpoint. A restore that finished before the purge is an
+independent workspace and keeps its own files.
+
+Partial and final archives stay charged until their files are removed. If a
+removal fails, the operation stays `pending` with `purge_storage_unavailable`
+and the bytes stay charged. After the problem is fixed, the next scheduler pass
+or a controller restart retries the same operation. Late uploads, old download
+grants and restores of the purged checkpoint are rejected.
+
+To check the flow against real Docker, run:
+
+```sh
+bun run example:e2e:docker-checkpoint-purge
+```
+
+It purges during a held upload, purges a source and then a destination during
+held restore downloads, then blocks archive deletion, restarts the controller, and checks that the retry removes the files
+and releases their charge.
 
 Storage and provider errors keep the operation `pending`, with no completion
 time. The controller retries it each scheduler interval and after restart. Its

@@ -19,10 +19,10 @@ export class PersistenceService {
   constructor(deps: PersistenceServiceDeps) {
     this.context = new PersistenceContext(deps);
     this.drain = this.context.drain.bind(this.context);
-    const purge = new PersistencePurgeService(this.context);
+    this.preserveRunner = new PersistencePreserveRunner(this.context);
+    const purge = new PersistencePurgeService(this.context, this.preserveRunner);
     this.purge = purge.purge.bind(purge);
     this.retryPurges = purge.retry.bind(purge);
-    this.preserveRunner = new PersistencePreserveRunner(this.context);
     this.reconcileCheckpointOperation = createPersistenceTransferRecovery(this.context, this.preserveRunner);
     this.retryPreserves = this.preserveRunner.retry.bind(this.preserveRunner);
     this.preservePersistence = new PreservePersistenceService(this.context, this.preserveRunner);

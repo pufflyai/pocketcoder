@@ -125,12 +125,13 @@ test.each(["preserve", "cancel"] as const)(
       if (!cancel) expect((await f.store.getWorkspaceStorage(f.workspace.id))?.state).toBe("retained");
       expect(await f.issuer.resource(initial.credential, f.workspace.id)).toBe(401);
       expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toEqual([]);
-      if (cancel) {
-        expect((await f.store.getWorkspace(f.workspace.id))?.state).toBe("canceled");
-        const purge = await built.persistence.purge(principal, f.workspace.id, randomUUID());
-        await built.persistence.drain();
-        expect((await f.store.getOperation(purge.id))?.state).toBe("succeeded");
-      }
+      // A failed upload keeps the source preserving for recovery; purge still ends it.
+      expect((await f.store.getWorkspace(f.workspace.id))?.state).toBe(cancel ? "canceled" : "preserving");
+      const purge = await built.persistence.purge(principal, f.workspace.id, randomUUID());
+      await built.persistence.drain();
+      expect((await f.store.getOperation(purge.id))?.state).toBe("succeeded");
+      expect((await f.store.getWorkspace(f.workspace.id))?.state).toBe("canceled");
+      expect((await f.store.listWorkspaceStorage(f.workspace.id)).map((row) => row.state)).toEqual(["deleted"]);
     } finally {
       f.issuer.controls.reply = "valid";
       await built?.checkpointTransfers?.close();
