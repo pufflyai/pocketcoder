@@ -65,7 +65,7 @@ and `token: null`. To recover a lost response, list with `request_id`, revoke,
 then issue a fresh request ID. Plaintext secrets never appear in inventory.
 The SDK exposes `client.principals.create/list/get/update` and `client.keys`.
 
-## Registry secrets
+## Controller secrets
 
 ```text
 PUT    /v1/secrets/{name}   scope secrets:write → { name, type, updated_at, retired_at }
@@ -78,7 +78,10 @@ PUT accepts `{ type: "registry", value: { server, username, password } }`, up to
 start with a letter or digit. The server encrypts values with its private data
 folder key. Read APIs return metadata only. DELETE blocks future resolution;
 a new PUT replaces the active configuration. Authority is checked again inside
-the database transaction. Setup and runtime issuer types are unavailable.
+the database transaction. Setup issuers accept
+`{ type: "setup-issuer", value: { url, authorization, policy } }`. The URL must
+use HTTPS without userinfo, queries or fragments. Runtime issuer types remain
+unavailable. See [private-source setup](private-source.md).
 
 A template uses `spec.imagePullSecret: "secretRef:<name>"`. Publishing such a
 template also requires `secrets:write`; launching it uses the caller's normal

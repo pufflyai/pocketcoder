@@ -1,10 +1,11 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type { EncryptedSecret } from "@pstdio/pocketcoder-runtime-contracts";
 import { assertAuthorityScope } from "@pstdio/pocketcoder-runtime-core";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { lockKeyAuthority } from "../auth/authority";
+import { fenceWorkspaceLeaseRows } from "./lease-fence";
 
 export function createSecrets({ db, tables }: DatabaseContext) {
   const { secrets, secretVersions } = tables;
@@ -62,6 +63,25 @@ export function createSecrets({ db, tables }: DatabaseContext) {
           .where(eq(secrets.name, name))
           .returning();
         if (!row) throw new ApiError("secret.not_found", "Unknown stored secret.");
+        const consumers = await tx
+          .selectDistinct({ id: tables.workspaceLeases.workspaceId })
+          .from(tables.workspaceLeases)
+          .where(
+            and(
+              eq(tables.workspaceLeases.secretName, name),
+              notInArray(tables.workspaceLeases.state, ["revoked", "expired"]),
+            ),
+          )
+          .orderBy(asc(tables.workspaceLeases.workspaceId));
+        const at = new Date();
+        for (const { id } of consumers) {
+          await tx
+            .select({ id: tables.workspaces.id })
+            .from(tables.workspaces)
+            .where(eq(tables.workspaces.id, id))
+            .for("update");
+          await fenceWorkspaceLeaseRows(tx, tables, id, at);
+        }
         return metadata(row);
       });
     },

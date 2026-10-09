@@ -77,6 +77,7 @@ export interface SchedulerDeps {
   store: WorkspaceStore & PersistenceStore & LogStore;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
+  revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
   transferRuntime?: WorkspaceTransferRuntime;
   secretResolver?: WorkspaceSecretResolver;
   connections: ConnectionHub;

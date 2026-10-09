@@ -122,7 +122,7 @@ describe("attachment manifest", () => {
   });
 });
 
-describe("protocol v7", () => {
+describe("protocol v8", () => {
   const envelope = {
     v: PROTOCOL_VERSION,
     workspace_id: randomUUID(),
@@ -131,12 +131,12 @@ describe("protocol v7", () => {
     sent_at: new Date().toISOString(),
   };
 
-  test("supports versions 1 through 7 and keeps capability gates distinct", () => {
-    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(PROTOCOL_VERSION).toBe(7);
+  test("supports versions 1 through 8 and keeps capability gates distinct", () => {
+    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(PROTOCOL_VERSION).toBe(8);
     expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
     expect(STREAMING_MIN_PROTOCOL_VERSION).toBe(5);
-    expect(SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION).toBe(6);
+    expect(SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION).toBe(8);
     expect(SOURCE_CREDENTIAL_MAX_BYTES).toBe(65_536);
   });
 

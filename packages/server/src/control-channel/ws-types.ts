@@ -1,7 +1,8 @@
 import type { CheckpointInstalled, ProtocolVersion, RestoreTransferSpec } from "@pstdio/pocketcoder-contracts";
-import type { Scheduler, Store, WorkspaceRow, WorkspaceSecretResolver } from "@pstdio/pocketcoder-runtime-core";
+import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
 import type { PersistenceService } from "../persistence/persistence";
+import type { createWorkspaceLeaseService } from "../secrets/lease-service";
 import type { Hub, LiveConnection } from "./hub";
 
 export interface WsDeps {
@@ -9,7 +10,7 @@ export interface WsDeps {
   hub: Hub;
   scheduler: Scheduler;
   pepper: string;
-  secretResolver?: WorkspaceSecretResolver;
+  workspaceLeases?: ReturnType<typeof createWorkspaceLeaseService>;
   cleanupInput?: (workspaceId: string) => Promise<void>;
   log?: (msg: string) => void;
   persistence?: PersistenceService;

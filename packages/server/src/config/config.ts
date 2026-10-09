@@ -17,6 +17,7 @@ export interface ServerConfig {
   dataDir: string;
   pepper: string;
   secretKey?: string;
+  issuerCaFile?: string;
   eventSigningKey: string;
   eventSinkUrl: string | null;
   egressImage: string | null;
@@ -307,6 +308,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     inputDir: env.POCKETCODER_INPUT_DIR ?? null,
     ...storage,
     ...secrets,
+    issuerCaFile: env.POCKETCODER_ISSUER_CA_FILE,
     kubernetesNamespace,
     kubernetesServiceAccount: env.POCKETCODER_KUBERNETES_SERVICE_ACCOUNT ?? null,
     kubernetesNodeSelector: scheduling.nodeSelector ?? null,

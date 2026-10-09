@@ -48,7 +48,11 @@ export function createTemplates({ db, tables: { templates, principals, machineKe
       return db.transaction(async (tx) => {
         const { metadata, spec } = parsed.manifest;
         const authority = await authorize(tx, actorKeyId, metadata.name);
-        if (spec.imagePullSecret) assertAuthorityScope(authority, "secrets:write");
+        if (
+          spec.imagePullSecret ||
+          Object.values(spec.source?.repositories ?? {}).some((repository) => repository.credential)
+        )
+          assertAuthorityScope(authority, "secrets:write");
         const result = await upsert(tx, {
           name: metadata.name,
           version: spec.version,

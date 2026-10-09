@@ -191,7 +191,7 @@ export class SchedulerAdmission {
 
   private async resolveRuntimeSecrets(row: WorkspaceRow) {
     const resolver = this.context.deps.secretResolver;
-    const { imagePullSecret: _registry, ...runtime } = row.templateSnapshot.spec;
+    const { imagePullSecret: _registry, source: _source, ...runtime } = row.templateSnapshot.spec;
     if (!resolver && JSON.stringify(runtime).includes('"secretRef:')) {
       throw new Error("secret.unavailable: no deployment secret resolver configured");
     }

@@ -155,3 +155,7 @@ jobs:
         env:
           POCKETCODER_KIND_BIN: /tmp/kind
         run: bun run test:kind:registry
+      - name: Verify private Git setup and revocation on both providers
+        env:
+          POCKETCODER_KIND_BIN: /tmp/kind
+        run: bun run test:source:live

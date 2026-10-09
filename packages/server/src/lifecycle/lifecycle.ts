@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { signEvent } from "@pstdio/pocketcoder-auth";
 import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools } from "@pstdio/pocketcoder-runtime-core";
 import { startLocalAdmin } from "../administration/local-admin";
@@ -6,6 +7,7 @@ import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "..
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
+import { createIssuerClient } from "../secrets/issuer-client";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
@@ -21,6 +23,7 @@ import {
   startExclusiveTimer,
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
+import { reconcileSetupLeases } from "./setup-lease-reconciliation";
 
 export type ServerLog = (message: string) => void;
 
@@ -32,6 +35,14 @@ export interface RunningPocketCoderServer {
 }
 
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
+
+function configuredIssuer(config: ServerConfig) {
+  return createIssuerClient(config.issuerCaFile ? { ca: readFileSync(config.issuerCaFile, "utf8") } : {});
+}
+
+function cleanupState(pending: number) {
+  return pending > 0 ? "pending" : "ok";
+}
 
 export async function startPocketCoderServer(
   config: ServerConfig = loadConfig(),
@@ -69,27 +80,31 @@ export async function startPocketCoderServer(
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const { app, agentApp, websocket, scheduler, persistence, warmPool, checkpointTransfers } = buildServer({
-      ...(authorizeLaunch ? { authorizeLaunch } : {}),
-      store,
-      driver,
-      ...(storageDriver ? { storageDriver } : {}),
-      ...(secretResolver ? { secretResolver } : {}),
-      pepper: config.pepper,
-      ...(config.secretKey ? { secretKey: config.secretKey } : {}),
-      eventSigningKey: config.eventSigningKey,
-      egressImage: config.egressImage,
-      limits: config.limits,
-      workspaceServerUrl: config.workspaceServerUrl,
-      persistenceLimits: config.persistenceLimits,
-      checkpointTransferOptions: checkpointTransferOptions(config),
-      ...(options.instanceId ? { instanceId: options.instanceId } : {}),
-      logger,
-      metrics,
-      warmPools,
-      readiness,
-    });
+    const { app, agentApp, websocket, scheduler, persistence, warmPool, checkpointTransfers, workspaceLeases } =
+      buildServer({
+        issuerClient: configuredIssuer(config),
+        ...(authorizeLaunch ? { authorizeLaunch } : {}),
+        store,
+        driver,
+        ...(storageDriver ? { storageDriver } : {}),
+        ...(secretResolver ? { secretResolver } : {}),
+        pepper: config.pepper,
+        ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+        eventSigningKey: config.eventSigningKey,
+        egressImage: config.egressImage,
+        limits: config.limits,
+        workspaceServerUrl: config.workspaceServerUrl,
+        persistenceLimits: config.persistenceLimits,
+        checkpointTransferOptions: checkpointTransferOptions(config),
+        ...(options.instanceId ? { instanceId: options.instanceId } : {}),
+        logger,
+        metrics,
+        warmPools,
+        readiness,
+      });
 
+    const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
+    readiness.set("cleanup", cleanupState(pendingSetup));
     readiness.set(
       "reconciliation",
       (await reconcileStartup(store, driver, storageDriver, log, metrics)) ? "ok" : "failed",
@@ -108,8 +123,9 @@ export async function startPocketCoderServer(
       async () => {
         try {
           await scheduler.tick();
+          const pendingLeases = await reconcileSetupLeases(store, workspaceLeases, scheduler);
           const pendingPurges = await persistence.retryPurges();
-          readiness.set("cleanup", pendingPurges > 0 ? "pending" : "ok");
+          readiness.set("cleanup", cleanupState(pendingPurges + pendingLeases));
           metrics.observe("purge.pending", pendingPurges);
           readiness.set("coordinator", "ok");
         } catch (error) {

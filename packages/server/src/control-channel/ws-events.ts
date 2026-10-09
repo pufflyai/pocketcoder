@@ -1,5 +1,12 @@
 import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
-import { type AgentFrame, AgentFrameSchema, isTerminal, MAX_FRAME_BYTES } from "@pstdio/pocketcoder-contracts";
+import {
+  type AgentFrame,
+  AgentFrameSchema,
+  type ExecSpec,
+  isTerminal,
+  MAX_FRAME_BYTES,
+} from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext, WSEvents } from "hono/ws";
 import { type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";
 import { execSpecOf, sourceCredentialFor } from "./ws-auth";
@@ -9,7 +16,34 @@ import type { CloseProtocol, WsAuth, WsDeps } from "./ws-types";
 const HEARTBEAT_SECONDS = 15;
 const LOG_CHUNK_BYTES = 65_536;
 
+function interruptedRestore(deps: WsDeps, auth: WsAuth, row: Awaited<ReturnType<WsDeps["store"]["getWorkspace"]>>) {
+  return (
+    auth.mode === "reconnect" && deps.checkpointTransfers && row?.launchMode === "restore" && row.state === "connected"
+  );
+}
+
 type RegisteredFrame = Extract<AgentFrame, { type: "registered" }>;
+
+async function restoreExec(
+  deps: WsDeps,
+  connection: LiveConnection,
+  row: WorkspaceRow,
+  exec: ExecSpec,
+  ws: WSContext,
+  closeProtocol: CloseProtocol,
+) {
+  if (!deps.checkpointTransfers || row.launchMode !== "restore" || row.state === "ready") return true;
+  const current = await deps.store.getWorkspace(row.id);
+  const transfer = current && (await deps.checkpointTransfers.restoreGrant(connection, current));
+  if (!transfer || !exec.restore || deps.hub.get(row.id) !== connection) {
+    deps.hub.detach(connection);
+    await deps.checkpointTransfers.disconnected?.(connection);
+    closeProtocol(ws, "restore transfer unavailable");
+    return false;
+  }
+  exec.restore.transfer = transfer;
+  return true;
+}
 
 async function registerConnection(
   deps: WsDeps,
@@ -23,23 +57,22 @@ async function registerConnection(
     closeProtocol(ws, "workspace ended");
     return null;
   }
+  if (auth.mode === "register" && row.state !== "provisioning") {
+    closeProtocol(ws, "registration no longer valid");
+    return null;
+  }
   if (frame.payload.template.digest !== row.templateDigest) {
     closeProtocol(ws, "template digest mismatch");
     return null;
   }
-  if (
-    auth.mode === "reconnect" &&
-    deps.checkpointTransfers &&
-    row.launchMode === "restore" &&
-    row.state === "connected"
-  ) {
+  if (interruptedRestore(deps, auth, row)) {
     await deps.scheduler.beginTermination(row, "failed", "restore_failed", new Date());
     closeProtocol(ws, "restore interrupted before readiness");
     return null;
   }
   const epoch = row.connectionEpoch + 1;
   let reconnectCredential: string | undefined;
-  let sourceCredential: string | null = null;
+  let sourceCredential: Awaited<ReturnType<typeof sourceCredentialFor>> = null;
   if (auth.mode === "register") {
     try {
       sourceCredential = await sourceCredentialFor(deps, row);
@@ -80,18 +113,10 @@ async function registerConnection(
   connection.registered = true;
   try {
     const restoreMode = deps.checkpointTransfers ? "controller_archive" : "provider_installed";
-    const exec = execSpecOf(row, sourceCredential, restoreMode);
-    if (deps.checkpointTransfers && row.launchMode === "restore" && row.state !== "ready") {
-      const current = await deps.store.getWorkspace(row.id);
-      const transfer = current && (await deps.checkpointTransfers?.restoreGrant(connection, current));
-      if (!transfer || !exec.restore || deps.hub.get(row.id) !== connection) {
-        deps.hub.detach(connection);
-        await deps.checkpointTransfers?.disconnected?.(connection);
-        closeProtocol(ws, "restore transfer unavailable");
-        return null;
-      }
-      exec.restore.transfer = transfer;
-    }
+    const exec = execSpecOf(row, sourceCredential?.credential ?? null, restoreMode);
+    if (exec.source && sourceCredential)
+      exec.source.credential_expires_at = sourceCredential.lease.issuerExpiresAt?.toISOString() ?? null;
+    if (!(await restoreExec(deps, connection, row, exec, ws, closeProtocol))) return null;
     deps.hub.send(connection, "registered_ack", {
       epoch,
       ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),

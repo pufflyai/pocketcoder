@@ -5,6 +5,8 @@ import { shutdownAgent } from "./agent/agent-shutdown";
 import { createSupervisorHarness } from "./agent/supervisor-harness";
 import { SupervisorTransfers } from "./agent/supervisor-transfers";
 import { AttachmentManager } from "./attachments/attachments";
+import { SetupCompletion } from "./bootstrap/setup-completion";
+import { prepareSourceSetup } from "./bootstrap/source-setup";
 import { loadProviderInput } from "./bootstrap/supervisor-bootstrap";
 import {
   EXIT_NETWORK_POLICY_FAILED,
@@ -18,8 +20,6 @@ import {
   clearSourceCredential,
   preflightNetwork,
   probeWritableMemory,
-  reportResolvedSource,
-  runSetupWithCredentials,
   startNetworkMonitor,
 } from "./bootstrap/supervisor-setup";
 import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
@@ -44,6 +44,10 @@ class Supervisor {
   private readonly transfers: SupervisorTransfers;
   private readonly harness: ReturnType<typeof createSupervisorHarness>;
   private exec: ExecSpec | null = null;
+  private readonly setupAbort = new AbortController();
+  private readonly setupCompletion = new SetupCompletion((requestId) =>
+    this.sendFrame("setup_complete", { request_id: requestId }),
+  );
   private shuttingDown = false;
   private quiescing = false;
   private readonly done: Promise<number>;
@@ -152,7 +156,8 @@ class Supervisor {
       await this.flushAndClose();
       return EXIT_WRITABLE_MEMORY_FAILED;
     }
-    const failedSetupStep = await runSetupWithCredentials(exec, {
+    const failedSetupStep = await prepareSourceSetup(exec, this.setupCompletion, {
+      abort: this.setupAbort,
       send: this.sendFrame.bind(this),
       log: this.logs.log.bind(this.logs),
       pump: this.logs.pump.bind(this.logs),
@@ -171,7 +176,6 @@ class Supervisor {
       await this.flushAndClose();
       return EXIT_SETUP_FAILED;
     }
-    await reportResolvedSource(exec, this.sendFrame.bind(this), this.logs.log.bind(this.logs));
     if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
     this.timers.push(this.healthMonitor.start(exec));
     const networkMonitor = startNetworkMonitor(exec, this.sendFrame.bind(this), (code) => {
@@ -191,6 +195,9 @@ class Supervisor {
     if (!parsed.success) return;
     const frame = parsed.data;
     switch (frame.type) {
+      case "setup_complete_ack":
+        this.setupCompletion.acknowledge(frame.payload.request_id);
+        return;
       case "registered_ack": {
         this.connection.setEpoch(frame.payload.epoch);
         if (frame.payload.reconnect_credential) {
@@ -298,6 +305,8 @@ class Supervisor {
   }
 
   private forwardSignal(signal: "SIGTERM" | "SIGKILL"): void {
+    this.setupAbort.abort();
+    this.setupCompletion.cancel();
     this.harness.phase = "terminating";
     if (this.harness.child && this.harness.exitCode === null) {
       this.harness.child.kill(signal);
@@ -312,6 +321,8 @@ class Supervisor {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     this.quiescing = true;
+    this.setupAbort.abort();
+    this.setupCompletion.cancel();
     await this.transfers.cancel();
     const exec = this.exec;
     const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
