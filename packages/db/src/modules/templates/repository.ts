@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   ApiError,
   parseTemplateManifest,
+  runtimeCredentialReferences,
   type TemplateManifest,
   TemplateSpecSchema,
 } from "@pstdio/pocketcoder-contracts";
@@ -50,6 +51,7 @@ export function createTemplates({ db, tables: { templates, principals, machineKe
         const authority = await authorize(tx, actorKeyId, metadata.name);
         if (
           spec.imagePullSecret ||
+          runtimeCredentialReferences(spec).length > 0 ||
           Object.values(spec.source?.repositories ?? {}).some((repository) => repository.credential)
         )
           assertAuthorityScope(authority, "secrets:write");

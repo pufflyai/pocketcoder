@@ -1,4 +1,4 @@
-import { isAgentApiNative, parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import { isAgentApiNative, isTerminal, parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type {
   StorageRef,
   WorkspaceCheckpointRow,
@@ -10,7 +10,36 @@ import type { PersistenceContext, SnapshotResult } from "./persistence-base";
 import { cleanupTransferAuthority, retainUnpublishedSource } from "./preserve-source-lifecycle";
 
 export class PersistencePreserveRunner {
+  private readonly running = new Map<string, Promise<void>>();
+
   constructor(private readonly context: PersistenceContext) {}
+
+  async retry() {
+    const operations = await this.context.deps.store.listIncompleteOperations();
+    const pending = operations.filter((operation) => operation.kind === "preserve" && operation.state === "pending");
+    for (const operation of pending) {
+      if (!operation.workspaceId || !operation.checkpointId) continue;
+      const workspace = await this.context.deps.store.getWorkspace(operation.workspaceId);
+      if (
+        !workspace ||
+        (workspace.state !== "preserving" && workspace.state !== "terminating" && !isTerminal(workspace.state))
+      )
+        continue;
+      void this.runPreserve(workspace.id, operation.checkpointId, operation.id).catch((error) => {
+        this.context.deps.log?.(`preserve ${operation.id}: ${String(error)}`);
+      });
+    }
+    return pending.length;
+  }
+
+  runPreserve(workspaceId: string, checkpointId: string, operationId: string) {
+    const active = this.running.get(workspaceId);
+    if (active) return active;
+    const task = this.attempt(workspaceId, checkpointId, operationId).finally(() => this.running.delete(workspaceId));
+    this.running.set(workspaceId, task);
+    this.context.track(task);
+    return task;
+  }
   private async cleanupTransferSource(workspace: WorkspaceRow, storage: WorkspaceStorageRow) {
     const { store, driver } = this.context.deps;
     await cleanupTransferAuthority(this.context, workspace);
@@ -234,16 +263,42 @@ export class PersistencePreserveRunner {
     await this.context.failOperation(operationId, reason);
   }
 
-  async runPreserve(workspaceId: string, checkpointId: string, operationId: string): Promise<void> {
+  private async attempt(workspaceId: string, checkpointId: string, operationId: string): Promise<void> {
     const { store } = this.context.deps;
-    await store.updateOperation(operationId, { state: "running", attemptCount: 1 }, this.context.now());
+    const operation = await store.getOperation(operationId);
+    if (!operation) return;
+    await store.updateOperation(
+      operationId,
+      { state: "pending", attemptCount: operation.attemptCount + 1 },
+      this.context.now(),
+    );
     const workspace = await store.getWorkspace(workspaceId);
     const checkpoint = await store.getCheckpoint(checkpointId);
-    const storage = await store.getWorkspaceStorage(workspaceId);
-    if (!workspace || !checkpoint || !storage) {
+    if (!workspace || !checkpoint) {
       await this.context.failOperation(operationId, "checkpoint_storage_lost");
       return;
     }
+    try {
+      // Pending records let cleanup resume after an issuer outage or controller restart.
+      await this.context.deps.revokeWorkspaceLeases?.(workspaceId);
+    } catch (error) {
+      this.context.deps.log?.(`preserve credential cleanup ${workspaceId}: ${String(error)}`);
+      return;
+    }
+    if ((await store.getWorkspace(workspaceId))?.state !== "preserving") {
+      const at = this.context.now();
+      await store.updateCheckpoint(checkpoint.id, { state: "failed", reasonCode: "operation_conflict" }, at);
+      const failed = await store.getCheckpoint(checkpoint.id);
+      if (failed) await this.context.emitCheckpointEvent("checkpoint.failed", failed);
+      await this.context.failOperation(operationId, "operation_conflict");
+      return;
+    }
+    const storage = await store.getWorkspaceStorage(workspaceId);
+    if (!storage) {
+      await this.context.failOperation(operationId, "checkpoint_storage_lost");
+      return;
+    }
+    await store.updateOperation(operationId, { state: "running" }, this.context.now());
     let stopped = false;
     try {
       if (this.context.deps.checkpointTransfers) {

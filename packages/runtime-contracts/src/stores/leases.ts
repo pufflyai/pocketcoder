@@ -17,8 +17,8 @@ export interface WorkspaceLeaseRow {
   secretName: string;
   secretVersionId: string;
   purpose: WorkspaceLeasePurpose;
-  sourceUrl: string;
-  sourceRevision: string;
+  sourceUrl: string | null;
+  sourceRevision: string | null;
   templateDigest: string;
   policyDigest: string;
   requestId: string;

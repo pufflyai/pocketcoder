@@ -22,6 +22,7 @@ export class PersistenceService {
     this.purge = purge.purge.bind(purge);
     this.retryPurges = purge.retry.bind(purge);
     this.preserveRunner = new PersistencePreserveRunner(this.context);
+    this.retryPreserves = this.preserveRunner.retry.bind(this.preserveRunner);
     this.preservePersistence = new PreservePersistenceService(this.context, this.preserveRunner);
     this.checkpoint = new PersistenceCheckpointService(this.context);
     this.maintenance = new PersistenceMaintenanceService(this.context);
@@ -40,6 +41,7 @@ export class PersistenceService {
   readonly drain: PersistenceContext["drain"];
   readonly purge: PersistencePurgeService["purge"];
   readonly retryPurges: PersistencePurgeService["retry"];
+  readonly retryPreserves: PersistencePreserveRunner["retry"];
   private readonly restoreService: PersistenceRestoreService;
 
   private readonly maintenance: PersistenceMaintenanceService;

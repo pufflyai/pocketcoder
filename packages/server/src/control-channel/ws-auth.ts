@@ -13,9 +13,11 @@ import {
   type ProtocolVersion,
   parseDurationMs,
   type RestoreMode,
+  RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
+  runtimeCredentialPath,
+  runtimeCredentialReferences,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
-  secretMountPath,
   snapshotServices,
   TERMINAL_REPLAY_BUFFER_BYTES,
 } from "@pstdio/pocketcoder-contracts";
@@ -64,6 +66,12 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     return { error: "Missing workspace credentials." };
   }
   const row = await deps.store.getWorkspace(credentials.workspaceId);
+  if (
+    row &&
+    runtimeCredentialReferences(row.templateSnapshot.spec).length &&
+    credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
+  )
+    return { error: "Runtime credentials require agent protocol version 9." };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
   if (
     deps.checkpointTransfers &&
@@ -204,6 +212,9 @@ export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow) {
 
 function materializeSecretEnv(env: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(env).map(([key, value]) => [key, value.startsWith("secretRef:") ? secretMountPath(value) : value]),
+    Object.entries(env).map(([key, value]) => [
+      key,
+      value.startsWith("secretRef:") ? runtimeCredentialPath(value) : value,
+    ]),
   );
 }

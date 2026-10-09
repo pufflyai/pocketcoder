@@ -82,7 +82,7 @@ for the permission model, content inventory, and backup replay rules.
 | Workspace registration secret | Supervisor | Single-use, spent at connect |
 | Reconnect credential | Supervisor | Memory-only, never touches the workspace filesystem |
 | Git/source setup lease (`secretRef:`) | Setup process | Bound to the workspace, template and repository; at most five minutes; revoked before the harness starts |
-| Model gateway credential | Workspace | Per-workspace, minted at launch, dead at teardown — never a shared or standing bearer |
+| Runtime issuer credential | Workspace memory storage | Per-workspace, at most five minutes or the earlier workspace deadline; renewed only while active, revoked at cleanup |
 
 ## Model access is a gateway concern
 
@@ -152,3 +152,12 @@ Classify by when the secret's authority is exercised, and by whom:
 - **By agent code at runtime** (a database the code under test connects to):
   it cannot be hidden from the reader. Make the backing resource ephemeral and
   workspace-scoped instead, and revoke it at teardown.
+
+## Runtime renewal
+
+Use a typed runtime issuer and read its credential file on each resource request.
+The supervisor replaces the file during renewal and stops the agent at expiry
+if renewal fails. Preserve, purge and termination fence renewal and wait for
+revocation or recorded expiry. Restored workspaces receive fresh authority.
+See the [runtime issuer recipe](runtime-credentials.md) for configuration, the
+HTTPS issuer contract, and the real Docker/Kubernetes validation command.

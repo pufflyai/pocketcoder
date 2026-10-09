@@ -217,5 +217,17 @@
     "folderMillis": 1791545058000,
     "hash": "9ac297ad91c74f6b473434f6d45b7805d94e90f8ea0210bb503c113f43752716",
     "name": "20261009112418_lumpy_obadiah_stane"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspace_leases\" ALTER COLUMN \"source_url\" DROP NOT NULL;",
+      "\nALTER TABLE \"workspace_leases\" ALTER COLUMN \"source_revision\" DROP NOT NULL;",
+      "\nALTER TABLE \"secret_versions\" DROP CONSTRAINT \"secret_versions_type_check\", ADD CONSTRAINT \"secret_versions_type_check\" CHECK (\"type\" IN ('setup-issuer', 'runtime-issuer', 'registry'));",
+      "\nALTER TABLE \"workspace_leases\" DROP CONSTRAINT \"workspace_leases_purpose\", ADD CONSTRAINT \"workspace_leases_purpose\" CHECK (\"purpose\" IN ('setup-issuer', 'runtime-issuer'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791551776000,
+    "hash": "06804295e4b48cef7c2c837daeec546b76617e9e7144bd21893da2022f22ac7e",
+    "name": "20261009131616_small_purple_man"
   }
 ]

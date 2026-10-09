@@ -15,8 +15,8 @@ type Reply =
   | "deep-policy";
 type RequestIdentity = {
   workspace_id: string;
-  source_url: string;
-  source_revision: string;
+  source_url: string | null;
+  source_revision: string | null;
   template_digest: string;
   request_id: string;
   request_digest: string;
@@ -34,12 +34,17 @@ type IssuedLease = {
 };
 
 export async function createTestIssuer(
-  options: { directoryRoot?: string; sourceUrl?: string; opensslBin?: string } = {},
+  options: { directoryRoot?: string; sourceUrl?: string; opensslBin?: string; resourceHost?: string } = {},
 ) {
   const directory = await mkdtemp(join(options.directoryRoot ?? tmpdir(), "pc-issuer-tls-"));
   try {
     const keyPath = join(directory, "key.pem");
     const certificatePath = join(directory, "cert.pem");
+    let subjectAltName = "subjectAltName=IP:127.0.0.1,DNS:localhost";
+    if (options.resourceHost) {
+      const type = /^[0-9.]+$/.test(options.resourceHost) ? "IP" : "DNS";
+      subjectAltName += `,${type}:${options.resourceHost}`;
+    }
     const certificate = Bun.spawn(
       [
         options.opensslBin ?? "openssl",
@@ -53,7 +58,7 @@ export async function createTestIssuer(
         "-subj",
         "/CN=localhost",
         "-addext",
-        "subjectAltName=IP:127.0.0.1,DNS:localhost",
+        subjectAltName,
         "-keyout",
         keyPath,
         "-out",
@@ -118,7 +123,8 @@ export async function createTestIssuer(
     }
     async function mint(identity: RequestIdentity, requestUrl: string) {
       if (tombstones.has(identity.request_id)) return new Response("revoked", { status: 409 });
-      if (!policy.repositories.includes(identity.source_url)) return new Response("refused", { status: 403 });
+      if (identity.purpose === "setup-issuer" && !policy.repositories.includes(identity.source_url ?? ""))
+        return new Response("refused", { status: 403 });
       if (digestOf(identity.policy) !== digestOf(policy) || identity.policy_digest !== digestOf(policy))
         return new Response("refused", { status: 403 });
       controls.mintCalls++;
@@ -163,7 +169,7 @@ export async function createTestIssuer(
       });
     }
     const server = Bun.serve({
-      hostname: "127.0.0.1",
+      hostname: options.resourceHost ? "0.0.0.0" : "127.0.0.1",
       port: 0,
       tls: { key, cert },
       async fetch(request) {
@@ -204,7 +210,8 @@ export async function createTestIssuer(
       },
     });
     return {
-      url: new URL("/leases", server.url).href,
+      url: `https://127.0.0.1:${server.port}/leases`,
+      resourceUrl: `https://${options.resourceHost ?? "127.0.0.1"}:${server.port}/resource`,
       ca: cert,
       authorization,
       policy,
@@ -214,12 +221,14 @@ export async function createTestIssuer(
           (row) =>
             !row.revoked &&
             row.expiresAt > new Date().toISOString() &&
-            new URL(request.url).pathname.startsWith(`${new URL(row.identity.source_url).pathname}/`) &&
+            new URL(request.url).pathname.startsWith(
+              `${new URL(row.identity.source_url ?? "https://invalid.example").pathname}/`,
+            ) &&
             request.headers.get("authorization") === `Bearer ${row.credential}`,
         );
       },
       async resource(credential: string, workspaceId: string, resource = policy.resource) {
-        const url = new URL("/resource", server.url);
+        const url = new URL(`https://127.0.0.1:${server.port}/resource`);
         url.searchParams.set("workspace", workspaceId);
         url.searchParams.set("resource", resource);
         return (await fetch(url, { headers: { authorization: `Bearer ${credential}` }, tls: { ca: cert } })).status;

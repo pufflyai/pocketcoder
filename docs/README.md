@@ -11,6 +11,7 @@ API drives the whole lifecycle.
 | [CLI reference](cli.md) | Every `pcd` command with examples |
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [Private source](private-source.md) | Scoped Git setup leases, issuer contract and real provider checks |
+| [Runtime credentials](runtime-credentials.md) | Renewable workspace authority and cleanup on both providers |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
 | [Source layout](source-layout.md) | Feature directories, dependencies, and contributor workflow |
 | [Architecture](architecture.md) | Components, database schema, workspace state machine, agent protocol |

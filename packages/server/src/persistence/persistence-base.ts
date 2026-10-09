@@ -23,6 +23,7 @@ import type { WorkspaceService } from "../workspaces/service";
 export interface PersistenceServiceDeps {
   store: AuthStore & TemplateStore & WorkspaceStore & PersistenceStore & OutputStore & ConversationStore & OutboxStore;
   scheduler: Scheduler;
+  revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
   checkpointTransfers?: {
