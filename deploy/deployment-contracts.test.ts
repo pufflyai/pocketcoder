@@ -9,14 +9,6 @@ test("maps Kubernetes readiness and liveness to the matching endpoints", async (
   expect(manifest).toContain("livenessProbe:\n            httpGet:\n              path: /livez");
 });
 
-test("ships database migrations beside the bundled server and pcd entry points", async () => {
-  const dockerfile = await readFile(join(import.meta.dir, "image/server.Dockerfile"), "utf8");
-
-  expect(dockerfile).toContain("COPY --from=build /src/packages/db/drizzle /opt/pocketcoder/drizzle");
-  expect(dockerfile).toContain("RUN test -f /opt/pocketcoder/drizzle/20260730103433_initial/migration.sql");
-  expect(dockerfile.split("\n")).toContain("WORKDIR /");
-});
-
 test("configures kubectl with the rotating in-cluster service account token", async () => {
   const [dockerfile, kubeconfig] = await Promise.all([
     readFile(join(import.meta.dir, "image/server.Dockerfile"), "utf8"),

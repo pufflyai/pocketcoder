@@ -11,7 +11,7 @@ renamed or removed before that release.
 | `coder-lite.dev/v1alpha1` | `pocketcoder.dev/v1alpha1` |
 | `X-Coder-Lite-Signature` | `X-PocketCoder-Signature` |
 | `/run/coder-lite/input` | `/run/pocketcoder/input` |
-| `/opt/coder-lite/ctl.js` | `/opt/pocketcoder/pcd.js` |
+| `/opt/coder-lite/ctl.js` | `/opt/pocketcoder/cli/index.js` |
 | `coder-lite-agent` binary | `pocketcoder-supervisor` |
 
 Apply the rename in one pass across deployment scripts, Compose/Kubernetes
@@ -22,7 +22,7 @@ Do not mix old and new identifiers within one deployment.
 After the replacement:
 
 1. Pin the server image and every workspace image by digest.
-2. Run database migrations with `pcd db migrate`.
+2. Start the server with a supported data folder; migrations run on startup.
 3. Validate every reviewed template.
 4. Run `pcd doctor --template <production-template>`.
 5. Confirm a signed event using `X-PocketCoder-Signature`.
@@ -31,3 +31,11 @@ After the replacement:
 write checks and completed a correlated request/response turn through the
 relay. It is safe to remove image-side world-writable workarounds after all
 deployed control planes contain the writable-memory ownership fix.
+
+## Embedded database cutover
+
+The embedded database opens only PGlite data folders. It does not convert an
+existing PostgreSQL install in place. Keep the stopped source database, original
+auth pepper, event-signing identity and required checkpoint bytes intact until
+the offline export/import flow is available and verified. A fresh `pc_data`
+folder is a new install, not a migration of existing state.

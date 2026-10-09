@@ -1,29 +1,5 @@
-# Local development stack: PostgreSQL plus pocketcoder-server on the host.
-# Non-interactive and idempotent; provider credentials never enter pocketcoder.
-#
-#   docker compose -f deploy/compose/docker-compose.yaml up -d
-#   export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
-#   export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
-#   bun run --filter '@pstdio/pocketcoder-cli' start db migrate
-#   POCKETCODER_TEMPLATE_DIR=examples/templates bun run --filter '@pstdio/pocketcoder-server' start
-
+# Local server with embedded PGlite. Keep controller data separate from workspace mounts.
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: pocketcoder
-      POSTGRES_PASSWORD: pocketcoder
-      POSTGRES_DB: pocketcoder
-    ports:
-      - "127.0.0.1:5433:5432"
-    volumes:
-      - pocketcoder-postgres:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pocketcoder"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   server:
     profiles: ["full"]
     image: ${POCKETCODER_SERVER_IMAGE:-pocketcoder-server:dev}
@@ -33,8 +9,7 @@ services:
     environment:
       POCKETCODER_HOST: 0.0.0.0
       POCKETCODER_PORT: "7080"
-      POCKETCODER_DATABASE_URL: postgres://pocketcoder:pocketcoder@postgres:5432/pocketcoder
-      POCKETCODER_DATABASE_SCHEMA: pocketcoder
+      POCKETCODER_DIR: /var/lib/pocketcoder-controller/pc_data
       POCKETCODER_AUTH_PEPPER: ${POCKETCODER_AUTH_PEPPER:-}
       POCKETCODER_TEMPLATE_DIR: /etc/pocketcoder/templates
       POCKETCODER_DRIVER: docker
@@ -48,16 +23,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - pocketcoder-data:/var/lib/pocketcoder-controller
       - /var/run/docker.sock:/var/run/docker.sock
       # Local demo only; production deployments mount their own reviewed manifests.
       - ../../examples/templates:/etc/pocketcoder/templates:ro
       # The host daemon resolves child-container bind paths. Keep this
       # absolute source and target identical.
       - ${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}:${POCKETCODER_HOST_DATA_ROOT:-/tmp/pocketcoder-data}
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  pocketcoder-postgres:
+  pocketcoder-data:

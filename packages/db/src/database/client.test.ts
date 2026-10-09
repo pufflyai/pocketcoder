@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/bun-sql";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/pglite";
 import { createSchema } from "../schema";
-import { createPostgresFixture, insertTestWorkspace, TEST_DATABASE_URL } from "../test-fixtures";
+import { createPGliteFixture, insertTestWorkspace } from "../test-fixtures";
 
 test("runtime tables qualify every table and foreign key with their schema", () => {
   const tables = createSchema("isolated_store");
@@ -20,10 +20,10 @@ test("runtime tables qualify every table and foreign key with their schema", () 
   }
 });
 
-describe.skipIf(!TEST_DATABASE_URL)("typed database behavior", () => {
+describe.each(["memory", "disk"] as const)("typed database behavior (%s)", (mode) => {
   test("stores isolate concurrent queries and round-trip arrays and binary values", async () => {
-    const a = await createPostgresFixture("pc40_a");
-    const b = await createPostgresFixture("pc40_b");
+    const a = await createPGliteFixture("pc40_a", mode);
+    const b = await createPGliteFixture("pc40_b", mode);
     try {
       const scopes = ["comma,value", 'quote"value', "slash\\value", "", "NULL"];
       const [left, right] = await Promise.all([
@@ -56,10 +56,10 @@ describe.skipIf(!TEST_DATABASE_URL)("typed database behavior", () => {
   });
 
   test("a failed event append rolls back a transition and its history", async () => {
-    const fixture = await createPostgresFixture("pc40_rollback");
+    const fixture = await createPGliteFixture("pc40_rollback", mode);
     try {
       const row = await insertTestWorkspace(fixture, "rollback");
-      await fixture.sql.unsafe(
+      await fixture.query(
         `ALTER TABLE "${fixture.schema}".event_outbox ADD CONSTRAINT reject_provisioning CHECK (event_type <> 'workspace.provisioning')`,
       );
       await expect(

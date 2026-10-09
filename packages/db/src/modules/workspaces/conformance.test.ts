@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { createPostgresFixture, insertTestWorkspace, TEST_DATABASE_URL, workspaceOf } from "../../test-fixtures";
+import { createPGliteFixture, insertTestWorkspace, workspaceOf } from "../../test-fixtures";
 
-describe.skipIf(!TEST_DATABASE_URL)("postgres workspace capabilities", () => {
+describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)", (mode) => {
   test("round-trips identity, templates, workspaces, and conversations", async () => {
-    const fixture = await createPostgresFixture("pkt_workspace");
+    const fixture = await createPGliteFixture("pkt_workspace", mode);
     const { parsed, principal, store, template } = fixture;
     try {
       const inheritedKeyId = randomUUID();
@@ -88,7 +88,7 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres workspace capabilities", () => {
   }, 30_000);
 
   test("round-trips warm claims, transitions, logs, and network events", async () => {
-    const fixture = await createPostgresFixture("pkt_runtime");
+    const fixture = await createPGliteFixture("pkt_runtime", mode);
     const { store, template } = fixture;
     try {
       const warmWorkspace = await insertTestWorkspace(fixture, "pg-warm-task");

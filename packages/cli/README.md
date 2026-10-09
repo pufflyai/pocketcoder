@@ -16,8 +16,8 @@ pcd --version
 pcd --help
 ```
 
-Database and administrative commands use `POCKETCODER_DATABASE_URL` and
-`POCKETCODER_DATABASE_SCHEMA`. Workspace and diagnostics commands use
+Local administrative commands use `POCKETCODER_DIR` (default `./pc_data`)
+while the server is stopped. Startup applies migrations automatically. Workspace and diagnostics commands use
 `POCKETCODER_URL` and `POCKETCODER_KEY`.
 
 The CLI automatically loads the nearest `.env` file without overriding values

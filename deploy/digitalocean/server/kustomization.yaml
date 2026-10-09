@@ -6,6 +6,7 @@ resources:
 patches:
   - path: deployment-patch.yaml
   - path: pvc-patch.yaml
+  - path: controller-data-patch.yaml
 images:
   - name: ghcr.io/OWNER/REPOSITORY/server
     newName: REPLACE_SERVER_IMAGE_REPOSITORY

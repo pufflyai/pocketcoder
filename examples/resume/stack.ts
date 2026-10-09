@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { loadConfig } from "@pstdio/pocketcoder-server/config";
 import { startPocketCoderServer } from "@pstdio/pocketcoder-server/lifecycle";
-import { freePort, waitFor } from "../e2e/local-process";
+import { freePort } from "../e2e/local-process";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { removeRunDirectory } from "./cleanup";
@@ -54,7 +54,6 @@ export class IsolatedStack {
     const directory = await mkdtemp(join(tmpdir(), "pocketcoder-resume-"));
     this.cleanups.push(() => removeRunDirectory(directory));
     const id = randomBytes(6).toString("hex");
-    const postgres = `pocketcoder-resume-db-${id}`;
     console.log("Building the remote client...");
     await this.run(["bun", "run", "build"]);
     console.log("Building the Pi workspace image...");
@@ -67,46 +66,13 @@ export class IsolatedStack {
       dockerfile: "examples/harnesses/pi/Dockerfile",
       command: (args) => this.run(args),
     });
-    console.log("Starting the isolated database...");
-    this.cleanups.push(() => run(["docker", "rm", "--force", postgres]));
-    await this.run([
-      "docker",
-      "run",
-      "--detach",
-      "--name",
-      postgres,
-      "--env",
-      "POSTGRES_USER=pocketcoder",
-      "--env",
-      "POSTGRES_PASSWORD=pocketcoder",
-      "--env",
-      "POSTGRES_DB=pocketcoder",
-      "--publish",
-      "127.0.0.1::5432",
-      "postgres:16-alpine",
-    ]);
-    const port = (await this.run(["docker", "port", postgres, "5432/tcp"])).stdout.split(":").at(-1);
-    await waitFor(
-      async () => {
-        try {
-          await this.run(["docker", "exec", postgres, "pg_isready", "-h", "127.0.0.1", "-U", "pocketcoder"]);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      30_000,
-      "isolated PostgreSQL",
-    );
     const adminEnv = {
-      POCKETCODER_DATABASE_URL: `postgres://pocketcoder:pocketcoder@127.0.0.1:${port}/pocketcoder`,
-      POCKETCODER_DATABASE_SCHEMA: "pocketcoder",
+      POCKETCODER_DIR: join(directory, "pc_data"),
       POCKETCODER_AUTH_PEPPER: randomBytes(32).toString("base64url"),
     };
     await Bun.write(join(directory, ".env"), "");
     const cli = ["bun", "--no-env-file", "packages/cli/src/index.ts", "--env-file", join(directory, ".env")];
     console.log("Preparing the database and API credentials...");
-    await this.run([...cli, "db", "migrate"], adminEnv);
     await this.run(
       [
         ...cli,

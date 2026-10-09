@@ -9,10 +9,10 @@ the server container.
 
 Commands use one of two access paths:
 
-- **Database commands** (migrations, principals, keys, `templates
-  list-database`) need `POCKETCODER_DATABASE_URL`,
-  `POCKETCODER_DATABASE_SCHEMA` (default `pocketcoder`), and for key issuance
-  `POCKETCODER_AUTH_PEPPER`.
+- **Local data commands** (principals, keys, `templates list-database`) use
+  `POCKETCODER_DIR` (default `./pc_data`) and, for key issuance,
+  `POCKETCODER_AUTH_PEPPER`. Run them while the server is stopped; they take
+  the same folder lock.
 - **REST commands** (workspaces, checkpoints, storage, pools, `templates list`,
   doctor) need `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and
   `POCKETCODER_KEY` (a machine key).
@@ -51,19 +51,18 @@ pcd server stop [--timeout-seconds 15]
 These commands manage only the PocketCoder server process. `start` reads the
 normal server environment and starts the same implementation as `bun run
 start`; it does not build images, generate templates, start a model gateway,
-migrate a database, create credentials, or launch a workspace.
+create credentials, or launch a workspace.
 
 Background starts record an identity-protected PID and log path under
 `POCKETCODER_STATE_DIR`. `stop` refuses to signal a process whose identity does
 not match that record. Use `--foreground` to keep the server attached and stop
 it with Ctrl-C.
 
-## Database and migrations
+## Data folder and migrations
 
-```sh
-pcd db migrate     # apply pending migrations (schema-scoped advisory lock)
-pcd db status      # per-migration applied/pending/DRIFTED
-```
+The server loads a migrated seed and applies pending migrations on startup.
+Unknown histories and checksum drift stop startup. Use `POCKETCODER_DIR` to
+select the private data folder. Use local disk or a block volume, never NFS.
 
 ## Principals and machine keys
 
@@ -114,7 +113,7 @@ pcd templates validate examples/templates/*.json # validate manifests offline, n
 pcd templates render <manifest> --image <repo@sha256:digest> --out <directory> \
   [--set '<json-pointer>=<json-value>']...
 pcd templates list [--json]                      # versions the key may launch, through the REST API
-pcd templates list-database                      # every loaded version, straight from PostgreSQL
+pcd templates list-database                      # every loaded version, from embedded PGlite
 ```
 
 `templates render` reads JSON or YAML, replaces a placeholder image with an

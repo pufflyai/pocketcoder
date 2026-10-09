@@ -1,18 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { migrateDatabase, PostgresStore } from "@pstdio/pocketcoder-db";
+import { PGliteStore } from "@pstdio/pocketcoder-db";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
-import { SQL } from "bun";
 import { buildServer } from "../app";
 import { DEFAULT_PERSISTENCE_LIMITS } from "./persistence";
 
-const databaseUrl = process.env.POCKETCODER_TEST_DATABASE_URL;
 const pepper = "postgres-route-test-pepper";
 
 async function waitFor(condition: () => Promise<boolean>) {
@@ -39,11 +36,9 @@ async function removeStorageRoot(root: string) {
   await rm(root, { recursive: true, force: true });
 }
 
-describe.skipIf(!databaseUrl)("PostgreSQL persistence routes", () => {
-  const schema = `pkt_routes_${randomUUID().slice(0, 8)}`;
-  let sql: SQL;
+describe.each(["memory", "disk"] as const)("PGlite persistence routes (%s)", (mode) => {
   let root: string;
-  let store: PostgresStore;
+  let store: PGliteStore;
   let server: ReturnType<typeof buildServer>;
   let storageDriver: FilesystemStorageDriver;
   let request: (path: string, init?: RequestInit) => Response | Promise<Response>;
@@ -51,36 +46,16 @@ describe.skipIf(!databaseUrl)("PostgreSQL persistence routes", () => {
   let sourceStorageId: string;
 
   beforeAll(async () => {
-    sql = new SQL(databaseUrl as string);
     root = await mkdtemp(join(tmpdir(), "pocketcoder-postgres-routes-"));
-    store = new PostgresStore(databaseUrl as string, schema);
-    await migrateDatabase(sql, schema);
-    await store.init();
+    store = await PGliteStore.create(mode === "disk" ? join(root, "pc_data") : undefined);
   });
 
   afterAll(async () => {
     await store?.close();
-    if (sql) {
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await sql.end();
-    }
     if (root) await removeStorageRoot(root);
   });
 
   beforeAll(async () => {
-    const constraints = (await sql.unsafe(
-      `SELECT constraint_name FROM information_schema.table_constraints
-         WHERE constraint_schema = $1 AND table_name = 'workspace_operations'
-         AND constraint_type = 'FOREIGN KEY'`,
-      [schema],
-    )) as Array<{ constraint_name: string }>;
-    expect(constraints.map((row) => row.constraint_name)).toEqual(
-      expect.arrayContaining([
-        "workspace_operations_fBJ1lkBRI011_fkey",
-        "workspace_operations_result_workspace_id_workspaces_id_fkey",
-      ]),
-    );
-
     const parsed = fixtureTemplatePersistent();
     await store.upsertTemplate({
       name: parsed.manifest.metadata.name,
@@ -154,14 +129,7 @@ describe.skipIf(!databaseUrl)("PostgreSQL persistence routes", () => {
     await writeFile(join(sourceRoot, "worktree", "state.txt"), "preserved\n");
   });
 
-  test("preserve, restore, and cleanup legacy records keep forks and foreign-key targets valid", async () => {
-    // Reproduce the extra JSON-string layer written by 0.7.1 before preserve.
-    await sql.unsafe(`UPDATE "${schema}".workspaces SET
-        template_snapshot = to_jsonb(template_snapshot::text), metadata = to_jsonb(metadata::text),
-        health = to_jsonb(health::text), provider_ref = to_jsonb(provider_ref::text)`);
-    await sql.unsafe(`UPDATE "${schema}".workspace_storage SET
-        provider_ref = to_jsonb(provider_ref::text), mount_manifest = to_jsonb(mount_manifest::text)`);
-
+  test("preserve, restore, and cleanup keep forks and foreign-key targets valid", async () => {
     const preserveResponse = await request(`/v1/workspaces/${created.id}/preserve`, {
       method: "POST",
       headers: { "idempotency-key": "postgres-preserve" },
@@ -176,10 +144,6 @@ describe.skipIf(!databaseUrl)("PostgreSQL persistence routes", () => {
     const preserveOperation = await store.getOperation(preserved.operation.id);
     expect(preserveOperation?.checkpointId).toBe(preserved.checkpoint.id);
     expect(await store.getCheckpoint(preserveOperation?.checkpointId ?? "")).not.toBeNull();
-
-    await sql.unsafe(`UPDATE "${schema}".workspace_checkpoints SET
-        provider_ref = to_jsonb(provider_ref::text), template_snapshot = to_jsonb(template_snapshot::text),
-        manifest = to_jsonb(manifest::text)`);
 
     const restoreResponse = await request(`/v1/checkpoints/${preserved.checkpoint.id}/restore`, {
       method: "POST",

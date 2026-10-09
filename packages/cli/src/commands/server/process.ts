@@ -121,7 +121,7 @@ function configFingerprint(config: ServerConfig): string {
     listenHost: config.listenHost,
     listenPort: config.listenPort,
     storeKind: config.storeKind,
-    databaseSchema: config.databaseSchema,
+    dataDir: config.dataDir,
     templateDir: config.templateDir,
     driverKind: config.driverKind,
     inputDir: config.inputDir,

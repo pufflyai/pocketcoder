@@ -134,8 +134,8 @@ The independent operator remains able to reconcile and purge the disabled target
 
 ## Backup replay and rollout
 
-1. Upgrade the controller first and run `pcd db migrate`. This release adds one
-   forward migration; it preserves existing allocations and credentials.
+1. Upgrade the controller first. Startup applies known forward migrations.
+   Existing allocations and credentials remain stored in the data folder.
 2. Pin compatible reviewed CLI/controller and SDK artifacts. The existing
    workspace protocol is unchanged; no new workspace credential is introduced.
 3. Restore database and storage backups into an isolated environment. Keep normal

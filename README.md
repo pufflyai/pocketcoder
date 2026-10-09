@@ -58,18 +58,17 @@ The manifests in `examples/templates` intentionally contain placeholder image
 and gateway values. Validate them offline, but do not use that directory as a
 runnable server catalog.
 
-With PostgreSQL (dedicated database or an existing one; pocketcoder only
-touches its own schema, default `pocketcoder`):
+For durable state, set a private data folder on local disk or a block volume.
+The fixed `pocketcoder` schema migrates automatically. Local admin commands
+run while the server is stopped and hold the same folder lock.
 
 ```sh
-docker compose -f deploy/compose/docker-compose.yaml up -d
-export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
-export POCKETCODER_DATABASE_SCHEMA=pocketcoder
-export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
+export POCKETCODER_DIR="$PWD/pc_data"
+export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
+# Keep the pepper in private operator configuration for later restarts.
 
-bun run pcd db migrate
 bun run pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read --templates '*'
-bun run pcd keys issue --principal my-backend --expires never   # shown once
+bun run pcd keys issue --principal my-backend --expires "$(bun -e 'console.log(new Date(Date.now() + 86_400_000).toISOString())')"   # shown once
 
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
 bun run pcd -- server start
@@ -154,9 +153,8 @@ Lerna coordinates tasks across `packages/*` and the private
 `examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
 
-Two suites need external services and skip themselves otherwise:
-`POCKETCODER_TEST_DATABASE_URL=postgres://…` runs the PostgreSQL store suite
-(migrations, schema isolation, store behavior), and
+The PGlite memory and disk suites run without an external database. Docker
+suites require a running daemon, and
 `POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
 
 Harness and client integrations live under [`examples/`](examples/). The
@@ -221,10 +219,9 @@ trusted publisher. Do not keep a publish token in the repository.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DATABASE_URL` | required (postgres store) | PostgreSQL server/database |
-| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | Runtime schema (dedicated or shared DB) |
-| `POCKETCODER_STORE` | `postgres` | `memory` for tests/single-process development |
-| `POCKETCODER_AUTH_PEPPER` | required (postgres store) | Keyed digest secret for machine keys |
+| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
+| `POCKETCODER_STORE` | `pglite` | `memory` for tests/single-process development |
+| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |

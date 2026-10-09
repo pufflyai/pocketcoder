@@ -2,15 +2,13 @@
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.3+
+- [Bun](https://bun.sh) 1.4.2+
 - Docker (to actually run workspaces; the API works without it)
-- PostgreSQL (optional for development; required for production)
 
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun run test      # unit suites use the in-memory store; suites needing
-                  # PostgreSQL, Docker, or a cluster skip themselves
+bun run test      # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
 ```
 
 ## 1. Run the server
@@ -25,26 +23,23 @@ The checked-in manifests under `examples/templates` are illustrative and use
 placeholder image/gateway values. Do not point a runnable server at that
 directory; materialize or deploy a digest-pinned runtime template first.
 
-With PostgreSQL (durable; the schema defaults to `pocketcoder` and may live in
-a dedicated database or an existing one):
+For durable state, use the embedded database on local disk or a block volume:
 
 ```sh
-docker compose -f deploy/compose/docker-compose.yaml up -d   # local postgres on :5433
-export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
-export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
-
-bun run pcd db migrate
+export POCKETCODER_DIR="$PWD/pc_data"
+export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
+# Keep the pepper in private operator configuration for later restarts.
 bun run pcd -- server start
 bun run pcd -- server status
 ```
 
-The server command starts only PocketCoder. It does not migrate the database,
+The server command starts only PocketCoder. It migrates the database on startup. It does not
 build an agent image, generate a template, or start a model gateway. The server
 logs which templates it loaded and refuses to start if any template file is
 invalid. The OpenAPI document is at
 `http://127.0.0.1:7080/v1/openapi.json`.
 
-For a persistent local Pi deployment, after configuring PostgreSQL, a principal
+For a persistent local Pi deployment, after configuring the data folder, a principal
 and machine key, run the optional repository convenience:
 
 ```sh
@@ -94,7 +89,7 @@ bun run example:pi:resume
 ```
 
 Docker must be running. The command builds the Pi image and remote client, then
-starts a separate PostgreSQL container, API, model gateways, and temporary storage.
+starts an isolated PGlite database, API, model gateways, and temporary storage.
 It does not use your existing PocketCoder server, machine key, or database.
 Startup prints each build and setup stage. Ctrl+C stops waiting while the server
 continues starting. Run the same command again to wait for that server. Each

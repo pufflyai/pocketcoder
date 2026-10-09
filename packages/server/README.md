@@ -15,7 +15,7 @@ failures. This application brings those control-plane parts together.
 - Loads templates, admits work, schedules workspace runtimes, and manages warm
   pools.
 - Uses Docker or Kubernetes drivers and optional storage and secret adapters.
-- Stores state in PostgreSQL for deployments or in memory for local
+- Stores state in embedded PGlite for deployments or in memory for local
   development.
 - Dispatches durable events and reconciles database state with provider state
   after startup.
