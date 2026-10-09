@@ -45,13 +45,13 @@
     "release": "bun run build && bun run pack:check && changeset publish",
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",
     "test": "bun run test:all",
-    "test:all": "bun run test:unit && bun run test:performance && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run pack:check:test",
+    "test:all": "bun run test:unit && bun run test:performance && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run pack:check:test && bun run test:extensions",
     "test:kind:registry": "bun --no-env-file scripts/test-kind-registry.ts",
     "test:source:live": "bun --no-env-file scripts/test-source-live.ts",
     "test:deploy": "bun test deploy",
     "test:integration": "bun test packages/db/src/pglite-conformance.test.ts packages/db/src/modules/persistence/conformance.test.ts packages/db/src/modules/workspaces/conformance.test.ts packages/server/src/persistence/persistence-pglite-conformance.test.ts packages/drivers/src/docker/docker-registry-conformance.test.ts packages/drivers/src/docker/docker-conformance.test.ts packages/drivers/src/docker/docker-egress-conformance.test.ts packages/drivers/src/kubernetes/kubernetes.test.ts packages/egress/src/proxy/docker-conformance.test.ts packages/egress/src/proxy/kubernetes-conformance.test.ts",
     "test:unit": "lerna run test -- --path-ignore-patterns='**/*conformance.test.ts' --path-ignore-patterns='**/*.benchmark.test.ts'",
-    "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json && tsc --project examples/native/tsconfig.json",
+    "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json && tsc --project examples/native/tsconfig.json && bun run --cwd .pstdio/extensions/pocketcoder typecheck",
     "version-packages": "changeset version",
     "example:pi:resume": "bun examples/resume/run.ts",
     "example:pi:resume:check": "bun examples/resume/run.ts --check",
@@ -62,7 +62,8 @@
     "example:e2e:docker-checkpoint": "bun --no-env-file examples/e2e/docker-checkpoint.ts",
     "example:e2e:docker-checkpoint-failures": "bun --no-env-file examples/e2e/docker-checkpoint-source-failures.ts",
     "example:e2e:docker-checkpoint-repeat": "bun --no-env-file examples/e2e/docker-checkpoint-repeat.ts",
-    "example:e2e:native": "bun --no-env-file examples/native/run.ts"
+    "example:e2e:native": "bun --no-env-file examples/native/run.ts",
+    "test:extensions": "bun run build:native && bun test ./.pstdio/extensions/pocketcoder"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
