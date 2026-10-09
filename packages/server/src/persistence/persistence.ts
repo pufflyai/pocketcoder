@@ -13,6 +13,7 @@ import { PreservePersistenceService } from "./persistence-preserve";
 import { PersistencePreserveRunner } from "./persistence-preserve-runner";
 import { PersistencePurgeService } from "./persistence-purge";
 import { PersistenceRestoreService } from "./persistence-restore";
+import { createPersistenceTransferRecovery } from "./persistence-transfer-recovery";
 
 export class PersistenceService {
   constructor(deps: PersistenceServiceDeps) {
@@ -22,6 +23,7 @@ export class PersistenceService {
     this.purge = purge.purge.bind(purge);
     this.retryPurges = purge.retry.bind(purge);
     this.preserveRunner = new PersistencePreserveRunner(this.context);
+    this.reconcileCheckpointOperation = createPersistenceTransferRecovery(this.context, this.preserveRunner);
     this.retryPreserves = this.preserveRunner.retry.bind(this.preserveRunner);
     this.preservePersistence = new PreservePersistenceService(this.context, this.preserveRunner);
     this.checkpoint = new PersistenceCheckpointService(this.context);
@@ -38,6 +40,7 @@ export class PersistenceService {
     this.delete = this.maintenance.delete.bind(this.maintenance);
     this.restore = this.restoreService.restore.bind(this.restoreService);
   }
+  readonly reconcileCheckpointOperation: ReturnType<typeof createPersistenceTransferRecovery>;
   readonly drain: PersistenceContext["drain"];
   readonly purge: PersistencePurgeService["purge"];
   readonly retryPurges: PersistencePurgeService["retry"];

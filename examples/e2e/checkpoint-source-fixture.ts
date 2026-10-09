@@ -37,27 +37,31 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
   const templatePath = join(templateDir, "echo.json");
   await writeFile(templatePath, JSON.stringify(parsed.manifest));
   const proxy = createCheckpointInterruptionProxy(proxyPort, agentPort);
-  const controller = Bun.spawn([...cli, "serve", "--dir", dataDir], {
-    cwd: root,
-    env: {
-      ...process.env,
-      POCKETCODER_DIR: dataDir,
-      POCKETCODER_TEMPLATE_DIR: undefined,
-      POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
-      POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
-      POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${proxyPort}`,
-      POCKETCODER_INPUT_DIR: join(directory, "inputs"),
-      POCKETCODER_STORAGE_BACKEND: "filesystem",
-      POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "live"),
-      POCKETCODER_CHECKPOINT_DIR: checkpointDir,
-      POCKETCODER_MAX_CHECKPOINT_FILES: options.deadlinePolicy ? "100" : "1",
-      POCKETCODER_SECRET_PROVIDER: "disabled",
-      POCKETCODER_WARM_POOLS: "[]",
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const output = Promise.all([new Response(controller.stdout).text(), new Response(controller.stderr).text()]);
+  function start() {
+    const controller = Bun.spawn([...cli, "serve", "--dir", dataDir], {
+      cwd: root,
+      env: {
+        ...process.env,
+        POCKETCODER_DIR: dataDir,
+        POCKETCODER_TEMPLATE_DIR: undefined,
+        POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
+        POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
+        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${proxyPort}`,
+        POCKETCODER_INPUT_DIR: join(directory, "inputs"),
+        POCKETCODER_STORAGE_BACKEND: "filesystem",
+        POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "live"),
+        POCKETCODER_CHECKPOINT_DIR: checkpointDir,
+        POCKETCODER_MAX_CHECKPOINT_FILES: options.deadlinePolicy ? "100" : "1",
+        POCKETCODER_SECRET_PROVIDER: "disabled",
+        POCKETCODER_WARM_POOLS: "[]",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = Promise.all([new Response(controller.stdout).text(), new Response(controller.stderr).text()]);
+    return { controller, output };
+  }
+  let { controller, output } = start();
   const sources: string[] = [];
   let stopped = false;
   async function stop() {
@@ -68,7 +72,7 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
     console.log((await output).join("\n"));
     await proxy.close();
   }
-  try {
+  async function ready() {
     await waitFor(
       async () => {
         if (controller.exitCode !== null) throw new Error(`Controller exited: ${(await output).join("\n")}`);
@@ -79,6 +83,9 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
       30_000,
       "source survival controller",
     );
+  }
+  try {
+    await ready();
     const owner = JSON.parse(
       (
         await command(
@@ -106,6 +113,13 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
       checkpointDir,
       proxy,
       stop,
+      async restart() {
+        controller.kill("SIGKILL");
+        await controller.exited;
+        console.log((await output).join("\n"));
+        ({ controller, output } = start());
+        await ready();
+      },
       ownWorkspace: (id: string) => sources.push(id),
       async createSource() {
         const source = await createHarnessWorkspace({ baseUrl, key: owner.token, template: "echo-harness" });

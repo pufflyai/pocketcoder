@@ -15,9 +15,11 @@ import {
   reconcilePersistence,
   reconcileProviders,
   type Store,
+  type WorkspaceOperationRow,
 } from "@pstdio/pocketcoder-runtime-core";
 import { openControllerStore } from "../bootstrap/controller-store";
 import type { ServerConfig } from "../config/config";
+import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import type { ServerLog } from "./lifecycle";
 
 async function initializeStore(config: ServerConfig, log: ServerLog): Promise<Store> {
@@ -103,6 +105,7 @@ export async function reconcileStartup(
   storageDriver: ReturnType<typeof createStorageDriver>,
   log: ServerLog,
   metrics: RuntimeMetrics,
+  reconcileCheckpointOperation?: (operation: WorkspaceOperationRow) => Promise<boolean>,
 ): Promise<boolean> {
   try {
     await reconcileProviders({
@@ -112,7 +115,7 @@ export async function reconcileStartup(
       log,
       metrics,
     });
-    await reconcilePersistence({ store, driver, storageDriver, log, metrics });
+    await reconcilePersistence({ store, driver, storageDriver, log, metrics, reconcileCheckpointOperation });
     return true;
   } catch (error) {
     log(`startup reconciliation failed: ${String(error)}`);
@@ -143,4 +146,17 @@ export async function initializeController(config: ServerConfig, log: ServerLog)
     return { config, store: await initializeStore(config, log), directory: await realpath(config.dataDir) };
   const controller = await openControllerStore(config.dataDir);
   return { config: { ...config, ...controller.keys }, store: controller.store, directory: controller.dataDirectory };
+}
+
+export async function reconcileCheckpointPreserves(
+  store: Store,
+  recover: (operation: WorkspaceOperationRow) => Promise<boolean>,
+  transfers?: CheckpointTransferService,
+  verifyComplete = false,
+) {
+  const pending = (await transfers?.reconcile(verifyComplete)) ?? 0;
+  for (const operation of await store.listIncompleteOperations()) {
+    if (operation.kind === "preserve" && operation.state === "running") await recover(operation);
+  }
+  return pending;
 }
