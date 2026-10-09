@@ -97,8 +97,10 @@ USER 10001:10001
         process.execPath,
         "--no-env-file",
         "test",
-        "packages/server/src/testing/private-source.conformance.test.ts",
-        ...process.argv.slice(2),
+        process.argv.includes("--runtime")
+          ? "packages/server/src/testing/runtime-credential.conformance.test.ts"
+          : "packages/server/src/testing/private-source.conformance.test.ts",
+        ...process.argv.slice(2).filter((arg) => arg !== "--runtime"),
       ],
       {
         ...process.env,

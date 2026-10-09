@@ -20,7 +20,13 @@ export function createWorkspaceLeaseService({
     config: Awaited<ReturnType<typeof vault.resolve>>,
     row: Awaited<ReturnType<typeof store.requestWorkspaceLease>>,
   ) {
-    if (config.type === "registry" || ["revoking", "revoked", "expired"].includes(row.state)) throw unavailable();
+    if (
+      config.type === "registry" ||
+      ["revoking", "revoked", "expired"].includes(row.state) ||
+      row.requestExpiresAt <= now() ||
+      (await store.hasWorkspaceLeaseFence(row.workspaceId))
+    )
+      throw unavailable();
     const result = await issuer.mint(config.value, row);
     const issued = await store.recordWorkspaceLeaseIssued(
       row.id,
@@ -51,6 +57,14 @@ export function createWorkspaceLeaseService({
     purpose: WorkspaceLeasePurpose,
     requestId: string = randomUUID(),
   ) {
+    const existing = (await store.listWorkspaceLeases(workspaceId)).find(
+      (row) => row.secretName === name && row.requestId === requestId,
+    );
+    if (existing) {
+      if (existing.purpose !== purpose) throw unavailable();
+      // A lost reply must keep the issuer and policy of its recorded request.
+      return await deliver(await vault.resolveVersion(existing.secretVersionId, purpose), existing);
+    }
     const config = await vault.resolve(name, purpose);
     if (config.type === "registry") throw unavailable();
     const row = await store.requestWorkspaceLease({
@@ -71,6 +85,30 @@ export function createWorkspaceLeaseService({
       if (!row || row.workspaceId !== workspaceId) throw unavailable();
       const config = await vault.resolveVersion(row.secretVersionId, row.purpose);
       return await deliver(config, row);
+    },
+    async renew(workspaceId: string, previousLeaseId: string, requestId: string) {
+      const previous = await store.getWorkspaceLease(previousLeaseId);
+      if (!previous || previous.workspaceId !== workspaceId || previous.purpose !== "runtime-issuer")
+        throw unavailable();
+      return await issue(workspaceId, previous.secretName, "runtime-issuer", requestId);
+    },
+    async completeRenewal(workspaceId: string, previousLeaseId: string, leaseId: string) {
+      const previous = await store.getWorkspaceLease(previousLeaseId);
+      const installed = await store.getWorkspaceLease(leaseId);
+      if (
+        !previous ||
+        !installed ||
+        previous.id === installed.id ||
+        previous.workspaceId !== workspaceId ||
+        installed.workspaceId !== workspaceId ||
+        previous.purpose !== "runtime-issuer" ||
+        installed.purpose !== "runtime-issuer" ||
+        previous.secretName !== installed.secretName
+      )
+        throw unavailable();
+      if (previous.state === "revoked" || previous.state === "expired") return;
+      if (installed.state !== "delivered") throw unavailable();
+      await revoke(previousLeaseId);
     },
     revoke,
     async completeSetup(workspaceId: string) {

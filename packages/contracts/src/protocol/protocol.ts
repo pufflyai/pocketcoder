@@ -39,6 +39,14 @@ import {
 } from "./protocol-checkpoint";
 
 export * from "./protocol-checkpoint";
+export * from "./protocol-credentials";
+
+import {
+  CredentialInstalledPayload,
+  CredentialRenewedPayload,
+  CredentialRenewPayload,
+  WorkspaceCredentialSchema,
+} from "./protocol-credentials";
 
 import {
   ProxyStreamAckPayload,
@@ -70,10 +78,11 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
+export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, 7, PROTOCOL_VERSION] as const;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, 7, 8, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -95,6 +104,7 @@ const EnvelopeBase = z.object({
     z.literal(5),
     z.literal(6),
     z.literal(7),
+    z.literal(8),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -188,6 +198,8 @@ export const RestoreStatusPayload = z.object({
 export const ConversationMessagePayload = ConversationMessageInputSchema;
 
 export const AgentFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
   EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
@@ -228,6 +240,7 @@ export type AgentFrame = z.infer<typeof AgentFrameSchema>;
 // --- Server -> Agent frames ---
 
 export const RegisteredAckPayload = z.object({
+  credentials: z.array(WorkspaceCredentialSchema).max(64).default([]),
   epoch: z.number().int().positive(),
   reconnect_credential: z.string().optional(),
   limits: z.object({
@@ -268,6 +281,8 @@ export const PrepareCheckpointPayload = z.object({
 });
 
 export const ServerFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("credential_renewed"), payload: CredentialRenewedPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_installed_ack"), payload: CredentialInstalledPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete_ack"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),

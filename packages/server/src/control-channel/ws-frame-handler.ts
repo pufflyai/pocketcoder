@@ -8,6 +8,7 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
+import { confirmCredential, renewCredential } from "./credential-frames";
 import type { LiveConnection } from "./hub";
 import { completeSourceSetup, setupAuthorityClosed } from "./setup-authority";
 import type { CloseProtocol, WsDeps } from "./ws-types";
@@ -146,6 +147,12 @@ export async function handleConnectedFrame(
 ): Promise<void> {
   if (frame.type !== "conversation_message" && deps.hub.get(connection.workspaceId) !== connection) return;
   switch (frame.type) {
+    case "credential_renew":
+      await renewCredential(deps, connection, frame.payload);
+      return;
+    case "credential_installed":
+      await confirmCredential(deps, connection, frame.payload);
+      return;
     case "setup_complete":
       await completeSourceSetup(deps, connection, frame.payload.request_id);
       return;

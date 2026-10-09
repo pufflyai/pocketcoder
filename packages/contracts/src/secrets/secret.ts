@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SECRET_TYPES = ["setup-issuer", "registry"] as const;
+export const SECRET_TYPES = ["setup-issuer", "runtime-issuer", "registry"] as const;
 export const SecretTypeSchema = z.enum(SECRET_TYPES);
 export type SecretType = z.infer<typeof SecretTypeSchema>;
 export const SecretNameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/);
@@ -27,6 +27,7 @@ const RegistryConfigSchema = z.strictObject({
 });
 export const SecretPutRequestSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("setup-issuer"), value: IssuerConfigSchema }),
+  z.strictObject({ type: z.literal("runtime-issuer"), value: IssuerConfigSchema }),
   z.strictObject({ type: z.literal("registry"), value: RegistryConfigSchema }),
 ]);
 export type SecretPutRequest = z.infer<typeof SecretPutRequestSchema>;

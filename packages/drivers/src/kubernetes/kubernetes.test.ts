@@ -261,7 +261,7 @@ describe("Kubernetes workspace driver", () => {
     expect(job.spec.template.spec.containers[0]?.volumeMounts.map((mount) => mount.mountPath)).toContain(
       "/home/onefin",
     );
-    expect(job.spec.template.spec.volumes).toHaveLength(5);
+    expect(job.spec.template.spec.volumes).toHaveLength(6);
   });
 
   test("places NET_ADMIN and audit credentials only in a restartable native sidecar", async () => {

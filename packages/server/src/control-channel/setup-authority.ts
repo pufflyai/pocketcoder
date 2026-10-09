@@ -9,7 +9,9 @@ export async function setupAuthorityClosed(store: Store, row: WorkspaceRow) {
   const leases = await store.listWorkspaceLeases(row.id);
   return (
     leases.some((lease) => lease.secretName === reference.slice(10) && lease.deliveredAt !== null) &&
-    leases.every((lease) => lease.state === "revoked" || lease.state === "expired")
+    leases
+      .filter((lease) => lease.purpose === "setup-issuer")
+      .every((lease) => lease.state === "revoked" || lease.state === "expired")
   );
 }
 
