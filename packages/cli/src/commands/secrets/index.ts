@@ -36,7 +36,7 @@ export function addSecretCommands(parser: Argv) {
     const put = addAction(
       commands,
       "put <name>",
-      "Store controller registry or setup issuer configuration",
+      "Store controller registry or workspace issuer configuration",
       (command) =>
         command
           .positional("name", { type: "string", demandOption: true })

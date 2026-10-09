@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ProviderInput } from "@pstdio/pocketcoder-contracts";
+import { type ProviderInput, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
@@ -190,12 +190,12 @@ export class SchedulerAdmission {
   }
 
   private async resolveRuntimeSecrets(row: WorkspaceRow) {
-    const resolver = this.context.deps.secretResolver;
-    const { imagePullSecret: _registry, source: _source, ...runtime } = row.templateSnapshot.spec;
-    if (!resolver && JSON.stringify(runtime).includes('"secretRef:')) {
-      throw new Error("secret.unavailable: no deployment secret resolver configured");
-    }
-    return resolver ? resolver.resolve(row) : [];
+    const spec = row.templateSnapshot.spec;
+    if (spec.setup.some((step) => Object.values(step.env).some((value) => value.startsWith("secretRef:"))))
+      throw new Error("secret.unavailable: setup environment credentials are not supported");
+    if (runtimeCredentialReferences(spec).length && !this.context.deps.revokeWorkspaceLeases)
+      throw new Error("secret.unavailable: no runtime issuer configured");
+    return [];
   }
 
   private async cleanupFailedLaunch(row: WorkspaceRow) {

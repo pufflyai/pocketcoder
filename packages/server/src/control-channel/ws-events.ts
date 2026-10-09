@@ -8,7 +8,9 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext, WSEvents } from "hono/ws";
+import { activeConnectionWorkspace } from "./connection-authority";
 import { type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";
+import { workspaceCredentialsFor } from "./workspace-credentials";
 import { execSpecOf, sourceCredentialFor } from "./ws-auth";
 import { handleConnectedFrame } from "./ws-frame-handler";
 import type { CloseProtocol, WsAuth, WsDeps } from "./ws-types";
@@ -113,12 +115,17 @@ async function registerConnection(
   connection.registered = true;
   try {
     const restoreMode = deps.checkpointTransfers ? "controller_archive" : "provider_installed";
+    const credentials = await workspaceCredentialsFor(deps, row);
+    if (!(await activeConnectionWorkspace(deps, connection))) {
+      closeProtocol(ws, "workspace ended during credential delivery");
+      return null;
+    }
     const exec = execSpecOf(row, sourceCredential?.credential ?? null, restoreMode);
-    if (exec.source && sourceCredential)
-      exec.source.credential_expires_at = sourceCredential.lease.issuerExpiresAt?.toISOString() ?? null;
+    if (exec.source) exec.source.credential_expires_at = sourceCredential?.lease.issuerExpiresAt?.toISOString() ?? null;
     if (!(await restoreExec(deps, connection, row, exec, ws, closeProtocol))) return null;
     deps.hub.send(connection, "registered_ack", {
       epoch,
+      credentials,
       ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
       limits: {
         max_frame_bytes: MAX_FRAME_BYTES,
@@ -131,6 +138,7 @@ async function registerConnection(
     deps.hub.resumeTerminals(connection);
     return connection;
   } catch (error) {
+    await deps.scheduler.finalize(row, "failed", "secret_resolution_failed", new Date());
     deps.hub.detach(connection);
     await deps.checkpointTransfers?.disconnected?.(connection);
     throw error;

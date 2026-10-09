@@ -67,6 +67,7 @@ export class PersistencePurgeService {
       await scheduler.drain();
       const workspace = await store.getWorkspace(workspaceId);
       if (!workspace) throw new Error("Workspace missing");
+      await this.context.deps.revokeWorkspaceLeases?.(workspaceId);
       if (await this.hasActiveCopies(workspaceId, workspace.state === "queued")) {
         reason = "purge_operation_in_progress";
         throw new Error(reason);

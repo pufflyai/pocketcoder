@@ -5,25 +5,19 @@ import { shutdownAgent } from "./agent/agent-shutdown";
 import { createSupervisorHarness } from "./agent/supervisor-harness";
 import { SupervisorTransfers } from "./agent/supervisor-transfers";
 import { AttachmentManager } from "./attachments/attachments";
+import { prepareWorkspace } from "./bootstrap/prepare-workspace";
 import { SetupCompletion } from "./bootstrap/setup-completion";
-import { prepareSourceSetup } from "./bootstrap/source-setup";
 import { loadProviderInput } from "./bootstrap/supervisor-bootstrap";
 import {
   EXIT_NETWORK_POLICY_FAILED,
   EXIT_PROTOCOL_ERROR,
   EXIT_REGISTRATION_FAILED,
   EXIT_SETUP_FAILED,
-  EXIT_WRITABLE_MEMORY_FAILED,
 } from "./bootstrap/supervisor-constants";
-import { installRestoredCheckpoint } from "./bootstrap/supervisor-restore";
-import {
-  clearSourceCredential,
-  preflightNetwork,
-  probeWritableMemory,
-  startNetworkMonitor,
-} from "./bootstrap/supervisor-setup";
+import { clearSourceCredential, preflightNetwork, startNetworkMonitor } from "./bootstrap/supervisor-setup";
 import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
 import { quiesceArchive } from "./checkpoints/quiesce-archive";
+import { WorkspaceCredentials } from "./credentials/workspace-credentials";
 import { SupervisorLogs } from "./observability/supervisor-logs";
 import { relayProxyRequest } from "./proxy/proxy-relay";
 import { ProxyStreamCoordinator } from "./proxy/proxy-stream";
@@ -43,6 +37,7 @@ class Supervisor {
   private readonly terminals: TerminalManager;
   private readonly transfers: SupervisorTransfers;
   private readonly harness: ReturnType<typeof createSupervisorHarness>;
+  private readonly credentials: WorkspaceCredentials;
   private exec: ExecSpec | null = null;
   private readonly setupAbort = new AbortController();
   private readonly setupCompletion = new SetupCompletion((requestId) =>
@@ -81,6 +76,7 @@ class Supervisor {
           },
           setQuiescing: () => {
             this.quiescing = true;
+            this.credentials.setQuiescing(true);
           },
           child: () => this.harness.child,
           drainChild: () => this.harness.drained,
@@ -88,6 +84,13 @@ class Supervisor {
         }),
     });
     this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+    this.credentials = new WorkspaceCredentials({
+      send: (message) => this.sendFrame(message.type, message.payload),
+      addSecret: this.logs.addSecret.bind(this.logs),
+      expired: () => {
+        void this.gracefulShutdown();
+      },
+    });
     this.harness = createSupervisorHarness(input, {
       send: this.sendFrame.bind(this),
       logs: this.logs,
@@ -121,6 +124,7 @@ class Supervisor {
     try {
       return await this.runWorkspace();
     } finally {
+      await this.credentials.stop();
       process.off("SIGINT", shutdown);
       process.off("SIGTERM", shutdown);
     }
@@ -139,43 +143,16 @@ class Supervisor {
     }
 
     this.timers.push(this.healthMonitor.startHeartbeat());
-    const installed = await installRestoredCheckpoint(exec, this.transfers, {
+    const failed = await prepareWorkspace(exec, this.transfers, this.setupCompletion, {
       send: this.sendFrame.bind(this),
       close: this.flushAndClose.bind(this),
       logs: this.logs,
-    });
-    if (!installed) return EXIT_SETUP_FAILED;
-    const memoryOk = await probeWritableMemory(exec, this.logs.log.bind(this.logs));
-    if (!memoryOk) {
-      clearSourceCredential(exec);
-      this.sendFrame("process_state", {
-        phase: "exited",
-        exit_code: EXIT_WRITABLE_MEMORY_FAILED,
-        setup_step: "writable-memory-preflight",
-      });
-      await this.flushAndClose();
-      return EXIT_WRITABLE_MEMORY_FAILED;
-    }
-    const failedSetupStep = await prepareSourceSetup(exec, this.setupCompletion, {
       abort: this.setupAbort,
-      send: this.sendFrame.bind(this),
-      log: this.logs.log.bind(this.logs),
-      pump: this.logs.pump.bind(this.logs),
-      addSecret: this.logs.addSecret.bind(this.logs),
-      removeSecret: this.logs.removeSecret.bind(this.logs),
       setSetupPhase: () => {
         this.harness.phase = "setup";
       },
     });
-    if (failedSetupStep) {
-      this.sendFrame("process_state", {
-        phase: "exited",
-        exit_code: EXIT_SETUP_FAILED,
-        setup_step: failedSetupStep,
-      });
-      await this.flushAndClose();
-      return EXIT_SETUP_FAILED;
-    }
+    if (failed !== null) return failed;
     if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
     this.timers.push(this.healthMonitor.start(exec));
     const networkMonitor = startNetworkMonitor(exec, this.sendFrame.bind(this), (code) => {
@@ -195,11 +172,23 @@ class Supervisor {
     if (!parsed.success) return;
     const frame = parsed.data;
     switch (frame.type) {
+      case "credential_renewed":
+        await this.credentials.renewed(frame.payload);
+        return;
+      case "credential_installed_ack":
+        this.credentials.confirmed(frame.payload);
+        return;
       case "setup_complete_ack":
         this.setupCompletion.acknowledge(frame.payload.request_id);
         return;
       case "registered_ack": {
         this.connection.setEpoch(frame.payload.epoch);
+        try {
+          await this.credentials.install(frame.payload.credentials);
+        } catch {
+          await this.gracefulShutdown();
+          return;
+        }
         if (frame.payload.reconnect_credential) {
           this.connection.setReconnectCredential(frame.payload.reconnect_credential);
         }
@@ -300,6 +289,7 @@ class Supervisor {
       closeTerminals: () => this.terminals.closeAll("checkpoint"),
       setQuiescing: (value) => {
         this.quiescing = value;
+        this.credentials.setQuiescing(value);
       },
     });
   }
@@ -321,6 +311,7 @@ class Supervisor {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     this.quiescing = true;
+    this.credentials.setQuiescing(true);
     this.setupAbort.abort();
     this.setupCompletion.cancel();
     await this.transfers.cancel();
@@ -342,6 +333,7 @@ class Supervisor {
   }
 
   private async flushAndClose(): Promise<void> {
+    await this.credentials.stop();
     await this.transfers.cancel();
     await this.proxyStreams.cancelAll();
     await this.terminals.closeAll("workspace_ended");

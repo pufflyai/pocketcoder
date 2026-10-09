@@ -4,11 +4,11 @@ import type { WorkspaceLeaseRequest, WorkspaceLeaseRow } from "@pstdio/pocketcod
 import { and, asc, eq, isNull, lte, notInArray } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { leaseSourceIdentity, leaseWorkspaceActive } from "./lease-authority";
 import { fenceWorkspaceLeaseRows } from "./lease-fence";
 
 const closed = ["revoked", "expired"] as const;
 const isClosed = (state: string) => state === "revoked" || state === "expired";
-const active = ["provisioning"];
 
 async function enforceReferenceLimit(
   tx: Transaction,
@@ -67,8 +67,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
         await lock(tx, input.secretName, 4);
         const owner = await workspace(tx, input.workspaceId);
         if (await fenced(tx, owner.id)) throw new Error("Lease workspace is fenced");
-        if (!active.includes(owner.state) || owner.purgeRequestedAt || owner.deadlineAt <= input.at)
-          throw new Error("Lease workspace is inactive");
+        if (!leaseWorkspaceActive(owner, input.purpose, input.at)) throw new Error("Lease workspace is inactive");
         const [issuer] = await tx
           .select()
           .from(secrets)
@@ -89,10 +88,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
           assertRequestIdentity(existing, input, owner.templateDigest);
           return existing;
         }
-        const source = owner.sourceDescriptor;
-        const repository = source && owner.templateSnapshot.spec.source?.repositories[source.repository];
-        if (owner.launchMode !== "create" || !source || repository?.credential !== `secretRef:${input.secretName}`)
-          throw new Error("Lease source reference is unavailable");
+        const sourceIdentity = leaseSourceIdentity(owner, input.purpose, input.secretName);
         await enforceReferenceLimit(tx, leases, input);
         const requestExpiresAt = new Date(Math.min(owner.deadlineAt.getTime(), input.at.getTime() + 300_000));
         const identity = {
@@ -100,8 +96,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
           secretName: input.secretName,
           secretVersionId: issuer.versionId,
           purpose: input.purpose,
-          sourceUrl: repository.url,
-          sourceRevision: source.revision,
+          ...sourceIdentity,
           templateDigest: owner.templateDigest,
           policyDigest: input.policyDigest,
           requestId: input.requestId,
@@ -175,11 +170,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
         )
           throw new Error("Lease request identity changed");
         const stopped =
-          row.state === "revoking" ||
-          (await fenced(tx, owner.id)) ||
-          !active.includes(owner.state) ||
-          owner.purgeRequestedAt ||
-          owner.deadlineAt <= at;
+          row.state === "revoking" || (await fenced(tx, owner.id)) || !leaseWorkspaceActive(owner, row.purpose, at);
         let state = row.state;
         if (stopped) state = "revoking";
         else if (state !== "delivered") state = "issued";
@@ -194,9 +185,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
           !row.issuerExpiresAt ||
           row.issuerExpiresAt <= at ||
           (await fenced(tx, owner.id)) ||
-          !active.includes(owner.state) ||
-          owner.purgeRequestedAt ||
-          owner.deadlineAt <= at
+          !leaseWorkspaceActive(owner, row.purpose, at)
         )
           return null;
         return update(tx, id, { state: "delivered", deliveredAt: row.deliveredAt ?? at, updatedAt: at });

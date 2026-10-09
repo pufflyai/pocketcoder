@@ -45,6 +45,8 @@ export async function setupLeaseClosed(tx: Transaction, tables: DatabaseContext[
   const leases = await tx.select().from(tables.workspaceLeases).where(eq(tables.workspaceLeases.workspaceId, row.id));
   return (
     leases.some((lease) => lease.secretName === reference.slice(10) && lease.deliveredAt !== null) &&
-    leases.every((lease) => lease.state === "revoked" || lease.state === "expired")
+    leases
+      .filter((lease) => lease.purpose === "setup-issuer")
+      .every((lease) => lease.state === "revoked" || lease.state === "expired")
   );
 }

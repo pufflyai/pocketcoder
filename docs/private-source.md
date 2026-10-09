@@ -108,7 +108,7 @@ issuer outage leaves a durable cleanup request. Cleanup retries by its original
 request ID. The workspace stays unfinished until revocation is acknowledged or
 an acknowledged lease has proven expiry. Agent readiness also checks this in
 the database. A saved copy of the setup credential has no authority after this
-barrier. Runtime issuer credentials are not supported by this slice.
+barrier. Runtime renewal uses the separate [runtime issuer flow](runtime-credentials.md).
 
 Run `bun run test:source:live` for real Docker and kind Git clones with a local
 HTTPS issuer. The fixture uses HTTP Git only for synthetic data on the local

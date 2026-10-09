@@ -124,8 +124,9 @@ export async function startPocketCoderServer(
         try {
           await scheduler.tick();
           const pendingLeases = await reconcileSetupLeases(store, workspaceLeases, scheduler);
+          const pendingPreserves = await persistence.retryPreserves();
           const pendingPurges = await persistence.retryPurges();
-          readiness.set("cleanup", cleanupState(pendingPurges + pendingLeases));
+          readiness.set("cleanup", cleanupState(pendingPurges + pendingLeases + pendingPreserves));
           metrics.observe("purge.pending", pendingPurges);
           readiness.set("coordinator", "ok");
         } catch (error) {
