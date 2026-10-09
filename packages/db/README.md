@@ -1,42 +1,36 @@
 # `@pstdio/pocketcoder-db`
 
-The PostgreSQL persistence adapter for PocketCoder.
+The embedded PGlite store for PocketCoder. `PGliteStore.create(dataDir)` opens
+`dataDir/db/`, migrates it and returns the full runtime `Store`. Omit `dataDir`
+for a fresh in-memory PGlite instance in tests. Close the store when finished.
 
-## Why it exists
+The fixed core schema is `pocketcoder`. Its generated SQL registry, seed, WASM
+and filesystem bundle ship with the application. No source checkout or adjacent
+migration folder is needed. The core seed contains only core tables; a future
+manager must build its own seed and registry.
 
-Production control-plane state must survive server restarts and support safe
-coordination between operations. This package keeps PostgreSQL and Drizzle
-details behind the runtime's driver-neutral store contract.
+Disk instances take a kernel `flock` on the canonical data folder's stable
+`LOCK` file before database writes. The descriptor stays open until close;
+SIGKILL releases it. Do not delete `LOCK`. Use local disk or block storage,
+never NFS or EFS. A Kubernetes node must be fenced before volume reattachment.
 
-## What it does
+First start stages the seed, syncs its files and atomically publishes `db/`.
+Startup rejects incompatible engine versions, unknown migration history, gaps
+and checksum drift. PostgreSQL fsync is enabled and routed to native file and
+directory fsync. PGlite relaxed durability is disabled; shared buffers are 16 MB.
 
-- Implements the full runtime `Store` interface with `PostgresStore`.
-- Defines the Drizzle schema for principals, keys, templates, workspaces,
-  conversations, logs, persistence, warm pools, terminals, and the event
-  outbox.
-- Runs generated migrations under a PostgreSQL advisory lock and reports
-  migration status.
-- Supports configurable PostgreSQL schemas for deployment and isolated tests.
+`store.ts` composes adjacent feature repositories under `src/modules/` using
+one Drizzle client and schema-backed queries. Transactions share one connection;
+keep driver, network and timer waits outside their callbacks. Workspace state,
+history and outbox changes use the same transaction.
 
-Change the TypeScript schema first, then run `bun run db:generate` from the
-repository root. Do not edit generated migration SQL by hand.
+Change the TypeScript schema first, then run `bun run db:generate`. Do not edit
+migration SQL by hand. `bun run db:seed` rebuilds the core seed and SQL registry;
+`bun run check` verifies those assets against generated migrations and the
+pinned engine. Type-only changes do not need a new migration.
 
-## Source layout
-
-`store.ts` composes feature repositories under `src/modules/`. They share one
-Drizzle client and schema-qualified table set from `src/database/context.ts`.
-The runtime contract stays in `runtime-contracts`; only this adapter imports
-Drizzle. Ordinary queries use table objects and inferred row types.
-
-`src/schema/` contains table factories shared by runtime queries and Drizzle
-Kit. Kit receives unqualified tables, while runtime queries use the configured
-PostgreSQL schema. A TypeScript type or file move must not create a migration.
-
-Workspace state changes pass one transaction to history and outbox writes.
-PostgreSQL advisory locks remain in focused helpers, and the coordinator keeps
-its session lock on a reserved connection until shutdown.
-
-Run database conformance tests against a disposable PostgreSQL database by
-setting `POCKETCODER_TEST_DATABASE_URL` in your test environment, then running
-`bun test packages/db/src` from the repository root. Tests create isolated
-schemas and remove them when they finish.
+`bun test packages/db/src` runs memory and disk conformance, rollback, migration
+drift, process locking, SIGKILL recovery and a compiled fixture without adjacent
+assets. The compiled fixture also checks the 512 MB first-start memory budget.
+CI runs the disk and compiled checks on macOS and Linux, on arm64 and x64.
+Real hosted block-volume crash and node-fencing checks remain release gates.

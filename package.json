@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "lerna run build",
-    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts",
+    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check",
     "check-licenses": "bun scripts/check-licenses.ts",
     "check-licenses:test": "bun test scripts/check-licenses.test.ts",
     "check-boundaries:test": "bun test scripts/check-boundaries.test.ts",
@@ -18,7 +18,7 @@
     "changeset": "changeset",
     "changeset:status": "changeset status",
     "pcd": "bun --no-env-file packages/cli/src/index.ts",
-    "db:generate": "bun run --cwd packages/db db:generate",
+    "db:generate": "bun run --cwd packages/db db:generate && bun run db:seed",
     "dev": "lerna run dev --parallel",
     "example:digitalocean:check": "bun deploy/digitalocean/preflight.ts",
     "example:e2e": "bun examples/e2e/run.ts",
@@ -46,12 +46,13 @@
     "test": "bun run test:all",
     "test:all": "bun run test:unit && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run pack:check:test",
     "test:deploy": "bun test deploy",
-    "test:integration": "bun test packages/db/src/postgres-conformance.test.ts packages/db/src/modules/persistence/conformance.test.ts packages/db/src/modules/workspaces/conformance.test.ts packages/server/src/persistence/persistence-postgres-conformance.test.ts packages/drivers/src/docker/docker-conformance.test.ts packages/drivers/src/docker/docker-egress-conformance.test.ts packages/drivers/src/kubernetes/kubernetes.test.ts packages/egress/src/proxy/docker-conformance.test.ts packages/egress/src/proxy/kubernetes-conformance.test.ts",
+    "test:integration": "bun test packages/db/src/pglite-conformance.test.ts packages/db/src/modules/persistence/conformance.test.ts packages/db/src/modules/workspaces/conformance.test.ts packages/server/src/persistence/persistence-pglite-conformance.test.ts packages/drivers/src/docker/docker-conformance.test.ts packages/drivers/src/docker/docker-egress-conformance.test.ts packages/drivers/src/kubernetes/kubernetes.test.ts packages/egress/src/proxy/docker-conformance.test.ts packages/egress/src/proxy/kubernetes-conformance.test.ts",
     "test:unit": "lerna run test -- --path-ignore-patterns='**/*conformance.test.ts'",
     "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json",
     "version-packages": "changeset version",
     "example:pi:resume": "bun examples/resume/run.ts",
-    "example:pi:resume:check": "bun examples/resume/run.ts --check"
+    "example:pi:resume:check": "bun examples/resume/run.ts --check",
+    "db:seed": "bun scripts/build-pglite-seed.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -69,6 +70,8 @@
     "lerna": "^9.0.7",
     "nx": "^23.1.0",
     "semver": "7.8.4",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@electric-sql/pglite": "0.5.8",
+    "drizzle-orm": "1.0.0-rc.4"
   }
 }

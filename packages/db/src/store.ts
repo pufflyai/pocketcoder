@@ -1,5 +1,5 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
-import { createDatabaseContext, createLifecycle } from "./database/context";
+import { createDatabaseContext, createLifecycle, type DatabaseContext } from "./database/context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import { createAuth } from "./modules/auth/repository";
 import { createConversations } from "./modules/conversations/repository";
@@ -18,9 +18,12 @@ import { createAdmission } from "./modules/workspaces/admission";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 
-export class PostgresStore implements Store {
-  constructor(databaseUrl: string, schema = "pocketcoder", options: { max?: number } = {}) {
-    const context = createDatabaseContext(databaseUrl, schema, options);
+export class PGliteStore implements Store {
+  static async create(dataDir?: string) {
+    return new PGliteStore(await createDatabaseContext(dataDir));
+  }
+
+  constructor(context: DatabaseContext) {
     const lifecycle = createLifecycle(context);
     const content = createContentPurge(context);
     this.listWorkspaceStorage = content.listWorkspaceStorage;

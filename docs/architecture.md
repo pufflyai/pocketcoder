@@ -3,7 +3,7 @@
 ```text
 caller (machine key)
   → pocketcoder-server (Hono REST/WSS on Bun)
-  → durable workspace queue (PostgreSQL)
+  → durable workspace queue (embedded PGlite)
   → workspace driver (Docker container or Kubernetes Job)
   → one isolated runtime per workspace
   → storage driver (host data roots or a Kubernetes PVC)
@@ -22,13 +22,13 @@ neither callers nor templates can select them.
 | pocketcoder-server | `packages/server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
 | pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, AgentAPI launch, accepted-input capture, health, relay, checkpoint quiescing, TERM/KILL |
 | pocketcoder-egress | `packages/egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
-| pcd | `packages/cli` | Published bundled operator CLI: migrations, principals/keys, template validation, workspace inspection, chat, doctor |
+| pcd | `packages/cli` | Published bundled operator CLI: principals/keys, template validation, workspace inspection, chat, doctor |
 | remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
 | sdk | `packages/sdk` | Published runtime-validated TypeScript client for the control-plane API |
 | contracts | `packages/contracts` | Published zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
 | runtime-contracts | `packages/runtime-contracts` | Driver-neutral runtime ports and durable row contracts |
-| db | `packages/db` | PostgreSQL store, Drizzle schema and generated migrations under an advisory lock |
+| db | `packages/db` | PGlite store, Drizzle schema, embedded migrations and a kernel folder lock |
 | memory-store | `packages/memory-store` | In-memory store adapter for `POCKETCODER_STORE=memory` |
 | auth | `packages/auth` | Machine-key digests, registration secrets, event signing |
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
@@ -222,7 +222,12 @@ erDiagram
 The Drizzle definitions in `packages/db/src/schema/` are the source of truth;
 the diagram intentionally omits non-relational detail fields and indexes.
 `drizzle-kit generate` writes reviewed SQL to `packages/db/drizzle/`, and the
-Drizzle ORM migrator reads those files directly at runtime.
+build script embeds their SQL, names and checksums in the executable.
+PGlite startup uses that registry and a matching migrated seed. It rejects
+unknown or drifted history before applying pending migrations. The database
+uses durable commits, native fsync and 16 MB shared buffers. One process owns
+the folder lock for the full database lifetime. All transaction callbacks do
+database work only; network, driver and timer waits stay outside transactions.
 
 ## Workspace state machine
 

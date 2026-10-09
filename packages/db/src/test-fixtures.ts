@@ -1,13 +1,13 @@
 import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceInsertResult } from "@pstdio/pocketcoder-runtime-core";
-import { SQL } from "bun";
+import { createDatabaseContext } from "./database/context";
 import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
-import { PostgresStore } from "./store";
-
-// Shared by the command and public store integration suites.
-export const TEST_DATABASE_URL = process.env.POCKETCODER_TEST_DATABASE_URL;
+import { PGliteStore } from "./store";
 
 export function workspaceOf(result: WorkspaceInsertResult) {
   if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
@@ -25,24 +25,20 @@ export function templateFixture() {
       harness: { command: ["sleep", "1"] },
       resources: { cpu: "1", memory: "256Mi" },
       services: {},
-      persistence: {
-        mounts: [{ name: "worktree", target: "/workspace", maxBytes: 1024, maxFiles: 10 }],
-      },
+      persistence: { mounts: [{ name: "worktree", target: "/workspace", maxBytes: 1024, maxFiles: 10 }] },
       outputs: { commit: { type: "gitSha" } },
     },
   });
 }
 
-export async function createPostgresFixture(prefix: string) {
-  const url = TEST_DATABASE_URL as string;
-  const schema = `${prefix}_${randomUUID().slice(0, 8)}`;
-  const sql = new SQL(url);
-  await migrateDatabase(sql, schema);
-  expect(await migrateDatabase(sql, schema)).toEqual([]);
-  const status = await getMigrationStatus(sql, schema);
-  expect(status.every((migration) => migration.appliedAt !== null && !migration.drifted)).toBe(true);
-  const store = new PostgresStore(url, schema);
-  await store.init();
+export async function createPGliteFixture(prefix: string, mode: "memory" | "disk" = "memory") {
+  const dir = mode === "disk" ? await mkdtemp(join(tmpdir(), `${prefix}-`)) : undefined;
+  const context = await createDatabaseContext(dir);
+  expect(await migrateDatabase(context.client)).toEqual([]);
+  expect(
+    (await getMigrationStatus(context.client)).every((migration) => migration.appliedAt && !migration.drifted),
+  ).toBe(true);
+  const store = new PGliteStore(context);
   const parsed = templateFixture();
   const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
   const { row: template } = await store.upsertTemplate({
@@ -55,20 +51,22 @@ export async function createPostgresFixture(prefix: string) {
   return {
     parsed,
     principal,
-    schema,
-    sql,
+    schema: context.schema,
+    context,
     store,
     template,
+    async query<T>(statement: string, params?: unknown[]) {
+      return (await context.client.query<T>(statement, params)).rows;
+    },
     async dispose() {
       await store.close();
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await sql.end();
+      if (dir) await rm(dir, { recursive: true, force: true });
     },
   };
 }
 
 export async function insertTestWorkspace(
-  fixture: Awaited<ReturnType<typeof createPostgresFixture>>,
+  fixture: Awaited<ReturnType<typeof createPGliteFixture>>,
   externalId: string,
   metadata: Record<string, string> = {},
 ) {

@@ -32,7 +32,7 @@ real harnesses.
 
 ## Persistent local Pi workflow
 
-With PostgreSQL, a migrated PocketCoder schema, and an issued machine key
+With a private PGlite data folder and an issued machine key
 already configured:
 
 ```sh
@@ -82,13 +82,13 @@ From the repository root:
 bun run example:e2e:local
 ```
 
-The command creates a temporary PostgreSQL container, builds a locally
+The command creates a temporary PGlite data folder, builds a locally
 content-addressed echo workspace image, starts PocketCoder on the host, and
 proves:
 
 ```text
 REST create
-  → PostgreSQL queue
+  → PGlite queue
   → Docker driver
   → workspace container
   → pocketcoder-supervisor over WSS

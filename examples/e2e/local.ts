@@ -46,9 +46,7 @@ if (
 
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const tempDir = await mkdtemp(resolve(tmpdir(), "pocketcoder-example-"));
-const postgresName = `pocketcoder-example-postgres-${runId}`;
 const localImage = `pocketcoder-example-${harness}:${runId}`;
-let postgresId = "";
 let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
 let localPiProcess: ReturnType<typeof Bun.spawn> | null = null;
 let modelGateway: ReturnType<typeof Bun.serve> | null = null;
@@ -69,7 +67,6 @@ async function cleanup(): Promise<void> {
     serverProcess.kill("SIGTERM");
     await Promise.race([serverProcess.exited, Bun.sleep(5000)]).catch(() => {});
   }
-  if (postgresId) await bestEffort(["docker", "rm", "--force", postgresId]);
   await bestEffort(["docker", "image", "rm", "--force", localImage]);
   await rm(tempDir, { recursive: true, force: true });
 }
@@ -82,43 +79,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   await command(["docker", "version", "--format", "{{.Server.Version}}"], { quiet: true });
-  postgresId = (
-    await command(
-      [
-        "docker",
-        "run",
-        "--detach",
-        "--name",
-        postgresName,
-        "--env",
-        "POSTGRES_USER=pocketcoder",
-        "--env",
-        "POSTGRES_PASSWORD=pocketcoder",
-        "--env",
-        "POSTGRES_DB=pocketcoder",
-        "--publish",
-        "127.0.0.1::5432",
-        "postgres:16-alpine",
-      ],
-      { quiet: true },
-    )
-  ).stdout;
-
-  const postgresPortOutput = await command(["docker", "port", postgresId, "5432/tcp"], {
-    quiet: true,
-  });
-  const postgresPort = Number(postgresPortOutput.stdout.split(":").at(-1));
-  if (!postgresPort) throw new Error("could not resolve the temporary PostgreSQL port");
-
-  await waitFor(
-    async () =>
-      (await command(["docker", "exec", postgresId, "pg_isready", "-U", "pocketcoder"], {
-        quiet: true,
-      }).catch(() => null)) !== null,
-    30_000,
-    "PostgreSQL",
-  );
-
   if (harness === "echo") {
     await command([
       "bun",
@@ -199,15 +159,11 @@ try {
   await mkdir(templateDir, { recursive: true });
   await writeFile(resolve(templateDir, `${harness}.json`), JSON.stringify(template, null, 2));
 
-  const databaseUrl = `postgres://pocketcoder:pocketcoder@127.0.0.1:${postgresPort}/pocketcoder`;
   const pepper = randomBytes(32).toString("base64url");
   const adminEnv = {
-    POCKETCODER_DATABASE_URL: databaseUrl,
+    POCKETCODER_DIR: resolve(tempDir, "pc_data"),
     POCKETCODER_AUTH_PEPPER: pepper,
   };
-  await command(["bun", "packages/cli/src/index.ts", "db", "migrate"], {
-    env: adminEnv,
-  });
   await command(
     [
       "bun",

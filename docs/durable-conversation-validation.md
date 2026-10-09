@@ -16,9 +16,8 @@ bun run pack:check
 git diff --check
 ```
 
-Expected result: every command exits zero. The default test run may report the
-PostgreSQL and runtime-driver suites as skipped when their disposable external
-dependencies are not configured.
+Expected result: every command exits zero. The database suites run against memory and disk PGlite. Runtime-driver suites
+may skip when Docker or a cluster is not available.
 
 ## 2. Run the focused in-process E2E
 
@@ -35,13 +34,13 @@ post-cancel retrieval, and cancellation.
 Expected result: `1 pass`, with the lifecycle test named `create, setup,
 harness, ready, converse, cancel`.
 
-## 3. Run the disposable Docker/PostgreSQL E2E
+## 3. Run the disposable Docker/PGlite E2E
 
 ```sh
 bun run example:e2e:local
 ```
 
-The runner creates a temporary PostgreSQL 16 container, applies all migrations,
+The runner creates a temporary migrated PGlite data folder,
 builds the workspace image, starts the server, creates and drives an echo
 workspace through Docker, reads the durable conversation API, cancels the
 workspace, and removes its temporary container and image.
@@ -56,30 +55,17 @@ Expected result: the final JSON report contains:
 }
 ```
 
-## 4. Run the PostgreSQL store integration directly
-
-This optional focused check proves the generated migration and transcript
-deduplication against PostgreSQL without building a workspace image.
+## 4. Run the PGlite store integration directly
 
 ```sh
-docker run --detach --name pocketcoder-validation-postgres \
-  --env POSTGRES_USER=pocketcoder \
-  --env POSTGRES_PASSWORD=pocketcoder \
-  --env POSTGRES_DB=pocketcoder \
-  --publish 127.0.0.1:55432:5432 \
-  postgres:16-alpine
-
-until docker exec pocketcoder-validation-postgres pg_isready -U pocketcoder; do sleep 1; done
-
-POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
-  bun test packages/db/src/store.test.ts
-
-docker rm --force pocketcoder-validation-postgres
+bun test packages/db/src/pglite-conformance.test.ts \
+  packages/db/src/modules/workspaces/conformance.test.ts \
+  packages/db/src/database/crash.test.ts
 ```
 
-Expected result: the PostgreSQL suite runs rather than skips, applies the full
-migration chain in `packages/db/drizzle` without drift, appends one message,
-treats a replayed `message_id` as idempotent, and reads sequence `1` back.
+The suites run in memory and on disk. They check transcript deduplication,
+transaction rollback, migration history, writer locking and SIGKILL recovery.
+The compiled fixture runs without a source checkout or adjacent database assets.
 
 ## 5. Inspect a running workspace manually
 

@@ -6,7 +6,7 @@ Driver-neutral ports and durable row contracts for the PocketCoder runtime.
 
 The scheduler and adapters need a shared vocabulary without depending on each
 other's implementations. This package is the dependency boundary that lets the
-runtime work with PostgreSQL or memory and with Docker or Kubernetes.
+runtime work with PGlite or memory and with Docker or Kubernetes.
 
 ## What it does
 

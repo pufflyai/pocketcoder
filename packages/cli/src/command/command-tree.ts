@@ -24,7 +24,7 @@ export function createCli(argv: string[]): Argv {
     .epilogue(
       [
         "Environment:",
-        "  POCKETCODER_DATABASE_URL, POCKETCODER_DATABASE_SCHEMA (db/key/template commands)",
+        "  POCKETCODER_DIR (local key/template commands, while the server is stopped)",
         "  POCKETCODER_URL, POCKETCODER_KEY (workspace and doctor commands)",
         "  POCKETCODER_AUTH_PEPPER (key issuance)",
         "  POCKETCODER_STATE_DIR (managed server state and message cursors)",

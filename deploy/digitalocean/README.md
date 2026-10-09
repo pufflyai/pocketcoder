@@ -1,7 +1,7 @@
 # PocketCoder on DigitalOcean Kubernetes
 
 This example deploys one PocketCoder server to DigitalOcean Kubernetes (DOKS).
-It uses DigitalOcean Managed PostgreSQL and Network File Storage (NFS). The
+It uses embedded PGlite on a private block volume and workspace Network File Storage (NFS). The
 default Service is private. The test workspace uses the credential-free
 `persistent-echo` harness. A second flow runs the real Pi coding agent through
 a private, single-session model gateway.
@@ -20,8 +20,8 @@ Prepare these resources in one DigitalOcean project:
 - A DOKS cluster on Kubernetes 1.33 or newer.
 - A DigitalOcean NFS share reachable by that cluster. Use the same VPC and
   region. Record its private host, export path, size, and tier.
-- A DigitalOcean Managed PostgreSQL database. Restrict its trusted sources to
-  the DOKS cluster and use a private connection URL with `sslmode=require`.
+- A DigitalOcean block volume through the `do-block-storage` class for PGlite.
+  The controller data folder must never use the workspace NFS share.
 - Exact server and workspace image references from one release.
 - Exact Pi and Pi gateway image references if you will run the coding-agent
   flow.
@@ -31,13 +31,9 @@ DigitalOcean NFS enforces root squashing. The server therefore runs as uid/gid
 10001. The NFS example follows DigitalOcean's static `ReadWriteMany` PV/PVC
 setup and uses `nconnect=8`. See the [DigitalOcean NFS guide](https://docs.digitalocean.com/products/kubernetes/how-to/use-nfs-storage/).
 
-Managed PostgreSQL requires TLS. `sslmode=require` encrypts traffic but does not
-verify the server identity. Standard Edition can use `verify-full` with its CA,
-but this example does not claim that mode until it is tested with Bun SQL and a
-mounted CA. See [DigitalOcean database security](https://docs.digitalocean.com/products/databases/postgresql/how-to/secure/).
-
-DOKS, PostgreSQL, NFS, a registry, and an optional load balancer are billed
-separately. Check current prices before creating them.
+Keep the controller data separate from workspace storage. PGlite needs local
+or block storage. Keep one writer and fence a failed node before moving its
+volume. A `ReadWriteOnce` claim does not replace the process's kernel lock.
 
 ## Prepare an ignored working copy
 
@@ -55,7 +51,7 @@ Edit these files under `.pocketcoder/`:
 - `digitalocean/storage/nfs.yaml`: replace the NFS host and export path. Set
   both storage sizes to the NFS share size.
 - `digitalocean/server/pvc-patch.yaml`: set the same PVC size.
-- `digitalocean/migrate/kustomization.yaml`: replace the server repository and
+- `digitalocean/bootstrap/kustomization.yaml`: replace the server repository and
   digest.
 - `digitalocean/server/kustomization.yaml`: use the same server repository and
   digest.
@@ -68,19 +64,19 @@ Edit these files under `.pocketcoder/`:
 - `digitalocean/pi-gateway/gateway.yaml`: set the same allowed model.
 
 Every image must use `repo@sha256:<64 lowercase hex>`. Mutable tags, repeated
-placeholder digests, unresolved `REPLACE_` values, and mismatched migration and
-server images fail preflight.
+placeholder digests and unresolved `REPLACE_` values fail preflight.
+Use the same exact image for the admin Pod and server.
 
 Render and check every phase before applying anything:
 
 ```bash
 kubectl kustomize .pocketcoder/digitalocean/storage >/tmp/pocketcoder-storage.yaml
-kubectl kustomize .pocketcoder/digitalocean/migrate >/tmp/pocketcoder-migrate.yaml
+kubectl kustomize .pocketcoder/digitalocean/bootstrap >/tmp/pocketcoder-bootstrap.yaml
 kubectl kustomize .pocketcoder/digitalocean/server >/tmp/pocketcoder-server.yaml
 kubectl kustomize .pocketcoder/digitalocean/pi-gateway >/tmp/pocketcoder-pi-gateway.yaml
 bun run example:digitalocean:check \
   /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-migrate.yaml \
+  /tmp/pocketcoder-bootstrap.yaml \
   /tmp/pocketcoder-server.yaml \
   /tmp/pocketcoder-pi-gateway.yaml
 ```
@@ -112,13 +108,8 @@ history or the repository.
 ```bash
 secret_directory="$(mktemp -d)"
 chmod 0700 "$secret_directory"
-read -r -s -p "Private PostgreSQL URL: " database_url
-printf '\n'
-printf '%s' "$database_url" >"$secret_directory/database-url"
-unset database_url
 openssl rand -base64 32 >"$secret_directory/auth-pepper"
 kubectl -n pocketcoder create secret generic pocketcoder-server \
-  --from-file=database-url="$secret_directory/database-url" \
   --from-file=auth-pepper="$secret_directory/auth-pepper"
 rm -r -- "$secret_directory"
 unset secret_directory
@@ -143,44 +134,24 @@ kubectl -n pocketcoder patch serviceaccount pocketcoder-workspace \
 The kubelet reads this Secret. Workspace containers do not mount it, have no
 service-account token, and have no controller RBAC.
 
-## Migrate, then start the server
+## Bootstrap and start the server
 
-The migration Job uses the exact server digest. It receives the database URL
-through one Secret reference and has no service-account token.
-
-```bash
-kubectl -n pocketcoder delete job pocketcoder-migrate --ignore-not-found
-kubectl apply -k .pocketcoder/digitalocean/migrate
-kubectl -n pocketcoder wait job/pocketcoder-migrate \
-  --for=condition=complete --timeout=5m
-kubectl -n pocketcoder logs job/pocketcoder-migrate
-kubectl apply -k .pocketcoder/digitalocean/server
-kubectl -n pocketcoder rollout status deployment/pocketcoder-server --timeout=5m
-```
-
-Keep one server replica with the `Recreate` strategy. Server startup checks the
-schema but never applies migrations.
-
-Start a private port forward:
+Run the temporary admin Pod while the controller is stopped. It mounts only
+controller data and receives no Kubernetes API token. On an existing install,
+first scale the controller to zero and wait for its old Pod to terminate.
 
 ```bash
-kubectl -n pocketcoder port-forward service/pocketcoder-server 7080:7080
-```
-
-In another terminal:
-
-```bash
-curl --fail http://127.0.0.1:7080/livez
-curl --fail http://127.0.0.1:7080/readyz
+kubectl apply -k .pocketcoder/digitalocean/bootstrap
+kubectl -n pocketcoder wait pod/pocketcoder-admin --for=condition=Ready --timeout=5m
 ```
 
 ## Issue a one-hour operator key
 
-Create a principal with only the scopes used by this recipe. The server command
-prints the key once. Keep it only in the operator shell.
+Create a principal before starting the server. Local admin commands hold the
+same data-folder lock as the controller. Keep the key only in the operator shell.
 
 ```bash
-kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
+kubectl -n pocketcoder exec pod/pocketcoder-admin -- \
   pcd principals create \
   --name digitalocean-example \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
@@ -188,7 +159,7 @@ kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
 
 key_expiry="$(bun -e 'console.log(new Date(Date.now() + 3_600_000).toISOString())')"
 export POCKETCODER_KEY="$(
-  kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
+  kubectl -n pocketcoder exec pod/pocketcoder-admin -- \
     pcd keys issue --principal digitalocean-example --expires "$key_expiry" | tail -n 1
 )"
 unset key_expiry
@@ -196,6 +167,19 @@ export POCKETCODER_URL=http://127.0.0.1:7080
 ```
 
 Never use `--expires never` for this example.
+
+Delete the admin Pod before starting the controller so the volume has one user:
+
+```bash
+kubectl -n pocketcoder delete pod pocketcoder-admin --wait=true
+kubectl apply -k .pocketcoder/digitalocean/server
+kubectl -n pocketcoder rollout status deployment/pocketcoder-server --timeout=5m
+kubectl -n pocketcoder port-forward service/pocketcoder-server 7080:7080
+```
+
+Keep one server replica with the `Recreate` strategy. Startup loads the seed or
+opens the existing database, checks history and applies pending migrations.
+In another terminal, check `/livez` and `/readyz` before running the flow below.
 
 ## Run the echo and persistence checks
 
@@ -302,7 +286,6 @@ kubectl kustomize .pocketcoder/digitalocean/public-https \
   >/tmp/pocketcoder-public.yaml
 bun run example:digitalocean:check \
   /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-migrate.yaml \
   /tmp/pocketcoder-public.yaml
 kubectl apply -k .pocketcoder/digitalocean/public-https
 curl --fail https://<pocketcoder-host>/readyz
@@ -323,7 +306,8 @@ kubectl delete namespace pocketcoder
 kubectl delete persistentvolume pocketcoder-digitalocean-nfs
 ```
 
-The retained NFS share, managed PostgreSQL database, DOKS cluster, registry,
+The retained NFS share, controller block volume, DOKS cluster, registry,
 and load balancer can continue to incur cost. Review each one in DigitalOcean
 and delete it only through a separate, explicit operator action. Back up and
-restore PostgreSQL and NFS together; NFS alone is not disaster recovery.
+restore the embedded database, auth pepper, signing identity and NFS checkpoints
+together while the controller is stopped. NFS alone is not disaster recovery.

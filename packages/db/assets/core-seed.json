@@ -1,0 +1,40 @@
+{
+  "app": "pocketcoder",
+  "pgliteVersion": "0.5.8",
+  "postgresVersion": "18.3",
+  "checksum": "2dc6b37ffb4e03feda0759a7dd72a7f16e7c34cc6a8279928fad08b8a8dbd0af",
+  "migrations": [
+    {
+      "name": "20260730103433_initial",
+      "hash": "72be0c8fe059ee14ff1b1dfee18acd3821f7b3e0e8d352b0cd82763ebc174f52"
+    },
+    {
+      "name": "20260730113243_regular_pretty_boy",
+      "hash": "eb711305e4362580a81e14d66e95546e0af6fa4c1acf6cb429c4c1ef1e957a64"
+    },
+    {
+      "name": "20260730132750_workspace-change-diagnostics",
+      "hash": "264f0fd7cfb421f9ae88b564d14877a7e09b31d0554b4a783690eb4f94adb242"
+    },
+    {
+      "name": "20260803081501_warm-workspace-pool",
+      "hash": "d6558e3880b13c12fdfbcdafdf1197e97e42eee11d03472ae7bce0f3380bd2f3"
+    },
+    {
+      "name": "20260803092834_durable-conversations",
+      "hash": "653afcd2a38a1ab2b2f764a1ce1e74411f2c7faace8ba313bcbb9295ed6bf462"
+    },
+    {
+      "name": "20260804093525_petite_morlun",
+      "hash": "5c49feb64558ef728228f2ed07917a51518b6d3e3e38cea98b928e0ee17bd092"
+    },
+    {
+      "name": "20260805123328_sloppy_brother_voodoo",
+      "hash": "4e302762168fabdcc0ccb9775abb3333c986022410f47487a4d0789a9914df54"
+    },
+    {
+      "name": "20260922062201_brave_the_spike",
+      "hash": "1c918bc027e6af6be581400607beaf8547a2fba53dffca74e1490b79177b1a0a"
+    }
+  ]
+}

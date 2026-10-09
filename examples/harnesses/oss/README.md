@@ -18,7 +18,7 @@ bun run example:e2e:opencode
 bun run example:e2e:oss
 ```
 
-The tests create a disposable PostgreSQL database, workspace image, server,
+The tests create a disposable PGlite database, workspace image, server,
 and authenticated local model gateway. Each run mints a random bearer that is
 valid only for that gateway process. Both harnesses must emit multiple live
 AgentAPI snapshots, return the exact deterministic response, cancel the

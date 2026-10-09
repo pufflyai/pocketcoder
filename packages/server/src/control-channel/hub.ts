@@ -22,7 +22,7 @@ import { type AttachmentChannel, type AttachmentEvent, AttachmentRegistry } from
 
 // In-memory registry of live supervisor connections. Exactly one connection
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
-// durable; PostgreSQL only records epoch metadata.
+// durable; PGlite only records epoch metadata.
 
 export interface LiveConnection {
   workspaceId: string;

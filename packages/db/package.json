@@ -8,7 +8,7 @@
   },
   "version": "0.1.0",
   "private": true,
-  "description": "PostgreSQL persistence for PocketCoder.",
+  "description": "Embedded PGlite persistence for PocketCoder.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -17,6 +17,7 @@
     "directory": "packages/db"
   },
   "files": [
+    "assets",
     "drizzle",
     "src",
     "!src/**/*.test.ts"
@@ -33,6 +34,7 @@
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",

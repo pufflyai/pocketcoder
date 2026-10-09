@@ -40,3 +40,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .vscode
 .claude
 .pocketcoder/
+
+# Embedded controller state
+pc_data/
