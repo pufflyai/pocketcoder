@@ -1,11 +1,21 @@
 # Templates
 
 A template (`pocketcoder.dev/v1alpha1 Template`, JSON or YAML) is a reviewed,
-versioned definition of a coding-agent environment. Templates are deployment
-resources: operators put files in `POCKETCODER_TEMPLATE_DIR`, the server
-validates and loads them at startup, and callers may only *select* an
-authorized template by name/version. No API call can ever submit an image,
-command, mount, network, privilege, or driver.
+versioned definition of a coding-agent environment. An operator with
+`templates:write` and a matching name grant publishes it with
+`pcd templates import <directory>` or `POST /v1/templates` using
+`{ "manifest": <template> }`. Image references must be digest-pinned. Restricted-network publication requires
+a configured `POCKETCODER_EGRESS_IMAGE`; otherwise the API rejects it before storage. Published
+versions are immutable; identical content returns the existing version.
+`DELETE /v1/templates/{name}/{version}` retires a version without changing
+existing workspace snapshots. Retirement cannot be undone by republishing it.
+
+Workspace callers select an authorized template by name/version. Workspace
+creation never accepts arbitrary images, commands, mounts or privileges.
+`POCKETCODER_TEMPLATE_DIR` remains an additive operator startup import option.
+Removing a file does not retire its published version. Use the retirement API;
+a startup file cannot reactivate an explicitly retired version. The local
+HTTP echo path is described in [Getting started](getting-started.md).
 
 ## Full example
 
@@ -242,10 +252,12 @@ URLs. A harness publishes one by writing a line such as
 `(name, version)` content is immutable: changing a file without bumping
 `spec.version` is a startup error. Each workspace stores a full snapshot of
 its template version, so template updates only affect workspaces created
-afterwards. Removing a file from the template dir retires that version for
-new workspaces without invalidating existing snapshots; putting it back
-reactivates it. Omitting `version` at creation resolves the newest active
-version once.
+afterwards. Startup imports are additive. Removing a file leaves its published
+version available. Retire a version with `DELETE /v1/templates/{name}/{version}`
+or the SDK's `templates.retire(name, version)`; existing snapshots stay valid.
+Restoring a file or republishing identical content cannot reactivate a retired
+version. Publish a new version instead. Omitting `version` at creation resolves
+the newest active version once.
 
 Use `pcd templates render` when a build must promote a source manifest to a
 deployable immutable version. It replaces the placeholder image digest,

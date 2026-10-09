@@ -21,4 +21,4 @@ spec:
               drop: ["ALL"]
           env:
             - name: POCKETCODER_WORKSPACE_SERVER_URL
-              value: http://pocketcoder-server.pocketcoder.svc.cluster.local:7080
+              value: http://pocketcoder-agent.pocketcoder.svc.cluster.local:7081

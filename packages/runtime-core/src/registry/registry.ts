@@ -5,8 +5,8 @@ import type { Store, TemplateRow } from "../types";
 
 // Template registry: loads reviewed template files from a deployment
 // directory, validates them, and upserts immutable versions. Changing content
-// without changing the version is an error. Removing a file makes that
-// version unavailable for new workspaces but keeps existing snapshots valid.
+// without changing the version is an error. Import is additive: retirement
+// requires explicit operator authority and cannot be undone by a startup file.
 
 export interface RegistryLoadResult {
   loaded: TemplateRow[];
@@ -41,7 +41,6 @@ export async function loadTemplateDir(store: Store, dir: string): Promise<Regist
     result.errors.push({ file: dir, message: `cannot read template dir: ${String(err)}` });
     return result;
   }
-  const seenVersions = new Set<string>();
   for (const file of files) {
     const path = join(dir, file);
     try {
@@ -62,21 +61,9 @@ export async function loadTemplateDir(store: Store, dir: string): Promise<Regist
         });
         continue;
       }
-      seenVersions.add(`${parsed.manifest.metadata.name}@${parsed.manifest.spec.version}`);
       result.loaded.push(upsert.row);
     } catch (err) {
       result.errors.push({ file, message: err instanceof Error ? err.message : String(err) });
-    }
-  }
-  // Mark versions that are no longer on disk as unavailable for new
-  // workspaces without invalidating stored snapshots.
-  const all = await store.listTemplates(null);
-  for (const row of all) {
-    const key = `${row.name}@${row.version}`;
-    if (!seenVersions.has(key) && row.status !== "retired") {
-      await store.setTemplateStatus(row.name, row.version, "retired");
-    } else if (seenVersions.has(key) && row.status === "retired") {
-      await store.setTemplateStatus(row.name, row.version, "active");
     }
   }
   return result;

@@ -1,4 +1,4 @@
-import type { TemplateSpec } from "@pstdio/pocketcoder-contracts";
+import type { TemplateManifest, TemplateSpec } from "@pstdio/pocketcoder-contracts";
 
 export const TEMPLATE_STATUSES = ["active", "available", "retired"] as const;
 
@@ -33,8 +33,9 @@ export interface UpsertResult {
 }
 
 export interface TemplateStore {
+  publishTemplate(actorKeyId: string, manifest: TemplateManifest): Promise<{ row: TemplateRow; created: boolean }>;
+  retireTemplate(actorKeyId: string, name: string, version: string): Promise<TemplateRow>;
   upsertTemplate(input: TemplateUpsert): Promise<UpsertResult>;
   listTemplates(names: string[] | null): Promise<TemplateRow[]>;
   getTemplate(name: string, version?: string): Promise<TemplateRow | null>;
-  setTemplateStatus(name: string, version: string, status: TemplateStatus): Promise<void>;
 }

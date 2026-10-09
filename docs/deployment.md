@@ -88,7 +88,7 @@ server image with:
   container**, with `POCKETCODER_INPUT_DIR` pointing at it. The driver writes
   one-time provider input files there and bind-mounts them into workspaces;
   since the host daemon resolves mount paths, the paths must match.
-- `POCKETCODER_WORKSPACE_SERVER_URL=http://host.docker.internal:<port>` so
+- `POCKETCODER_WORKSPACE_SERVER_URL=http://host.docker.internal:7081` so
   workspace containers can reach the server.
 
 A complete, disposable worked example (server + PGlite + a locally
@@ -253,7 +253,8 @@ together while the server is stopped. Live copy is not a consistent backup.
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
 | `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `7080` | Listen address |
-| `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |
+| `POCKETCODER_AGENT_HTTP` | `0.0.0.0:7081` | Separate agent listener |
+| `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:7081` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |
 | `POCKETCODER_INPUT_DIR` | OS tempdir | Provider input files (must be host-shared when the server is containerized) |
 | `POCKETCODER_DRIVER` | `docker` | `docker` or `kubernetes` runtime |
 | `POCKETCODER_STORAGE_BACKEND` | `disabled` | `filesystem`/`docker-local` or `kubernetes-pvc` |

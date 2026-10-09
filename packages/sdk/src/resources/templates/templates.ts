@@ -1,4 +1,9 @@
-import { type TemplateListItem, TemplatePageSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  type TemplateListItem,
+  TemplateListItemSchema,
+  type TemplateManifest,
+  TemplatePageSchema,
+} from "@pstdio/pocketcoder-contracts";
 import { type CursorListQuery, page, queryString } from "../../transport/common";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
 
@@ -17,6 +22,32 @@ export class TemplatesApi {
   }
 
   async list(options: RequestOptions = {}) {
-    return (await this.page({}, options)).items;
+    const items: TemplateListItem[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await this.page({ cursor }, options);
+      items.push(...result.items);
+      cursor = result.nextCursor ?? undefined;
+    } while (cursor);
+    return items;
+  }
+
+  async publish(manifest: TemplateManifest, options: RequestOptions = {}) {
+    return this.transport.request("/v1/templates", TemplateListItemSchema, {
+      ...options,
+      method: "POST",
+      body: JSON.stringify({ manifest }),
+    });
+  }
+
+  async retire(name: string, version: string, options: RequestOptions = {}) {
+    return this.transport.request(
+      `/v1/templates/${encodeURIComponent(name)}/${encodeURIComponent(version)}`,
+      TemplateListItemSchema,
+      {
+        ...options,
+        method: "DELETE",
+      },
+    );
   }
 }

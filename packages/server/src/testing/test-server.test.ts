@@ -120,7 +120,7 @@ export function authed(token: string, init: RequestInit = {}): RequestInit {
 }
 
 export async function markReadyThroughAgent(
-  testServer: Pick<TestServer, "app" | "websocket" | "store" | "driver">,
+  testServer: Pick<TestServer, "agentApp" | "websocket" | "store" | "driver">,
   workspaceId: string,
 ): Promise<void> {
   const input = testServer.driver.inputFor(workspaceId);
@@ -128,7 +128,7 @@ export async function markReadyThroughAgent(
   const listener = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: testServer.app.fetch,
+    fetch: testServer.agentApp.fetch,
     websocket: testServer.websocket,
   });
   const connectionId = randomUUID();

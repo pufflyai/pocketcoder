@@ -152,7 +152,7 @@ describe("workspace network audits", () => {
     };
     const body = JSON.stringify({ source_session_id: sourceSession, events: [event] });
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await server.app.request("/v1/internal/egress/events", {
+      const response = await server.agentApp.request("/v1/internal/egress/events", {
         method: "POST",
         headers: { authorization: `Bearer ${auditToken}`, "content-type": "application/json" },
         body,
@@ -186,7 +186,7 @@ describe("workspace network audits", () => {
       id: randomUUID(),
       expiresAt: new Date(Date.now() - 1),
     });
-    const response = await server.app.request("/v1/internal/egress/events", {
+    const response = await server.agentApp.request("/v1/internal/egress/events", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: "{}",

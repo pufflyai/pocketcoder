@@ -263,3 +263,27 @@ describe("pcd workspace workflows", () => {
     }
   });
 });
+
+test("managed IPv6 startup and status use a valid bracketed origin", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "pc-cli-ipv6-"));
+  const port = freePort();
+  const env = {
+    POCKETCODER_HTTP: `[::1]:${port}`,
+    POCKETCODER_AGENT_HTTP: `[::1]:${freePort()}`,
+    POCKETCODER_STATE_DIR: directory,
+    POCKETCODER_DIR: join(directory, "data"),
+    POCKETCODER_AUTH_PEPPER: "ipv6-test-pepper",
+  };
+  try {
+    const started = await runCli(["server", "start", "--timeout-seconds", "3"], { env });
+    expect(started.exitCode).toBe(0);
+    expect(started.output).toContain(`http://[::1]:${port}`);
+    const status = await runCli(["server", "status", "--json"], { env });
+    expect(status.exitCode).toBe(0);
+    expect(JSON.parse(status.output)).toMatchObject({ state: "running", url: `http://[::1]:${port}` });
+    expect((await fetch(`http://[::1]:${port}/readyz`)).status).toBe(200);
+  } finally {
+    await runCli(["server", "stop"], { env }).catch(() => {});
+    rmSync(directory, { recursive: true, force: true });
+  }
+}, 10_000);
