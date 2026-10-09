@@ -1,10 +1,11 @@
 import { expect } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { server, waitFor } from "./persistence-support.test";
 
-export async function failedAllocation() {
-  const app = await server({ retainFailures: true });
+export async function failedAllocation(store: Store) {
+  const app = await server(store, { retainFailures: true });
   const response = await app.request("/v1/workspaces", {
     method: "POST",
     headers: { "idempotency-key": "purge-source" },

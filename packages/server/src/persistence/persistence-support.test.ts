@@ -1,31 +1,34 @@
-import { afterEach, expect } from "bun:test";
+import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { registerTestCleanup } from "@pstdio/pocketcoder-db/testing";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { DEFAULT_LIMITS, type WorkspaceCheckpointRow } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
 import { DEFAULT_PERSISTENCE_LIMITS } from "./persistence";
 
-const roots: string[] = [];
 const pepper = "persistence-test-pepper";
 
-afterEach(async () => {
-  for (const root of roots.splice(0)) {
-    await chmod(root, 0o700).catch(() => {});
-    await rm(root, { recursive: true, force: true }).catch(() => {});
+async function makeWritable(path: string) {
+  await chmod(path, 0o700);
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    if (entry.isDirectory()) await makeWritable(join(path, entry.name));
   }
-});
+}
 
-export async function server(options: { maxConcurrentOperations?: number; retainFailures?: boolean } = {}) {
+export async function server(
+  store: Store,
+  options: { maxConcurrentOperations?: number; retainFailures?: boolean } = {},
+) {
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-persistence-api-"));
-  roots.push(root);
-  const store = new MemoryStore();
+
   const driver = new FakeDriver();
   const storageDriver = new FilesystemStorageDriver({
     workspaceRoot: join(root, "workspaces"),
@@ -91,6 +94,15 @@ export async function server(options: { maxConcurrentOperations?: number; retain
         ...(init.headers ?? {}),
       },
     });
+  registerServerTestCleanup(store, built);
+  registerTestCleanup(
+    store,
+    async () => {
+      await makeWritable(root);
+      await rm(root, { recursive: true, force: true });
+    },
+    "resources",
+  );
   return { ...built, store, driver, storageDriver, principal, parsed, request };
 }
 
@@ -104,13 +116,23 @@ export async function waitFor(condition: () => Promise<boolean>, timeoutMs = 500
 }
 
 export async function insertReadyCheckpoint(testServer: Awaited<ReturnType<typeof server>>) {
+  const response = await testServer.request("/v1/workspaces", {
+    method: "POST",
+    headers: { "idempotency-key": randomUUID() },
+    body: JSON.stringify({ external_id: randomUUID(), template: { name: "fixture-persistent" } }),
+  });
+  const workspace = (await response.json()) as { id: string };
+  await testServer.scheduler.tick();
+  await waitFor(async () => (await testServer.store.getWorkspaceStorage(workspace.id))?.state === "ready");
+  const storage = await testServer.store.getWorkspaceStorage(workspace.id);
+  if (!storage) throw new Error("missing checkpoint source storage");
   const checkpointId = randomUUID();
   const now = new Date();
   await testServer.store.insertCheckpoint({
     id: checkpointId,
-    workspaceId: randomUUID(),
+    workspaceId: workspace.id,
     principalId: testServer.principal.id,
-    storageId: randomUUID(),
+    storageId: storage.id,
     parentCheckpointId: null,
     state: "ready",
     reasonCode: null,

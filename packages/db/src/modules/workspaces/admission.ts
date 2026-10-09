@@ -1,6 +1,6 @@
 import { TERMINAL_STATES } from "@pstdio/pocketcoder-contracts";
 import type { ActiveCounts, WorkspaceAdmissionClaim } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, asc, count, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, notifyChange, type QueryContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { appendTransition } from "./events";
@@ -12,12 +12,24 @@ export function createAdmission(context: DatabaseContext) {
     tables: { workspaces },
     schema,
   } = context;
-  async function countActive(tx: QueryContext = db) {
-    const rows = await tx
+  function activeQuery(query: QueryContext) {
+    return query
       .select({ principalId: workspaces.principalId, templateName: workspaces.templateName, n: count() })
       .from(workspaces)
       .where(inArray(workspaces.state, ["provisioning", "connected", "ready", "preserving", "terminating"]))
       .groupBy(workspaces.principalId, workspaces.templateName);
+  }
+  function prepareActive() {
+    return activeQuery(db).prepare("active_workspaces");
+  }
+  let active: ReturnType<typeof prepareActive> | undefined;
+  async function countActive(tx?: QueryContext) {
+    async function readCounts() {
+      if (tx) return activeQuery(tx);
+      active ??= prepareActive();
+      return active.execute();
+    }
+    const rows = await readCounts();
     const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
     for (const row of rows) {
       counts.global += row.n;
@@ -27,15 +39,6 @@ export function createAdmission(context: DatabaseContext) {
     return counts;
   }
   return {
-    async listQueuedHeads() {
-      const heads = db
-        .selectDistinctOn([workspaces.principalId])
-        .from(workspaces)
-        .where(eq(workspaces.state, "queued"))
-        .orderBy(asc(workspaces.principalId), asc(workspaces.createdAt), asc(workspaces.id))
-        .as("heads");
-      return (await db.select().from(heads).orderBy(asc(heads.createdAt), asc(heads.id))).map(workspaceFromRow);
-    },
     async listNonterminal() {
       return (
         await db

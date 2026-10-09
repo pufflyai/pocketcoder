@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
@@ -12,7 +11,6 @@ export interface ServerConfig {
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
   listenHost: string;
   listenPort: number;
-  storeKind: "pglite" | "memory";
   dataDir: string;
   pepper: string;
   eventSigningKey: string;
@@ -146,16 +144,9 @@ function bytesEnv(env: Environment, key: string, fallback: number): number {
   return value;
 }
 
-function resolvePepper(env: Environment, storeKind: ServerConfig["storeKind"]): string {
-  let pepper = env.POCKETCODER_AUTH_PEPPER ?? "";
-  if (!pepper) {
-    if (storeKind === "pglite") {
-      throw new Error("POCKETCODER_AUTH_PEPPER is required with the pglite store");
-    }
-    // Ephemeral pepper is acceptable only for the in-memory dev store,
-    // where keys do not outlive the process anyway.
-    pepper = randomBytes(32).toString("base64url");
-  }
+function resolvePepper(env: Environment) {
+  const pepper = env.POCKETCODER_AUTH_PEPPER;
+  if (!pepper) throw new Error("POCKETCODER_AUTH_PEPPER is required");
   return pepper;
 }
 
@@ -262,8 +253,7 @@ function assertCompatibleBackends(
 export function configSummary(config: ServerConfig) {
   return {
     listen: `${config.listenHost}:${config.listenPort}`,
-    store: config.storeKind,
-    dataDir: config.storeKind === "pglite" ? config.dataDir : null,
+    dataDir: config.dataDir,
     driver: config.driverKind,
     storage: config.storageBackend,
     secrets: config.secretProvider,
@@ -274,8 +264,7 @@ export function configSummary(config: ServerConfig) {
 
 export function loadConfig(env: Environment = process.env): ServerConfig {
   if (env.POCKETCODER_DIR === "") throw new Error("POCKETCODER_DIR must not be empty");
-  const storeKind = enumEnv(env, "POCKETCODER_STORE", ["pglite", "memory"] as const, "pglite");
-  const pepper = resolvePepper(env, storeKind);
+  const pepper = resolvePepper(env);
   const listenPort = intEnv(env, "POCKETCODER_PORT", 7080);
   if (listenPort > 65_535) throw new Error("POCKETCODER_PORT must be at most 65535");
   const driverKind = enumEnv(env, "POCKETCODER_DRIVER", ["docker", "kubernetes"] as const, "docker");
@@ -292,7 +281,6 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     listenHost: env.POCKETCODER_HOST ?? "127.0.0.1",
     launchPolicy: launchPolicyConfig(env),
     listenPort,
-    storeKind,
     dataDir: env.POCKETCODER_DIR ?? "./pc_data",
     pepper,
     eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,

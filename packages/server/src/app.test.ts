@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { issueEgressAuditToken } from "@pstdio/pocketcoder-auth";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { Readiness } from "./observability/health";
 import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER as PEPPER } from "./testing/test-server.test";
 
+const createStore = createTestStoreFactory();
+
 describe("authentication", () => {
   test("rejects missing and invalid keys with the stable envelope", async () => {
-    const { app } = await createTestServer();
+    const { app } = await createTestServer(await createStore());
     const res = await app.request("/v1/templates");
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { code: string; request_id: string } };
@@ -18,7 +21,7 @@ describe("authentication", () => {
   });
 
   test("propagates a bounded caller request ID on success and errors", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const requestId = "caller-trace-123";
     const success = await app.request("/v1/templates", authed(token, { headers: { "x-request-id": requestId } }));
     expect(success.headers.get("x-request-id")).toBe(requestId);
@@ -31,7 +34,7 @@ describe("authentication", () => {
   });
 
   test("rejects revoked keys on the next request", async () => {
-    const { app, store, token } = await createTestServer();
+    const { app, store, token } = await createTestServer(await createStore());
     const keyId = token.split("_")[1] as string;
     expect((await app.request("/v1/templates", authed(token))).status).toBe(200);
     await store.revokeMachineKey(keyId, new Date());
@@ -39,7 +42,7 @@ describe("authentication", () => {
   });
 
   test("enforces scopes", async () => {
-    const { app, limitedToken } = await createTestServer();
+    const { app, limitedToken } = await createTestServer(await createStore());
     const res = await app.request(
       "/v1/workspaces",
       authed(limitedToken, {
@@ -54,7 +57,7 @@ describe("authentication", () => {
   });
 
   test("default-issued keys inherit current principal scopes", async () => {
-    const { app, store, token } = await createTestServer();
+    const { app, store, token } = await createTestServer(await createStore());
     expect((await app.request("/v1/templates", authed(token))).status).toBe(200);
     const principal = await store.getPrincipalByName("test-backend");
     if (!principal) throw new Error("expected test principal");
@@ -69,7 +72,7 @@ describe("authentication", () => {
 
 describe("health", () => {
   test("separates process liveness from dependency readiness", async () => {
-    const { app } = await createTestServer();
+    const { app } = await createTestServer(await createStore());
     const live = await app.request("/livez");
     const ready = await app.request("/readyz");
 
@@ -90,7 +93,7 @@ describe("health", () => {
   test("keeps liveness healthy while a failed dependency makes readiness unavailable", async () => {
     const readiness = new Readiness();
     readiness.set("reconciliation", "failed");
-    const { app } = await createTestServer({}, readiness);
+    const { app } = await createTestServer(await createStore(), {}, readiness);
 
     expect((await app.request("/livez")).status).toBe(200);
     const ready = await app.request("/readyz");
@@ -104,14 +107,14 @@ describe("health", () => {
 
 describe("templates", () => {
   test("lists only authorized templates", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request("/v1/templates", authed(token));
     const body = (await res.json()) as { items: Array<{ name: string }> };
     expect(body.items.map((i) => i.name)).toEqual(["fixture-echo", "fixture-terminal"]);
   });
 
   test("unauthorized template names look nonexistent", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request("/v1/templates/fixture-sleep", authed(token));
     expect(res.status).toBe(404);
   });
@@ -119,7 +122,7 @@ describe("templates", () => {
 
 describe("workspace network audits", () => {
   test("authenticates, deduplicates, redacts, paginates, and authorizes events", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const createdResponse = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -177,7 +180,7 @@ describe("workspace network audits", () => {
   });
 
   test("rejects expired audit credentials", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const token = issueEgressAuditToken(PEPPER, {
       kind: "workspace",
       id: randomUUID(),

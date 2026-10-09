@@ -33,17 +33,28 @@ export class Scheduler {
   private readonly lifecycle: SchedulerLifecycle;
 
   private readonly context: SchedulerContext;
+  private tickRequested = false;
 
   tick(): Promise<void> {
+    this.tickRequested = true;
     if (this.context.activeTick) return this.context.activeTick;
-    this.context.activeTick = this.runTick().finally(() => {
+    this.context.activeTick = this.runPendingTicks().finally(() => {
       this.context.activeTick = null;
+      // A request can arrive after the loop exits but before this promise settles.
+      if (this.tickRequested) return this.tick();
     });
     return this.context.activeTick;
   }
 
   async drain(): Promise<void> {
     await this.context.activeTick;
+  }
+
+  private async runPendingTicks(): Promise<void> {
+    while (this.tickRequested) {
+      this.tickRequested = false;
+      await this.runTick();
+    }
   }
 
   private async runTick(): Promise<void> {

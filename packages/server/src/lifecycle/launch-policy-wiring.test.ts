@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { buildServer } from "../app";
 import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
+
+const createStore = createTestStoreFactory();
 
 test("authenticated workspace creation reaches the configured admission hook before provisioning", async () => {
-  const { store, driver, token } = await createTestServer();
+  const { store, driver, token } = await createTestServer(await createStore());
   let allowed = false;
   const seen: string[] = [];
   const server = buildServer({
@@ -18,6 +22,7 @@ test("authenticated workspace creation reaches the configured admission hook bef
       return allowed;
     },
   });
+  registerServerTestCleanup(store, server);
   const response = await server.app.request(
     "/v1/workspaces",
     authed(token, {

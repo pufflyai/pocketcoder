@@ -30,14 +30,18 @@ Two clients sit on top of the same machine API:
 ## The short version
 
 ```sh
-# 1. Run the control plane (in-memory store for a quick look)
-POCKETCODER_STORE=memory bun run pcd -- server start --foreground
+# 1. Choose a private temporary development data folder
+export POCKETCODER_DIR="$(mktemp -d)"
+export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
 
 # 2. Operators manage principals/keys/templates with pcd
 pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,conversations:read,services:relay,attachments:write,logs:read,terminal:attach,terminal:read --templates '*'
 pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z   # shown once; bounded — rotate, don't reissue forever
 
-# 3. Callers (your backend, or the CLI) drive workspaces
+# 3. Start the server after local administration
+bun run pcd -- server start
+
+# 4. Callers (your backend, or the CLI) drive workspaces
 export POCKETCODER_URL=http://127.0.0.1:7080 POCKETCODER_KEY=pkt_…
 pcd workspaces create --template claude-code-agent
 pcd workspaces list --active
@@ -50,3 +54,9 @@ Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
 `pocketcoder-supervisor` (PID 1) → PocketCoder-owned AgentAPI → your template's
 coding-agent command.
+
+Run `bun run test` for the full suite. It runs unit tests across packages, then
+`bun run test:performance` on its own before integration tests. The warm-pool
+benchmark measures 40 real admissions, includes first-use costs, and keeps the
+80% p95 target. Running it alongside builds or other tests adds CPU scheduling
+delays to the measured database work.

@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { type AgentFrame, ConversationRequestIdentitySchema, PROTOCOL_VERSION } from "@pstdio/pocketcoder-contracts";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import type { WSContext } from "hono/ws";
 import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
 import { handleConnectedFrame } from "./ws-frame-handler";
+
+const createStore = createTestStoreFactory();
 
 // Control-channel wiring: identity and retention must both survive decoded frames.
 test.each([
@@ -12,7 +15,7 @@ test.each([
 ])(
   "a received transcript frame respects $history history (identified=$identified)",
   async ({ history, identified }) => {
-    const server = await createTestServer({ globalActiveWorkspaces: 0 });
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const response = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -90,7 +93,7 @@ test.each([
     await pending;
     await receive();
     const messages = await server.store.readConversation(id, 0, 10);
-    if (history === "retained") expect(messages[0]?.identity).toEqual(identified ? identity : undefined);
+    if (history === "retained") expect(messages[0]?.identity).toEqual(identified ? identity : null);
     expect((await server.store.getWorkspace(id))?.state).toBe("canceled");
     expect(messages.map((message) => message.content)).toEqual(history === "retained" ? ["accepted before Stop"] : []);
   },

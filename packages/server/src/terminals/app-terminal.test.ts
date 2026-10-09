@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import type { WSContext } from "hono/ws";
 import { authed, createTestServer, type TestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 function connectTerminalAgent(server: TestServer, workspaceId: string, protocolVersion: 3 | 4) {
   const connection = server.hub.attach(
@@ -50,7 +53,7 @@ async function readyTerminalWorkspace(server: TestServer, template: "fixture-ech
 
 describe("remote terminals", () => {
   test("holds scope, workspace-state, template, and protocol gates before upgrade", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const pending = await terminalWorkspace(server, "fixture-terminal");
     const notReady = await server.app.request(`/v1/workspaces/${pending.id}/terminal`, authed(server.token));
     expect(notReady.status).toBe(409);
@@ -74,7 +77,7 @@ describe("remote terminals", () => {
   });
 
   test("returns principal-owned terminal session audit pages", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const workspaceId = await readyTerminalWorkspace(server, "fixture-terminal");
     const openedAt = new Date("2026-08-05T12:00:00.000Z");
     const session = await server.store.openTerminalSession(
@@ -108,7 +111,7 @@ describe("remote terminals", () => {
   });
 
   test("rejects malformed reattach ids and enforces the audited session limit", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const workspaceId = await readyTerminalWorkspace(server, "fixture-terminal");
     connectTerminalAgent(server, workspaceId, 4);
     const upgrade = { upgrade: "websocket" };
@@ -140,7 +143,7 @@ describe("remote terminals", () => {
   });
 
   test("upgrades a terminal WebSocket and audits the live session", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const workspaceId = await readyTerminalWorkspace(server, "fixture-terminal");
     let connection: ReturnType<TestServer["hub"]["attach"]>;
     const agentSocket = {

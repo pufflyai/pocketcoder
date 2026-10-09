@@ -174,7 +174,7 @@ export interface WorkspaceStore {
   getWorkspaceByIdempotency(principalId: string, idempotencyKey: string): Promise<WorkspaceRow | null>;
   getWorkspace(id: string): Promise<WorkspaceRow | null>;
   listWorkspaces(principalId: string, filter: WorkspaceListFilter): Promise<WorkspaceRow[]>;
-  listQueuedHeads(): Promise<WorkspaceRow[]>;
+  readAdmissionSnapshot(): Promise<{ counts: ActiveCounts; queued: WorkspaceRow[]; queuedCount: number }>;
   listNonterminal(): Promise<WorkspaceRow[]>;
   countActive(): Promise<ActiveCounts>;
   countQueued(): Promise<number>;
