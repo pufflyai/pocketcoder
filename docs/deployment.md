@@ -6,7 +6,7 @@ CI publishes three images to the GitHub Container Registry on every push to
 `main` and on version tags (see `.github/workflows/images.yml`):
 
 - `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pcd`
-  (`/usr/local/bin/pcd`, backed by `/opt/pocketcoder/pcd.js`), Docker CLI, and
+  (`/usr/local/bin/pcd`, backed by `/opt/pocketcoder/cli/index.js`), Docker CLI, and
   `kubectl`.
   Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
 - `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
@@ -78,7 +78,7 @@ docker build -t pocketcoder-workspace:dev deploy/image
 ## Docker compose
 
 [`deploy/compose/docker-compose.yaml`](../deploy/compose/docker-compose.yaml)
-provides a local PostgreSQL. For a full containerized control plane, run the
+runs the server with an embedded PGlite database. For a full containerized control plane, run the
 server image with:
 
 - the docker socket mounted (`/var/run/docker.sock`) and the socket's gid in
@@ -91,7 +91,7 @@ server image with:
 - `POCKETCODER_WORKSPACE_SERVER_URL=http://host.docker.internal:<port>` so
   workspace containers can reach the server.
 
-A complete, disposable worked example (server + PostgreSQL + a locally
+A complete, disposable worked example (server + PGlite + a locally
 content-addressed workspace image) lives in
 [`examples/`](../examples/README.md). Run
 `bun run example:e2e:local` for the credential-free echo harness, or use the
@@ -153,7 +153,7 @@ workspace container remains non-root, capability-free, read-only, and unable to 
 contains separate controller/workspace service accounts, least-privilege
 Role/RoleBinding, a single-replica server Deployment, Service, and PVC:
 
-For a maintained DOKS recipe with DigitalOcean NFS, Managed PostgreSQL,
+For a maintained DOKS recipe with DigitalOcean workspace NFS and a separate block volume for PGlite,
 two-phase migration, strict image preflight, and optional public HTTPS, see the
 [DigitalOcean Kubernetes example](../deploy/digitalocean/README.md).
 
@@ -218,32 +218,37 @@ setup contract and are cleared before the harness starts; runtime environment
 secrets remain read-only projected files. Secret names/values are not stored in
 checkpoint manifests.
 
-## PostgreSQL placement
+## Data folder
 
-One migration/query path serves both layouts:
+`POCKETCODER_DIR` defaults to `./pc_data`. The server stores PGlite in its `db/`
+subdirectory, with the fixed `pocketcoder` schema. Use local disk or a block
+volume, never NFS or EFS. In a container, mount a private volume at `/pc_data`.
+Do not mount this folder into workspaces.
 
-```text
-POCKETCODER_DATABASE_URL      the PostgreSQL server and database
-POCKETCODER_DATABASE_SCHEMA   table namespace, default pocketcoder
-```
+The process holds a kernel lock on `LOCK` before opening the database. A second
+process fails with "data folder is in use". The operating system releases the
+lock when the process dies. Keep the lock file in place; its PID is not a lock.
+Only one controller may use a data folder. Kubernetes must fence a failed node
+before moving its block volume; `ReadWriteOnce` does not provide a writer lock.
 
-The URL may target a dedicated database or an existing application database.
-Runtime queries are schema-qualified, while generated Drizzle migrations run
-with `search_path` pinned to the configured schema on a reserved connection.
-PocketCoder never touches `public`, other schemas, extensions, or application
-tables, and creates no cross-schema dependencies. Migrations run under a
-  schema-scoped advisory lock via `pcd db migrate`. Server startup verifies that
-  all migrations are applied but never changes the schema. Recommended roles: a migration role owning the schema,
-an application role with connect/usage/DML only.
+First start loads the bundled, migrated seed into a staging folder, syncs it to
+disk and publishes it atomically. Startup checks the embedded migration history
+and applies pending migrations in one transaction. Unknown histories, gaps and
+checksum drift stop startup. Schema changes require `bun run db:generate`;
+`bun run db:seed` rebuilds the seed and embedded SQL registry.
+
+Local principal, key and template database commands take the same folder lock.
+Run them while the server is stopped. Keep the auth pepper stable across restarts.
+Back up the database, its auth pepper, signing identity and checkpoint storage
+together while the server is stopped. Live copy is not a consistent backup.
 
 ## Configuration reference
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DATABASE_URL` | required (postgres store) | PostgreSQL server/database |
-| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | Runtime schema |
-| `POCKETCODER_STORE` | `postgres` | `memory` for tests/dev only |
-| `POCKETCODER_AUTH_PEPPER` | required (postgres store) | Keyed digest secret for machine keys and registration secrets |
+| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
+| `POCKETCODER_STORE` | `pglite` | `memory` for temporary development only |
+| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
@@ -308,7 +313,7 @@ Unbound providers contain only template identity and a single-use pool enrollmen
   per-workspace and expire with it — never a shared or standing bearer
   ([security model](security.md)).
 - **Backups**: filesystem/PVC checkpoints survive runtime removal but are not
-  disaster recovery unless the checkpoint root and PostgreSQL are backed up
+  disaster recovery unless the checkpoint root and embedded database are backed up
   together.
 - **Retention**: the server sweeps expired ready checkpoints every minute.
   `pcd storage doctor|list-orphans|prune` provides explicit

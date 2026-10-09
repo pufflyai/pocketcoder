@@ -1,0 +1,163 @@
+[
+  {
+    "sql": [
+      "CREATE TABLE \"event_outbox\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"event_type\" text NOT NULL,\n\t\"payload\" jsonb NOT NULL,\n\t\"occurred_at\" timestamp with time zone NOT NULL,\n\t\"next_attempt_at\" timestamp with time zone NOT NULL,\n\t\"attempt_count\" integer DEFAULT 0 NOT NULL,\n\t\"delivered_at\" timestamp with time zone,\n\t\"last_error_code\" text\n);\n",
+      "\nCREATE TABLE \"machine_keys\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"principal_id\" uuid NOT NULL,\n\t\"secret_digest\" bytea NOT NULL,\n\t\"scopes\" text[] NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"expires_at\" timestamp with time zone,\n\t\"revoked_at\" timestamp with time zone,\n\t\"last_used_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"principals\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"name\" text NOT NULL UNIQUE,\n\t\"scopes\" text[] NOT NULL,\n\t\"template_names\" text[] NOT NULL,\n\t\"disabled_at\" timestamp with time zone,\n\t\"created_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"templates\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"name\" text NOT NULL,\n\t\"version\" text NOT NULL,\n\t\"digest\" text NOT NULL UNIQUE,\n\t\"description\" text,\n\t\"spec\" jsonb NOT NULL,\n\t\"status\" text NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"retired_at\" timestamp with time zone,\n\tCONSTRAINT \"templates_name_version_unique\" UNIQUE(\"name\",\"version\")\n);\n",
+      "\nCREATE TABLE \"workspace_logs\" (\n\t\"workspace_id\" uuid,\n\t\"seq\" bigint,\n\t\"stream\" text NOT NULL,\n\t\"occurred_at\" timestamp with time zone NOT NULL,\n\t\"content\" bytea NOT NULL,\n\tCONSTRAINT \"workspace_logs_pkey\" PRIMARY KEY(\"workspace_id\",\"seq\")\n);\n",
+      "\nCREATE TABLE \"workspace_state_history\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"from_state\" text,\n\t\"to_state\" text NOT NULL,\n\t\"reason_code\" text,\n\t\"occurred_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"workspaces\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"principal_id\" uuid NOT NULL,\n\t\"external_id\" text NOT NULL,\n\t\"idempotency_key\" text NOT NULL,\n\t\"request_digest\" text NOT NULL,\n\t\"template_id\" uuid NOT NULL,\n\t\"template_name\" text NOT NULL,\n\t\"template_version\" text NOT NULL,\n\t\"template_digest\" text NOT NULL,\n\t\"template_snapshot\" jsonb NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"reason_code\" text,\n\t\"terminal_intent\" text,\n\t\"launch_input\" jsonb,\n\t\"provider_kind\" text,\n\t\"provider_ref\" jsonb,\n\t\"registration_digest\" bytea,\n\t\"registration_expires_at\" timestamp with time zone,\n\t\"reconnect_digest\" bytea,\n\t\"connection_epoch\" integer DEFAULT 0 NOT NULL,\n\t\"connected_at\" timestamp with time zone,\n\t\"disconnected_at\" timestamp with time zone,\n\t\"ready_at\" timestamp with time zone,\n\t\"last_activity_at\" timestamp with time zone,\n\t\"launch_attempts\" integer DEFAULT 0 NOT NULL,\n\t\"health\" jsonb DEFAULT '{}' NOT NULL,\n\t\"metadata\" jsonb DEFAULT '{}' NOT NULL,\n\t\"deadline_at\" timestamp with time zone NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"terminal_at\" timestamp with time zone,\n\tCONSTRAINT \"workspaces_principal_id_idempotency_key_unique\" UNIQUE(\"principal_id\",\"idempotency_key\")\n);\n",
+      "\nCREATE INDEX \"event_outbox_due\" ON \"event_outbox\" (\"next_attempt_at\") WHERE \"delivered_at\" IS NULL;",
+      "\nCREATE INDEX \"workspace_state_history_ws\" ON \"workspace_state_history\" (\"workspace_id\",\"occurred_at\");",
+      "\nCREATE UNIQUE INDEX \"workspaces_principal_external_active\" ON \"workspaces\" (\"principal_id\",\"external_id\") WHERE \"state\" NOT IN ('succeeded', 'failed', 'canceled', 'expired');",
+      "\nCREATE INDEX \"workspaces_state_created\" ON \"workspaces\" (\"state\",\"created_at\");",
+      "\nCREATE INDEX \"workspaces_deadline\" ON \"workspaces\" (\"deadline_at\") WHERE \"state\" NOT IN ('succeeded', 'failed', 'canceled', 'expired');",
+      "\nALTER TABLE \"event_outbox\" ADD CONSTRAINT \"event_outbox_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"machine_keys\" ADD CONSTRAINT \"machine_keys_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"workspace_logs\" ADD CONSTRAINT \"workspace_logs_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_state_history\" ADD CONSTRAINT \"workspace_state_history_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_template_id_templates_id_fkey\" FOREIGN KEY (\"template_id\") REFERENCES \"templates\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1785407673000,
+    "hash": "72be0c8fe059ee14ff1b1dfee18acd3821f7b3e0e8d352b0cd82763ebc174f52",
+    "name": "20260730103433_initial"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"workspace_checkpoints\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"storage_id\" uuid NOT NULL,\n\t\"parent_checkpoint_id\" uuid,\n\t\"state\" text NOT NULL,\n\t\"reason_code\" text,\n\t\"provider_kind\" text NOT NULL,\n\t\"provider_ref\" jsonb,\n\t\"template_snapshot\" jsonb NOT NULL,\n\t\"template_digest\" text NOT NULL,\n\t\"source_provenance\" jsonb,\n\t\"manifest\" jsonb,\n\t\"manifest_digest\" text,\n\t\"logical_bytes\" bigint,\n\t\"stored_bytes\" bigint,\n\t\"file_count\" bigint,\n\t\"conversation_restore\" text NOT NULL,\n\t\"label\" text,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"ready_at\" timestamp with time zone,\n\t\"expires_at\" timestamp with time zone,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"workspace_operations\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"principal_id\" uuid NOT NULL,\n\t\"kind\" text NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"idempotency_key\" text NOT NULL,\n\t\"request_digest\" text NOT NULL,\n\t\"workspace_id\" uuid,\n\t\"checkpoint_id\" uuid,\n\t\"result_workspace_id\" uuid,\n\t\"reason_code\" text,\n\t\"attempt_count\" integer DEFAULT 0 NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"completed_at\" timestamp with time zone,\n\tCONSTRAINT \"workspace_operations_principal_id_kind_idempotency_key_unique\" UNIQUE(\"principal_id\",\"kind\",\"idempotency_key\")\n);\n",
+      "\nCREATE TABLE \"workspace_outputs\" (\n\t\"workspace_id\" uuid,\n\t\"seq\" bigint,\n\t\"name\" text NOT NULL,\n\t\"value\" jsonb NOT NULL,\n\t\"occurred_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"workspace_outputs_pkey\" PRIMARY KEY(\"workspace_id\",\"seq\")\n);\n",
+      "\nCREATE TABLE \"workspace_storage\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"provider_kind\" text NOT NULL,\n\t\"provider_ref\" jsonb NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"mount_manifest\" jsonb NOT NULL,\n\t\"logical_bytes\" bigint,\n\t\"file_count\" bigint,\n\t\"retained_until\" timestamp with time zone,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"deleted_at\" timestamp with time zone,\n\t\"last_error_code\" text\n);\n",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"origin_workspace_id\" uuid;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"restored_from_checkpoint_id\" uuid;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"source_descriptor\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"resolved_source\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"persistence_capability\" text DEFAULT 'filesystem_only' NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"latest_checkpoint_id\" uuid;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"launch_mode\" text DEFAULT 'create' NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"outputs\" jsonb DEFAULT '{}' NOT NULL;",
+      "\nDROP INDEX \"workspaces_principal_external_active\";",
+      "\nCREATE UNIQUE INDEX \"workspaces_principal_external_active\" ON \"workspaces\" (\"principal_id\",\"external_id\") WHERE \"state\" NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved');",
+      "\nDROP INDEX \"workspaces_deadline\";",
+      "\nCREATE INDEX \"workspaces_deadline\" ON \"workspaces\" (\"deadline_at\") WHERE \"state\" NOT IN ('succeeded', 'failed', 'canceled', 'expired', 'preserved');",
+      "\nCREATE INDEX \"workspace_checkpoints_principal_state\" ON \"workspace_checkpoints\" (\"principal_id\",\"state\",\"created_at\");",
+      "\nCREATE INDEX \"workspace_checkpoints_gc\" ON \"workspace_checkpoints\" (\"state\",\"expires_at\");",
+      "\nCREATE INDEX \"workspace_operations_due\" ON \"workspace_operations\" (\"state\",\"updated_at\");",
+      "\nCREATE UNIQUE INDEX \"workspace_storage_one_live\" ON \"workspace_storage\" (\"workspace_id\") WHERE \"state\" NOT IN ('deleted', 'lost', 'quarantined');",
+      "\nCREATE INDEX \"workspace_storage_gc\" ON \"workspace_storage\" (\"state\",\"retained_until\");",
+      "\nCREATE INDEX \"workspace_storage_principal\" ON \"workspace_storage\" (\"principal_id\");",
+      "\nALTER TABLE \"workspace_checkpoints\" ADD CONSTRAINT \"workspace_checkpoints_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_checkpoints\" ADD CONSTRAINT \"workspace_checkpoints_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"workspace_checkpoints\" ADD CONSTRAINT \"workspace_checkpoints_storage_id_workspace_storage_id_fkey\" FOREIGN KEY (\"storage_id\") REFERENCES \"workspace_storage\"(\"id\");",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_fBJ1lkBRI011_fkey\" FOREIGN KEY (\"checkpoint_id\") REFERENCES \"workspace_checkpoints\"(\"id\");",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_result_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"result_workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_outputs\" ADD CONSTRAINT \"workspace_outputs_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_storage\" ADD CONSTRAINT \"workspace_storage_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_storage\" ADD CONSTRAINT \"workspace_storage_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1785411163000,
+    "hash": "eb711305e4362580a81e14d66e95546e0af6fa4c1acf6cb429c4c1ef1e957a64",
+    "name": "20260730113243_regular_pretty_boy"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspaces\" ADD COLUMN \"agent_state\" text DEFAULT 'unknown' NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"change_seq\" bigint DEFAULT 1 NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"failure_log_tail\" text;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"failure_log_tail_truncated\" boolean DEFAULT false NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"failure_last_log_seq\" bigint;"
+    ],
+    "bps": true,
+    "folderMillis": 1785418070000,
+    "hash": "264f0fd7cfb421f9ae88b564d14877a7e09b31d0554b4a783690eb4f94adb242",
+    "name": "20260730132750_workspace-change-diagnostics"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"warm_pool_runtimes\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"template_id\" uuid NOT NULL,\n\t\"template_name\" text NOT NULL,\n\t\"template_version\" text NOT NULL,\n\t\"template_digest\" text NOT NULL,\n\t\"driver_kind\" text NOT NULL,\n\t\"eligibility_fingerprint\" text NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"provider_ref\" jsonb,\n\t\"enrollment_digest\" bytea,\n\t\"enrollment_expires_at\" timestamp with time zone,\n\t\"workspace_id\" uuid,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"ready_at\" timestamp with time zone,\n\t\"leased_at\" timestamp with time zone,\n\t\"failure_code\" text\n);\n",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"provisioning_mode\" text;",
+      "\nCREATE INDEX \"warm_pool_eligible\" ON \"warm_pool_runtimes\" (\"template_digest\",\"driver_kind\",\"eligibility_fingerprint\",\"state\",\"ready_at\");",
+      "\nCREATE UNIQUE INDEX \"warm_pool_workspace_once\" ON \"warm_pool_runtimes\" (\"workspace_id\");",
+      "\nALTER TABLE \"warm_pool_runtimes\" ADD CONSTRAINT \"warm_pool_runtimes_template_id_templates_id_fkey\" FOREIGN KEY (\"template_id\") REFERENCES \"templates\"(\"id\");",
+      "\nALTER TABLE \"warm_pool_runtimes\" ADD CONSTRAINT \"warm_pool_runtimes_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1785744901000,
+    "hash": "d6558e3880b13c12fdfbcdafdf1197e97e42eee11d03472ae7bce0f3380bd2f3",
+    "name": "20260803081501_warm-workspace-pool"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"workspace_conversation_messages\" (\n\t\"workspace_id\" uuid,\n\t\"seq\" bigint,\n\t\"message_id\" text NOT NULL,\n\t\"role\" text NOT NULL,\n\t\"content\" text NOT NULL,\n\t\"occurred_at\" timestamp with time zone NOT NULL,\n\t\"metadata\" jsonb DEFAULT '{}' NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"workspace_conversation_messages_pkey\" PRIMARY KEY(\"workspace_id\",\"seq\"),\n\tCONSTRAINT \"workspace_conversation_messages_workspace_id_message_id_unique\" UNIQUE(\"workspace_id\",\"message_id\")\n);\n",
+      "\nCREATE TABLE \"workspace_conversations\" (\n\t\"workspace_id\" uuid PRIMARY KEY,\n\t\"status\" text NOT NULL,\n\t\"expires_at\" timestamp with time zone,\n\t\"deleted_at\" timestamp with time zone,\n\t\"updated_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nALTER TABLE \"workspace_conversation_messages\" ADD CONSTRAINT \"workspace_conversation_messages_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_conversations\" ADD CONSTRAINT \"workspace_conversations_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1785749314000,
+    "hash": "653afcd2a38a1ab2b2f764a1ce1e74411f2c7faace8ba313bcbb9295ed6bf462",
+    "name": "20260803092834_durable-conversations"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"workspace_network_events\" (\n\t\"workspace_id\" uuid,\n\t\"seq\" bigint,\n\t\"source_session_id\" uuid NOT NULL,\n\t\"source_seq\" bigint NOT NULL,\n\t\"occurred_at\" timestamp with time zone NOT NULL,\n\t\"decision\" text NOT NULL,\n\t\"transport\" text NOT NULL,\n\t\"host\" text NOT NULL,\n\t\"port\" integer NOT NULL,\n\t\"method\" text,\n\t\"path\" text,\n\t\"matched_rule\" text,\n\t\"reason\" text NOT NULL,\n\tCONSTRAINT \"workspace_network_events_pkey\" PRIMARY KEY(\"workspace_id\",\"seq\"),\n\tCONSTRAINT \"workspace_network_events_workspace_id_source_session_id_source_seq_unique\" UNIQUE(\"workspace_id\",\"source_session_id\",\"source_seq\")\n);\n",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"network_state\" text DEFAULT 'disabled' NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"network_event_seq\" bigint DEFAULT 0 NOT NULL;",
+      "\nCREATE INDEX \"workspace_network_events_page\" ON \"workspace_network_events\" (\"workspace_id\",\"seq\");",
+      "\nALTER TABLE \"workspace_network_events\" ADD CONSTRAINT \"workspace_network_events_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"templates\" ADD CONSTRAINT \"templates_status_check\" CHECK (\"status\" IN ('active', 'available', 'retired'));",
+      "\nALTER TABLE \"warm_pool_runtimes\" ADD CONSTRAINT \"warm_pool_runtimes_state_check\" CHECK (\"state\" IN ('provisioning', 'ready', 'leasing', 'leased', 'draining', 'failed'));",
+      "\nALTER TABLE \"workspace_checkpoints\" ADD CONSTRAINT \"workspace_checkpoints_state_check\" CHECK (\"state\" IN ('creating', 'ready', 'failed', 'deleting', 'deleted'));",
+      "\nALTER TABLE \"workspace_checkpoints\" ADD CONSTRAINT \"workspace_checkpoints_conversation_restore_check\" CHECK (\"conversation_restore\" IN ('supported', 'filesystem_only', 'unknown'));",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_kind_check\" CHECK (\"kind\" IN ('preserve', 'restore', 'verify', 'delete'));",
+      "\nALTER TABLE \"workspace_operations\" ADD CONSTRAINT \"workspace_operations_state_check\" CHECK (\"state\" IN ('pending', 'running', 'succeeded', 'failed'));",
+      "\nALTER TABLE \"workspace_state_history\" ADD CONSTRAINT \"workspace_state_history_from_check\" CHECK (\"from_state\" IS NULL OR \"from_state\" IN ('queued', 'provisioning', 'connected', 'ready', 'preserving', 'terminating', 'succeeded', 'failed', 'canceled', 'expired', 'preserved'));",
+      "\nALTER TABLE \"workspace_state_history\" ADD CONSTRAINT \"workspace_state_history_to_check\" CHECK (\"to_state\" IN ('queued', 'provisioning', 'connected', 'ready', 'preserving', 'terminating', 'succeeded', 'failed', 'canceled', 'expired', 'preserved'));",
+      "\nALTER TABLE \"workspace_state_history\" ADD CONSTRAINT \"workspace_state_history_reason_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));",
+      "\nALTER TABLE \"workspace_storage\" ADD CONSTRAINT \"workspace_storage_state_check\" CHECK (\"state\" IN ('allocating', 'ready', 'snapshotting', 'retained', 'restoring', 'deleting', 'deleted', 'lost', 'quarantined'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_state_check\" CHECK (\"state\" IN ('queued', 'provisioning', 'connected', 'ready', 'preserving', 'terminating', 'succeeded', 'failed', 'canceled', 'expired', 'preserved'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_reason_code_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_agent_state_check\" CHECK (\"agent_state\" IN ('unknown', 'running', 'stable'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_network_state_check\" CHECK (\"network_state\" IN ('disabled', 'starting', 'ready', 'degraded'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_terminal_intent_check\" CHECK (\"terminal_intent\" IS NULL OR \"terminal_intent\" IN ('queued', 'provisioning', 'connected', 'ready', 'preserving', 'terminating', 'succeeded', 'failed', 'canceled', 'expired', 'preserved'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_provisioning_mode_check\" CHECK (\"provisioning_mode\" IS NULL OR \"provisioning_mode\" IN ('cold', 'warm'));",
+      "\nALTER TABLE \"workspaces\" ADD CONSTRAINT \"workspaces_launch_mode_check\" CHECK (\"launch_mode\" IN ('create', 'restore'));"
+    ],
+    "bps": true,
+    "folderMillis": 1785836125000,
+    "hash": "5c49feb64558ef728228f2ed07917a51518b6d3e3e38cea98b928e0ee17bd092",
+    "name": "20260804093525_petite_morlun"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"workspace_terminal_sessions\" (\n\t\"session_id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"key_id\" uuid NOT NULL,\n\t\"opened_at\" timestamp with time zone NOT NULL,\n\t\"closed_at\" timestamp with time zone,\n\t\"close_reason\" text,\n\t\"exit_code\" integer,\n\t\"bytes_in\" bigint DEFAULT 0 NOT NULL,\n\t\"bytes_out\" bigint DEFAULT 0 NOT NULL,\n\tCONSTRAINT \"workspace_terminal_sessions_close_reason_check\" CHECK (\"close_reason\" IS NULL OR \"close_reason\" IN ('exit', 'idle', 'checkpoint', 'workspace_ended', 'agent_detached', 'client_closed'))\n);\n",
+      "\nCREATE INDEX \"workspace_terminal_sessions_page\" ON \"workspace_terminal_sessions\" (\"workspace_id\",\"opened_at\",\"session_id\");",
+      "\nALTER TABLE \"workspace_terminal_sessions\" ADD CONSTRAINT \"workspace_terminal_sessions_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"workspace_terminal_sessions\" ADD CONSTRAINT \"workspace_terminal_sessions_key_id_machine_keys_id_fkey\" FOREIGN KEY (\"key_id\") REFERENCES \"machine_keys\"(\"id\");\n"
+    ],
+    "bps": true,
+    "folderMillis": 1785933208000,
+    "hash": "4e302762168fabdcc0ccb9775abb3333c986022410f47487a4d0789a9914df54",
+    "name": "20260805123328_sloppy_brother_voodoo"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"machine_keys\" ADD COLUMN \"issuance_request_id\" text;",
+      "\nALTER TABLE \"machine_keys\" ADD COLUMN \"issuance_request_digest\" text;",
+      "\nALTER TABLE \"machine_keys\" ADD COLUMN \"managed_principal_ids\" text[] DEFAULT '{}'::text[] NOT NULL;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"purge_requested_at\" timestamp with time zone;",
+      "\nALTER TABLE \"machine_keys\" ADD CONSTRAINT \"machine_keys_principal_id_issuance_request_id_unique\" UNIQUE(\"principal_id\",\"issuance_request_id\");",
+      "\nALTER TABLE \"workspace_operations\" DROP CONSTRAINT \"workspace_operations_kind_check\", ADD CONSTRAINT \"workspace_operations_kind_check\" CHECK (\"kind\" IN ('preserve', 'restore', 'verify', 'delete', 'purge'));"
+    ],
+    "bps": true,
+    "folderMillis": 1790058121000,
+    "hash": "1c918bc027e6af6be581400607beaf8547a2fba53dffca74e1490b79177b1a0a",
+    "name": "20260922062201_brave_the_spike"
+  }
+]

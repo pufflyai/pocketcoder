@@ -4,7 +4,7 @@ import type { MetricSink } from "../observability/metrics";
 import type { Store, WorkspaceRow } from "../types";
 import { measureReconciliation } from "./reconciliation-metrics";
 
-// Server-restart recovery: reconcile PostgreSQL state with provider objects.
+// Server-restart recovery: reconcile database state with provider objects.
 // Workspaces with a live provider wait for their supervisor to reconnect
 // inside the disconnect grace; workspaces whose provider vanished fail.
 

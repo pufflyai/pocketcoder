@@ -31,8 +31,8 @@
     "bun": ">=1.4.2"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun ../../scripts/copy-db-migrations.ts ./dist",
-    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pcd && bun ../../scripts/copy-db-migrations.ts ./dist",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pcd",
     "start": "bun ./src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"

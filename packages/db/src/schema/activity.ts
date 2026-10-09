@@ -23,7 +23,6 @@ import {
 } from "drizzle-orm/pg-core";
 import type { createAccessTables } from "./access";
 import { sqlValues, timestamptz } from "./columns";
-import { structuredJson } from "./structured-json";
 import type { createWorkspaceTables } from "./workspaces";
 
 export function createActivityTables(
@@ -79,11 +78,8 @@ export function createActivityTables(
       role: text("role").$type<NonNullable<ConversationMessageRow["role"]>>().notNull(),
       content: text("content").notNull(),
       occurredAt: timestamptz("occurred_at").notNull(),
-      metadata: structuredJson("metadata")
-        .$type<NonNullable<ConversationMessageRow["metadata"]>>()
-        .notNull()
-        .default({}),
-      identity: structuredJson("identity").$type<NonNullable<ConversationMessageRow["identity"]>>(),
+      metadata: jsonb("metadata").$type<NonNullable<ConversationMessageRow["metadata"]>>().notNull().default({}),
+      identity: jsonb("identity").$type<NonNullable<ConversationMessageRow["identity"]>>(),
       createdAt: timestamptz("created_at").notNull(),
     },
     (table) => [

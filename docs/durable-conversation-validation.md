@@ -16,9 +16,8 @@ bun run pack:check
 git diff --check
 ```
 
-Expected result: every command exits zero. The default test run may report the
-PostgreSQL and runtime-driver suites as skipped when their disposable external
-dependencies are not configured.
+Expected result: every command exits zero. The database suites run against memory and disk PGlite. Runtime-driver suites
+may skip when Docker or a cluster is not available.
 
 ## 2. Run the focused in-process E2E
 
@@ -35,13 +34,13 @@ post-cancel retrieval, and cancellation.
 Expected result: `1 pass`, with the lifecycle test named `create, setup,
 harness, ready, converse, cancel`.
 
-## 3. Run the disposable Docker/PostgreSQL E2E
+## 3. Run the disposable Docker/PGlite E2E
 
 ```sh
 bun run example:e2e:local
 ```
 
-The runner creates a temporary PostgreSQL 16 container, applies all migrations,
+The runner creates a temporary migrated PGlite data folder,
 builds the workspace image, starts the server, creates and drives an echo
 workspace through Docker, reads the durable conversation API, cancels the
 workspace, and removes its temporary container and image.
@@ -56,45 +55,30 @@ Expected result: the final JSON report contains:
 }
 ```
 
-## 4. Run the PostgreSQL store integration directly
-
-This optional focused check proves the generated migration and transcript
-deduplication against PostgreSQL without building a workspace image.
+## 4. Run the PGlite store integration directly
 
 ```sh
-docker run --detach --name pocketcoder-validation-postgres \
-  --env POSTGRES_USER=pocketcoder \
-  --env POSTGRES_PASSWORD=pocketcoder \
-  --env POSTGRES_DB=pocketcoder \
-  --publish 127.0.0.1:55432:5432 \
-  postgres:16-alpine
-
-until docker exec pocketcoder-validation-postgres pg_isready -U pocketcoder; do sleep 1; done
-
-POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
-  bun test packages/db/src/postgres-conformance.test.ts
-
-docker rm --force pocketcoder-validation-postgres
+bun test packages/db/src/pglite-conformance.test.ts \
+  packages/db/src/modules/workspaces/conformance.test.ts \
+  packages/db/src/database/crash.test.ts
 ```
 
-Expected result: the PostgreSQL suite runs rather than skips, applies the full
-migration chain in `packages/db/drizzle` without drift, appends one message,
-treats a replayed `message_id` as idempotent, and reads sequence `1` back.
+The suites run in memory and on disk. They check transcript deduplication,
+transaction rollback, migration history, writer locking and SIGKILL recovery.
+The compiled fixture runs without a source checkout or adjacent database assets.
 
 ## 5. Validate supplied request identities
 
-With the disposable PostgreSQL URL from step 4:
+Run the focused identity checks:
 
 ```sh
-POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
-  bun test packages/contracts/src/conversations/conversation.test.ts \
-  packages/memory-store/src/memory-store.test.ts \
-  packages/db/src/postgres-conformance.test.ts \
+bun test packages/contracts/src/conversations/conversation.test.ts \
+  packages/db/src/pglite-conformance.test.ts \
   packages/server/src/conversations/conversation-requests.test.ts \
   packages/server/src/control-channel/ws-frame-handler.test.ts
 ```
 
-The same shared contract runs against memory and PostgreSQL. It covers external
+The same shared contract runs against memory and disk PGlite. It covers external
 and generic identities, simultaneous retries, resumed workspace generations,
 conflicting fingerprints, principal/conversation scoping, repeated delivery,
 provider IDs reused in another turn, and immutable returned identities. API/SDK
@@ -114,7 +98,7 @@ Expected: explicit intermediate/final/tool-only/activity/terminal facts decode;
 final text survives interruption; duplicate or stale revisions and unrelated turns
 do not replace the accepted turn; canonical facts survive checkpoint-history
 projection; finishing a reader releases its stream. The store tests in step 5
-also round-trip activity facts against real PostgreSQL and detach memory snapshots.
+also round-trip activity facts against real PGlite and detach memory snapshots.
 No installed producer or deployment capability is claimed by these fixtures.
 
 ## 7. Inspect a running workspace manually

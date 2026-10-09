@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { configSummary, loadConfig } from "./config";
 
 describe("portable persistence configuration", () => {
+  test("rejects an empty embedded data folder", () => {
+    expect(() => loadConfig({ POCKETCODER_DIR: "", POCKETCODER_AUTH_PEPPER: "test" })).toThrow(
+      "POCKETCODER_DIR must not be empty",
+    );
+  });
+  test("defaults to embedded data and accepts an explicit data folder", () => {
+    const env = { POCKETCODER_AUTH_PEPPER: "test-pepper" };
+    expect(loadConfig(env).storeKind).toBe("pglite");
+    expect(loadConfig(env).dataDir).toBe("./pc_data");
+    expect(loadConfig({ ...env, POCKETCODER_DIR: "/data/private" }).dataDir).toBe("/data/private");
+  });
   test("parses operator warm pool configuration with safe defaults", () => {
     const config = loadConfig({
       POCKETCODER_STORE: "memory",
@@ -75,9 +86,7 @@ describe("portable persistence configuration", () => {
   });
 
   test("rejects unknown explicit backend values instead of selecting fallbacks", () => {
-    expect(() => loadConfig({ POCKETCODER_STORE: "memroy", POCKETCODER_DATABASE_URL: "postgres://unused" })).toThrow(
-      "POCKETCODER_STORE",
-    );
+    expect(() => loadConfig({ POCKETCODER_STORE: "memroy" })).toThrow("POCKETCODER_STORE");
     expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_DRIVER: "dokcer" })).toThrow(
       "POCKETCODER_DRIVER",
     );

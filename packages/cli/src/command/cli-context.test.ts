@@ -1,41 +1,32 @@
-import { describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { migrateDatabase } from "@pstdio/pocketcoder-db";
-import { SQL } from "bun";
+import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PGliteStore } from "@pstdio/pocketcoder-db";
 import { withStore } from "./cli-context";
 
-const databaseUrl = process.env.POCKETCODER_TEST_DATABASE_URL;
-
-describe.skipIf(!databaseUrl)("operator store connections", () => {
-  test("uses one connection and releases it after a command", async () => {
-    const schema = `cli_pool_${randomUUID().replaceAll("-", "")}`;
-    const observer = new SQL(databaseUrl as string, { max: 1 });
-    const url = new URL(databaseUrl as string);
-    url.searchParams.set("application_name", schema);
-    const previousUrl = process.env.POCKETCODER_DATABASE_URL;
-    const previousSchema = process.env.POCKETCODER_DATABASE_SCHEMA;
+test("local commands persist rows and release the writer lock, including after failure", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pc-cli-store-"));
+  const previous = process.env.POCKETCODER_DIR;
+  try {
+    process.env.POCKETCODER_DIR = dir;
+    await withStore(async (store) => {
+      await store.createPrincipal("operator", ["admin"], ["*"]);
+    });
+    await expect(
+      withStore(async () => {
+        throw new Error("command failed");
+      }),
+    ).rejects.toThrow("command failed");
+    const reopened = await PGliteStore.create(dir);
     try {
-      await migrateDatabase(observer, schema);
-      process.env.POCKETCODER_DATABASE_URL = url.href;
-      process.env.POCKETCODER_DATABASE_SCHEMA = schema;
-      await withStore(async (store) => {
-        expect(await store.listPrincipals()).toEqual([]);
-        // Let every eagerly opened connection finish authentication before counting.
-        await Bun.sleep(100);
-        const rows =
-          await observer`SELECT count(*)::int AS count FROM pg_stat_activity WHERE application_name = ${schema}`;
-        expect(rows[0].count).toBe(1);
-      });
-      const rows =
-        await observer`SELECT count(*)::int AS count FROM pg_stat_activity WHERE application_name = ${schema}`;
-      expect(rows[0].count).toBe(0);
+      expect((await reopened.getPrincipalByName("operator"))?.name).toBe("operator");
     } finally {
-      if (previousUrl === undefined) delete process.env.POCKETCODER_DATABASE_URL;
-      else process.env.POCKETCODER_DATABASE_URL = previousUrl;
-      if (previousSchema === undefined) delete process.env.POCKETCODER_DATABASE_SCHEMA;
-      else process.env.POCKETCODER_DATABASE_SCHEMA = previousSchema;
-      await observer.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await observer.end();
+      await reopened.close();
     }
-  });
+  } finally {
+    if (previous === undefined) delete process.env.POCKETCODER_DIR;
+    else process.env.POCKETCODER_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
 });

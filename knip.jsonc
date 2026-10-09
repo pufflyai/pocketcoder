@@ -15,6 +15,9 @@
     ".pstdio/extensions/*": {
       "entry": ["src/view.ts", "**/*.test.ts"]
     },
+    "packages/db": {
+      "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts"]
+    },
     "packages/server": {
       "entry": ["src/**/*.test.ts"]
     },

@@ -15,8 +15,8 @@
     "./lifecycle": "./src/lifecycle/lifecycle.ts"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun ../../scripts/copy-db-migrations.ts ./dist",
-    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-server && bun ../../scripts/copy-db-migrations.ts ./dist",
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-server",
     "dev": "bun --watch ./src/index.ts",
     "start": "bun ./src/index.ts",
     "test": "bun test",

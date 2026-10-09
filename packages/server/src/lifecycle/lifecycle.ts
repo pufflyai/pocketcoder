@@ -1,5 +1,5 @@
 import { signEvent } from "@pstdio/pocketcoder-auth";
-import { PostgresStore } from "@pstdio/pocketcoder-db";
+import { PGliteStore } from "@pstdio/pocketcoder-db";
 import {
   DockerDriver,
   FileSecretResolver,
@@ -37,12 +37,9 @@ export interface RunningPocketCoderServer {
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
 
 async function initializeStore(config: ServerConfig, log: ServerLog): Promise<Store> {
-  const store: Store =
-    config.storeKind === "postgres"
-      ? new PostgresStore(config.databaseUrl as string, config.databaseSchema)
-      : new MemoryStore();
+  const store: Store = config.storeKind === "pglite" ? await PGliteStore.create(config.dataDir) : new MemoryStore();
   await store.init();
-  log(`store: ${config.storeKind}${config.storeKind === "postgres" ? ` (schema ${config.databaseSchema})` : ""}`);
+  log(`store: ${config.storeKind}${config.storeKind === "pglite" ? ` (${config.dataDir})` : ""}`);
   return store;
 }
 

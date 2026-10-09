@@ -12,9 +12,8 @@ export interface ServerConfig {
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
   listenHost: string;
   listenPort: number;
-  storeKind: "postgres" | "memory";
-  databaseUrl: string | null;
-  databaseSchema: string;
+  storeKind: "pglite" | "memory";
+  dataDir: string;
   pepper: string;
   eventSigningKey: string;
   eventSinkUrl: string | null;
@@ -147,20 +146,11 @@ function bytesEnv(env: Environment, key: string, fallback: number): number {
   return value;
 }
 
-function resolveStore(env: Environment): Pick<ServerConfig, "storeKind" | "databaseUrl"> {
-  const storeKind = enumEnv(env, "POCKETCODER_STORE", ["postgres", "memory"] as const, "postgres");
-  const databaseUrl = env.POCKETCODER_DATABASE_URL ?? null;
-  if (storeKind === "postgres" && !databaseUrl) {
-    throw new Error("POCKETCODER_DATABASE_URL is required (or set POCKETCODER_STORE=memory for development)");
-  }
-  return { storeKind, databaseUrl };
-}
-
 function resolvePepper(env: Environment, storeKind: ServerConfig["storeKind"]): string {
   let pepper = env.POCKETCODER_AUTH_PEPPER ?? "";
   if (!pepper) {
-    if (storeKind === "postgres") {
-      throw new Error("POCKETCODER_AUTH_PEPPER is required with the postgres store");
+    if (storeKind === "pglite") {
+      throw new Error("POCKETCODER_AUTH_PEPPER is required with the pglite store");
     }
     // Ephemeral pepper is acceptable only for the in-memory dev store,
     // where keys do not outlive the process anyway.
@@ -273,7 +263,7 @@ export function configSummary(config: ServerConfig) {
   return {
     listen: `${config.listenHost}:${config.listenPort}`,
     store: config.storeKind,
-    databaseSchema: config.storeKind === "postgres" ? config.databaseSchema : null,
+    dataDir: config.storeKind === "pglite" ? config.dataDir : null,
     driver: config.driverKind,
     storage: config.storageBackend,
     secrets: config.secretProvider,
@@ -283,7 +273,8 @@ export function configSummary(config: ServerConfig) {
 }
 
 export function loadConfig(env: Environment = process.env): ServerConfig {
-  const { storeKind, databaseUrl } = resolveStore(env);
+  if (env.POCKETCODER_DIR === "") throw new Error("POCKETCODER_DIR must not be empty");
+  const storeKind = enumEnv(env, "POCKETCODER_STORE", ["pglite", "memory"] as const, "pglite");
   const pepper = resolvePepper(env, storeKind);
   const listenPort = intEnv(env, "POCKETCODER_PORT", 7080);
   if (listenPort > 65_535) throw new Error("POCKETCODER_PORT must be at most 65535");
@@ -302,8 +293,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     launchPolicy: launchPolicyConfig(env),
     listenPort,
     storeKind,
-    databaseUrl,
-    databaseSchema: env.POCKETCODER_DATABASE_SCHEMA ?? "pocketcoder",
+    dataDir: env.POCKETCODER_DIR ?? "./pc_data",
     pepper,
     eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,
     eventSinkUrl: httpUrlEnv(env, "POCKETCODER_EVENT_SINK_URL", null),

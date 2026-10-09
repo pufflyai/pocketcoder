@@ -6,7 +6,7 @@ The deployment-neutral application logic for the PocketCoder control plane.
 
 Workspace lifecycle rules must behave the same with every database and
 provider. This package keeps scheduling and reconciliation separate from HTTP,
-PostgreSQL, Docker, and Kubernetes code.
+PGlite, Docker, and Kubernetes code.
 
 ## What it does
 

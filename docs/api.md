@@ -120,7 +120,7 @@ connection/health change, or agent `running`/`stable` change advances the
 cursor and releases waiters. Cursors survive server restarts because they are
 stored with the workspace. The single-active server uses bounded in-process
 waiters after the initial durable cursor read, so an open long-poll does not
-timer-poll PostgreSQL.
+timer-poll the database.
 
 A failed workspace includes a bounded `failure` object directly in the
 resource and lifecycle event:
