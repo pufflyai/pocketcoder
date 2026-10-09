@@ -1,5 +1,17 @@
 # @pstdio/pocketcoder-cli
 
+## 0.8.1
+
+### Patch Changes
+
+- [#65](https://github.com/pufflyai/pocketcoder/pull/65) [`8e9026e`](https://github.com/pufflyai/pocketcoder/commit/8e9026e435a1bef95069e7dfadb175ce7d8b3d53) Thanks [@au-re](https://github.com/au-re)! - Retain accepted native prompts through cooperative Stop.
+
+- [#56](https://github.com/pufflyai/pocketcoder/pull/56) [`5a2bcad`](https://github.com/pufflyai/pocketcoder/commit/5a2bcad1d5b702eca27ec680d7129757945819b8) Thanks [@au-re](https://github.com/au-re)! - Allow the Docker egress initializer to read private non-root server-owned configuration before dropping its capabilities.
+
+- [#64](https://github.com/pufflyai/pocketcoder/pull/64) [`3a1e9e9`](https://github.com/pufflyai/pocketcoder/commit/3a1e9e934e41350be310d8c95c639863d86ce9eb) Thanks [@au-re](https://github.com/au-re)! - Recover retained Kubernetes termination proof after concurrent cleanup.
+
+- [#49](https://github.com/pufflyai/pocketcoder/pull/49) [`8696920`](https://github.com/pufflyai/pocketcoder/commit/86969200834bdf92d7973bc6e77d84d702a1f9bf) Thanks [@au-re](https://github.com/au-re)! - Require Bun 1.4.2 or newer.
+
 ## 0.8.0
 
 ### Minor Changes
