@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { runCli } from "./testing/cli-test-support";
 
-describe("pcd version", () => {
+describe("pocketcoder version", () => {
   test("prints the published package version", async () => {
     const { version } = await Bun.file(resolve(import.meta.dir, "../package.json")).json();
     const result = await runCli(["--version"]);
@@ -20,20 +20,20 @@ describe("pcd version", () => {
   });
 });
 
-describe("pcd help", () => {
+describe("pocketcoder help", () => {
   test("prints root help successfully", async () => {
     const result = await runCli(["--help"]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.output).toContain("pcd <command>");
-    expect(result.output).toContain("pcd workspaces <command>");
+    expect(result.output).toContain("pocketcoder <command>");
+    expect(result.output).toContain("pocketcoder workspaces <command>");
   });
 
   test("a missing root command prints help and fails", async () => {
     const result = await runCli([]);
 
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain("pcd <command>");
+    expect(result.output).toContain("pocketcoder <command>");
     expect(result.output).toContain("A command is required.");
   });
 
@@ -43,7 +43,7 @@ describe("pcd help", () => {
       const result = await runCli([group]);
 
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain(`pcd ${group} <command>`);
+      expect(result.output).toContain(`pocketcoder ${group} <command>`);
       expect(result.output).toContain("Not enough non-option arguments");
     },
   );
@@ -51,67 +51,67 @@ describe("pcd help", () => {
   test.each([
     {
       args: ["principals", "create"],
-      usage: "pcd principals create",
+      usage: "pocketcoder principals create",
       error: "Missing required arguments: name, scopes",
     },
     {
       args: ["principals", "update"],
-      usage: "pcd principals update",
+      usage: "pocketcoder principals update",
       error: "Missing required argument: id",
     },
     {
       args: ["keys", "issue"],
-      usage: "pcd keys issue",
+      usage: "pocketcoder keys issue",
       error: "Missing required arguments: principal-id, request-id, scopes, expires",
     },
     {
       args: ["keys", "revoke"],
-      usage: "pcd keys revoke",
+      usage: "pocketcoder keys revoke",
       error: "Missing required argument: id",
     },
     {
       args: ["templates", "validate"],
-      usage: "pcd templates validate <files..>",
+      usage: "pocketcoder templates validate <files..>",
       error: "Not enough non-option arguments",
     },
     {
       args: ["workspaces", "create"],
-      usage: "pcd workspaces create",
+      usage: "pocketcoder workspaces create",
       error: "Missing required argument: template",
     },
     {
       args: ["workspaces", "get"],
-      usage: "pcd workspaces get",
+      usage: "pocketcoder workspaces get",
       error: "Missing required argument: id",
     },
     {
       args: ["workspaces", "logs"],
-      usage: "pcd workspaces logs",
+      usage: "pocketcoder workspaces logs",
       error: "Missing required argument: id",
     },
     {
       args: ["workspaces", "network-events"],
-      usage: "pcd workspaces network-events",
+      usage: "pocketcoder workspaces network-events",
       error: "Missing required argument: id",
     },
     {
       args: ["workspaces", "terminal"],
-      usage: "pcd workspaces terminal",
+      usage: "pocketcoder workspaces terminal",
       error: "Missing required argument: id",
     },
     {
       args: ["workspaces", "terminal-sessions"],
-      usage: "pcd workspaces terminal-sessions",
+      usage: "pocketcoder workspaces terminal-sessions",
       error: "Missing required argument: id",
     },
     {
       args: ["workspaces", "cancel"],
-      usage: "pcd workspaces cancel",
+      usage: "pocketcoder workspaces cancel",
       error: "Missing required argument: id",
     },
     {
       args: ["doctor"],
-      usage: "pcd doctor",
+      usage: "pocketcoder doctor",
       error: "Missing required argument: template",
     },
   ])("$usage prints command help when required arguments are missing", async ({ args, usage, error }) => {

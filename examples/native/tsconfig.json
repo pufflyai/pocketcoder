@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "paths": { "@pstdio/pocketcoder-sdk": ["../../packages/sdk/src/index.ts"] } },
+  "include": ["./*.ts"]
+}

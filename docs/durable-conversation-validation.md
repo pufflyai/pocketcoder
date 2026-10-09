@@ -73,7 +73,7 @@ For a server and participating harness you already run, set the machine key and
 workspace id, then read the first page:
 
 ```sh
-export POCKETCODER_URL=http://127.0.0.1:7080
+export POCKETCODER_URL=http://127.0.0.1:8090
 export POCKETCODER_KEY=pkt_...
 export WORKSPACE_ID=<workspace-uuid>
 
