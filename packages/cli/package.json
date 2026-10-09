@@ -42,6 +42,7 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@pstdio/pocketcoder-drivers": "workspace:*",
     "@pstdio/pocketcoder-auth": "workspace:*",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-db": "workspace:*",

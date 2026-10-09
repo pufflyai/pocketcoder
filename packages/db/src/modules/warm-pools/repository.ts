@@ -33,33 +33,29 @@ export function createWarmPools(context: DatabaseContext) {
         .where(eq(runtimes.id, id));
     },
     async claimWarmPoolRuntime(claim: WarmPoolClaim) {
-      const result = await db.transaction(async (tx) => {
-        const current = claim.workspace;
-        const payload = buildEventEnvelope(
-          { ...current, state: "provisioning", provisioningMode: "warm", changeSeq: current.changeSeq + 1 },
-          claim.at,
-        );
-        // Only the statement shape is shared; rows and parameters belong to this transaction.
-        claimQuery ??= createWarmClaimQuery(context);
-        const [result] = await claimQuery(tx, {
-          ...claim,
-          workspaceId: current.id,
-          expectedChangeSeq: current.changeSeq,
-          expectedOutputs: current.outputs,
-          historyId: randomUUID(),
-          eventId: payload.id,
-          eventType: payload.type,
-          payload,
-        });
-        if (!result) return null;
-        if (result.stale) return { kind: "stale" } as const;
-        if (!result.runtime) return null;
-        if (!result.workspace) throw new Error("warm_pool.claim_workspace_race");
-        const workspace = workspaceFromRow(result.workspace);
-        return { runtime: result.runtime, workspace };
+      const current = claim.workspace;
+      const payload = buildEventEnvelope(
+        { ...current, state: "provisioning", provisioningMode: "warm", changeSeq: current.changeSeq + 1 },
+        claim.at,
+      );
+      claimQuery ??= createWarmClaimQuery(context);
+      // The statement commits the lease, workspace, history and event atomically.
+      const [result] = await claimQuery({
+        ...claim,
+        workspaceId: current.id,
+        expectedChangeSeq: current.changeSeq,
+        expectedOutputs: current.outputs,
+        historyId: randomUUID(),
+        eventId: payload.id,
+        eventType: payload.type,
+        payload,
       });
-      if (result && !("kind" in result)) notifyChange(context, claim.workspace.id);
-      return result;
+      if (!result) return null;
+      if (result.stale) return { kind: "stale" } as const;
+      if (!result.runtime) return null;
+      if (!result.workspace) throw new Error("warm_pool.claim_workspace_race");
+      notifyChange(context, current.id);
+      return { runtime: result.runtime, workspace: workspaceFromRow(result.workspace) };
     },
   };
 }

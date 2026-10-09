@@ -23,6 +23,7 @@ export type {
 export { buildEventEnvelope } from "./events/events";
 export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
 export * from "./stores/checkpoint-transfers";
+export * from "./stores/secrets";
 export * from "./stores/storage-reservations";
 export {
   type ActiveCounts,

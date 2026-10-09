@@ -80,7 +80,6 @@ export class WarmPoolManager {
       return "miss";
     }
     if ("kind" in claimed) return "deferred";
-    await this.deps.store.updateWarmPoolRuntime(claimed.runtime.id, { state: "leased" }, this.now());
     if (!this.deps.connections.assign(claimed.runtime.id, input)) {
       this.metrics.leaseFailures += 1;
       await this.destroy(claimed.runtime, "assignment_connection_lost");

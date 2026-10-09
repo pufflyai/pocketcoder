@@ -5,6 +5,7 @@ import { ConversationsApi } from "./resources/conversations/conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 import { KeysApi, RecoveryApi } from "./resources/keys/keys";
 import { PrincipalsApi } from "./resources/principals/principals";
+import { SecretsApi } from "./resources/secrets/secrets";
 import { TemplatesApi } from "./resources/templates/templates";
 import { TerminalsApi } from "./resources/terminals/terminals";
 import { WorkspacesApi } from "./resources/workspaces/workspaces";
@@ -12,6 +13,7 @@ import { type PocketCoderClientConfig, PocketCoderTransport } from "./transport/
 
 export class PocketCoderClient {
   private readonly transport: PocketCoderTransport;
+  readonly secrets: SecretsApi;
   readonly templates: TemplatesApi;
   readonly workspaces: WorkspacesApi;
   readonly attachments: AttachmentsApi;
@@ -30,6 +32,7 @@ export class PocketCoderClient {
 
   constructor(config: PocketCoderClientConfig, fetchImpl: typeof fetch = fetch) {
     this.transport = new PocketCoderTransport(config, fetchImpl);
+    this.secrets = new SecretsApi(this.transport);
     this.templates = new TemplatesApi(this.transport);
     this.workspaces = new WorkspacesApi(this.transport);
     this.attachments = new AttachmentsApi(this.transport);

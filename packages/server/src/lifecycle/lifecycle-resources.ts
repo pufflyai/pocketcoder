@@ -7,6 +7,7 @@ import {
   KubernetesDriver,
   KubernetesPvcStorageDriver,
   KubernetesSecretResolver,
+  type RegistryResolver,
 } from "@pstdio/pocketcoder-drivers";
 import {
   loadTemplateDir,
@@ -49,8 +50,9 @@ export async function requireEgressImageForRestrictedTemplates(store: Store, con
   }
 }
 
-export function createWorkspaceDriver(config: ServerConfig) {
+export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: RegistryResolver) {
   const egress = {
+    ...(resolveRegistry ? { resolveRegistry } : {}),
     ...(config.egressImage ? { egressImage: config.egressImage } : {}),
     egressSigningKey: config.eventSigningKey,
   };

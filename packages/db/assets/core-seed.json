@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "81843de562f6af8ced14dc69d48134f9bf3c6b7288a124655b461cf19f6a56d2",
+  "checksum": "43b9c6434e99367f82285458141338729740f882e26af115f413d079e6b12f1b",
   "engine": {
     "wasm": {
       "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
@@ -53,6 +53,10 @@
     {
       "name": "20261007210918_abnormal_outlaw_kid",
       "hash": "88f1798d438de732a450ba343a6efaf482816b3bd69991756f1021c050b751cd"
+    },
+    {
+      "name": "20261009085152_cheerful_the_spike",
+      "hash": "0e96f2f636d4df623abdbf2330067ae1a00dfbc5a49f66ebf920fa9668c8a31f"
     }
   ]
 }

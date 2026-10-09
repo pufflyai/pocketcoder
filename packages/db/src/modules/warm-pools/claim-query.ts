@@ -51,7 +51,7 @@ export function buildWarmClaimQuery({
     db
       .update(runtimes)
       .set({
-        state: "leasing",
+        state: "leased",
         workspaceId: sql.placeholder("workspaceId"),
         leasedAt: sql`${sql.param(sql.placeholder("at"), runtimes.leasedAt)}`,
         updatedAt: sql`${sql.param(sql.placeholder("at"), runtimes.updatedAt)}`,
@@ -125,7 +125,7 @@ export function buildWarmClaimQuery({
 }
 
 export function createWarmClaimQuery(context: DatabaseContext) {
-  return compileSelect(buildWarmClaimQuery(context), {
+  return compileSelect(context.client, buildWarmClaimQuery(context), {
     locked_workspace: true,
     leased_runtime: false,
     admitted_workspace: false,
