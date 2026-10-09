@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { checkpointHttpFixture } from "./checkpoint-transfer-fixture.test";
 
-async function fixture() {
+export async function checkpointDownloadFixture() {
   const f = await checkpointHttpFixture();
   const pending = f.service.preserve(f.workspace, f.checkpoint, f.operationId);
   const upload = await f.grant;
@@ -75,7 +75,7 @@ async function fixture() {
 }
 
 test("fresh destination HTTP grant streams source bytes and completes only after verified installed barrier", async () => {
-  const f = await fixture();
+  const f = await checkpointDownloadFixture();
   try {
     const payload = {
       operation_id: f.operationId,
@@ -107,7 +107,7 @@ test("fresh destination HTTP grant streams source bytes and completes only after
 test.each(["owner", "operation", "epoch", "purpose"])(
   "HTTP grant refuses wrong %s without consumption",
   async (failure) => {
-    const f = await fixture();
+    const f = await checkpointDownloadFixture();
     try {
       const headers = { ...f.headers };
       if (failure === "owner") headers["x-pocketcoder-workspace"] = f.workspace.id;
@@ -124,7 +124,7 @@ test.each(["owner", "operation", "epoch", "purpose"])(
 );
 
 test("normal destination disconnect drains download handles and revokes its one-use grant", async () => {
-  const f = await fixture();
+  const f = await checkpointDownloadFixture();
   try {
     const response = await fetch(f.grant.url, { headers: f.headers });
     expect(response.status).toBe(200);
@@ -151,7 +151,7 @@ test("normal destination disconnect drains download handles and revokes its one-
 });
 
 test("the final declared HTTP chunk proves native EOF before installation can arrive", async () => {
-  const f = await fixture();
+  const f = await checkpointDownloadFixture();
   try {
     const response = await f.service.handleDownload(new Request(f.grant.url, { headers: f.headers }), f.operationId);
     const reader = response.body?.getReader();

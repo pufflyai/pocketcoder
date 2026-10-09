@@ -41,6 +41,7 @@ export interface PersistenceServiceDeps {
       operationId: string,
     ): Promise<WorkspaceCheckpointRow>;
     cleanup(workspaceId: string): Promise<void>;
+    cancel(workspaceId: string, checkpointIds: Set<string>): Promise<void>;
     verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
     delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
   };

@@ -24,6 +24,8 @@ export function createTransferLifetime(store: Store, hub: Hub) {
   let closed = false;
   const jobs = new Set<{ workspaceId: string; task: Promise<unknown> }>();
   const preparations = new Map<string, { connection: LiveConnection; task: Promise<unknown> }>();
+  // The purge fence is permanent. A preserve still before its prepare step must not start one later.
+  const purged = new Set<string>();
   function ensureOpen() {
     if (closed) throw new Error("Checkpoint transfers are closed.");
   }
@@ -53,6 +55,15 @@ export function createTransferLifetime(store: Store, hub: Hub) {
       context.failed(reason);
     })();
     return context.cleanup;
+  }
+  async function cleanupWorkspace(workspaceId: string, connection?: LiveConnection) {
+    cancelPreparations(workspaceId, connection);
+    const contexts = [...active.values()].filter(
+      (context) => context.row.workspaceId === workspaceId && (!connection || context.connection === connection),
+    );
+    const results = await Promise.allSettled(contexts.map((context) => cleanup(context)));
+    await settle(results);
+    await Promise.allSettled([...jobs].filter((job) => job.workspaceId === workspaceId).map((job) => job.task));
   }
   function open(connection: LiveConnection, row: TransferRow) {
     ensureOpen();
@@ -131,6 +142,7 @@ export function createTransferLifetime(store: Store, hub: Hub) {
     },
     prepare(workspaceId: string, payload: PrepareCheckpointArchive) {
       ensureOpen();
+      if (purged.has(workspaceId)) throw new Error("Workspace purge canceled the checkpoint transfer.");
       const connection = hub.get(workspaceId);
       const task = hub.prepareCheckpointArchive(workspaceId, payload);
       if (connection) preparations.set(payload.operation_id, { connection, task });
@@ -142,14 +154,14 @@ export function createTransferLifetime(store: Store, hub: Hub) {
     },
     open,
     cleanup,
-    async cleanupWorkspace(workspaceId: string, connection?: LiveConnection) {
-      cancelPreparations(workspaceId, connection);
-      const contexts = [...active.values()].filter(
-        (context) => context.row.workspaceId === workspaceId && (!connection || context.connection === connection),
-      );
-      const results = await Promise.allSettled(contexts.map((context) => cleanup(context)));
-      await settle(results);
-      await Promise.allSettled([...jobs].filter((job) => job.workspaceId === workspaceId).map((job) => job.task));
+    cleanupWorkspace,
+    async cancel(workspaceId: string, checkpointIds: Set<string>) {
+      // Restores of these checkpoints run under their destination workspace.
+      purged.add(workspaceId);
+      const reason = new Error("Workspace purge canceled the checkpoint transfer.");
+      const copies = [...active.values()].filter((context) => checkpointIds.has(context.row.checkpointId));
+      await settle(await Promise.allSettled(copies.map((context) => cleanup(context, reason))));
+      await cleanupWorkspace(workspaceId);
     },
     async drain() {
       closed = true;
