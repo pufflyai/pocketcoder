@@ -14,6 +14,10 @@ export class PersistencePreserveRunner {
 
   constructor(private readonly context: PersistenceContext) {}
 
+  owns(workspaceId: string) {
+    return this.running.has(workspaceId);
+  }
+
   async retry() {
     const operations = await this.context.deps.store.listIncompleteOperations();
     const pending = operations.filter((operation) => operation.kind === "preserve" && operation.state === "pending");
@@ -62,7 +66,11 @@ export class PersistencePreserveRunner {
     const { checkpointTransfers, store } = this.context.deps;
     if (!checkpointTransfers) throw new Error("Checkpoint transfer service is unavailable");
     await store.updateWorkspaceStorage(storage.id, { state: "snapshotting" }, this.context.now());
-    const published = await checkpointTransfers.preserve(workspace, checkpoint, operationId);
+    const published =
+      checkpoint.state === "ready"
+        ? checkpoint
+        : await checkpointTransfers.preserve(workspace, checkpoint, operationId);
+    if (checkpoint.state === "ready") await checkpointTransfers.verify(published);
     if (published.state !== "ready" || !published.providerRef || !published.readyAt) {
       throw new Error("Checkpoint transfer did not publish durable content");
     }
@@ -283,6 +291,12 @@ export class PersistencePreserveRunner {
       await this.context.deps.revokeWorkspaceLeases?.(workspaceId);
     } catch (error) {
       this.context.deps.log?.(`preserve credential cleanup ${workspaceId}: ${String(error)}`);
+      return;
+    }
+    if (checkpoint.state === "ready" && workspace.state === "preserved" && this.context.deps.checkpointTransfers) {
+      await this.context.deps.checkpointTransfers.verify(checkpoint);
+      const at = this.context.now();
+      await store.updateOperation(operationId, { state: "succeeded", completedAt: at }, at);
       return;
     }
     if ((await store.getWorkspace(workspaceId))?.state !== "preserving") {

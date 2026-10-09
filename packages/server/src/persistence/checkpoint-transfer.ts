@@ -11,6 +11,7 @@ import { checkpointPreservationExpiry, checkpointTransferExpiry } from "./checkp
 import { type CheckpointRetentionLimits, createCheckpointTransferHttp } from "./checkpoint-transfer-http";
 import { createTransferLifetime, type TransferRow } from "./checkpoint-transfer-lifetime";
 import { createCheckpointTransferMaintenance } from "./checkpoint-transfer-maintenance";
+import { createCheckpointTransferRecovery } from "./checkpoint-transfer-recovery";
 
 export interface CheckpointTransferLimits {
   deadlineMs: number;
@@ -58,9 +59,11 @@ export function createCheckpointTransferService(options: CheckpointTransferOptio
       throw error;
     }
   }
+  const maintenance = createCheckpointTransferMaintenance(store, lifetime, directory);
   const service = {
+    reconcile: createCheckpointTransferRecovery(store, lifetime, directory, maintenance.verify),
     ...http,
-    ...createCheckpointTransferMaintenance(store, lifetime, directory),
+    ...maintenance,
     async preserve(workspace: WorkspaceRow, checkpoint: WorkspaceCheckpointRow, operationId: string) {
       const expiresAt = await checkpointPreservationExpiry(
         store,

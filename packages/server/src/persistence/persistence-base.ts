@@ -8,6 +8,7 @@ import type {
   PersistenceStore,
   PrincipalRow,
   Scheduler,
+  Store,
   TemplateStore,
   WorkspaceCheckpointRow,
   WorkspaceDriver,
@@ -21,7 +22,14 @@ import type { Hub } from "../control-channel/hub";
 import type { WorkspaceService } from "../workspaces/service";
 
 export interface PersistenceServiceDeps {
-  store: AuthStore & TemplateStore & WorkspaceStore & PersistenceStore & OutputStore & ConversationStore & OutboxStore;
+  store: AuthStore &
+    TemplateStore &
+    WorkspaceStore &
+    PersistenceStore &
+    OutputStore &
+    ConversationStore &
+    OutboxStore &
+    Pick<Store, "checkpointTransfers">;
   scheduler: Scheduler;
   revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
   driver: WorkspaceDriver;

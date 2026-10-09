@@ -125,6 +125,10 @@ export function createCheckpointArchivePublication(
   }
   return {
     validate,
+    identity() {
+      validate();
+      return identity(fstatSync(file, { bigint: true }));
+    },
     write(verified: VerifiedCheckpointArchive) {
       if (writing) throw new Error("Checkpoint archive publication is already writing.");
       writing = (async () => {

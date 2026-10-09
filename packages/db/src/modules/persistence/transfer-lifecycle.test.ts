@@ -31,6 +31,7 @@ async function streaming() {
       ctimeNs: "2",
     },
   };
+  await t.stage(f.input.id, { stagePath: receipt.stagePath, stageIdentity: receipt.stageIdentity }, () => {});
   return { ...f, t, receipt };
 }
 
@@ -54,18 +55,19 @@ test("publication atomically makes bounded checkpoint metadata ready and settles
   }
 });
 
-test.each(["size", "mounts", "custody"])(
+test.each(["size", "mounts", "custody", "inode"])(
   "publication refuses changed %s without success or released quota",
   async (change) => {
     const f = await streaming();
     try {
       if (change === "size") f.receipt.storedBytes++;
+      if (change === "inode") f.receipt.stageIdentity = { ...f.receipt.stageIdentity, inode: "3" };
       if (change === "mounts") f.receipt.summary.mounts = [{ name: "worktree", logical_bytes: 1, file_count: 1 }];
       const check = () => {
         if (change === "custody") throw new Error("owned publication changed");
       };
       await expect(f.t.publish(f.input.id, f.receipt, check, f.input.retentionLimits)).rejects.toThrow();
-      expect((await f.t.get(f.input.id))?.state).toBe("streaming");
+      expect((await f.t.get(f.input.id))?.state).toBe("publishing");
       expect((await f.store.getCheckpoint(f.checkpoint.id))?.state).toBe("creating");
       expect((await f.store.storageReservations.get(f.input.reservationId))?.state).toBe("reserved");
     } finally {
