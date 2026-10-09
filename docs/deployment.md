@@ -259,9 +259,9 @@ together while the server is stopped. Live copy is not a consistent backup.
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
-| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `7080` | Listen address |
-| `POCKETCODER_AGENT_HTTP` | `0.0.0.0:7081` | Separate agent listener |
-| `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:7081` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |
+| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `8090` | Listen address |
+| `POCKETCODER_AGENT_HTTP` | `0.0.0.0:8091` | Separate agent listener |
+| `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:8091` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |
 | `POCKETCODER_INPUT_DIR` | OS tempdir | Provider input files (must be host-shared when the server is containerized) |
 | `POCKETCODER_DRIVER` | `docker` | `docker` or `kubernetes` runtime |
 | `POCKETCODER_STORAGE_BACKEND` | `disabled` | `filesystem`/`docker-local` or `kubernetes-pvc` |

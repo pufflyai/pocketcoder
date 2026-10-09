@@ -78,3 +78,54 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Disk locking, durable recovery and compiled assets
         run: bun test packages/db/src/database/crash.test.ts packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts packages/db/src/migrations/crash.test.ts
+
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
+          - { runner: macos-15, platform: darwin, arch: arm64 }
+          - { runner: macos-15-intel, platform: darwin, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    env:
+      NATIVE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.NATIVE_COMMIT }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build:native
+      - name: Verify native size
+        run: bun test examples/native/build.test.ts
+      - name: Verify native Docker round trip outside the checkout
+        if: matrix.platform == 'linux'
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-fixture"
+          bun run example:e2e:native -- --binary out/native/pocketcoder --export-fixture "$RUNNER_TEMP/native-fixture" > "$RUNNER_TEMP/native-fixture/validation.json"
+          cat "$RUNNER_TEMP/native-fixture/validation.json"
+      - name: Record binary digest and commit
+        env:
+          NATIVE_PLATFORM: ${{ matrix.platform }}
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: |
+          bun -e 'const bytes = await Bun.file("out/native/pocketcoder").arrayBuffer(); if (bytes.byteLength > 90_000_000) throw new Error("Executable exceeded 90 MB"); await Bun.write("out/native/native.json", JSON.stringify({commit:process.env.NATIVE_COMMIT,platform:process.env.NATIVE_PLATFORM,arch:process.env.NATIVE_ARCH,bytes:bytes.byteLength,sha256:new Bun.CryptoHasher("sha256").update(bytes).digest("hex")}, null, 2));'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-${{ env.NATIVE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            out/native/pocketcoder
+            out/native/native.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'linux'
+        with:
+          name: pocketcoder-fixture-${{ env.NATIVE_COMMIT }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-fixture
+          if-no-files-found: error
