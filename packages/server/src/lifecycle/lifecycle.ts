@@ -6,6 +6,7 @@ import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "..
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
+import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
   createSecretResolver,
@@ -63,7 +64,7 @@ export async function startPocketCoderServer(
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const { app, agentApp, websocket, scheduler, persistence, warmPool } = buildServer({
+    const { app, agentApp, websocket, scheduler, persistence, warmPool, checkpointTransfers } = buildServer({
       ...(authorizeLaunch ? { authorizeLaunch } : {}),
       store,
       driver,
@@ -75,6 +76,7 @@ export async function startPocketCoderServer(
       limits: config.limits,
       workspaceServerUrl: config.workspaceServerUrl,
       persistenceLimits: config.persistenceLimits,
+      checkpointTransferOptions: checkpointTransferOptions(config),
       ...(options.instanceId ? { instanceId: options.instanceId } : {}),
       logger,
       metrics,
@@ -204,6 +206,9 @@ export async function startPocketCoderServer(
           if (policyTimer) clearInterval(policyTimer);
           await policyReconciliation?.drain();
           if (warmPoolTimer) clearInterval(warmPoolTimer);
+          await checkpointTransfers?.close();
+          await persistence.drain();
+          await scheduler.drain();
           await server.stop(true);
           await agentServer?.stop(true);
           await admin?.stop();

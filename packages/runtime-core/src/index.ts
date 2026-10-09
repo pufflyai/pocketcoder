@@ -12,8 +12,10 @@ export {
   type DiscoveredProvider,
   type DiscoveredStorage,
   type DiscoveredWarmProvider,
+  deadlinePreservationExpiry,
   type LogRow,
   type LogStore,
+  MAX_CHECKPOINT_PRESERVATION_MS,
   type MachineKeyRow,
   type NetworkAuditStore,
   type NetworkEventRow,
@@ -31,6 +33,7 @@ export {
   type SnapshotResult,
   type StateHistoryRow,
   type StorageAllocation,
+  type StorageCapacity,
   type StorageRef,
   type Store,
   type StoreLifecycle,
@@ -70,6 +73,7 @@ export {
   type WorkspaceStoragePatch,
   type WorkspaceStorageRow,
   type WorkspaceStore,
+  type WorkspaceTransferRuntime,
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
 export { bootstrapLocalOwnerKey, bootstrapLocalRecoveryKey } from "./keys/local-bootstrap";

@@ -21,8 +21,7 @@ export async function prepareCheckpoint(
   await callbacks.closeTerminals();
   const exec = callbacks.exec();
   if (exec?.agentapi_native) {
-    await prepareAgentApiCheckpoint(operationId, deadlineMs, callbacks);
-    return;
+    return await prepareAgentApiCheckpoint(operationId, deadlineMs, callbacks);
   }
   const hook = exec?.checkpoint_hook;
   callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
@@ -32,8 +31,9 @@ export async function prepareCheckpoint(
       phase: "failed",
       detail: "template has no checkpoint hook",
     });
-    return;
+    return false;
   }
+  callbacks.setQuiescing(true);
   try {
     const proc = Bun.spawn(hook.command, {
       cwd: hook.cwd ?? exec.harness.cwd ?? "/",
@@ -54,12 +54,14 @@ export async function prepareCheckpoint(
       phase: code === 0 ? "quiesced" : "failed",
       ...(code === 0 ? {} : { detail: `checkpoint hook exited ${code}` }),
     });
+    return code === 0;
   } catch (error) {
     callbacks.send("checkpoint_status", {
       operation_id: operationId,
       phase: "failed",
       detail: error instanceof Error ? error.message.slice(0, 512) : "hook failed",
     });
+    return false;
   }
 }
 
@@ -100,6 +102,7 @@ async function prepareAgentApiCheckpoint(
     }
     if (code !== 0 && code !== 143) throw new Error(`AgentAPI exited ${code}`);
     callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
+    return true;
   } catch (error) {
     if (!callbacks.childExited()) callbacks.setQuiescing(false);
     callbacks.send("checkpoint_status", {
@@ -107,5 +110,6 @@ async function prepareAgentApiCheckpoint(
       phase: "failed",
       detail: error instanceof Error ? error.message.slice(0, 512) : "quiesce failed",
     });
+    return false;
   }
 }

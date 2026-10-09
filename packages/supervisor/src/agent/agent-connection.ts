@@ -22,6 +22,7 @@ export class AgentConnection {
   private socket: WebSocket | null = null;
   private connectionId = "";
   private sequence = 0;
+  private epoch = 0;
   private reconnectCredential: string | null = null;
 
   constructor(
@@ -70,6 +71,14 @@ export class AgentConnection {
         if (!this.callbacks.isStopped()) this.connect(false);
       }, 2000);
     };
+  }
+
+  setEpoch(epoch: number) {
+    this.epoch = epoch;
+  }
+
+  transferConnection() {
+    return { workspaceId: this.input.workspace_id, connectionId: this.connectionId, epoch: this.epoch };
   }
 
   setReconnectCredential(value: string) {

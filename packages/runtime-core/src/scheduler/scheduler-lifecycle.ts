@@ -13,7 +13,7 @@ export class SchedulerLifecycle {
   ): Promise<WorkspaceRow | null> {
     const { store, connections } = this.context.deps;
     const updated = await store.transition(row.id, {
-      from: ["provisioning", "connected", "ready"],
+      from: ["provisioning", "connected", "ready", "preserving"],
       to: "terminating",
       reason,
       at,
@@ -38,7 +38,16 @@ export class SchedulerLifecycle {
     return updated;
   }
 
-  async finalize(row: WorkspaceRow, terminalState: WorkspaceState, reason: ReasonCode | null, at: Date): Promise<void> {
+  finalize(row: WorkspaceRow, terminalState: WorkspaceState, reason: ReasonCode | null, at: Date) {
+    return this.context.trackFinalizer(this.finalizeProvider(row, terminalState, reason, at));
+  }
+
+  private async finalizeProvider(
+    row: WorkspaceRow,
+    terminalState: WorkspaceState,
+    reason: ReasonCode | null,
+    at: Date,
+  ) {
     const { store, driver, connections } = this.context.deps;
     const retainStorage =
       terminalState === "failed" &&
@@ -60,7 +69,7 @@ export class SchedulerLifecycle {
         return;
       }
     }
-    if (retainStorage) {
+    if (retainStorage && !this.context.deps.transferRuntime) {
       const storage = await store.getWorkspaceStorage(row.id);
       if (storage && !["retained", "deleted"].includes(storage.state)) {
         await store.updateWorkspaceStorage(
@@ -91,6 +100,9 @@ export class SchedulerLifecycle {
       }
     }
     connections.close(row.id);
+    if (this.context.deps.transferRuntime && row.restoredFromCheckpointId) {
+      await this.context.finishRestoreOperation(row, "failed", "restore_failed");
+    }
     await store.transition(row.id, {
       from: ["queued", "provisioning", "connected", "ready", "terminating"],
       to: terminalState,

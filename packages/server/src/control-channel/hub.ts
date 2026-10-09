@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  type CheckpointPrepared,
   type ClientTerminalMessage,
   PROTOCOL_VERSION,
+  type PrepareCheckpointArchive,
   type ProtocolVersion,
   type ProxyRequest,
   type ProxyResponse,
@@ -16,43 +18,27 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
-import { type RelayStreamChannel, RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
+import { RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "../terminals/terminal-bridge";
-import { type AttachmentChannel, type AttachmentEvent, AttachmentRegistry } from "./hub-attachments";
+import type { LiveConnection } from "./hub-connection";
+
+export type { LiveConnection } from "./hub-connection";
+
+import { type AttachmentEvent, AttachmentRegistry } from "./hub-attachments";
+import { CheckpointRegistry } from "./hub-checkpoints";
 
 // In-memory registry of live supervisor connections. Exactly one connection
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
 // durable; PGlite only records epoch metadata.
 
-export interface LiveConnection {
-  workspaceId: string;
-  connectionId: string;
-  epoch: number;
-  ws: WSContext;
-  lastSeqIn: number;
-  seqOut: number;
-  inflight: Map<string, PendingRelay>;
-  streams: Map<string, RelayStreamChannel>;
-  registered: boolean;
-  protocolVersion: ProtocolVersion;
-  checkpoints: Map<string, PendingCheckpoint>;
-  attachments: Map<string, AttachmentChannel>;
-}
-
-interface PendingRelay {
-  resolve: (res: ProxyResponse) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-interface PendingCheckpoint {
-  resolve: (quiesced: boolean) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
 export const MAX_INFLIGHT_RELAY = 16;
 
 export class Hub implements ConnectionHub {
   private readonly byWorkspace = new Map<string, LiveConnection>();
+  private readonly archiveCheckpoints = new CheckpointRegistry(
+    (connection) => this.byWorkspace.get(connection.workspaceId) === connection,
+    (connection, type, payload) => this.send(connection, type, payload),
+  );
   private readonly attachments = new AttachmentRegistry<LiveConnection>(
     (connection) => this.byWorkspace.get(connection.workspaceId) === connection,
   );
@@ -93,6 +79,8 @@ export class Hub implements ConnectionHub {
       inflight: new Map(),
       streams: new Map(),
       registered: false,
+      restoreInstalled: false,
+      harnessRunning: false,
       protocolVersion,
       checkpoints: new Map(),
       attachments: new Map(),
@@ -162,6 +150,14 @@ export class Hub implements ConnectionHub {
     }
   }
 
+  prepareCheckpointArchive(workspaceId: string, payload: PrepareCheckpointArchive) {
+    return this.archiveCheckpoints.prepare(this.byWorkspace.get(workspaceId), payload);
+  }
+
+  resolveCheckpointArchive(connection: LiveConnection, declaration: CheckpointPrepared) {
+    this.archiveCheckpoints.prepared(connection, declaration);
+  }
+
   prepareCheckpoint(workspaceId: string, operationId: string, deadlineMs: number): Promise<boolean> {
     const conn = this.byWorkspace.get(workspaceId);
     if (!conn?.registered || conn.protocolVersion < 2) return Promise.resolve(false);
@@ -179,6 +175,7 @@ export class Hub implements ConnectionHub {
   }
 
   resolveCheckpoint(conn: LiveConnection, operationId: string, phase: "quiescing" | "quiesced" | "failed"): void {
+    if (phase === "failed") this.archiveCheckpoints.failed(conn, operationId);
     const current = this.byWorkspace.get(conn.workspaceId);
     if (current !== conn || phase === "quiescing") return;
     const pending = conn.checkpoints.get(operationId);
@@ -361,5 +358,6 @@ export class Hub implements ConnectionHub {
     }
     conn.checkpoints.clear();
     this.attachments.drop(conn);
+    this.archiveCheckpoints.drop(conn);
   }
 }

@@ -21,7 +21,8 @@ export class PersistenceRestoreService {
     if (replay.result) return replay.result;
     const { requestDigest } = replay;
     const checkpoint = await this.context.getCheckpointOwned(principal, checkpointId);
-    if (checkpoint.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) {
+    const transferred = checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers;
+    if (checkpoint.state !== "ready" || !checkpoint.providerRef || (!transferred && !checkpoint.manifest)) {
       throw new ApiError("checkpoint.not_ready", "Checkpoint is not ready for restore.");
     }
     if (!templateAuthorized(principal, checkpoint.templateSnapshot.name)) {

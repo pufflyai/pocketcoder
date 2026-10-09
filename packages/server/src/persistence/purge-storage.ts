@@ -44,10 +44,57 @@ function checkpointTargets(
   });
 }
 
+async function purgeTransferredStorage(
+  context: PersistenceContext,
+  workspace: WorkspaceRow,
+  allocations: WorkspaceStorageRow[],
+  checkpoints: WorkspaceCheckpointRow[],
+) {
+  const transfers = context.deps.checkpointTransfers;
+  if (!transfers) throw new Error("Checkpoint transfer service is unavailable");
+  const { store } = context.deps;
+  await transfers.cleanup(workspace.id);
+  for (const checkpoint of checkpoints) {
+    if (
+      checkpoint.principalId !== workspace.principalId ||
+      checkpoint.workspaceId !== workspace.id ||
+      !allocations.some((allocation) => allocation.id === checkpoint.storageId)
+    ) {
+      throw new PurgeOwnershipError("Checkpoint storage ownership is unresolved");
+    }
+    if (checkpoint.providerKind !== "controller-archive") {
+      throw new PurgeOwnershipError("Checkpoint backend ownership is unresolved");
+    }
+  }
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.providerRef && checkpoint.state !== "deleted") {
+      await store.updateCheckpoint(checkpoint.id, { state: "deleting" }, context.now());
+      await transfers.delete(checkpoint);
+    }
+    await store.updateCheckpoint(checkpoint.id, { state: "deleted", deletedAt: context.now() }, context.now());
+  }
+  for (const allocation of allocations) {
+    await store.updateWorkspaceStorage(
+      allocation.id,
+      {
+        state: "deleted",
+        deletedAt: context.now(),
+        retainedUntil: null,
+        lastErrorCode: null,
+      },
+      context.now(),
+    );
+  }
+}
+
 export async function purgeStorage(context: PersistenceContext, workspace: WorkspaceRow) {
   const { store, storageDriver } = context.deps;
   const allocations = await store.listWorkspaceStorage(workspace.id);
   const checkpoints = await store.listCheckpoints(workspace.principalId, { workspaceId: workspace.id });
+  if (context.deps.checkpointTransfers && allocations.every((row) => row.providerRef.kind === "tmpfs")) {
+    await purgeTransferredStorage(context, workspace, allocations, checkpoints);
+    return;
+  }
   if (!storageDriver) {
     if (allocations.length || checkpoints.length || workspace.templateSnapshot.spec.persistence.mounts.length) {
       throw new Error("Storage driver unavailable");

@@ -16,6 +16,9 @@ real harnesses.
   terminal state.
 - [`harnesses/echo/`](harnesses/echo/) is deterministic and credential-free.
   It is the default local smoke test.
+- [`e2e/docker-checkpoint.ts`](e2e/docker-checkpoint.ts) preserves an edited Docker
+  workspace and restores exact file bytes into a new workspace before a harness
+  response. See the [checkpoint runbook](../docs/docker-checkpoint-round-trip.md).
 - [`harnesses/pi/`](harnesses/pi/) runs the Pi CLI behind AgentAPI, which owns
   PocketCoder's three-route conversation contract. It uses the same E2E runner
   with an OpenAI-compatible model gateway.

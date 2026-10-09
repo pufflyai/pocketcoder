@@ -20,7 +20,8 @@
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@pstdio/pocketcoder-contracts": "workspace:*"
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-db": "workspace:*"
   },
   "devDependencies": {
     "@pstdio/pocketcoder-testkit": "workspace:*"

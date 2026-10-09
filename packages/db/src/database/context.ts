@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrateDatabase } from "../migrations/migrator";
 import { createSchema } from "../schema";
 import { loadCoreAssets } from "./assets";
+import { bindCheckpointWriter } from "./checkpoint-writer";
 import { lockDataFolder, syncDirectory, syncSeed } from "./data-folder";
 import { DurableFilesystem } from "./durable-filesystem";
 
@@ -51,13 +52,19 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
       client = await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
     }
     await migrateDatabase(client);
+    const tables = createSchema("pocketcoder");
+    const db = drizzle({ client });
+    const dataWriter = await bindCheckpointWriter(db, tables, folder);
     let closed = false;
     const database = client;
     return {
       schema: "pocketcoder",
       client: database,
-      db: drizzle({ client: database }),
-      tables: createSchema("pocketcoder"),
+      db,
+      tables,
+      dataWriter,
+      dataDir: folder?.dir,
+      validateStorage: folder?.validate,
       changes: new Map<string, Set<() => void>>(),
       async close() {
         if (closed) return;

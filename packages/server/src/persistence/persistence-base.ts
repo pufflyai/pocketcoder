@@ -12,6 +12,7 @@ import type {
   WorkspaceCheckpointRow,
   WorkspaceDriver,
   WorkspaceOperationRow,
+  WorkspaceRow,
   WorkspaceStorageDriver,
   WorkspaceStore,
 } from "@pstdio/pocketcoder-runtime-core";
@@ -24,6 +25,16 @@ export interface PersistenceServiceDeps {
   scheduler: Scheduler;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
+  checkpointTransfers?: {
+    preserve(
+      workspace: WorkspaceRow,
+      checkpoint: WorkspaceCheckpointRow,
+      operationId: string,
+    ): Promise<WorkspaceCheckpointRow>;
+    cleanup(workspaceId: string): Promise<void>;
+    verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+  };
   hub: Hub;
   workspaces: WorkspaceService;
   maxQueuedWorkspaces: number;
