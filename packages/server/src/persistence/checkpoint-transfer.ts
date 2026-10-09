@@ -220,6 +220,7 @@ export function createCheckpointTransferService(options: CheckpointTransferOptio
       return store.checkpointTransfers.completeRestore(connection.workspaceId, connection.epoch, check);
     },
     cleanup: lifetime.cleanupWorkspace,
+    cancel: lifetime.cancel,
     disconnected(connection: LiveConnection) {
       return lifetime.cleanupWorkspace(connection.workspaceId, connection);
     },

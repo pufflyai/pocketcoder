@@ -112,11 +112,13 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
       dataDir,
       checkpointDir,
       proxy,
+      agentUrl: `http://127.0.0.1:${proxyPort}`,
       stop,
-      async restart() {
+      async restart(stopped?: () => Promise<void>) {
         controller.kill("SIGKILL");
         await controller.exited;
         console.log((await output).join("\n"));
+        await stopped?.();
         ({ controller, output } = start());
         await ready();
       },
