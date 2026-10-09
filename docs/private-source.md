@@ -98,7 +98,8 @@ Add these fields to a template with your digest-pinned image and agent command:
 
 Publish the full template with `pocketcoder templates import ./templates`.
 Start it with `pocketcoder workspaces create --template <name> --source app
---revision main --wait`. Docker uses bounded workspace mounts. A source-only
+--revision main --wait`. Source-only launches need no shared volume or persistent
+storage backend. Docker uses bounded tmpfs charged to workspace memory. A source-only
 Kubernetes launch uses bounded `emptyDir` with matching storage requests and
 limits. Kubernetes checkpoint restore remains unavailable in this flow.
 

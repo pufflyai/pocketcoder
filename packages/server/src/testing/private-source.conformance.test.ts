@@ -22,6 +22,19 @@ test.each(["docker", "kubernetes"] as const)(
       expect(await response.json()).toEqual({ content: "private fixture content\n", credential_revoked: true });
       const logs = await f.store.readLogs(id, 0, 100);
       expect(JSON.stringify(logs)).not.toContain(f.issuer.authorization);
+      if (provider === "docker") {
+        const proc = Bun.spawn(["docker", "inspect", String(row.providerRef?.id)], { stdout: "pipe", stderr: "pipe" });
+        const output = await new Response(proc.stdout).text();
+        expect(await proc.exited).toBe(0);
+        const spec = JSON.parse(output)[0];
+        expect(spec.HostConfig.Tmpfs["/worktree"]).toContain("size=4194304");
+        expect(
+          spec.Mounts.some(
+            (mount: { Destination: string; Type: string }) =>
+              mount.Destination === "/worktree" && mount.Type === "bind",
+          ),
+        ).toBe(false);
+      }
       if (provider === "kubernetes") {
         const pods = JSON.parse(await f.kubectl(["get", "pods", "-o", "json"]));
         const spec = pods.items[0].spec;

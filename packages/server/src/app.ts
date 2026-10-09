@@ -34,7 +34,7 @@ import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
-import { kubernetesSourceRuntime } from "./persistence/source-runtime";
+import { disposableSourceRuntime } from "./persistence/source-runtime";
 import { relayHandler } from "./relay/relay";
 import { createIssuerClient } from "./secrets/issuer-client";
 import { createWorkspaceLeaseService } from "./secrets/lease-service";
@@ -102,10 +102,14 @@ function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
     deps.checkpointTransferOptions,
   );
   const { checkpointTransfers } = checkpointRuntime;
-  const transferRuntime =
-    checkpointRuntime.transferRuntime ??
-    (deps.driver.kind === "kubernetes" && !deps.storageDriver ? kubernetesSourceRuntime() : undefined);
+  const transferRuntime = checkpointRuntime.transferRuntime ?? sourceRuntime(deps);
   return { workspaceLeases, checkpointTransfers, transferRuntime };
+}
+
+function sourceRuntime(deps: BuildDeps) {
+  if (deps.storageDriver) return;
+  const kind = deps.driver.kind;
+  if (kind === "docker" || kind === "kubernetes") return disposableSourceRuntime(kind);
 }
 
 function registerHealthRoutes(app: OpenAPIHono<AppEnv>, deps: BuildDeps) {

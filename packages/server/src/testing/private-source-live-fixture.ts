@@ -3,12 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TemplateManifestSchema } from "@pstdio/pocketcoder-contracts";
-import { DockerDriver, FilesystemStorageDriver, KubernetesDriver } from "@pstdio/pocketcoder-drivers";
+import { DockerDriver, KubernetesDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { buildServer } from "../app";
-import { loadConfig } from "../config/config";
-import { checkpointTransferOptions } from "../lifecycle/checkpoint-transfer-config";
 import { createIssuerClient } from "../secrets/issuer-client";
 import { leaseServiceFixture } from "../secrets/lease-service-fixture";
 import { waitFor } from "./e2e-test-support";
@@ -62,11 +60,6 @@ export async function privateSourceLiveFixture(provider: "docker" | "kubernetes"
     websocket,
   });
   const callback = `http://${host}:${server.port}`;
-  const config = loadConfig({ POCKETCODER_DIR: directory, POCKETCODER_WORKSPACE_SERVER_URL: callback });
-  const storageDriver = new FilesystemStorageDriver({
-    workspaceRoot: join(directory, "workspaces"),
-    checkpointRoot: join(directory, "checkpoints"),
-  });
   built = buildServer({
     store: f.store,
     driver,
@@ -75,7 +68,6 @@ export async function privateSourceLiveFixture(provider: "docker" | "kubernetes"
     issuerClient: createIssuerClient({ ca: f.issuer.ca }),
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: callback,
-    ...(provider === "docker" ? { storageDriver, checkpointTransferOptions: checkpointTransferOptions(config) } : {}),
   });
   const baseUrl = `http://127.0.0.1:${server.port}`;
   const client = new PocketCoderClient({ baseUrl, apiKey: f.key.token });
