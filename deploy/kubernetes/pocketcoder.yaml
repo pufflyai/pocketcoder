@@ -86,11 +86,15 @@ spec:
           ports:
             - name: http
               containerPort: 7080
+            - name: agent
+              containerPort: 7081
           env:
             - name: POCKETCODER_HOST
               value: "0.0.0.0"
             - name: POCKETCODER_PORT
               value: "7080"
+            - name: POCKETCODER_AGENT_HTTP
+              value: "0.0.0.0:7081"
             - name: POCKETCODER_DRIVER
               value: kubernetes
             - name: POCKETCODER_KUBERNETES_NAMESPACE
@@ -159,3 +163,16 @@ spec:
     - name: http
       port: 7080
       targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pocketcoder-agent
+spec:
+  type: ClusterIP
+  selector:
+    app: pocketcoder-server
+  ports:
+    - name: agent
+      port: 7081
+      targetPort: agent

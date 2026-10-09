@@ -84,11 +84,14 @@ describe("end-to-end workspace lifecycle", () => {
         workspaceServerUrl: "placeholder",
       });
       registerServerTestCleanup(store, built);
-      const { app, websocket, scheduler } = built;
+      const { app, agentApp, websocket, scheduler } = built;
       const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: app.fetch,
+        fetch: (request, server) =>
+          new URL(request.url).pathname.startsWith("/v1/agent/")
+            ? agentApp.fetch(request, server)
+            : app.fetch(request, server),
         websocket,
       });
       cleanups.push(() => server.stop(true));

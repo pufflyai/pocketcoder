@@ -10,11 +10,16 @@ import { loadCoreAssets } from "./assets";
 import { lockDataFolder, syncDirectory, syncSeed } from "./data-folder";
 import { DurableFilesystem } from "./durable-filesystem";
 
-export async function createDatabaseContext(dataDir?: string) {
+export interface DatabaseOpenOptions {
+  beforeOpen?(directory: string): Promise<void>;
+}
+
+export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpenOptions = {}) {
   if (dataDir === "") throw new Error("data folder must not be empty");
   const folder = dataDir !== undefined ? lockDataFolder(dataDir) : undefined;
   let client: PGlite | undefined;
   try {
+    if (folder) await hooks.beforeOpen?.(folder.dir);
     const assets = await loadCoreAssets();
     const options = {
       pgliteWasmModule: assets.pgliteWasmModule,

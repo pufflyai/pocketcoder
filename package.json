@@ -53,7 +53,8 @@
     "example:pi:resume": "bun examples/resume/run.ts",
     "example:pi:resume:check": "bun examples/resume/run.ts --check",
     "db:seed": "bun scripts/build-pglite-seed.ts",
-    "test:performance": "bun test packages/runtime-core/src/warm-pool/warm-pool.benchmark.test.ts"
+    "test:performance": "bun test packages/runtime-core/src/warm-pool/warm-pool.benchmark.test.ts",
+    "example:e2e:local-echo": "bun --no-env-file examples/e2e/local-echo.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

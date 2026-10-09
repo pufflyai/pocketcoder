@@ -1,3 +1,4 @@
+export type { DatabaseOpenOptions } from "./database/context";
 export {
   advisoryLockKey,
   assertValidSchema,

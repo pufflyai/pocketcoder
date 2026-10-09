@@ -17,21 +17,58 @@ The checked-in manifests under `examples/templates` are illustrative and use
 placeholder image/gateway values. Do not point a runnable server at that
 directory; materialize or deploy a digest-pinned runtime template first.
 
-Use the embedded database on local disk or a block volume:
+Start with an empty private folder. The controller creates and keeps its keys:
 
 ```sh
-export POCKETCODER_DIR="$PWD/pc_data"
-export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
-# Keep the pepper in private operator configuration for later restarts.
-bun run pcd -- server start
-bun run pcd -- server status
+bun run pcd -- serve --dir ./pc_data --http 127.0.0.1:7080
 ```
 
-The server command starts only PocketCoder. It migrates the database on startup. It does not
-build an agent image, generate a template, or start a model gateway. The server
-logs which templates it loaded and refuses to start if any template file is
-invalid. The OpenAPI document is at
+The operator API uses port 7080. The agent listener uses port 7081. Set
+`POCKETCODER_AGENT_HTTP=0.0.0.0:<port>` to change its bind address, and
+`POCKETCODER_WORKSPACE_SERVER_URL` to the agent origin reachable from workspaces.
+Keep it separate from the operator port. The API contract is at
 `http://127.0.0.1:7080/v1/openapi.json`.
+
+In another terminal, create the owner key through the private local socket:
+
+```sh
+bun run pcd -- superuser create --dir ./pc_data --json
+# Automation must also pass --automation --expires <future-ISO8601>.
+```
+
+The key defaults to a 24-hour expiry and is returned once. Save it outside
+workspaces. A repeated `--request-id` returns metadata without the plaintext.
+Set `POCKETCODER_URL=http://127.0.0.1:7080` and `POCKETCODER_KEY` to the returned
+owner key, then publish a reviewed, digest-pinned template:
+
+```sh
+bun run pcd -- templates import <manifest-directory>
+```
+
+Publishing requires `templates:write` and a matching template name grant.
+Versions are immutable. Publishing identical content is safe to repeat. The
+SDK also supports `templates.publish(manifest)` and `templates.retire(name, version)`.
+
+For a complete local echo demonstration, run:
+
+```sh
+bun run example:e2e:local-echo
+```
+
+It builds the local image, starts an empty controller, creates a finite owner,
+publishes the template over HTTP, waits for a real Docker workspace, checks
+credential isolation, sends a message, removes the container, and restarts with
+the same keys and template. It prints image and template digests and cleans up
+its temporary data and image. It needs Bun and a running Docker Engine.
+
+Echo needs no runtime or registry secret. Its only workspace credentials are
+registration and reconnect credentials tied to that workspace. The supported
+path in this demonstration uses unrestricted networking and no persistent mount.
+A runtime that needs provider authority must use credentials scoped to its
+workspace that expire with it; never copy an owner, controller or registry key
+into a template or workspace. The issuer/private-pull matrix and backup/recovery
+remain separate development work. This command proves the local flow, not the
+full 1.0 release.
 
 For a persistent local Pi deployment, after configuring the data folder, a principal
 and machine key, run the optional repository convenience:
