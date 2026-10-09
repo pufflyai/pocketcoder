@@ -62,6 +62,7 @@
     "example:e2e:private-image": "bun --no-env-file examples/e2e/private-image.ts",
     "example:e2e:docker-checkpoint": "bun --no-env-file examples/e2e/docker-checkpoint.ts",
     "example:e2e:docker-checkpoint-failures": "bun --no-env-file examples/e2e/docker-checkpoint-source-failures.ts",
+    "example:e2e:docker-checkpoint-restart": "bun --no-env-file examples/e2e/docker-checkpoint-restart.ts",
     "example:e2e:docker-checkpoint-repeat": "bun --no-env-file examples/e2e/docker-checkpoint-repeat.ts",
     "example:e2e:native": "bun --no-env-file examples/native/run.ts"
   },

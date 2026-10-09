@@ -19,7 +19,7 @@
       "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts"]
     },
     "packages/server": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": ["src/**/*.test.ts", "src/persistence/checkpoint-transfer-crash-fixture.ts"]
     },
     "packages/remote": {
       "entry": ["src/**/*.test.ts"]

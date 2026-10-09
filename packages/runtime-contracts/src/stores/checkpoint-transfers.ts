@@ -95,6 +95,12 @@ export interface CheckpointPublication {
 }
 
 export interface CheckpointTransferStore {
+  listUnsettled(): Promise<CheckpointTransferRow[]>;
+  stage(
+    id: string,
+    receipt: Pick<CheckpointPublication, "stagePath" | "stageIdentity">,
+    check: () => void,
+  ): Promise<CheckpointTransferRow>;
   completeRestore(workspaceId: string, connectionEpoch: number, check: () => void): Promise<boolean>;
   validate(id: string, check: () => void): Promise<CheckpointTransferRow>;
   publish(
