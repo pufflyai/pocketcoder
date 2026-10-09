@@ -224,7 +224,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
 
       expect(findLease(claims)?.runtime).toMatchObject({
         id: runtimeId,
-        state: "leasing",
+        state: "leased",
       });
       expect(await store.getWarmPoolRuntime(nextRuntimeId)).toMatchObject({ state: "ready", workspaceId: null });
       await expectNextWarmClaim(fixture, claim, nextRuntimeId);

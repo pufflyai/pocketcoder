@@ -11,9 +11,11 @@ import type {
   WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
 import { type EgressDriverOptions, egressConfig, poolInput, workspaceInput } from "../egress/egress";
+import type { RegistryResolver } from "../registry/registry";
 import { appendSecurityOptions, appendWorkspaceMounts } from "./docker-args";
 import { resolveDockerImage, runDocker } from "./docker-command";
 import { createDockerEgress } from "./docker-egress";
+import { pullPrivateImage } from "./docker-registry";
 
 export { resolveDockerImage } from "./docker-command";
 
@@ -36,14 +38,18 @@ export interface DockerDriverOptions extends EgressDriverOptions {
   // pocketcoder-server running on the host during development.
   addHostGateway?: boolean;
   dockerBin?: string;
+  resolveRegistry?: RegistryResolver;
 }
 
 export class DockerDriver implements WorkspaceDriver {
   readonly kind = "docker";
-  private readonly opts: Required<Omit<DockerDriverOptions, keyof EgressDriverOptions>> & EgressDriverOptions;
+  private readonly opts: Required<Omit<DockerDriverOptions, keyof EgressDriverOptions | "resolveRegistry">> &
+    EgressDriverOptions &
+    Pick<DockerDriverOptions, "resolveRegistry">;
 
   constructor(options: DockerDriverOptions = {}) {
     this.opts = {
+      ...(options.resolveRegistry ? { resolveRegistry: options.resolveRegistry } : {}),
       inputDir: options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
       network: options.network ?? "",
       addHostGateway: options.addHostGateway ?? true,
@@ -64,6 +70,14 @@ export class DockerDriver implements WorkspaceDriver {
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
+    if (spec.imagePullSecret) {
+      if (!this.opts.resolveRegistry) throw new Error("Stored registry credentials are unavailable");
+      await pullPrivateImage(
+        this.opts.dockerBin,
+        spec.image,
+        await this.opts.resolveRegistry(spec.imagePullSecret, spec.image),
+      );
+    }
     await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
     await chmod(this.opts.inputDir, 0o700);
     const inputFile = this.inputPath(workspace.id);
@@ -146,6 +160,7 @@ export class DockerDriver implements WorkspaceDriver {
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
     const spec = launch.template.spec;
+    if (spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
     await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
     await chmod(this.opts.inputDir, 0o700);
     const inputFile = this.inputPath(`pool-${launch.runtimeId}`);

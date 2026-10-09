@@ -122,3 +122,12 @@ test("SDK inventory, reconciliation and revocation use the real public server", 
     server.stop(true);
   }
 });
+
+test.each(["secrets:write", "workspaces:read"])(
+  "recovery delegation cannot issue %s for a registry administrator",
+  async (scope) => {
+    const f = await fixture();
+    await f.store.updatePrincipal(f.target.id, ["workspaces:read", "secrets:write"], []);
+    expect((await f.issue({ ...f.body, scopes: [scope] })).status).toBe(403);
+  },
+);

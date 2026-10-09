@@ -6,6 +6,8 @@ import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "..
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
+import { createRegistryResolver } from "../secrets/registry-resolver";
+import { createSecretVault } from "../secrets/secret-vault";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
@@ -50,7 +52,10 @@ export async function startPocketCoderServer(
     log("coordinator lease acquired");
     await loadConfiguredTemplates(store, config.templateDir, log);
     await requireEgressImageForRestrictedTemplates(store, config);
-    const driver = createWorkspaceDriver(config);
+    const resolveRegistry = config.secretKey
+      ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
+      : undefined;
+    const driver = createWorkspaceDriver(config, resolveRegistry);
     const warmPools = await resolveWarmPools(
       store,
       config.warmPools,
@@ -71,6 +76,7 @@ export async function startPocketCoderServer(
       ...(storageDriver ? { storageDriver } : {}),
       ...(secretResolver ? { secretResolver } : {}),
       pepper: config.pepper,
+      ...(config.secretKey ? { secretKey: config.secretKey } : {}),
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
       limits: config.limits,
@@ -158,6 +164,7 @@ export async function startPocketCoderServer(
         directory: directory,
         store,
         pepper: config.pepper,
+        ...(config.secretKey ? { secretKey: config.secretKey } : {}),
       });
       agentServer = Bun.serve({
         hostname: config.agentHost,

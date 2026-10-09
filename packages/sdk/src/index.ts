@@ -16,6 +16,8 @@ export type {
   PrincipalResource,
   PrincipalUpdateRequest,
   RestoreRequest,
+  SecretPutRequest,
+  SecretResource,
   ServerTerminalMessage,
   StorageState,
   TerminalSession,
@@ -38,6 +40,7 @@ export { ConversationsApi } from "./resources/conversations/conversations";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
 export { PrincipalsApi } from "./resources/principals/principals";
+export { SecretsApi } from "./resources/secrets/secrets";
 export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,

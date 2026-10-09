@@ -4,6 +4,7 @@ import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
 
+import { cleanupUncommittedProvider } from "./provider-termination";
 import type { SchedulerContext } from "./scheduler-base";
 
 export class SchedulerAdmission {
@@ -147,12 +148,7 @@ export class SchedulerAdmission {
     if (!claimed) return false;
     try {
       const mounts = await this.prepareStorage(claimed);
-      if (!this.context.deps.secretResolver && JSON.stringify(claimed.templateSnapshot.spec).includes('"secretRef:')) {
-        throw new Error("secret.unavailable: no deployment secret resolver configured");
-      }
-      const runtimeSecrets = this.context.deps.secretResolver
-        ? await this.context.deps.secretResolver.resolve(claimed)
-        : [];
+      const runtimeSecrets = await this.resolveRuntimeSecrets(claimed);
       const ref = await driver.create({
         workspace: claimed,
         input,
@@ -164,6 +160,7 @@ export class SchedulerAdmission {
     } catch (err) {
       this.context.report(`launch.${row.id}`, err);
       const at = this.context.now();
+      if (!(await this.cleanupFailedLaunch(claimed))) return false;
       if (claimed.launchAttempts < this.context.deps.limits.maxLaunchAttempts) {
         // No provider object was created; the bounded requeue is legal.
         await store.transition(row.id, {
@@ -188,6 +185,26 @@ export class SchedulerAdmission {
         await this.context.cleanupWorkspaceStorage(claimed);
         await this.context.finishRestoreOperation(row, "failed", "restore_failed");
       }
+      return false;
+    }
+  }
+
+  private async resolveRuntimeSecrets(row: WorkspaceRow) {
+    const resolver = this.context.deps.secretResolver;
+    const { imagePullSecret: _registry, ...runtime } = row.templateSnapshot.spec;
+    if (!resolver && JSON.stringify(runtime).includes('"secretRef:')) {
+      throw new Error("secret.unavailable: no deployment secret resolver configured");
+    }
+    return resolver ? resolver.resolve(row) : [];
+  }
+
+  private async cleanupFailedLaunch(row: WorkspaceRow) {
+    try {
+      await cleanupUncommittedProvider(this.context.deps.driver, row, this.context.graceSeconds(row));
+      return true;
+    } catch (error) {
+      // Registration expiry retries cleanup without declaring the failed launch settled.
+      this.context.report(`launch.cleanup.${row.id}`, error);
       return false;
     }
   }

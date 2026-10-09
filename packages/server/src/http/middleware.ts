@@ -28,16 +28,21 @@ export function requestLogging(logger: StructuredLogger): MiddlewareHandler<AppE
     const started = performance.now();
     await next();
     const segments = new URL(context.req.url).pathname.split("/");
+    const secretPath = segments[1] === "v1" && segments[2] === "secrets";
     const workspaceIndex = segments.indexOf("workspaces");
     const operationIndex = segments.indexOf("operations");
     logger.info("request.completed", {
       request_id: context.get("requestId"),
       method: context.req.method,
-      path: new URL(context.req.url).pathname,
+      path: secretPath ? "/v1/secrets" : new URL(context.req.url).pathname,
       status: context.res.status,
       duration_ms: Math.round((performance.now() - started) * 1000) / 1000,
-      ...(workspaceIndex >= 0 && segments[workspaceIndex + 1] ? { workspace_id: segments[workspaceIndex + 1] } : {}),
-      ...(operationIndex >= 0 && segments[operationIndex + 1] ? { operation_id: segments[operationIndex + 1] } : {}),
+      ...(!secretPath && workspaceIndex >= 0 && segments[workspaceIndex + 1]
+        ? { workspace_id: segments[workspaceIndex + 1] }
+        : {}),
+      ...(!secretPath && operationIndex >= 0 && segments[operationIndex + 1]
+        ? { operation_id: segments[operationIndex + 1] }
+        : {}),
     });
   };
 }

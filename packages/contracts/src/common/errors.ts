@@ -48,6 +48,7 @@ export const ERROR_CODES = {
   "source.not_allowed": 422,
   "source.invalid_revision": 422,
   "secret.unavailable": 503,
+  "secret.not_found": 404,
   "storage.capacity_exhausted": 507,
   "relay.body_too_large": 413,
   "relay.route_not_allowed": 422,

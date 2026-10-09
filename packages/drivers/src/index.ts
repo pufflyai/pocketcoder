@@ -37,4 +37,5 @@ export {
   KubernetesPvcStorageDriver,
   type KubernetesPvcStorageDriverOptions,
 } from "./kubernetes/kubernetes-storage";
+export type { RegistryResolver } from "./registry/registry";
 export { FileSecretResolver, type FileSecretResolverOptions } from "./secrets/file-secrets";
