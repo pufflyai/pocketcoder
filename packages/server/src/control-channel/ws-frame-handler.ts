@@ -9,6 +9,7 @@ import {
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
 import type { LiveConnection } from "./hub";
+import { completeSourceSetup, setupAuthorityClosed } from "./setup-authority";
 import type { CloseProtocol, WsDeps } from "./ws-types";
 
 type ServiceHealthFrame = Extract<AgentFrame, { type: "service_health" }>;
@@ -30,7 +31,7 @@ async function maybeMarkReady(
   health: Record<string, string>,
   networkState: WorkspaceRow["networkState"],
 ) {
-  if (row.state !== "connected") return;
+  if (row.state !== "connected" || !(await setupAuthorityClosed(deps.store, row))) return;
   const connection = deps.hub.get(row.id);
   if (deps.checkpointTransfers && row.launchMode === "restore") {
     if (!connection?.restoreInstalled || !connection.harnessRunning) return;
@@ -145,6 +146,9 @@ export async function handleConnectedFrame(
 ): Promise<void> {
   if (frame.type !== "conversation_message" && deps.hub.get(connection.workspaceId) !== connection) return;
   switch (frame.type) {
+    case "setup_complete":
+      await completeSourceSetup(deps, connection, frame.payload.request_id);
+      return;
     case "registered":
       closeProtocol(ws, "already registered");
       return;

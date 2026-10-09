@@ -66,8 +66,9 @@ in the workspace, and service account token mounting stays disabled. Registratio
 failed launch, removal and purge delete the owned pull Secret. An interrupted
 launch uses the same workspace name so later cleanup can remove its Secret.
 
-Only registry storage is enabled here. Setup and runtime issuer configuration
-remain unavailable until their lease flows are implemented. A server configured
+Registry and setup issuer storage are enabled. See [private source setup](private-source.md)
+for scoped source leases. Runtime issuer configuration remains unavailable until
+its lease flow is implemented. A server configured
 with an explicit authentication pepper also needs a controller-only
 `POCKETCODER_SECRET_KEY` (32 bytes encoded as base64url) to enable secret storage.
 
@@ -282,7 +283,7 @@ caller selects only an alias and validated revision:
     "repositories": {
       "app": {
         "url": "https://github.com/example/app.git",
-        "credential": "secretRef:git-credentials/token"
+        "credential": "secretRef:private-source"
       }
     }
   }
@@ -290,12 +291,13 @@ caller selects only an alias and validated revision:
 ```
 
 The non-secret alias, revision, and resolved commit are durable provenance.
-The repository credential is resolved when the supervisor registers, delivered
-inside `POCKETCODER_SOURCE` only to create-time setup steps, and removed from
-supervisor memory before the harness starts. It is never mounted in the
-workspace or checkpointed. Local deployments read the referenced value beneath
-`POCKETCODER_SECRET_ROOT`; Kubernetes interprets
-`secretRef:<secret>/<key>`.
+The repository reference names a stored `setup-issuer`. At registration the
+controller requests a bounded workspace lease over HTTPS. Create-time setup
+receives it in `POCKETCODER_SOURCE`. The supervisor clears the value and waits
+for issuer revocation before the harness starts. See the [private-source
+recipe](private-source.md). Source credentials are never read from deployment
+files or Kubernetes Secrets. Publishing their references also requires
+`secrets:write`.
 
 Other `secretRef:` environment values still resolve to read-only files under
 `/run/pocketcoder/secrets` for agent code that needs a runtime credential. Such

@@ -8,6 +8,7 @@ import {
 import { asc, eq, ne, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { prepareLeaseTransition, setupLeaseClosed } from "../secrets/lease-fence";
 import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
 import { CHANGE_PATCH_KEYS } from "./patch";
@@ -71,6 +72,8 @@ export async function transitionWorkspace(
   if (!current || !permitsTransition(current, req)) return null;
   if (current.purgeRequestedAt && ["provisioning", "connected", "ready", "preserving", "queued"].includes(req.to))
     return null;
+  if (req.to === "ready" && !(await setupLeaseClosed(tx, context.tables, workspaceFromRow(current)))) return null;
+  if (!(await prepareLeaseTransition(tx, context.tables, id, req.to, req.at))) return null;
   const terminal = isTerminal(req.to);
   const [row] = await tx
     .update(workspaces)

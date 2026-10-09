@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "43b9c6434e99367f82285458141338729740f882e26af115f413d079e6b12f1b",
+  "checksum": "b649ebd33384894903d6780f5236dee3acf2d1cc42de7d7b716fab05ab1969a3",
   "engine": {
     "wasm": {
       "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
@@ -57,6 +57,10 @@
     {
       "name": "20261009085152_cheerful_the_spike",
       "hash": "0e96f2f636d4df623abdbf2330067ae1a00dfbc5a49f66ebf920fa9668c8a31f"
+    },
+    {
+      "name": "20261009112418_lumpy_obadiah_stane",
+      "hash": "9ac297ad91c74f6b473434f6d45b7805d94e90f8ea0210bb503c113f43752716"
     }
   ]
 }

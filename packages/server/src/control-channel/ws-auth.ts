@@ -13,7 +13,6 @@ import {
   type ProtocolVersion,
   parseDurationMs,
   type RestoreMode,
-  SOURCE_CREDENTIAL_MAX_BYTES,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
   secretMountPath,
@@ -34,7 +33,7 @@ interface WsCredentials {
 
 type WsAuthResult = { auth: WsAuth } | { error: string };
 
-function sourceCredentialReference(row: WorkspaceRow): string | null {
+export function sourceCredentialReference(row: WorkspaceRow): string | null {
   if (row.launchMode !== "create" || !row.sourceDescriptor) return null;
   return row.templateSnapshot.spec.source?.repositories[row.sourceDescriptor.repository]?.credential ?? null;
 }
@@ -74,7 +73,7 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     return { error: "Checkpoint restore requires agent protocol version 7." };
   }
   if (sourceCredentialReference(row) && credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION) {
-    return { error: "Source credentials require agent protocol version 6." };
+    return { error: "Source credentials require agent protocol version 8." };
   }
   if (credentials.registration) {
     if (!validRegistration(deps, row, credentials.registration)) {
@@ -159,7 +158,10 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
             ...row.sourceDescriptor,
             url: sourceRepository.url,
             destination: sourceMount.target,
+            max_bytes: sourceMount.maxBytes,
+            max_files: sourceMount.maxFiles,
             credential: sourceCredential,
+            credential_expires_at: null,
           }
         : null,
     restore:
@@ -188,16 +190,16 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
   };
 }
 
-export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow): Promise<string | null> {
+export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow) {
   const reference = sourceCredentialReference(row);
   if (!reference) return null;
-  if (!deps.secretResolver) throw new Error("no deployment secret resolver configured");
-  const credential = await deps.secretResolver.resolveSourceCredential(row);
-  if (!credential) throw new Error("source credential resolved to an empty value");
-  if (credential.includes("\0") || Buffer.byteLength(credential) > SOURCE_CREDENTIAL_MAX_BYTES) {
-    throw new Error("source credential is not a bounded environment value");
-  }
-  return credential;
+  if (!deps.workspaceLeases) throw new Error("No setup issuer is configured.");
+  const previous = (await deps.store.listPendingWorkspaceLeases(row.id)).find(
+    (lease) => lease.secretName === reference.slice(10),
+  );
+  return previous
+    ? deps.workspaceLeases.replay(row.id, previous.id)
+    : deps.workspaceLeases.issue(row.id, reference.slice(10), "setup-issuer");
 }
 
 function materializeSecretEnv(env: Record<string, string>): Record<string, string> {

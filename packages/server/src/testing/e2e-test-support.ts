@@ -223,7 +223,7 @@ export function e2eTemplate(input: {
         repositories: {
           app: {
             url: "https://github.com/example/app.git",
-            credential: "secretRef:git/token",
+            credential: "secretRef:git-clone",
           },
         },
       },

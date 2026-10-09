@@ -9,6 +9,7 @@ import { KubernetesPvcStorageDriver } from "./kubernetes-storage";
 
 function render(mounts: RuntimeMountRef[]) {
   const workspace = fixtureWorkspace();
+  workspace.templateSnapshot.spec.resources.ephemeralStorage = "64Mi";
   return workspaceJobManifest(
     {
       workspace,
@@ -30,6 +31,18 @@ function render(mounts: RuntimeMountRef[]) {
     { imagePullPolicy: "IfNotPresent" },
   ).spec.template.spec;
 }
+
+test("source mounts use bounded emptyDir and full ephemeral storage requests and limits", () => {
+  const pod = render([{ name: "source", target: "/worktree", source: { kind: "empty-dir", maxBytes: 4 * 1024 ** 2 } }]);
+  expect(pod.volumes).toContainEqual({ name: "persistent-0", emptyDir: { sizeLimit: "4194304" } });
+  expect(pod.containers[0]?.resources).toMatchObject({
+    requests: { "ephemeral-storage": "64Mi" },
+    limits: { "ephemeral-storage": "64Mi" },
+  });
+  expect(() =>
+    render([{ name: "source", target: "/worktree", source: { kind: "empty-dir", maxBytes: 128 * 1024 ** 2 } }]),
+  ).toThrow("full ephemeral-storage");
+});
 
 test("shares a PVC volume while preserving each directory and mount permission", () => {
   const pod = render([
