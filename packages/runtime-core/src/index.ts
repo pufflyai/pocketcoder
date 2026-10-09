@@ -1,3 +1,8 @@
+export type {
+  WorkspaceLeasePurpose,
+  WorkspaceLeaseRow,
+  WorkspaceLeaseStore,
+} from "@pstdio/pocketcoder-runtime-contracts";
 export {
   type ActiveCounts,
   type AllocatedStorage,

@@ -53,6 +53,7 @@ export class SchedulerLifecycle {
       terminalState === "failed" &&
       row.templateSnapshot.spec.persistence.checkpoint.onFailure === "retain-for-recovery";
     try {
+      await this.context.deps.revokeWorkspaceLeases?.(row.id);
       if (row.providerRef) {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
         await driver.purgeInput(row.id);

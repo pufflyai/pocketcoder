@@ -35,6 +35,7 @@ test.skipIf(!dockerAvailable)(
         ...loadConfig({ POCKETCODER_DIR: dir, POCKETCODER_AUTH_PEPPER: "disposable-test-pepper" }),
         listenHost: "127.0.0.1",
         listenPort: 0,
+        agentPort: 0,
       };
       for (let attempt = 0; attempt < 2; attempt++) {
         running = await startPocketCoderServer(config, { log: (message) => messages.push(message) });

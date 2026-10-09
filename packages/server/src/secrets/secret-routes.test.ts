@@ -67,6 +67,22 @@ test("secret HTTP API and SDK return metadata only and retire names", async () =
   }
 });
 
+test("setup issuer publication returns only metadata through HTTP", async () => {
+  const f = await fixture();
+  const value = {
+    url: "https://issuer.example/setup",
+    authorization: "Bearer standing-controller-only",
+    policy: { repositories: ["https://source.example/private.git"] },
+  };
+  const response = await f.request("/v1/secrets/private-source", {
+    method: "PUT",
+    body: JSON.stringify({ type: "setup-issuer", value }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ name: "private-source", type: "setup-issuer" });
+  expect(JSON.stringify(f.logs)).not.toContain(value.authorization);
+});
+
 test("secret routes reject missing scope before reading values", async () => {
   const f = await fixture(["templates:write"]);
   let reads = 0;

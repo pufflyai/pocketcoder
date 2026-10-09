@@ -202,5 +202,20 @@
     "folderMillis": 1791535912000,
     "hash": "0e96f2f636d4df623abdbf2330067ae1a00dfbc5a49f66ebf920fa9668c8a31f",
     "name": "20261009085152_cheerful_the_spike"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"workspace_lease_fences\" (\n\t\"workspace_id\" uuid PRIMARY KEY,\n\t\"created_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"workspace_leases\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"secret_name\" text NOT NULL,\n\t\"secret_version_id\" uuid NOT NULL,\n\t\"purpose\" text NOT NULL,\n\t\"source_url\" text NOT NULL,\n\t\"source_revision\" text NOT NULL,\n\t\"template_digest\" text NOT NULL,\n\t\"policy_digest\" text NOT NULL,\n\t\"request_id\" uuid NOT NULL,\n\t\"request_digest\" text NOT NULL,\n\t\"request_expires_at\" timestamp with time zone NOT NULL,\n\t\"issuer_lease_id\" text,\n\t\"issuer_expires_at\" timestamp with time zone,\n\t\"credential_bytes\" integer,\n\t\"state\" text NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\t\"delivered_at\" timestamp with time zone,\n\t\"closed_at\" timestamp with time zone,\n\tCONSTRAINT \"workspace_leases_secret_name_request_id_unique\" UNIQUE(\"secret_name\",\"request_id\"),\n\tCONSTRAINT \"workspace_leases_purpose\" CHECK (\"purpose\" IN ('setup-issuer')),\n\tCONSTRAINT \"workspace_leases_state\" CHECK (\"state\" IN ('requested', 'issued', 'delivered', 'revoking', 'revoked', 'expired')),\n\tCONSTRAINT \"workspace_leases_request_expiry\" CHECK (\"request_expires_at\" > \"created_at\" AND \"request_expires_at\" <= \"created_at\" + interval '5 minutes'),\n\tCONSTRAINT \"workspace_leases_issuer_expiry\" CHECK ((\"issuer_lease_id\" IS NULL AND \"issuer_expires_at\" IS NULL) OR (\"issuer_lease_id\" IS NOT NULL AND \"issuer_expires_at\" IS NOT NULL AND \"issuer_expires_at\" > \"created_at\" AND \"issuer_expires_at\" <= \"request_expires_at\")),\n\tCONSTRAINT \"workspace_leases_closed\" CHECK ((\"state\" IN ('revoked', 'expired')) = (\"closed_at\" IS NOT NULL)),\n\tCONSTRAINT \"workspace_leases_credential_bytes\" CHECK (\"credential_bytes\" IS NULL OR \"credential_bytes\" BETWEEN 1 AND 65536),\n\tCONSTRAINT \"workspace_leases_acknowledged\" CHECK (\"state\" NOT IN ('issued', 'delivered', 'expired') OR (\"issuer_lease_id\" IS NOT NULL AND \"credential_bytes\" IS NOT NULL))\n);\n",
+      "\nCREATE INDEX \"workspace_leases_workspace\" ON \"workspace_leases\" (\"workspace_id\",\"state\");",
+      "\nALTER TABLE \"workspace_lease_fences\" ADD CONSTRAINT \"workspace_lease_fences_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_leases\" ADD CONSTRAINT \"workspace_leases_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"workspace_leases\" ADD CONSTRAINT \"workspace_leases_oK6JwRD2T7nB_fkey\" FOREIGN KEY (\"secret_version_id\",\"secret_name\",\"purpose\") REFERENCES \"secret_versions\"(\"id\",\"name\",\"type\");",
+      "\nALTER TABLE \"secret_versions\" DROP CONSTRAINT \"secret_versions_type_check\", ADD CONSTRAINT \"secret_versions_type_check\" CHECK (\"type\" IN ('setup-issuer', 'registry'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791545058000,
+    "hash": "9ac297ad91c74f6b473434f6d45b7805d94e90f8ea0210bb503c113f43752716",
+    "name": "20261009112418_lumpy_obadiah_stane"
   }
 ]

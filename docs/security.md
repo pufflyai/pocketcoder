@@ -81,7 +81,7 @@ for the permission model, content inventory, and backup replay rules.
 | Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Require a future `--expires <ISO8601>` within the issuer lifetime; rotate before expiry |
 | Workspace registration secret | Supervisor | Single-use, spent at connect |
 | Reconnect credential | Supervisor | Memory-only, never touches the workspace filesystem |
-| Git/source credentials (`secretRef:`) | Setup process (memory-only) | Delivered at registration, consumed during create-time setup, cleared before the harness starts |
+| Git/source setup lease (`secretRef:`) | Setup process | Bound to the workspace, template and repository; at most five minutes; revoked before the harness starts |
 | Model gateway credential | Workspace | Per-workspace, minted at launch, dead at teardown — never a shared or standing bearer |
 
 ## Model access is a gateway concern
@@ -124,6 +124,20 @@ no Kubernetes service account token. Registration and all launch cleanup paths
 remove the pull Secret. Runtime and source references cannot read controller
 pull Secrets, including those owned by other workspaces. Retiring a name blocks
 future resolution.
+
+## Private source authority
+
+Source credentials come from stored HTTPS setup issuers. The controller records
+request identity before minting, and keeps plaintext out of the database and
+logs. The supervisor stops setup at credential expiry and clears its copy before
+agent startup. The controller confirms issuer revocation before startup and
+checks delivered, closed authority again in the readiness transaction.
+
+Lost mint replies remain owned requests. Restart, failed setup, retirement and
+termination retry revocation against the original encrypted issuer version.
+An uncertain mint cannot be declared expired without an acknowledged expiry.
+See the [private-source recipe](private-source.md) for the issuer contract and
+real Docker/Kubernetes validation. Runtime issuer types remain disabled.
 
 ## Handling secrets a template needs
 

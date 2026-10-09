@@ -19,6 +19,12 @@ interface ManifestOptions {
 
 function volumeForMount(mount: RuntimeMountRef, name: string) {
   if (mount.source.kind === "tmpfs") throw new Error("Docker disposable mounts cannot be used by Kubernetes");
+  if (mount.source.kind === "empty-dir") {
+    return {
+      volume: { name, emptyDir: { sizeLimit: String(mount.source.maxBytes) } },
+      mount: { name, mountPath: mount.target, readOnly: false },
+    };
+  }
   if (mount.source.kind === "pvc") {
     return {
       volume: { name, persistentVolumeClaim: { claimName: mount.source.claimName } },
@@ -134,6 +140,15 @@ export function workspaceJobManifest(
   const { workspace } = launch;
   const spec = workspace.templateSnapshot.spec;
   const restricted = spec.network.mode === "restricted";
+  const disposableBytes = launch.mounts.reduce(
+    (total, mount) => total + (mount.source.kind === "empty-dir" ? mount.source.maxBytes : 0),
+    0,
+  );
+  if (disposableBytes) {
+    const value = spec.resources.ephemeralStorage;
+    const bytes = value ? Number.parseInt(value, 10) * (value.endsWith("Gi") ? 1024 ** 3 : 1024 ** 2) : 0;
+    if (bytes < disposableBytes) throw new Error("Source storage requires full ephemeral-storage requests and limits.");
+  }
   const persistent = persistentVolumes(launch.mounts);
   const secrets = launch.secrets.map(volumeForSecret);
   const memory = memoryVolumes(spec.security.writableMemoryPaths);

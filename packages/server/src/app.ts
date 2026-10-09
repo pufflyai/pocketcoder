@@ -1,6 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
-import { ApiError, type TerminalClosed, type TerminalCloseReason } from "@pstdio/pocketcoder-contracts";
+import { ApiError } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
   type MetricSink,
@@ -34,11 +34,14 @@ import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
+import { disposableSourceRuntime } from "./persistence/source-runtime";
 import { relayHandler } from "./relay/relay";
+import { createIssuerClient } from "./secrets/issuer-client";
+import { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
-import type { TerminalBridgeCallbacks } from "./terminals/terminal-bridge";
+import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
 import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
@@ -53,6 +56,7 @@ export interface BuildDeps {
   checkpointTransferOptions?: CheckpointTransferOptions;
   pepper: string;
   secretKey?: string;
+  issuerClient?: ReturnType<typeof createIssuerClient>;
   eventSigningKey?: string;
   egressImage?: string | null;
   limits: AdmissionLimits;
@@ -69,52 +73,13 @@ export interface BuiltServer {
   agentApp: ReturnType<typeof createAgentApp>;
   websocket: ReturnType<typeof createBunWebSocket<ServerWebSocket>>["websocket"];
   hub: Hub;
+  workspaceLeases?: ReturnType<typeof createWorkspaceLeaseService>;
   scheduler: Scheduler;
   service: WorkspaceService;
   persistence: PersistenceService;
   checkpointTransfers?: ReturnType<typeof composeCheckpointRuntime>["checkpointTransfers"];
   warmPool?: WarmPoolManager;
   metrics: MetricSink;
-}
-
-function terminalAuditReason(reason: TerminalClosed["reason"]): TerminalCloseReason {
-  if (reason === "error") return "agent_detached";
-  if (reason === "closed") return "client_closed";
-  return reason;
-}
-
-function terminalCallbacks(store: Store): TerminalBridgeCallbacks {
-  return {
-    onTerminalInput: (workspaceId) => {
-      const now = new Date();
-      return store.updateWorkspace(workspaceId, { lastActivityAt: now }, now);
-    },
-    onTerminalClosed: async (event) => {
-      const closedAt = new Date();
-      const closeReason = terminalAuditReason(event.reason);
-      const session = await store.closeTerminalSession(event.session_id, {
-        closedAt,
-        closeReason,
-        exitCode: event.exit_code ?? null,
-        bytesIn: event.bytesIn,
-        bytesOut: event.bytesOut,
-      });
-      if (!session) return;
-      await store.appendEvent(
-        event.workspaceId,
-        "workspace.terminal_closed",
-        {
-          session_id: session.sessionId,
-          close_reason: session.closeReason,
-          exit_code: session.exitCode,
-          duration_ms: closedAt.getTime() - session.openedAt.getTime(),
-          bytes_in: session.bytesIn,
-          bytes_out: session.bytesOut,
-        },
-        closedAt,
-      );
-    },
-  };
 }
 
 function workspaceSecretFactory(pepper: string) {
@@ -124,19 +89,56 @@ function workspaceSecretFactory(pepper: string) {
   };
 }
 
+function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
+  const vault = deps.secretKey ? createSecretVault(deps.store, Buffer.from(deps.secretKey, "base64url")) : undefined;
+  const workspaceLeases = vault
+    ? createWorkspaceLeaseService({ store: deps.store, vault, issuer: deps.issuerClient ?? createIssuerClient() })
+    : undefined;
+  const checkpointRuntime = composeCheckpointRuntime(
+    deps.store,
+    hub,
+    deps.driver,
+    deps.storageDriver,
+    deps.checkpointTransferOptions,
+  );
+  const { checkpointTransfers } = checkpointRuntime;
+  const transferRuntime = checkpointRuntime.transferRuntime ?? sourceRuntime(deps);
+  return { workspaceLeases, checkpointTransfers, transferRuntime };
+}
+
+function sourceRuntime(deps: BuildDeps) {
+  if (deps.storageDriver) return;
+  const kind = deps.driver.kind;
+  if (kind === "docker" || kind === "kubernetes") return disposableSourceRuntime(kind);
+}
+
+function registerHealthRoutes(app: OpenAPIHono<AppEnv>, deps: BuildDeps) {
+  const readiness = deps.readiness ?? new Readiness();
+  app.get("/livez", (c) =>
+    c.json({
+      ok: true,
+      ...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
+    }),
+  );
+  app.get("/readyz", (c) => {
+    const snapshot = readiness.snapshot();
+    return c.json(
+      {
+        ...snapshot,
+        ...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
+      },
+      snapshot.ok ? 200 : 503,
+    );
+  });
+}
+
 export function buildServer(deps: BuildDeps): BuiltServer {
   const { store, driver, pepper, limits } = deps;
   const logger = deps.logger ?? createStructuredLogger(() => {});
   const metrics = deps.metrics ?? new RuntimeMetrics();
   const log = (message: string) => logger.info("runtime.message", { message });
   const hub = new Hub(terminalCallbacks(store));
-  const { checkpointTransfers, transferRuntime } = composeCheckpointRuntime(
-    store,
-    hub,
-    driver,
-    deps.storageDriver,
-    deps.checkpointTransferOptions,
-  );
+  const { workspaceLeases, checkpointTransfers, transferRuntime } = composeWorkspaceRuntime(deps, hub);
   const poolHub = new PoolConnectionHub();
   const secretFactory = workspaceSecretFactory(pepper);
   const warmPool = deps.warmPools
@@ -158,6 +160,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
     ...(transferRuntime ? { transferRuntime } : {}),
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
+    ...(workspaceLeases ? { revokeWorkspaceLeases: workspaceLeases.revokeWorkspace } : {}),
     connections: hub,
     secrets: secretFactory,
     limits,
@@ -202,33 +205,17 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   app.use("*", requestId);
   app.use("*", requestLogging(logger));
 
-  const readiness = deps.readiness ?? new Readiness();
-  app.get("/livez", (c) =>
-    c.json({
-      ok: true,
-      ...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
-    }),
-  );
-  app.get("/readyz", (c) => {
-    const snapshot = readiness.snapshot();
-    return c.json(
-      {
-        ...snapshot,
-        ...(deps.instanceId ? { instance_id: deps.instanceId } : {}),
-      },
-      snapshot.ok ? 200 : 503,
-    );
-  });
+  registerHealthRoutes(app, deps);
 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
   const wsDeps = {
+    ...(workspaceLeases ? { workspaceLeases } : {}),
     store,
     hub,
     scheduler,
     pepper,
-    ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
-    ...(driver.cleanupInput ? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() } : {}),
+    cleanupInput: driver.cleanupInput?.bind(driver),
     log,
     persistence,
     ...(checkpointTransfers ? { checkpointTransfers } : {}),
@@ -333,6 +320,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     agentApp,
     websocket,
     hub,
+    ...(workspaceLeases ? { workspaceLeases } : {}),
     scheduler,
     service,
     persistence,
