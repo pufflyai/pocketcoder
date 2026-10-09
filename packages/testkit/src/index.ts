@@ -1,4 +1,5 @@
 export { type FakeAgentApi, startFakeAgentApi } from "./agentapi/fake-agentapi";
+export { trackCheckpointFiles } from "./checkpoints/owned-files";
 export { FakeDriver } from "./drivers/fake-driver";
 export {
   fixtureSnapshot,

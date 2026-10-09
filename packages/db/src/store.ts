@@ -15,7 +15,9 @@ import { createOutputs } from "./modules/outputs/repository";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
 import { createContentPurge } from "./modules/persistence/content";
 import { createOperations } from "./modules/persistence/operations";
+import { createStorageReservations } from "./modules/persistence/reservations";
 import { createStorage } from "./modules/persistence/storage";
+import { createCheckpointTransfers } from "./modules/persistence/transfers";
 import { createTemplates } from "./modules/templates/repository";
 import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
@@ -25,11 +27,16 @@ import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 
 export class PGliteStore implements Store {
+  readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
+  readonly storageReservations: ReturnType<typeof createStorageReservations>;
+
   static async create(dataDir?: string, options?: DatabaseOpenOptions) {
     return new PGliteStore(await createDatabaseContext(dataDir, options));
   }
 
   constructor(context: DatabaseContext) {
+    this.checkpointTransfers = createCheckpointTransfers(context);
+    this.storageReservations = createStorageReservations(context);
     const lifecycle = createLifecycle(context);
     const content = createContentPurge(context);
     this.listWorkspaceStorage = content.listWorkspaceStorage;

@@ -127,6 +127,13 @@ export POCKETCODER_WORKSPACE_DATA_DIR=/var/lib/pocketcoder/workspaces
 export POCKETCODER_CHECKPOINT_DIR=/var/lib/pocketcoder/checkpoints
 ```
 
+The Docker filesystem path uses size-bounded disposable tmpfs mounts for live
+workspace files. Preserved bytes travel over authenticated agent HTTP into
+controller-owned archives. Checkpoint directories are never mounted into a
+workspace. Restore installs verified bytes before setup and harness readiness.
+See the [local checkpoint runbook](docker-checkpoint-round-trip.md) for the tested
+development slice and its support boundary.
+
 Use `POCKETCODER_SECRET_PROVIDER=file` plus an absolute
 `POCKETCODER_SECRET_ROOT` for local `secretRef:` values. Only bounded regular
 files beneath that root are accepted and they must be outside the

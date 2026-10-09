@@ -17,6 +17,7 @@ interface ManifestOptions {
 }
 
 function volumeForMount(mount: RuntimeMountRef, name: string) {
+  if (mount.source.kind === "tmpfs") throw new Error("Docker disposable mounts cannot be used by Kubernetes");
   if (mount.source.kind === "pvc") {
     return {
       volume: { name, persistentVolumeClaim: { claimName: mount.source.claimName } },

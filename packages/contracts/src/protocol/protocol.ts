@@ -10,8 +10,17 @@ import {
   AttachmentStartPayload,
 } from "../attachments/attachment";
 import { ConversationMessageInputSchema } from "../conversations/conversation";
-import { CONVERSATION_RESTORE_CAPABILITIES, LAUNCH_MODES, SourceDescriptorSchema } from "../persistence/persistence";
-import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "../templates/template";
+import { CONVERSATION_RESTORE_CAPABILITIES } from "../persistence/persistence";
+import { ExecSpecSchema } from "./protocol-exec";
+
+export {
+  type ExecSpec,
+  ExecSpecSchema,
+  type RestoreMode,
+  RestoreModeSchema,
+  SOURCE_CREDENTIAL_MAX_BYTES,
+} from "./protocol-exec";
+
 import {
   TerminalClosedPayload,
   TerminalClosePayload,
@@ -21,6 +30,16 @@ import {
   TerminalOutputPayload,
   TerminalResizePayload,
 } from "../terminals/terminal";
+import {
+  CheckpointInstalledPayload,
+  CheckpointPreparedPayload,
+  CheckpointUploadPayload,
+  CheckpointUploadStatusPayload,
+  PrepareCheckpointArchivePayload,
+} from "./protocol-checkpoint";
+
+export * from "./protocol-checkpoint";
+
 import {
   ProxyStreamAckPayload,
   ProxyStreamCancelPayload,
@@ -51,11 +70,10 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 6;
-export const SOURCE_CREDENTIAL_MAX_BYTES = 65_536;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, PROTOCOL_VERSION] as const;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -75,6 +93,7 @@ const EnvelopeBase = z.object({
     z.literal(3),
     z.literal(4),
     z.literal(5),
+    z.literal(6),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -185,6 +204,9 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
   EnvelopeBase.extend({ type: z.literal("source_resolved"), payload: SourceResolvedPayload }),
   EnvelopeBase.extend({ type: z.literal("checkpoint_status"), payload: CheckpointStatusPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_prepared"), payload: CheckpointPreparedPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_installed"), payload: CheckpointInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_upload_status"), payload: CheckpointUploadStatusPayload }),
   EnvelopeBase.extend({ type: z.literal("output_published"), payload: OutputPublishedPayload }),
   EnvelopeBase.extend({ type: z.literal("restore_status"), payload: RestoreStatusPayload }),
   EnvelopeBase.extend({
@@ -202,80 +224,6 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
 export type AgentFrame = z.infer<typeof AgentFrameSchema>;
 
 // --- Server -> Agent frames ---
-
-// The exec spec delivers the template-owned setup commands, harness command,
-// service allowlist, and timeouts to the supervisor at registration time, so
-// custom setup and custom harnesses require no image rebuild.
-export const ExecSpecSchema = z.object({
-  agentapi_native: z.boolean().default(false),
-  setup: z.array(SetupStepSchema),
-  harness: HarnessSchema,
-  env: z.record(z.string(), z.string()),
-  services: z.record(z.string(), ServiceSchema),
-  terminal: z
-    .object({
-      command: z.array(z.string().min(1)).min(1),
-      cwd: z.string().optional(),
-      env: z.record(z.string(), z.string()),
-      max_sessions: z.number().int().min(1).max(8),
-      idle_timeout_seconds: z.number().int().positive(),
-      replay_buffer_bytes: z.number().int().positive(),
-    })
-    .nullable()
-    .default(null),
-  timeouts: TimeoutsSchema,
-  security: z
-    .object({
-      writable_memory_paths: z.array(z.string()),
-    })
-    .default({ writable_memory_paths: [] }),
-  network: z
-    .discriminatedUnion("mode", [
-      z.object({ mode: z.literal("unrestricted") }),
-      z.object({
-        mode: z.literal("restricted"),
-        proxy_url: z.url(),
-        health_url: z.url(),
-      }),
-    ])
-    .default({ mode: "unrestricted" }),
-  launch_mode: z.enum(LAUNCH_MODES).default("create"),
-  source: SourceDescriptorSchema.extend({
-    url: z.url(),
-    destination: z.string(),
-    credential: z
-      .string()
-      .min(1)
-      .max(SOURCE_CREDENTIAL_MAX_BYTES)
-      .refine((value) => !value.includes("\0"), "credential must not contain NUL bytes")
-      .nullable()
-      .default(null),
-  })
-    .nullable()
-    .default(null),
-  restore: z
-    .object({
-      checkpoint_id: z.uuid(),
-      origin_workspace_id: z.uuid(),
-    })
-    .nullable()
-    .default(null),
-  persistence: z.object({
-    mounts: z.array(z.object({ name: z.string(), target: z.string() })),
-    conversation_restore: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
-  }),
-  checkpoint_hook: z
-    .object({
-      command: z.array(z.string().min(1)).min(1),
-      timeout_seconds: z.number().int().positive(),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string().optional(),
-    })
-    .nullable(),
-  outputs: z.record(z.string(), z.unknown()),
-});
-
-export type ExecSpec = z.infer<typeof ExecSpecSchema>;
 
 export const RegisteredAckPayload = z.object({
   epoch: z.number().int().positive(),
@@ -336,6 +284,8 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     type: z.literal("prepare_checkpoint"),
     payload: PrepareCheckpointPayload,
   }),
+  EnvelopeBase.extend({ type: z.literal("prepare_checkpoint_archive"), payload: PrepareCheckpointArchivePayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_upload"), payload: CheckpointUploadPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_start"), payload: AttachmentStartPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_chunk"), payload: AttachmentChunkPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_finish"), payload: AttachmentFinishPayload }),

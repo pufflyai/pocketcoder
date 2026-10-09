@@ -274,14 +274,23 @@ per-connection monotonic sequence numbers; the newest accepted connection
 Agent → server: `registered`, `heartbeat`, `process_state`, `service_health`,
 `agent_state`, `network_state`, `log_chunk`, `proxy_response`, `proxy_stream_start`, `proxy_stream_chunk`,
 `proxy_stream_end`, `termination_ack`, `source_resolved`,
-`checkpoint_status`, `restore_status`, `output_published`,
+`checkpoint_status`, `checkpoint_prepared`, `checkpoint_upload_status`,
+`checkpoint_installed`, `restore_status`, `output_published`,
 `conversation_message`, `attachment_ack`, `attachment_result`,
 `attachment_resolved`, `terminal_opened`, `terminal_output`, `terminal_closed`.
 Server → agent: `registered_ack`, `proxy_request`, `proxy_stream_ack`,
 `proxy_stream_cancel`, `signal`, `health_probe`,
-`shutdown`, `prepare_checkpoint`, `attachment_start`, `attachment_chunk`,
+`shutdown`, `prepare_checkpoint`, `prepare_checkpoint_archive`, `checkpoint_upload`,
+`attachment_start`, `attachment_chunk`,
 `attachment_finish`, `attachment_abort`, `attachment_resolve`, `terminal_open`,
 `terminal_input`, `terminal_resize`, `terminal_close`.
+
+Workspace protocol v7 adds checkpoint transfer declarations and installation
+receipts. Archive bytes use authenticated HTTP rather than control frames.
+The controller publishes a verified durable archive before source shutdown.
+A new destination receives its own grant and installs verified files before
+setup. Readiness also requires the current connection's installation receipt
+and running harness. See the [Docker checkpoint runbook](docker-checkpoint-round-trip.md).
 
 Workspace protocol v3 adds the attachment frames: caller files stream to the
 supervisor one acknowledged, bounded chunk at a time and land under

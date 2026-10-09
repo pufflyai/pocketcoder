@@ -27,6 +27,7 @@ export {
 } from "./attachments/attachment";
 export * from "./auth/keys";
 export * from "./auth/principals";
+export * from "./checkpoints";
 export { canonicalJson, digestOf, sha256Hex } from "./common/canonical";
 export { isDuration, parseDurationMs } from "./common/duration";
 export {
@@ -176,6 +177,8 @@ export {
   ProxyResponsePayload,
   RegisteredAckPayload,
   RegisteredPayload,
+  type RestoreMode,
+  RestoreModeSchema,
   RestoreStatusPayload,
   type ServerFrame,
   ServerFrameSchema,
@@ -188,6 +191,20 @@ export {
   SUPPORTED_PROTOCOL_VERSIONS,
   TerminationAckPayload,
 } from "./protocol/protocol";
+export {
+  CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
+  type CheckpointInstalled,
+  CheckpointInstalledPayload,
+  type CheckpointPrepared,
+  CheckpointPreparedPayload,
+  type CheckpointUpload,
+  CheckpointUploadPayload,
+  CheckpointUploadStatusPayload,
+  type PrepareCheckpointArchive,
+  PrepareCheckpointArchivePayload,
+  type RestoreTransferSpec,
+  RestoreTransferSpecSchema,
+} from "./protocol/protocol-checkpoint";
 export {
   PROXY_STREAM_CANCEL_REASONS,
   PROXY_STREAM_CHUNK_BYTES,
@@ -203,6 +220,7 @@ export {
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
+export * from "./recovery/source-writer";
 export {
   type Agent,
   AgentSchema,

@@ -193,6 +193,9 @@ export class SchedulerAdmission {
   }
 
   async prepareStorage(row: WorkspaceRow): Promise<RuntimeMountRef[]> {
+    if (this.context.deps.transferRuntime) {
+      return this.context.deps.transferRuntime.prepareStorage(row);
+    }
     const mounts = row.templateSnapshot.spec.persistence.mounts;
     if (mounts.length === 0) return [];
     const storageDriver = this.context.deps.storageDriver;
