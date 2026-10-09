@@ -1,3 +1,4 @@
+import { credentialMemoryPaths } from "@pstdio/pocketcoder-contracts";
 import type {
   RuntimeMountRef,
   RuntimeSecretRef,
@@ -151,7 +152,7 @@ export function workspaceJobManifest(
   }
   const persistent = persistentVolumes(launch.mounts);
   const secrets = launch.secrets.map(volumeForSecret);
-  const memory = memoryVolumes(spec.security.writableMemoryPaths);
+  const memory = memoryVolumes(credentialMemoryPaths(spec));
   const labels = { [KUBERNETES_WORKSPACE_LABEL]: workspace.id };
   const annotations = { [KUBERNETES_DIGEST_ANNOTATION]: workspace.templateDigest };
   return {
@@ -228,7 +229,7 @@ export function warmJobManifest(
 ) {
   const spec = launch.template.spec;
   const restricted = spec.network.mode === "restricted";
-  const memory = memoryVolumes(spec.security.writableMemoryPaths);
+  const memory = memoryVolumes(credentialMemoryPaths(spec));
   const labels = { [KUBERNETES_POOL_LABEL]: launch.runtimeId };
   const annotations = { [KUBERNETES_DIGEST_ANNOTATION]: launch.template.digest };
   return {

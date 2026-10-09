@@ -5,13 +5,13 @@ import { z } from "zod";
 type IssuerConfig = Extract<SecretPutRequest, { type: "setup-issuer" }>["value"];
 const IdentitySchema = z.strictObject({
   workspace_id: z.uuid(),
-  source_url: z.url(),
-  source_revision: z.string().min(1),
+  source_url: z.url().nullable(),
+  source_revision: z.string().min(1).nullable(),
   template_digest: z.string(),
   request_id: z.uuid(),
   request_digest: z.string(),
   policy_digest: z.string(),
-  purpose: z.literal("setup-issuer"),
+  purpose: z.enum(["setup-issuer", "runtime-issuer"]),
   expires_at: z.iso.datetime(),
   policy: z.record(z.string(), z.json()),
 });

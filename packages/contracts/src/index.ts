@@ -189,6 +189,7 @@ export {
   type RestoreMode,
   RestoreModeSchema,
   RestoreStatusPayload,
+  RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
   type ServerFrame,
   ServerFrameSchema,
   ServiceHealthPayload,
@@ -214,6 +215,7 @@ export {
   type RestoreTransferSpec,
   RestoreTransferSpecSchema,
 } from "./protocol/protocol-checkpoint";
+export * from "./protocol/protocol-credentials";
 export {
   PROXY_STREAM_CANCEL_REASONS,
   PROXY_STREAM_CHUNK_BYTES,
@@ -231,6 +233,7 @@ export {
 } from "./protocol/protocol-stream";
 export * from "./recovery/source-writer";
 export * from "./secrets/secret";
+export * from "./templates/runtime-credentials";
 export {
   type Agent,
   AgentSchema,

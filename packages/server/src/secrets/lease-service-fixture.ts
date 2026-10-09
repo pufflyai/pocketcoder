@@ -10,10 +10,12 @@ import { createSecretVault } from "./secret-vault";
 export async function leaseServiceFixture(
   mode: "memory" | "disk" = "memory",
   sourceUrl = "https://source.example/private.git",
+  resourceHost?: string,
+  runtime = false,
 ) {
   const db = await createPGliteFixture("issuer-service", mode);
   try {
-    const issuer = await createTestIssuer({ sourceUrl });
+    const issuer = await createTestIssuer({ sourceUrl, resourceHost });
     try {
       const principal = await db.store.createPrincipal("operator", ["secrets:write"], []);
       const pepper = randomBytes(32).toString("base64url");
@@ -41,6 +43,7 @@ export async function leaseServiceFixture(
       await vault.put(key.id, "source", config);
       const id = randomUUID();
       const snapshot = snapshotOf(db.parsed);
+      if (runtime) snapshot.spec.env.RUNTIME_TOKEN_FILE = "secretRef:runtime";
       snapshot.spec.source = {
         kind: "git",
         destinationMount: "worktree",

@@ -167,6 +167,14 @@ async function reconcileOperation(
     return;
   }
   if (operation.kind !== "preserve") return;
+  if (operation.state === "pending") {
+    const state = context.workspace?.state;
+    // Only admitted preserves own cleanup. A crash before admission leaves the active workspace alone.
+    if (state && (state === "preserving" || state === "terminating" || isTerminal(state))) return;
+    await deps.store.updateCheckpoint(context.checkpoint.id, { state: "failed", reasonCode: "checkpoint_failed" }, now);
+    await failOperation(deps, operation, "checkpoint_failed", now);
+    return;
+  }
   if (context.checkpoint.state === "ready" && context.workspace?.state === "preserving") {
     await completePreserve(deps, operation, context.checkpoint, context.workspace, now);
     return;

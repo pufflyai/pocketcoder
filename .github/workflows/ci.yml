@@ -159,3 +159,8 @@ jobs:
         env:
           POCKETCODER_KIND_BIN: /tmp/kind
         run: bun run test:source:live
+
+      - name: Verify renewable runtime authority on both providers
+        env:
+          POCKETCODER_KIND_BIN: /tmp/kind
+        run: bun run test:runtime:live

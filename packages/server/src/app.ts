@@ -160,7 +160,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
     ...(transferRuntime ? { transferRuntime } : {}),
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
-    ...(workspaceLeases ? { revokeWorkspaceLeases: workspaceLeases.revokeWorkspace } : {}),
+    revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
     connections: hub,
     secrets: secretFactory,
     limits,
@@ -173,6 +173,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const service = new WorkspaceService({ store, scheduler, limits });
   const persistence = new PersistenceService({
     store,
+    revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
     scheduler,
     driver,
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
