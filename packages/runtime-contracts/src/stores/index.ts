@@ -25,9 +25,13 @@ export interface Store
     NetworkAuditStore,
     ConversationStore,
     TerminalAuditStore,
-    OutboxStore {}
+    OutboxStore {
+  checkpointTransfers: import("./checkpoint-transfers").CheckpointTransferStore;
+  storageReservations: import("./storage-reservations").StorageReservationStore;
+}
 
 export * from "./auth";
+export * from "./checkpoint-transfers";
 export * from "./conversations";
 export * from "./lifecycle";
 export * from "./logs";
@@ -35,6 +39,7 @@ export * from "./network-audit";
 export * from "./outbox";
 export * from "./outputs";
 export * from "./persistence";
+export * from "./storage-reservations";
 export * from "./templates";
 export * from "./terminals";
 export * from "./warm-pools";

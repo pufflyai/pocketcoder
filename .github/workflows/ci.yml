@@ -49,6 +49,11 @@ jobs:
           bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
       - name: Unit, route, e2e, and PGlite integration tests
         run: bun run test
+      - name: Verify Docker checkpoint round trips
+        run: |
+          bun run example:e2e:docker-checkpoint
+          bun run example:e2e:docker-checkpoint-failures
+          bun run example:e2e:docker-checkpoint-repeat
       - name: Build all entrypoints
         run: bun run build
       - uses: actions/setup-node@v4

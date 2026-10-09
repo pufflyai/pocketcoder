@@ -31,6 +31,10 @@ async function maybeMarkReady(
   networkState: WorkspaceRow["networkState"],
 ) {
   if (row.state !== "connected") return;
+  const connection = deps.hub.get(row.id);
+  if (deps.checkpointTransfers && row.launchMode === "restore") {
+    if (!connection?.restoreInstalled || !connection.harnessRunning) return;
+  }
   const allRequiredHealthy = Object.entries(snapshotServices(row.templateSnapshot))
     .filter(([, service]) => service.required)
     .every(([name]) => health[name] === "healthy");
@@ -40,6 +44,18 @@ async function maybeMarkReady(
   if (row.sourceDescriptor && !row.resolvedSource) {
     await deps.scheduler.finalize(row, "failed", "source_resolution_failed", now);
     return;
+  }
+  if (deps.checkpointTransfers && row.launchMode === "restore" && connection) {
+    try {
+      if (await deps.checkpointTransfers.ready(connection)) return;
+      throw new Error("Restore readiness did not settle.");
+    } catch (error) {
+      deps.log?.(`restore ${row.id}: ${String(error)}`);
+      await deps.checkpointTransfers.disconnected?.(connection);
+      deps.hub.close(row.id);
+      await deps.scheduler.beginTermination(row, "failed", "restore_failed", now);
+      return;
+    }
   }
   await deps.store.transition(row.id, {
     from: ["connected"],
@@ -88,6 +104,38 @@ async function handleNetworkState(deps: WsDeps, frame: NetworkStateFrame): Promi
   }
 }
 
+async function handleCheckpointInstalled(
+  deps: WsDeps,
+  connection: LiveConnection,
+  payload: Extract<AgentFrame, { type: "checkpoint_installed" }>["payload"],
+) {
+  const accepted = await deps.checkpointTransfers?.installed(connection, payload);
+  if (!accepted || payload.phase !== "installed" || deps.hub.get(connection.workspaceId) !== connection) return;
+  connection.restoreInstalled = true;
+  const row = await deps.store.getWorkspace(connection.workspaceId);
+  if (row && deps.hub.get(row.id) === connection) await maybeMarkReady(deps, row, row.health, row.networkState);
+}
+
+async function handleConversation(deps: WsDeps, frame: Extract<AgentFrame, { type: "conversation_message" }>) {
+  const workspace = await deps.store.getWorkspace(frame.workspace_id);
+  // Provider cleanup can finish while a received frame waits for earlier writes.
+  if (!workspace) return;
+  try {
+    await deps.store.appendConversationMessage({
+      workspaceId: frame.workspace_id,
+      messageId: frame.payload.message_id,
+      role: frame.payload.role,
+      content: frame.payload.content,
+      occurredAt: new Date(frame.payload.occurred_at),
+      metadata: frame.payload.metadata,
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    deps.log?.(`conversation ${frame.workspace_id}: ${String(error)}`);
+  }
+  return;
+}
+
 export async function handleConnectedFrame(
   deps: WsDeps,
   connection: LiveConnection,
@@ -95,6 +143,7 @@ export async function handleConnectedFrame(
   frame: AgentFrame,
   closeProtocol: CloseProtocol,
 ): Promise<void> {
+  if (frame.type !== "conversation_message" && deps.hub.get(connection.workspaceId) !== connection) return;
   switch (frame.type) {
     case "registered":
       closeProtocol(ws, "already registered");
@@ -123,6 +172,7 @@ export async function handleConnectedFrame(
       ]);
       return;
     case "process_state":
+      connection.harnessRunning = frame.payload.phase === "running";
       await handleProcessState(deps, frame);
       return;
     case "proxy_response":
@@ -175,6 +225,14 @@ export async function handleConnectedFrame(
     case "source_resolved":
       await deps.persistence?.sourceResolved(frame.workspace_id, { kind: "git", ...frame.payload });
       return;
+    case "checkpoint_prepared":
+      deps.hub.resolveCheckpointArchive(connection, frame.payload);
+      return;
+    case "checkpoint_upload_status":
+      return;
+    case "checkpoint_installed":
+      await handleCheckpointInstalled(deps, connection, frame.payload);
+      return;
     case "checkpoint_status":
       deps.hub.resolveCheckpoint(connection, frame.payload.operation_id, frame.payload.phase);
       return;
@@ -192,24 +250,8 @@ export async function handleConnectedFrame(
       return;
     case "restore_status":
       return;
-    case "conversation_message": {
-      const workspace = await deps.store.getWorkspace(frame.workspace_id);
-      // Provider cleanup can finish while a received frame waits for earlier writes.
-      if (!workspace) return;
-      try {
-        await deps.store.appendConversationMessage({
-          workspaceId: frame.workspace_id,
-          messageId: frame.payload.message_id,
-          role: frame.payload.role,
-          content: frame.payload.content,
-          occurredAt: new Date(frame.payload.occurred_at),
-          metadata: frame.payload.metadata,
-          createdAt: new Date(),
-        });
-      } catch (error) {
-        deps.log?.(`conversation ${frame.workspace_id}: ${String(error)}`);
-      }
+    case "conversation_message":
+      await handleConversation(deps, frame);
       return;
-    }
   }
 }

@@ -18,8 +18,12 @@ export type {
   WorkspaceLaunch,
   WorkspaceSecretResolver,
   WorkspaceStorageDriver,
+  WorkspaceTransferRuntime,
 } from "./drivers/driver";
 export { buildEventEnvelope } from "./events/events";
+export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
+export * from "./stores/checkpoint-transfers";
+export * from "./stores/storage-reservations";
 export {
   type ActiveCounts,
   type AuthStore,

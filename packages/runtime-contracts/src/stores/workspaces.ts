@@ -167,6 +167,8 @@ export interface TransitionRequest {
   reason?: ReasonCode | null;
   at: Date;
   patch?: WorkspacePatch;
+  expectedConnectionEpoch?: number;
+  check?: () => void;
 }
 
 export interface WorkspaceStore {

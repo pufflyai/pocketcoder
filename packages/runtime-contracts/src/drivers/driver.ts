@@ -71,10 +71,11 @@ export interface WorkspaceDriver {
 }
 
 // Runtime mount refs are internal driver-neutral capabilities. Docker consumes
-// host-path sources; a Kubernetes adapter consumes PVC sources. Public APIs
+// host paths or bounded disposable mounts; Kubernetes consumes PVC sources. Public APIs
 // and template manifests never contain either physical form.
 export type RuntimeMountSource =
   | { kind: "host-path"; path: string }
+  | { kind: "tmpfs"; maxBytes: number; uid: number; gid: number }
   | { kind: "pvc"; claimName: string; subPath?: string };
 
 export interface RuntimeMountRef {
@@ -82,6 +83,11 @@ export interface RuntimeMountRef {
   target: string;
   source: RuntimeMountSource;
   readOnly?: boolean;
+}
+
+export interface WorkspaceTransferRuntime {
+  prepareStorage(workspace: WorkspaceRow): Promise<RuntimeMountRef[]>;
+  cleanupWorkspace(workspace: WorkspaceRow): Promise<void>;
 }
 
 export interface RuntimeSecretRef {

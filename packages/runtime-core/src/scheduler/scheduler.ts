@@ -48,6 +48,7 @@ export class Scheduler {
 
   async drain(): Promise<void> {
     await this.context.activeTick;
+    while (this.context.finalizers.size) await Promise.allSettled([...this.context.finalizers]);
   }
 
   private async runPendingTicks(): Promise<void> {

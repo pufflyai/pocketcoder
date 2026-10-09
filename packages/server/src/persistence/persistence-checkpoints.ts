@@ -20,7 +20,8 @@ export class PersistenceCheckpointService {
       return replay;
     }
     const checkpoint = await this.context.getCheckpointOwned(principal, checkpointId);
-    if (checkpoint.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) {
+    const transferred = checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers;
+    if (checkpoint.state !== "ready" || !checkpoint.providerRef || (!transferred && !checkpoint.manifest)) {
       throw new ApiError("checkpoint.not_ready", "Checkpoint is not ready.");
     }
     const now = this.context.now();
@@ -48,7 +49,11 @@ export class PersistenceCheckpointService {
       return inserted.operation;
     }
     try {
-      await this.context.storageDriver().verifyCheckpoint(checkpoint.providerRef as StorageRef, checkpoint.manifest);
+      if (transferred) {
+        await transferred.verify(checkpoint);
+      } else if (checkpoint.manifest) {
+        await this.context.storageDriver().verifyCheckpoint(checkpoint.providerRef as StorageRef, checkpoint.manifest);
+      }
       const done = this.context.now();
       await this.context.deps.store.updateOperation(
         inserted.operation.id,

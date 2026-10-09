@@ -29,6 +29,7 @@ import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requ
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
 import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
+import { type CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
 import { registerPurgeRoutes } from "./persistence/purge-routes";
@@ -47,6 +48,7 @@ export interface BuildDeps {
   storageDriver?: WorkspaceStorageDriver;
   secretResolver?: WorkspaceSecretResolver;
   persistenceLimits?: PersistenceLimits;
+  checkpointTransferOptions?: CheckpointTransferOptions;
   pepper: string;
   eventSigningKey?: string;
   egressImage?: string | null;
@@ -67,6 +69,7 @@ export interface BuiltServer {
   scheduler: Scheduler;
   service: WorkspaceService;
   persistence: PersistenceService;
+  checkpointTransfers?: ReturnType<typeof composeCheckpointRuntime>["checkpointTransfers"];
   warmPool?: WarmPoolManager;
   metrics: MetricSink;
 }
@@ -124,6 +127,13 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const metrics = deps.metrics ?? new RuntimeMetrics();
   const log = (message: string) => logger.info("runtime.message", { message });
   const hub = new Hub(terminalCallbacks(store));
+  const { checkpointTransfers, transferRuntime } = composeCheckpointRuntime(
+    store,
+    hub,
+    driver,
+    deps.storageDriver,
+    deps.checkpointTransferOptions,
+  );
   const poolHub = new PoolConnectionHub();
   const secretFactory = workspaceSecretFactory(pepper);
   const warmPool = deps.warmPools
@@ -143,6 +153,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     store,
     driver,
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
+    ...(transferRuntime ? { transferRuntime } : {}),
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
     connections: hub,
     secrets: secretFactory,
@@ -159,6 +170,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     scheduler,
     driver,
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
+    ...(checkpointTransfers ? { checkpointTransfers } : {}),
     hub,
     workspaces: service,
     maxQueuedWorkspaces: limits.maxQueuedWorkspaces,
@@ -216,10 +228,12 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     ...(driver.cleanupInput ? { cleanupInput: (id: string) => driver.cleanupInput?.(id) ?? Promise.resolve() } : {}),
     log,
     persistence,
+    ...(checkpointTransfers ? { checkpointTransfers } : {}),
   };
   const agentApp = createAgentApp({
     connection: wsDeps,
     poolHub,
+    ...(checkpointTransfers ? { checkpointTransfers } : {}),
     warmPool,
     eventSigningKey: deps.eventSigningKey ?? pepper,
     logger,
@@ -319,6 +333,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     service,
     persistence,
     metrics,
+    ...(checkpointTransfers ? { checkpointTransfers } : {}),
     ...(warmPool ? { warmPool } : {}),
   };
 }

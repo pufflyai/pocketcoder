@@ -1,6 +1,7 @@
 import { verifyOpaque } from "@pstdio/pocketcoder-auth";
 import {
   agentApiHarness,
+  CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
   type ExecSpec,
   errorEnvelope,
   HEADER_PROTOCOL,
@@ -11,6 +12,7 @@ import {
   isTerminal,
   type ProtocolVersion,
   parseDurationMs,
+  type RestoreMode,
   SOURCE_CREDENTIAL_MAX_BYTES,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
@@ -64,6 +66,13 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
   }
   const row = await deps.store.getWorkspace(credentials.workspaceId);
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
+  if (
+    deps.checkpointTransfers &&
+    row.launchMode === "restore" &&
+    credentials.protocolVersion < CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION
+  ) {
+    return { error: "Checkpoint restore requires agent protocol version 7." };
+  }
   if (sourceCredentialReference(row) && credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION) {
     return { error: "Source credentials require agent protocol version 6." };
   }
@@ -107,7 +116,7 @@ export function agentConnectValidator(deps: WsDeps): MiddlewareHandler<AppEnv> {
   };
 }
 
-export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): ExecSpec {
+export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, restoreMode: RestoreMode): ExecSpec {
   const spec = row.templateSnapshot.spec;
   const sourceSpec = spec.source;
   const sourceRepository =
@@ -156,8 +165,10 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): 
     restore:
       row.restoredFromCheckpointId && row.originWorkspaceId
         ? {
+            mode: restoreMode,
             checkpoint_id: row.restoredFromCheckpointId,
             origin_workspace_id: row.originWorkspaceId,
+            transfer: null,
           }
         : null,
     persistence: {

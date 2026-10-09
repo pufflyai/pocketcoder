@@ -2,6 +2,8 @@ import { type ExecSpec, type ProviderInput, parseDurationMs, ServerFrameSchema }
 import { AgentConnection } from "./agent/agent-connection";
 import { AgentHealthMonitor } from "./agent/agent-health";
 import { shutdownAgent } from "./agent/agent-shutdown";
+import { createSupervisorHarness } from "./agent/supervisor-harness";
+import { SupervisorTransfers } from "./agent/supervisor-transfers";
 import { AttachmentManager } from "./attachments/attachments";
 import { loadProviderInput } from "./bootstrap/supervisor-bootstrap";
 import {
@@ -11,6 +13,7 @@ import {
   EXIT_SETUP_FAILED,
   EXIT_WRITABLE_MEMORY_FAILED,
 } from "./bootstrap/supervisor-constants";
+import { installRestoredCheckpoint } from "./bootstrap/supervisor-restore";
 import {
   clearSourceCredential,
   preflightNetwork,
@@ -19,17 +22,12 @@ import {
   runSetupWithCredentials,
   startNetworkMonitor,
 } from "./bootstrap/supervisor-setup";
-import { enforcedEnvironment } from "./bootstrap/supervisor-utils";
 import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
+import { quiesceArchive } from "./checkpoints/quiesce-archive";
 import { SupervisorLogs } from "./observability/supervisor-logs";
 import { relayProxyRequest } from "./proxy/proxy-relay";
 import { ProxyStreamCoordinator } from "./proxy/proxy-stream";
 import { TerminalManager } from "./terminals/terminal-manager";
-
-// PID 1 inside every workspace. It registers with pocketcoder-server, then
-// manages setup, the harness, health, logs, relays, and shutdown.
-
-type ChildPhase = "starting" | "setup" | "running" | "exited" | "terminating";
 
 export async function supervise(inputPath: string): Promise<number> {
   const supervisor = new Supervisor(await loadProviderInput(inputPath));
@@ -43,10 +41,9 @@ class Supervisor {
   private readonly attachments: AttachmentManager;
   private readonly proxyStreams: ProxyStreamCoordinator;
   private readonly terminals: TerminalManager;
+  private readonly transfers: SupervisorTransfers;
+  private readonly harness: ReturnType<typeof createSupervisorHarness>;
   private exec: ExecSpec | null = null;
-  private child: ReturnType<typeof Bun.spawn> | null = null;
-  private childPhase: ChildPhase = "starting";
-  private childExit: number | null = null;
   private shuttingDown = false;
   private quiescing = false;
   private readonly done: Promise<number>;
@@ -55,21 +52,51 @@ class Supervisor {
   private execReady!: () => void;
   private readonly execReadyPromise: Promise<void>;
 
-  constructor(private readonly input: ProviderInput) {
+  constructor(input: ProviderInput) {
     this.connection = new AgentConnection(input, {
       services: () => (this.exec ? Object.keys(this.exec.services) : []),
       onMessage: (raw) => void this.handleMessage(raw),
       onRegistrationFailure: () => this.exitWith(EXIT_REGISTRATION_FAILED),
-      onDisconnect: () => void this.proxyStreams.cancelAll(),
-      isStopped: () => this.shuttingDown || this.childExit !== null,
+      onDisconnect: () => {
+        void this.proxyStreams.cancelAll();
+        void this.transfers.cancel().catch((error) => this.logs.log(String(error)));
+      },
+      isStopped: () => this.shuttingDown || (this.harness.exitCode !== null && !this.quiescing),
+    });
+    this.transfers = new SupervisorTransfers(input.server_url, input.template_digest, {
+      connection: () => this.connection.transferConnection(),
+      send: this.sendFrame.bind(this),
+      quiesce: (operationId, deadlineMs, signal) =>
+        quiesceArchive(operationId, deadlineMs, signal, {
+          native: this.exec?.agentapi_native === true,
+          hasHook: !!this.exec?.checkpoint_hook,
+          prepareHook: () => this.quiesce(operationId, deadlineMs),
+          closeSessions: async () => {
+            await this.terminals.closeAll("checkpoint");
+            await this.proxyStreams.cancelAll();
+          },
+          setQuiescing: () => {
+            this.quiescing = true;
+          },
+          child: () => this.harness.child,
+          drainChild: () => this.harness.drained,
+          send: this.sendFrame.bind(this),
+        }),
     });
     this.logs = new SupervisorLogs(this.sendFrame.bind(this));
+    this.harness = createSupervisorHarness(input, {
+      send: this.sendFrame.bind(this),
+      logs: this.logs,
+      close: this.flushAndClose.bind(this),
+      isQuiesced: () => this.quiescing && !this.shuttingDown,
+      exit: this.exitWith.bind(this),
+    });
     this.proxyStreams = new ProxyStreamCoordinator(this.sendFrame.bind(this));
     this.terminals = new TerminalManager(() => this.exec, this.sendFrame.bind(this));
     this.attachments = new AttachmentManager(this.sendFrame.bind(this));
     this.healthMonitor = new AgentHealthMonitor({
       exec: () => this.exec,
-      childPhase: () => this.childPhase,
+      childPhase: () => this.harness.phase,
       send: this.sendFrame.bind(this),
       log: this.logs.log.bind(this.logs),
     });
@@ -97,9 +124,7 @@ class Supervisor {
 
   private async runWorkspace(): Promise<number> {
     this.connection.connect();
-    // Wait until the server delivered the exec spec, then run setup and
-    // start the harness exactly once. Registration failure resolves
-    // `done` first, so a rejected connection cannot hang the supervisor.
+    // Setup waits for registration; a failed registration must still finish the supervisor.
     const raced = await Promise.race([this.execReadyPromise.then(() => null), this.done]);
     if (raced !== null) return raced;
     const exec = this.exec;
@@ -109,12 +134,13 @@ class Supervisor {
       return EXIT_NETWORK_POLICY_FAILED;
     }
 
-    if (exec.launch_mode === "restore") {
-      this.sendFrame("restore_status", {
-        phase: "validating",
-        capability: exec.persistence.conversation_restore,
-      });
-    }
+    this.timers.push(this.healthMonitor.startHeartbeat());
+    const installed = await installRestoredCheckpoint(exec, this.transfers, {
+      send: this.sendFrame.bind(this),
+      close: this.flushAndClose.bind(this),
+      logs: this.logs,
+    });
+    if (!installed) return EXIT_SETUP_FAILED;
     const memoryOk = await probeWritableMemory(exec, this.logs.log.bind(this.logs));
     if (!memoryOk) {
       clearSourceCredential(exec);
@@ -133,7 +159,7 @@ class Supervisor {
       addSecret: this.logs.addSecret.bind(this.logs),
       removeSecret: this.logs.removeSecret.bind(this.logs),
       setSetupPhase: () => {
-        this.childPhase = "setup";
+        this.harness.phase = "setup";
       },
     });
     if (failedSetupStep) {
@@ -146,20 +172,13 @@ class Supervisor {
       return EXIT_SETUP_FAILED;
     }
     await reportResolvedSource(exec, this.sendFrame.bind(this), this.logs.log.bind(this.logs));
-    if (exec.launch_mode === "restore") {
-      this.sendFrame("restore_status", {
-        phase: "ready",
-        capability: exec.persistence.conversation_restore,
-      });
-    }
-    this.startHarness(exec);
+    if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
     this.timers.push(this.healthMonitor.start(exec));
     const networkMonitor = startNetworkMonitor(exec, this.sendFrame.bind(this), (code) => {
-      this.child?.kill("SIGKILL");
+      this.harness.child?.kill("SIGKILL");
       this.exitWith(code);
     });
     if (networkMonitor) this.timers.push(networkMonitor);
-    this.timers.push(this.healthMonitor.startHeartbeat());
     return await this.done;
   }
 
@@ -173,6 +192,7 @@ class Supervisor {
     const frame = parsed.data;
     switch (frame.type) {
       case "registered_ack": {
+        this.connection.setEpoch(frame.payload.epoch);
         if (frame.payload.reconnect_credential) {
           this.connection.setReconnectCredential(frame.payload.reconnect_credential);
         }
@@ -247,62 +267,42 @@ class Supervisor {
       case "attachment_resolve":
         await this.attachments.handleResolve(frame.payload);
         return;
+      case "prepare_checkpoint_archive":
+        if (this.exec)
+          await this.transfers.prepare(frame.payload, this.exec).catch((error) => this.logs.log(String(error)));
+        return;
+      case "checkpoint_upload":
+        await this.transfers.upload(frame.payload).catch((error) => this.logs.log(String(error)));
+        return;
       case "prepare_checkpoint": {
-        await prepareCheckpoint(frame.payload.operation_id, frame.payload.deadline_ms, {
-          exec: () => this.exec,
-          send: this.sendFrame.bind(this),
-          pump: this.logs.pump.bind(this.logs),
-          readAgentApiStatus: this.healthMonitor.readAgentApiStatus.bind(this.healthMonitor),
-          syncAgentApiMessages: this.healthMonitor.syncMessages.bind(this.healthMonitor),
-          child: () => this.child,
-          childExited: () => this.childExit !== null,
-          closeTerminals: () => this.terminals.closeAll("checkpoint"),
-          setQuiescing: (value) => {
-            this.quiescing = value;
-          },
-        });
+        await this.quiesce(frame.payload.operation_id, frame.payload.deadline_ms);
         return;
       }
     }
   }
 
-  private startHarness(exec: ExecSpec): void {
-    this.childPhase = "running";
-    this.sendFrame("process_state", { phase: "running" });
-    // The caller's opaque launch input reaches the harness in memory
-    // only; it is never written to the workspace filesystem by the
-    // supervisor and the server erases its copy at readiness.
-    const child = Bun.spawn(exec.harness.command, {
-      cwd: exec.harness.cwd ?? "/",
-      env: enforcedEnvironment(exec, {
-        ...exec.harness.env,
-        POCKETCODER_LAUNCH_MODE: exec.launch_mode,
-        ...(exec.source ? { POCKETCODER_SOURCE: JSON.stringify(exec.source) } : {}),
-        ...(exec.restore ? { POCKETCODER_RESTORE: JSON.stringify(exec.restore) } : {}),
-        ...(this.input.launch_input ? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(this.input.launch_input) } : {}),
-      }),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    this.child = child;
-    const pumps = [this.logs.pump(child.stdout, "stdout"), this.logs.pump(child.stderr, "stderr")];
-    void child.exited.then(async (code) => {
-      this.childPhase = "exited";
-      this.childExit = code;
-      await Promise.all(pumps);
-      this.sendFrame("process_state", { phase: "exited", exit_code: code });
-      if (this.quiescing && !this.shuttingDown) return;
-      await this.flushAndClose();
-      this.exitWith(code);
+  private quiesce(operationId: string, deadlineMs: number) {
+    return prepareCheckpoint(operationId, deadlineMs, {
+      exec: () => this.exec,
+      send: this.sendFrame.bind(this),
+      pump: this.logs.pump.bind(this.logs),
+      readAgentApiStatus: this.healthMonitor.readAgentApiStatus.bind(this.healthMonitor),
+      syncAgentApiMessages: this.healthMonitor.syncMessages.bind(this.healthMonitor),
+      child: () => this.harness.child,
+      childExited: () => this.harness.exitCode !== null,
+      closeTerminals: () => this.terminals.closeAll("checkpoint"),
+      setQuiescing: (value) => {
+        this.quiescing = value;
+      },
     });
   }
 
   private forwardSignal(signal: "SIGTERM" | "SIGKILL"): void {
-    this.childPhase = "terminating";
-    if (this.child && this.childExit === null) {
-      this.child.kill(signal);
-    } else if (this.childExit !== null) {
-      this.exitWith(this.childExit);
+    this.harness.phase = "terminating";
+    if (this.harness.child && this.harness.exitCode === null) {
+      this.harness.child.kill(signal);
+    } else if (this.harness.exitCode !== null) {
+      this.exitWith(this.harness.exitCode);
     } else {
       this.exitWith(0);
     }
@@ -312,6 +312,7 @@ class Supervisor {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     this.quiescing = true;
+    await this.transfers.cancel();
     const exec = this.exec;
     const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
     await shutdownAgent(graceMs, {
@@ -323,13 +324,14 @@ class Supervisor {
         if (exec?.agentapi_native) await this.healthMonitor.syncMessages({ fresh: true, signal });
       },
       signal: this.forwardSignal.bind(this),
-      exited: () => this.child?.exited ?? Promise.resolve(0),
+      exited: () => this.harness.child?.exited ?? Promise.resolve(0),
       send: this.sendFrame.bind(this),
       log: this.logs.log.bind(this.logs),
     });
   }
 
   private async flushAndClose(): Promise<void> {
+    await this.transfers.cancel();
     await this.proxyStreams.cancelAll();
     await this.terminals.closeAll("workspace_ended");
     // Give queued frames a moment to flush before closing.
