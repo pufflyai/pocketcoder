@@ -7,6 +7,7 @@ import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gat
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
+import { bootstrapExampleOwner, issueExampleAccess } from "./administration";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
 import { piStartupCommand, runDoctorCheck } from "./doctor-check";
 import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
@@ -164,41 +165,8 @@ try {
     POCKETCODER_DIR: resolve(tempDir, "pc_data"),
     POCKETCODER_AUTH_PEPPER: pepper,
   };
-  await command(
-    [
-      "bun",
-      "packages/cli/src/index.ts",
-      "principals",
-      "create",
-      "--name",
-      `example-${runId}`,
-      "--scopes",
-      LOCAL_PI_PRINCIPAL_SCOPES.join(","),
-      "--templates",
-      "*",
-    ],
-    { env: adminEnv },
-  );
-  const issued = await command(
-    [
-      "bun",
-      "packages/cli/src/index.ts",
-      "keys",
-      "issue",
-      "--principal",
-      `example-${runId}`,
-      // Bounded to the template's maxAge: an ephemeral run must not
-      // mint credentials that outlive it (docs/security.md).
-      "--expires",
-      new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-    ],
-    { env: adminEnv, quiet: true },
-  );
-  const key = issued.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line.startsWith("pkt_"));
-  if (!key) throw new Error("pcd did not return a machine key");
+  const keyExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  const ownerKey = await bootstrapExampleOwner(adminEnv.POCKETCODER_DIR, pepper, keyExpiry);
 
   const serverPort = freePort();
   const serverProcessOutput = serverOutput({
@@ -233,6 +201,13 @@ try {
     30_000,
     "pocketcoder-server",
   );
+
+  const key = await issueExampleAccess(baseUrl, ownerKey, {
+    name: `example-${runId}`,
+    scopes: [...LOCAL_PI_PRINCIPAL_SCOPES],
+    templates: ["*"],
+    expiresAt: keyExpiry,
+  });
 
   let defaultPrompt = `Reply with exactly: ${OSS_FIXTURE_CONTENT}`;
   if (harness === "echo") defaultPrompt = "hello from the local E2E";

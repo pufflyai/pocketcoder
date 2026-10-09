@@ -16,9 +16,11 @@ endpoint) requires a machine key:
 Authorization: Bearer pkt_<key-id>_<secret>
 ```
 
-Keys belong to principals and can be revoked instantly. By default they inherit
-their principal's current scopes; an optional per-key scope set can narrow that
-authorization.
+Keys belong to principals and can be revoked instantly. Public issuance requires
+explicit scopes and expiry. Effective scopes and template grants intersect the
+principal's live grants on every request. A restricted key on an admin principal
+does not inherit admin. Stored legacy keys with empty scopes inherit live scopes;
+new public keys always have a nonempty scope set.
 Failures return the stable error envelope used everywhere:
 
 ```json
@@ -26,6 +28,42 @@ Failures return the stable error envelope used everywhere:
 ```
 
 Secret values, SQL/provider errors, and stack traces never appear in errors.
+
+## Principals and keys
+
+```text
+GET   /v1/principals                  principals:admin → { items: [...] }
+POST  /v1/principals                  principals:admin → principal (201)
+GET   /v1/principals/{id}             principals:admin → principal
+PATCH /v1/principals/{id}             principals:admin → principal
+GET   /v1/principals/{id}/keys        keys:read → { items: [...], next_cursor }
+POST  /v1/principals/{id}/keys        keys:write → { key, token } (201 or replay 200)
+DELETE /v1/principals/{id}/keys/{keyId} keys:write → { revoked: true }
+DELETE /v1/principals/{id}/keys       keys:write → { revoked: true }
+```
+
+Create accepts `{ name, scopes, templates }`. Patch accepts optional `scopes`,
+`templates` and `disabled`; supply at least one. ID and name cannot change.
+Names are unique (`principal.name_conflict`, 409). The caller cannot edit itself.
+A constrained caller can only create, see or change principals within its current
+scope and template grants. Stronger targets are hidden or rejected. Disable and
+issuance serialize: disabling revokes all target keys before returning, and
+re-enable does not restore their validity.
+
+Key issuance accepts `{ request_id, scopes, expires_at, templates?,
+managed_principal_ids? }`. Scope/template grants must fit both current caller and
+target. Expiry must be in the future and cannot exceed the caller key's expiry.
+Explicit owner admin may issue bounded admin or recovery keys. A
+`principals:admin`-only key cannot issue keys. Recovery issuance requires exact
+existing target UUIDs and only `keys:read`, `keys:write`, `workspaces:recover`.
+Existing delegated keys keep their exact target grant for execution-key recovery;
+they cannot mint administrative authority or target an administrative principal.
+
+Issuance identity includes scopes, templates, expiry and target IDs. Reusing an ID
+with changed input returns `idempotency.conflict` (409). Replay returns metadata
+and `token: null`. To recover a lost response, list with `request_id`, revoke,
+then issue a fresh request ID. Plaintext secrets never appear in inventory.
+The SDK exposes `client.principals.create/list/get/update` and `client.keys`.
 
 ## Templates
 

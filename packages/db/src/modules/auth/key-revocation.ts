@@ -1,0 +1,52 @@
+import { ApiError } from "@pstdio/pocketcoder-contracts";
+import { assertAuthorityScope, principalWithinAuthority } from "@pstdio/pocketcoder-runtime-core";
+import { and, eq, isNull } from "drizzle-orm";
+import type { DatabaseContext, Transaction } from "../../database/context";
+import { lockKeyAuthority } from "./authority";
+
+export function createKeyRevocation({ db, tables: { principals, machineKeys } }: DatabaseContext) {
+  async function lockTarget(tx: Transaction, principalId: string, actorKeyId?: string) {
+    if (!actorKeyId) {
+      await tx.select({ id: principals.id }).from(principals).where(eq(principals.id, principalId)).for("update");
+      return;
+    }
+    const { authority, key, target } = await lockKeyAuthority(tx, { principals, machineKeys }, actorKeyId, principalId);
+    assertAuthorityScope(authority, "keys:write");
+    if (!target) throw new ApiError("principal.not_found", "Unknown principal.");
+    // Exact recovery delegation remains valid for disabled targets.
+    if (!authority.scopes.includes("admin") && key.managedPrincipalIds.length) {
+      if (!key.managedPrincipalIds.includes(target.id)) throw new ApiError("principal.not_found", "Unknown principal.");
+    } else if (!principalWithinAuthority(authority, target)) {
+      throw new ApiError("principal.not_found", "Unknown principal.");
+    }
+  }
+
+  return {
+    async revokeMachineKey(keyId: string, at: Date, actorKeyId?: string) {
+      return db.transaction(async (tx) => {
+        const [identity] = await tx
+          .select({ principalId: machineKeys.principalId })
+          .from(machineKeys)
+          .where(eq(machineKeys.id, keyId));
+        if (!identity) return false;
+        await lockTarget(tx, identity.principalId, actorKeyId);
+        const rows = await tx
+          .update(machineKeys)
+          .set({ revokedAt: at })
+          .where(and(eq(machineKeys.id, keyId), isNull(machineKeys.revokedAt)))
+          .returning({ id: machineKeys.id });
+        return rows.length > 0;
+      });
+    },
+    async revokePrincipalKeys(principalId: string, at: Date, actorKeyId?: string) {
+      await db.transaction(async (tx) => {
+        await lockTarget(tx, principalId, actorKeyId);
+        await tx.update(principals).set({ disabledAt: at }).where(eq(principals.id, principalId));
+        await tx
+          .update(machineKeys)
+          .set({ revokedAt: at })
+          .where(and(eq(machineKeys.principalId, principalId), isNull(machineKeys.revokedAt)));
+      });
+    },
+  };
+}

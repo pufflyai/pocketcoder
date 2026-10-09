@@ -1,0 +1,1 @@
+ALTER TABLE "machine_keys" ADD COLUMN "template_names" text[];

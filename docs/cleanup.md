@@ -99,23 +99,29 @@ by a successful live purge.
 | `POST /v1/principals/{principalId}/workspaces/{id}/purge` | `workspaces:recover` |
 | `GET /v1/principals/{principalId}/operations/{id}` | `workspaces:recover` |
 
-Every endpoint also requires the exact target principal ID in the calling key's
-`managed_principal_ids`. There is no implicit cross-principal admin bypass.
-Bootstrap that grant locally using an operator principal with `admin` authority:
+A delegated recovery key must name the exact target in `managed_principal_ids`.
+Purge and recovery-operation routes always require that exact grant. For key
+inventory and issuance, explicit owner admin also permits bounded administration;
+an ordinary key issuer can only manage targets within its current grants.
+
+With a running server and a bounded owner key in `POCKETCODER_KEY`, create a
+dedicated recovery principal, then use its returned ID:
 
 ```sh
-pcd principals create --name cleanup-operator --scopes admin
-pcd keys issue --principal cleanup-operator \
+pcd principals create --name cleanup-operator \
   --scopes keys:read,keys:write,workspaces:recover \
-  --manage-principals "$TENANT_PRINCIPAL_ID" \
+  --templates "$TENANT_TEMPLATE" --json
+pcd keys issue --principal-id "$RECOVERY_PRINCIPAL_ID" \
+  --scopes keys:read,keys:write,workspaces:recover \
+  --templates "$TENANT_TEMPLATE" --manage-principals "$TENANT_PRINCIPAL_ID" \
   --request-id "$OPERATOR_ISSUANCE_ID" --expires "$SHORT_EXPIRY" --json
 ```
 
 Keep this expiring key in the operator backend, outside every workspace. It has
-no workload creation or relay scope. Public issuance cannot create an admin key
-or another delegated operator. Inventory and recovery keys do not need a database
-URL or the authentication pepper. Local bootstrap commands use those controller
-secrets only in the operator environment.
+no workload creation or relay scope. Delegated issuance cannot create admin or
+recovery authority. Explicit owner issuance can create those grants with a bounded
+expiry. Inventory and recovery commands only need the server URL and machine key;
+they do not open the data folder or read the authentication pepper.
 
 Public issuance accepts `request_id`, nonempty `scopes`, and a future
 `expires_at`. Request identity, normalized input digest, and key metadata commit

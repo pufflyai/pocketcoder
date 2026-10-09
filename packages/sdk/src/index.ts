@@ -12,6 +12,9 @@ export type {
   OperationState,
   OutputResource,
   PreserveRequest,
+  PrincipalCreateRequest,
+  PrincipalResource,
+  PrincipalUpdateRequest,
   RestoreRequest,
   ServerTerminalMessage,
   StorageState,
@@ -34,6 +37,7 @@ export type { ConversationMessage, ConversationPage } from "./resources/conversa
 export { ConversationsApi } from "./resources/conversations/conversations";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
+export { PrincipalsApi } from "./resources/principals/principals";
 export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,
