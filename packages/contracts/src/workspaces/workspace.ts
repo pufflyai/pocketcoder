@@ -43,7 +43,7 @@ const TRANSITIONS: Record<WorkspaceState, readonly WorkspaceState[]> = {
   provisioning: ["connected", "queued", "terminating", "failed", "canceled", "expired"],
   connected: ["ready", "preserving", "terminating", "failed", "canceled", "expired"],
   ready: ["preserving", "terminating", "succeeded", "failed", "canceled", "expired"],
-  preserving: ["preserved", "failed"],
+  preserving: ["terminating", "preserved", "failed"],
   terminating: ["succeeded", "failed", "canceled", "expired"],
   succeeded: [],
   failed: [],

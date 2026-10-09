@@ -47,6 +47,13 @@ describe("workspace state machine", () => {
     expect(canTransition("preserved", "queued")).toBe(false);
   });
 
+  test("a recoverable preserving source can enter explicit cancellation", () => {
+    expect(isTerminal("preserving")).toBe(false);
+    expect(canTransition("preserving", "terminating")).toBe(true);
+    expect(canTransition("terminating", "canceled")).toBe(true);
+    expect(canTransition("preserving", "ready")).toBe(false);
+  });
+
   test("skipping connected is not allowed", () => {
     expect(canTransition("provisioning", "ready")).toBe(false);
     expect(canTransition("queued", "ready")).toBe(false);

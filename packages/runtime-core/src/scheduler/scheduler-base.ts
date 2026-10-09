@@ -1,6 +1,12 @@
 import { redact } from "@pstdio/pocketcoder-auth";
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
-import type { StorageRef, WorkspaceDriver, WorkspaceSecretResolver, WorkspaceStorageDriver } from "../driver";
+import type {
+  StorageRef,
+  WorkspaceDriver,
+  WorkspaceSecretResolver,
+  WorkspaceStorageDriver,
+  WorkspaceTransferRuntime,
+} from "../driver";
 import type { MetricSink } from "../observability/metrics";
 import type { LogStore, PersistenceStore, WorkspacePatch, WorkspaceRow, WorkspaceStore } from "../types";
 import type { WarmPoolManager } from "../warm-pool/warm-pool";
@@ -71,6 +77,7 @@ export interface SchedulerDeps {
   store: WorkspaceStore & PersistenceStore & LogStore;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
+  transferRuntime?: WorkspaceTransferRuntime;
   secretResolver?: WorkspaceSecretResolver;
   connections: ConnectionHub;
   secrets: SecretFactory;
@@ -91,6 +98,13 @@ export class SchedulerContext {
   lastAdmittedPrincipal: string | null = null;
 
   activeTick: Promise<void> | null = null;
+  readonly finalizers = new Set<Promise<void>>();
+
+  trackFinalizer(task: Promise<void>) {
+    this.finalizers.add(task);
+    void task.finally(() => this.finalizers.delete(task)).catch(() => {});
+    return task;
+  }
 
   constructor(deps: SchedulerDeps) {
     this.deps = deps;
@@ -135,6 +149,10 @@ export class SchedulerContext {
   }
 
   async cleanupWorkspaceStorage(row: WorkspaceRow): Promise<void> {
+    if (this.deps.transferRuntime) {
+      await this.deps.transferRuntime.cleanupWorkspace(row);
+      return;
+    }
     const storageDriver = this.deps.storageDriver;
     if (!storageDriver) return;
     const storage = await this.deps.store.getWorkspaceStorage(row.id);

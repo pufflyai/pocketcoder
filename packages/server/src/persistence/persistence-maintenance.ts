@@ -148,7 +148,11 @@ export class PersistenceMaintenanceService {
     if (deleting) await this.context.emitCheckpointEvent("checkpoint.deleting", deleting);
     try {
       if (checkpoint.providerRef) {
-        await this.context.storageDriver().deleteCheckpoint(checkpoint.providerRef as StorageRef);
+        if (checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers) {
+          await this.context.deps.checkpointTransfers.delete(checkpoint);
+        } else {
+          await this.context.storageDriver().deleteCheckpoint(checkpoint.providerRef as StorageRef);
+        }
       }
       const done = this.context.now();
       await this.context.deps.store.updateCheckpoint(checkpoint.id, { state: "deleted", deletedAt: done }, done);

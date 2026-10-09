@@ -94,6 +94,15 @@ export class SchedulerSweep {
     await this.lifecycle.finalize(row, terminalState, row.reasonCode, now);
   }
 
+  async sweepPreserving(row: WorkspaceRow, now: Date): Promise<void> {
+    const store = this.context.deps.store;
+    const storage = await store.getWorkspaceStorage(row.id);
+    if (storage?.state !== "retained" || !storage.retainedUntil || now < storage.retainedUntil) return;
+    const operations = await store.listIncompleteOperations();
+    if (operations.some((operation) => operation.kind === "preserve" && operation.workspaceId === row.id)) return;
+    await this.lifecycle.beginTermination(row, "expired", "checkpoint_failed", now);
+  }
+
   async sweepRow(row: WorkspaceRow, now: Date): Promise<void> {
     switch (row.state) {
       case "queued":
@@ -131,6 +140,7 @@ export class SchedulerSweep {
         await this.sweepTerminating(row, now);
         return;
       case "preserving":
+        await this.sweepPreserving(row, now);
         return;
     }
   }

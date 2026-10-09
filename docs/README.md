@@ -17,6 +17,7 @@ API drives the whole lifecycle.
 | [Deployment](deployment.md) | Container images, docker compose, Kubernetes, data folder, configuration reference |
 | [Security model](security.md) | Trust zones, credential lifetime rules, what the deployment's model gateway must enforce |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
+| [Docker checkpoint round trip](docker-checkpoint-round-trip.md) | Local CLI/API archive transfer, verified restore, readiness and cleanup checks |
 | [Migration guide](migration.md) | Frozen legacy rename map and a one-pass consumer migration checklist |
 | [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |
 

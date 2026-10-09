@@ -27,6 +27,16 @@ async function registerConnection(
     closeProtocol(ws, "template digest mismatch");
     return null;
   }
+  if (
+    auth.mode === "reconnect" &&
+    deps.checkpointTransfers &&
+    row.launchMode === "restore" &&
+    row.state === "connected"
+  ) {
+    await deps.scheduler.beginTermination(row, "failed", "restore_failed", new Date());
+    closeProtocol(ws, "restore interrupted before readiness");
+    return null;
+  }
   const epoch = row.connectionEpoch + 1;
   let reconnectCredential: string | undefined;
   let sourceCredential: string | null = null;
@@ -68,19 +78,38 @@ async function registerConnection(
   const connection = deps.hub.attach(row.id, frame.connection_id, epoch, ws, auth.protocolVersion);
   connection.lastSeqIn = frame.seq;
   connection.registered = true;
-  deps.hub.send(connection, "registered_ack", {
-    epoch,
-    ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
-    limits: {
-      max_frame_bytes: MAX_FRAME_BYTES,
-      max_inflight_relay: MAX_INFLIGHT_RELAY,
-      log_chunk_bytes: LOG_CHUNK_BYTES,
-      heartbeat_seconds: HEARTBEAT_SECONDS,
-    },
-    exec: execSpecOf(row, sourceCredential),
-  });
-  deps.hub.resumeTerminals(connection);
-  return connection;
+  try {
+    const restoreMode = deps.checkpointTransfers ? "controller_archive" : "provider_installed";
+    const exec = execSpecOf(row, sourceCredential, restoreMode);
+    if (deps.checkpointTransfers && row.launchMode === "restore" && row.state !== "ready") {
+      const current = await deps.store.getWorkspace(row.id);
+      const transfer = current && (await deps.checkpointTransfers?.restoreGrant(connection, current));
+      if (!transfer || !exec.restore || deps.hub.get(row.id) !== connection) {
+        deps.hub.detach(connection);
+        await deps.checkpointTransfers?.disconnected?.(connection);
+        closeProtocol(ws, "restore transfer unavailable");
+        return null;
+      }
+      exec.restore.transfer = transfer;
+    }
+    deps.hub.send(connection, "registered_ack", {
+      epoch,
+      ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
+      limits: {
+        max_frame_bytes: MAX_FRAME_BYTES,
+        max_inflight_relay: MAX_INFLIGHT_RELAY,
+        log_chunk_bytes: LOG_CHUNK_BYTES,
+        heartbeat_seconds: HEARTBEAT_SECONDS,
+      },
+      exec,
+    });
+    deps.hub.resumeTerminals(connection);
+    return connection;
+  } catch (error) {
+    deps.hub.detach(connection);
+    await deps.checkpointTransfers?.disconnected?.(connection);
+    throw error;
+  }
 }
 
 function parseFrame(
@@ -145,9 +174,15 @@ async function processMessage(
 async function detachConnection(deps: WsDeps, auth: WsAuth, connection: LiveConnection | null): Promise<void> {
   if (!connection) return;
   const wasLive = deps.hub.detach(connection);
+  await deps.checkpointTransfers?.disconnected?.(connection);
   connection.registered = false;
   if (!wasLive) return;
   const row = await deps.store.getWorkspace(auth.workspaceId);
+  if (row && deps.checkpointTransfers && row.launchMode === "restore" && row.state === "connected") {
+    // Installation cannot be replayed safely over a mount that setup may have changed.
+    await deps.scheduler.beginTermination(row, "failed", "restore_failed", new Date());
+    return;
+  }
   if (row && !isTerminal(row.state) && !["terminating", "preserving"].includes(row.state)) {
     await deps.store.updateWorkspace(row.id, { disconnectedAt: new Date() }, new Date());
   }
@@ -158,6 +193,7 @@ export function agentWsEvents(deps: WsDeps) {
   return (c: { get: (key: string) => unknown }): WSEvents => {
     const auth = c.get("wsAuth") as WsAuth;
     let conn: LiveConnection | null = null;
+    let closed = false;
     let pipeline: Promise<void> = Promise.resolve();
 
     const closeProtocol = (ws: WSContext, message: string) => {
@@ -167,6 +203,7 @@ export function agentWsEvents(deps: WsDeps) {
 
     return {
       onMessage: (event, ws) => {
+        if (closed) return;
         pipeline = pipeline.then(async () => {
           try {
             conn = await processMessage(
@@ -177,6 +214,7 @@ export function agentWsEvents(deps: WsDeps) {
               ws,
               closeProtocol,
             );
+            if (closed) await detachConnection(deps, auth, conn);
           } catch (error) {
             deps.log?.(`ws ${auth.workspaceId}: ${String(error)}`);
             closeProtocol(ws, "internal error");
@@ -184,6 +222,7 @@ export function agentWsEvents(deps: WsDeps) {
         });
       },
       onClose: () => {
+        closed = true;
         void detachConnection(deps, auth, conn);
       },
     };

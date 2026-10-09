@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { createBunWebSocket } from "hono/bun";
 import { type AppEnv, errorHandler, requestId, requestLogging } from "../http/middleware";
 import type { StructuredLogger } from "../observability/observability";
+import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import { type PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
 import { agentConnectValidator, agentWsEvents } from "./ws";
 import type { WsDeps } from "./ws-types";
@@ -13,6 +14,7 @@ import type { WsDeps } from "./ws-types";
 interface AgentAppDeps {
   connection: WsDeps;
   poolHub: PoolConnectionHub;
+  checkpointTransfers?: Pick<CheckpointTransferService, "handleUpload" | "handleDownload">;
   warmPool?: WarmPoolManager;
   eventSigningKey: string;
   logger: StructuredLogger;
@@ -22,6 +24,7 @@ interface AgentAppDeps {
 export function createAgentApp({
   connection,
   poolHub,
+  checkpointTransfers,
   warmPool,
   eventSigningKey,
   logger,
@@ -45,6 +48,14 @@ export function createAgentApp({
           log,
         }),
       ),
+    );
+  }
+  if (checkpointTransfers) {
+    app.put("/v1/agent/checkpoints/:operationId/archive", (c) =>
+      checkpointTransfers.handleUpload(c.req.raw, c.req.param("operationId")),
+    );
+    app.get("/v1/agent/checkpoints/:operationId/archive", (c) =>
+      checkpointTransfers.handleDownload(c.req.raw, c.req.param("operationId")),
     );
   }
   app.post("/v1/internal/egress/events", async (c) => {

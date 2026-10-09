@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "36e8f2ca524628ba16516f93390cbd39dd825d9dc4217733cf2a7155aa03f6b4",
+  "checksum": "3677b2e8216f5b5888882be464a9ab46129b7e976032c109d209be75e07af20d",
   "migrations": [
     {
       "name": "20260730103433_initial",
@@ -39,6 +39,10 @@
     {
       "name": "20261005163843_tan_galactus",
       "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155"
+    },
+    {
+      "name": "20261007210918_abnormal_outlaw_kid",
+      "hash": "88f1798d438de732a450ba343a6efaf482816b3bd69991756f1021c050b751cd"
     }
   ]
 }

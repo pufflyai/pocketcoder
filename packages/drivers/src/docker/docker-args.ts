@@ -4,6 +4,14 @@ type WorkspaceSpec = WorkspaceLaunch["workspace"]["templateSnapshot"]["spec"];
 
 export function appendWorkspaceMounts(args: string[], launch: WorkspaceLaunch): void {
   for (const mount of launch.mounts) {
+    if (mount.source.kind === "tmpfs") {
+      const { maxBytes, uid, gid } = mount.source;
+      args.push(
+        "--tmpfs",
+        `${mount.target}:${mount.readOnly ? "ro" : "rw"},noexec,nosuid,nodev,size=${maxBytes},uid=${uid},gid=${gid},mode=0700`,
+      );
+      continue;
+    }
     if (mount.source.kind !== "host-path") {
       throw new Error(
         `docker driver cannot consume ${mount.source.kind} storage; configure a host-path storage backend`,
