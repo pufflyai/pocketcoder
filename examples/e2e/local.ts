@@ -169,6 +169,7 @@ try {
   const ownerKey = await bootstrapExampleOwner(adminEnv.POCKETCODER_DIR, pepper, keyExpiry);
 
   const serverPort = freePort();
+  const agentPort = freePort();
   const serverProcessOutput = serverOutput({
     interactive: localPiUi,
     debug: process.env.POCKETCODER_EXAMPLE_DEBUG === "1",
@@ -182,9 +183,10 @@ try {
       // so the E2E server must listen beyond the host loopback interface.
       POCKETCODER_HOST: "0.0.0.0",
       POCKETCODER_PORT: String(serverPort),
+      POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
       POCKETCODER_TEMPLATE_DIR: templateDir,
       POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
-      POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${serverPort}`,
+      POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
     },
     ...serverProcessOutput,
   });

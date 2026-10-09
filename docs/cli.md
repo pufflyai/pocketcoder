@@ -10,8 +10,8 @@ the server container.
 Principal and key commands use HTTP against the running server. Set
 `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and `POCKETCODER_KEY`.
 Workspaces, checkpoints, storage, pools, template catalog and doctor commands
-use the same settings. `templates list-database` still opens `POCKETCODER_DIR`
-(default `./pc_data`); run it while the server is stopped.
+use the same settings. `templates import <directory>` publishes immutable versions
+over HTTP. `superuser create` uses the private local socket in `POCKETCODER_DIR`.
 
 `pcd --version` prints the installed `@pstdio/pocketcoder-cli` version, and
 `pcd --help` lists the command tree. Neither needs credentials.
@@ -37,6 +37,21 @@ Keep real keys out of version control. The repository's `.env.example` can be
 copied to `.env`, which is already ignored by Git.
 
 ## Server process
+
+```sh
+pcd serve --dir ./pc_data --http 127.0.0.1:7080
+pcd superuser create --dir ./pc_data --json
+pcd superuser create --dir ./pc_data --automation --expires <future-ISO8601> --json
+```
+
+`serve` runs in the foreground. An empty folder gets private controller keys.
+Owner keys default to 24 hours and plaintext is shown once. Save a
+`--request-id` to retry a lost response without issuing another key.
+`--replace` revokes earlier owner keys. Only the fixed `owner` principal is
+supported here. The agent listener defaults to `0.0.0.0:7081`; configure it
+with `POCKETCODER_AGENT_HTTP` and point `POCKETCODER_WORKSPACE_SERVER_URL`
+at that listener. Operator and agent routes are separate.
+
 
 ```sh
 pcd server start [--foreground] [--timeout-seconds 30]
@@ -114,7 +129,7 @@ pcd templates validate examples/templates/*.json # validate manifests offline, n
 pcd templates render <manifest> --image <repo@sha256:digest> --out <directory> \
   [--set '<json-pointer>=<json-value>']...
 pcd templates list [--json]                      # versions the key may launch, through the REST API
-pcd templates list-database                      # every loaded version, from embedded PGlite
+pcd templates import <directory>                 # publish reviewed versions over HTTP
 ```
 
 `templates render` reads JSON or YAML, replaces a placeholder image with an

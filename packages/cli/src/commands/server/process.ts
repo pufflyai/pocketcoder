@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
+import { listenerOrigin, loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
 import { runPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/lifecycle";
 
 interface ServerState {
@@ -111,11 +111,6 @@ async function healthIdentity(url: string): Promise<string | null> {
   }
 }
 
-function configUrl(config: ServerConfig): string {
-  const host = config.listenHost === "0.0.0.0" || config.listenHost === "::" ? "127.0.0.1" : config.listenHost;
-  return `http://${host}:${config.listenPort}`;
-}
-
 function configFingerprint(config: ServerConfig): string {
   const safeConfig = {
     listenHost: config.listenHost,
@@ -186,7 +181,7 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
     version: 1,
     pid: 0,
     instanceToken,
-    url: configUrl(config),
+    url: listenerOrigin(config.listenHost, config.listenPort),
     startedAt: new Date().toISOString(),
     configFingerprint: configFingerprint(config),
     logPath: logPath(),
