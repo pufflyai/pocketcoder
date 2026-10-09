@@ -26,7 +26,7 @@ bun test packages/server/src/testing/e2e.test.ts
 ```
 
 This starts the real supervisor and harness process against the real REST and
-WebSocket server with an in-memory store. It verifies workspace creation,
+WebSocket server with in-memory PGlite. It verifies workspace creation,
 setup, readiness, relay conversation, harness stdout control records,
 supervisor forwarding, transcript persistence, ordered history retrieval,
 post-cancel retrieval, and cancellation.

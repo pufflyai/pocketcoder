@@ -43,7 +43,7 @@ export async function createDatabaseContext(dataDir?: string) {
       }
       client = await PGlite.create({ ...options, fs: new DurableFilesystem(databaseDir) });
     } else {
-      client = await PGlite.create({ ...options, loadDataDir: assets.loadDataDir });
+      client = await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
     }
     await migrateDatabase(client);
     let closed = false;

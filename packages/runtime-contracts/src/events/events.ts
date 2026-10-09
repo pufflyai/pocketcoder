@@ -5,7 +5,28 @@ import type { WorkspaceRow } from "../types";
 // Builds the signed lifecycle event payload for a state transition. Inserted
 // into the outbox in the same transaction as the transition by every store.
 
-export function buildEventEnvelope(row: WorkspaceRow, occurredAt: Date): EventEnvelope {
+type EventWorkspace = Pick<
+  WorkspaceRow,
+  | "id"
+  | "externalId"
+  | "state"
+  | "reasonCode"
+  | "agentState"
+  | "provisioningMode"
+  | "changeSeq"
+  | "failureLogTail"
+  | "failureLogTailTruncated"
+  | "failureLastLogSeq"
+  | "templateName"
+  | "templateVersion"
+  | "templateDigest"
+  | "originWorkspaceId"
+  | "restoredFromCheckpointId"
+  | "latestCheckpointId"
+  | "outputs"
+>;
+
+export function buildEventEnvelope(row: EventWorkspace, occurredAt: Date): EventEnvelope {
   return {
     id: randomUUID(),
     type: `workspace.${row.state}`,

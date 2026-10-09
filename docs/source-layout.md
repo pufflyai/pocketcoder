@@ -8,7 +8,6 @@ and compose the feature modules.
 | Package | Where to look |
 | --- | --- |
 | db | `modules/` for repositories, `database/` for client and lifecycle, `schema/` and `migrations/` for database definitions |
-| memory-store | `modules/` for store behavior and `state/` for shared maps and counters |
 | runtime-core | `scheduler/`, `reconciliation/`, `warm-pool/`, `registry/`, `outbox/`, and `observability/` |
 | server | Feature routes and services in `workspaces/`, `persistence/`, `templates/`, `administration/`, `conversations/`, `attachments/`, and `terminals/`; transport code in `http/`, `relay/`, and `control-channel/` |
 | drivers | `docker/`, `kubernetes/`, `filesystem/`, `secrets/`, and shared `egress/` |

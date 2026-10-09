@@ -1,15 +1,17 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { DEFAULT_LIMITS, Scheduler } from "../index";
+
+const createStore = createTestStoreFactory();
 
 // Policy callbacks are the external authorization boundary, not scheduler internals.
 test.each(["create", "restore"] as const)(
   "external denial blocks %s before provisioning and retries safely",
   async (launchMode) => {
-    const store = new MemoryStore();
+    const store = await createStore();
     const driver = new FakeDriver();
     const principal = await store.createPrincipal("backend", ["admin"], ["*"]);
     const fixture = fixtureTemplateEcho();

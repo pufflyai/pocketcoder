@@ -29,10 +29,9 @@ neither callers nor templates can select them.
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |
 | runtime-contracts | `packages/runtime-contracts` | Driver-neutral runtime ports and durable row contracts |
 | db | `packages/db` | PGlite store, Drizzle schema, embedded migrations and a kernel folder lock |
-| memory-store | `packages/memory-store` | In-memory store adapter for `POCKETCODER_STORE=memory` |
 | auth | `packages/auth` | Machine-key digests, registration secrets, event signing |
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
-| testkit | `packages/testkit` | In-memory store, fake driver, fake AgentAPI, template fixtures |
+| testkit | `packages/testkit` | Store contracts, fake driver, fake AgentAPI, template fixtures |
 
 ## Durable database schema
 

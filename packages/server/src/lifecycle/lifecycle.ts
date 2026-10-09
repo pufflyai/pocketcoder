@@ -8,7 +8,6 @@ import {
   KubernetesPvcStorageDriver,
   KubernetesSecretResolver,
 } from "@pstdio/pocketcoder-drivers";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import {
   loadTemplateDir,
   OutboxDispatcher,
@@ -37,9 +36,9 @@ export interface RunningPocketCoderServer {
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
 
 async function initializeStore(config: ServerConfig, log: ServerLog): Promise<Store> {
-  const store: Store = config.storeKind === "pglite" ? await PGliteStore.create(config.dataDir) : new MemoryStore();
+  const store = await PGliteStore.create(config.dataDir);
   await store.init();
-  log(`store: ${config.storeKind}${config.storeKind === "pglite" ? ` (${config.dataDir})` : ""}`);
+  log(`store: pglite (${config.dataDir})`);
   return store;
 }
 

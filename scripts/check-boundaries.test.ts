@@ -29,7 +29,7 @@ test("reports deep source imports and production testkit dependencies", () => {
       },
       {
         path: "packages/server/src/lifecycle/lifecycle.ts",
-        text: 'import { MemoryStore } from "@pstdio/pocketcoder-testkit";',
+        text: 'import { FakeDriver } from "@pstdio/pocketcoder-testkit";',
       },
     ]),
   ).toEqual([

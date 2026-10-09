@@ -63,13 +63,12 @@ export class WarmPoolManager {
     input: ProviderInput,
     registrationDigest: Uint8Array,
     registrationExpiresAt: Date,
-  ): Promise<boolean> {
+  ): Promise<"leased" | "miss" | "deferred"> {
     const pool = this.poolFor(row);
-    if (!pool) return false;
+    if (!pool) return "miss";
     const started = this.now();
     const claimed = await this.deps.store.claimWarmPoolRuntime({
-      workspaceId: row.id,
-      templateDigest: row.templateDigest,
+      workspace: row,
       driverKind: this.deps.driver.kind,
       eligibilityFingerprint: pool.eligibilityFingerprint,
       registrationDigest,
@@ -78,8 +77,9 @@ export class WarmPoolManager {
     });
     if (!claimed) {
       this.metrics.misses += 1;
-      return false;
+      return "miss";
     }
+    if ("kind" in claimed) return "deferred";
     await this.deps.store.updateWarmPoolRuntime(claimed.runtime.id, { state: "leased" }, this.now());
     if (!this.deps.connections.assign(claimed.runtime.id, input)) {
       this.metrics.leaseFailures += 1;
@@ -96,11 +96,11 @@ export class WarmPoolManager {
           registrationExpiresAt: null,
         },
       });
-      return false;
+      return "miss";
     }
     this.metrics.warmHits += 1;
     this.metrics.leaseLatencyMsTotal += this.now().getTime() - started.getTime();
-    return true;
+    return "leased";
   }
 
   async markReady(runtimeId: string): Promise<boolean> {

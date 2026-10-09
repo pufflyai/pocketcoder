@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
-import type { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import type { Store } from "@pstdio/pocketcoder-runtime-core";
 
 // A free port for the harness, reserved briefly so parallel or aborted runs
 // cannot collide on a hardcoded one.
@@ -176,7 +176,7 @@ await Bun.write(${JSON.stringify(setupMarker)}, JSON.stringify({
 }
 
 export async function verifySourceSecretBoundary(
-  store: MemoryStore,
+  store: Store,
   workspaceId: string,
   setupMarker: string,
   harnessEnvironment: string,

@@ -92,6 +92,20 @@ export function toOperationResource(row: WorkspaceOperationRow) {
 export class PersistenceContext {
   constructor(readonly deps: PersistenceServiceDeps) {}
 
+  private readonly tasks = new Set<Promise<void>>();
+
+  track(task: Promise<void>) {
+    this.tasks.add(task);
+    void task.then(
+      () => this.tasks.delete(task),
+      () => this.tasks.delete(task),
+    );
+  }
+
+  async drain() {
+    while (this.tasks.size) await Promise.allSettled([...this.tasks]);
+  }
+
   now(): Date {
     return this.deps.now ? this.deps.now() : new Date();
   }

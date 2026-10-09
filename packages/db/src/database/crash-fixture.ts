@@ -1,5 +1,6 @@
 import { getMigrationStatus } from "../migrations/migrator";
 import { PGliteStore } from "../store";
+import { inspectAdmission } from "./admission-fixture";
 import { createDatabaseContext } from "./context";
 import { lockDataFolder } from "./data-folder";
 
@@ -18,13 +19,14 @@ if (command === "lock") {
     const principal = await store.createPrincipal(`crash-${index}`, ["admin"], ["*"]);
     console.log(JSON.stringify({ id: principal.id, name: principal.name }));
   }
-} else if (command === "inspect") {
+} else if (command === "inspect" || command === "verify") {
   const context = await createDatabaseContext(dir);
   try {
     console.log(
       JSON.stringify({
         principals: await context.db.select().from(context.tables.principals),
         migrations: await getMigrationStatus(context.client),
+        admission: command === "verify" ? await inspectAdmission(new PGliteStore(context)) : undefined,
         peakKiB: process.resourceUsage().maxRSS,
       }),
     );
