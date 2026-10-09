@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { DEFAULT_LIMITS, reconcileProviders, Scheduler, type WorkspaceDriver } from "../index";
+
+const createStore = createTestStoreFactory();
 
 for (const mode of ["finalize", "warm", "retain", "process-exit", "heartbeat"] as const) {
   for (const failure of ["stop", "remove", "secret-cleanup"] as const) {
     test(`${mode}: failed provider ${failure} holds capacity and retries after scheduler restart`, async () => {
-      const store = new MemoryStore();
+      const store = await createStore();
       const provider = new FakeDriver();
       let unavailable = true;
       let now = new Date("2026-09-16T12:00:00Z");

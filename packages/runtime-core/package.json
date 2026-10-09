@@ -36,7 +36,7 @@
     "@pstdio/pocketcoder-runtime-contracts": "workspace:*"
   },
   "devDependencies": {
-    "@pstdio/pocketcoder-memory-store": "workspace:*",
-    "@pstdio/pocketcoder-testkit": "workspace:*"
+    "@pstdio/pocketcoder-testkit": "workspace:*",
+    "@pstdio/pocketcoder-db": "workspace:*"
   }
 }

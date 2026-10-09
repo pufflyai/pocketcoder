@@ -71,7 +71,7 @@ describe("TerminalManager", () => {
 
   test("replays buffered output when the same live session reattaches", async () => {
     const frames: Array<{ type: AgentFrame["type"]; payload: Record<string, unknown> }> = [];
-    const current = exec(["/bin/sh"]);
+    const current = exec(["/bin/sh", "-c", "printf replay-ok; read line"]);
     const manager = new TerminalManager(
       () => current,
       (type, payload) => {
@@ -81,10 +81,6 @@ describe("TerminalManager", () => {
     );
     const sessionId = randomUUID();
     manager.open({ session_id: sessionId, rows: 24, cols: 80, reattach: false });
-    manager.input({
-      session_id: sessionId,
-      data_b64: Buffer.from("printf replay-ok\\r").toString("base64"),
-    });
     await waitFor(() =>
       frames.some(
         (frame) =>
@@ -149,7 +145,7 @@ describe("TerminalManager", () => {
 
   test("closes a session after its terminal input idle timeout", async () => {
     const frames: Array<{ type: AgentFrame["type"]; payload: Record<string, unknown> }> = [];
-    const current = exec(["/bin/sh"]);
+    const current = exec(["/bin/sh", "-c", "printf replay-ok; read line"]);
     if (!current.terminal) throw new Error("expected terminal config");
     current.terminal.idle_timeout_seconds = 0.01;
     const manager = new TerminalManager(

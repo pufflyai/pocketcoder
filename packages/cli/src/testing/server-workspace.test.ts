@@ -12,7 +12,8 @@ describe("pcd server lifecycle", () => {
       POCKETCODER_HOST: "127.0.0.1",
       POCKETCODER_PORT: String(port),
       POCKETCODER_STATE_DIR: directory,
-      POCKETCODER_STORE: "memory",
+      POCKETCODER_DIR: join(directory, "data"),
+      POCKETCODER_AUTH_PEPPER: "server-test-pepper",
     };
     try {
       const started = await runCli(["server", "start"], { env });

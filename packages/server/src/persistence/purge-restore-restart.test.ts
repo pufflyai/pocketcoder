@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { reconcilePersistence, type StorageRef } from "@pstdio/pocketcoder-runtime-core";
 import { failedAllocation } from "./purge-support.test";
 
+const createStore = createTestStoreFactory();
+
 async function interruptedRestore(createTarget: boolean) {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const source = await app.store.getWorkspace(app.workspace.id);
   if (!source) throw new Error("Missing source");
   const checkpointId = crypto.randomUUID();

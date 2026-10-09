@@ -3,8 +3,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { supervise } from "@pstdio/pocketcoder-supervisor";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
@@ -17,6 +17,9 @@ import {
   verifySourceSecretBoundary,
   waitFor,
 } from "./e2e-test-support";
+import { registerServerTestCleanup } from "./test-server-cleanup";
+
+const createStore = createTestStoreFactory();
 
 const PEPPER = "e2e-pepper";
 
@@ -41,7 +44,7 @@ describe("end-to-end workspace lifecycle", () => {
 
       const template = e2eTemplate({ setupPath, harnessPath, harnessEnvironment, worktree });
 
-      const store = new MemoryStore();
+      const store = await createStore();
       const driver = new FakeDriver();
       const principal = await store.createPrincipal("e2e", ["admin"], ["*"]);
       const key = issueMachineKey(PEPPER);
@@ -71,7 +74,7 @@ describe("end-to-end workspace lifecycle", () => {
         resolve: async () => [],
         resolveSourceCredential: async () => sourceCredential,
       };
-      const { app, websocket, scheduler } = buildServer({
+      const built = buildServer({
         store,
         driver,
         storageDriver,
@@ -80,6 +83,8 @@ describe("end-to-end workspace lifecycle", () => {
         limits: DEFAULT_LIMITS,
         workspaceServerUrl: "placeholder",
       });
+      registerServerTestCleanup(store, built);
+      const { app, websocket, scheduler } = built;
       const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,

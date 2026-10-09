@@ -72,27 +72,26 @@ export class SchedulerAdmission {
 
   async admit(): Promise<void> {
     const { store, limits } = this.context.deps;
-    let counts: ActiveCounts;
-    try {
-      counts = await store.countActive();
-    } catch (err) {
-      this.context.report("admit.count", err);
-      return;
-    }
-    while (counts.global < limits.globalActiveWorkspaces) {
-      let queued: WorkspaceRow[];
+    while (true) {
+      let snapshot: Awaited<ReturnType<typeof store.readAdmissionSnapshot>>;
       try {
-        queued = await store.listQueuedHeads();
+        snapshot = await store.readAdmissionSnapshot();
       } catch (err) {
-        this.context.report("admit.list", err);
+        this.context.report("admit.snapshot", err);
         return;
       }
+      const { counts, queued, queuedCount } = snapshot;
+      if (counts.global >= limits.globalActiveWorkspaces) return;
       if (queued.length === 0) return;
       // The store returns only each principal's FIFO head, so a deep backlog
       // cannot hide another principal from the round-robin rotation.
       const byPrincipal = this.groupQueuedByPrincipal(queued);
       const rotation = this.principalRotation(byPrincipal);
+      const before = counts.global;
       if (!(await this.admitRound(byPrincipal, rotation, counts))) return;
+      if (counts.global >= limits.globalActiveWorkspaces) return;
+      // All rows in this snapshot were admitted; new arrivals wait for the next tick.
+      if (queuedCount === queued.length && counts.global - before === queued.length) return;
     }
   }
 
@@ -134,7 +133,8 @@ export class SchedulerAdmission {
     };
     if (this.context.deps.warmPool) {
       const hit = await this.context.deps.warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
-      if (hit) return true;
+      if (hit === "leased") return true;
+      if (hit === "deferred") return false;
       if (this.context.deps.warmPool.missDecision(row) === "wait") return false;
     }
     const claimed = await store.claimWorkspaceAdmission({

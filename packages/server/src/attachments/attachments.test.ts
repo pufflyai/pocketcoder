@@ -5,6 +5,7 @@ import {
   ATTACHMENT_MAX_FILE_BYTES,
   type AttachmentDescriptor,
 } from "@pstdio/pocketcoder-contracts";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import {
   authed,
   createTestServer,
@@ -14,9 +15,11 @@ import {
   uploadRequest,
 } from "./attachments-support.test";
 
+const createStore = createTestStoreFactory();
+
 describe("attachment upload", () => {
   test("streams chunked frames through the supervisor and returns the descriptor", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const agent = fakeAgent(server, id);
     const bytes = new Uint8Array(ATTACHMENT_CHUNK_BYTES + 1024).fill(7);
@@ -42,7 +45,7 @@ describe("attachment upload", () => {
   });
 
   test("byte-identical retries return 200 and different bytes conflict with 409", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id);
     const attachmentId = randomUUID();
@@ -69,7 +72,7 @@ describe("attachment upload", () => {
   });
 
   test("requires the attachments:write scope", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id);
     const res = await server.app.request(
@@ -81,7 +84,7 @@ describe("attachment upload", () => {
   });
 
   test("rejects invalid ids, missing filenames, and oversized declarations", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id);
 
@@ -111,7 +114,7 @@ describe("attachment upload", () => {
   });
 
   test("rejects uploads while the workspace is not ready, ended, or disconnected", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const res = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -143,7 +146,7 @@ describe("attachment upload", () => {
   });
 
   test("rejects uploads to supervisors that predate protocol v3", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, 2);
     const res = await server.app.request(
@@ -168,7 +171,7 @@ describe("agent message attachments", () => {
 
   for (const alias of ["agent", "services/agent"]) {
     test(`appends the manifest and strips ids through /${alias}/message`, async () => {
-      const server = await createTestServer();
+      const server = await createTestServer(await createStore());
       const id = await readyWorkspace(server);
       const agent = fakeAgent(server, id);
       const attachmentId = await uploaded(server, id);
@@ -197,7 +200,7 @@ describe("agent message attachments", () => {
   }
 
   test("keeps text-only messages byte-identical", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const agent = fakeAgent(server, id);
     const res = await server.app.request(
@@ -213,7 +216,7 @@ describe("agent message attachments", () => {
   });
 
   test("rejects unknown attachment ids without sending anything to the agent", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const agent = fakeAgent(server, id);
     const res = await server.app.request(
@@ -230,7 +233,7 @@ describe("agent message attachments", () => {
   });
 
   test("rejects messages whose resolved attachments exceed the aggregate limit", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const agent = fakeAgent(server, id);
     const ids = Array.from({ length: 5 }, () => randomUUID());
@@ -258,7 +261,7 @@ describe("agent message attachments", () => {
   });
 
   test("rejects duplicate ids as invalid", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id);
     const attachmentId = randomUUID();
@@ -279,7 +282,7 @@ describe("agent message attachments", () => {
   });
 
   test("rejects attachment messages for supervisors that predate protocol v3", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const agent = fakeAgent(server, id, 2);
     const res = await server.app.request(

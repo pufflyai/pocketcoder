@@ -39,8 +39,7 @@ export type WarmPoolRuntimePatch = Partial<
 >;
 
 export interface WarmPoolClaim {
-  workspaceId: string;
-  templateDigest: string;
+  workspace: WorkspaceRow;
   driverKind: string;
   eligibilityFingerprint: string;
   registrationDigest: Uint8Array;
@@ -53,5 +52,7 @@ export interface WarmPoolStore {
   getWarmPoolRuntime(id: string): Promise<WarmPoolRuntimeRow | null>;
   listWarmPoolRuntimes(): Promise<WarmPoolRuntimeRow[]>;
   updateWarmPoolRuntime(id: string, patch: WarmPoolRuntimePatch, at: Date): Promise<void>;
-  claimWarmPoolRuntime(claim: WarmPoolClaim): Promise<{ runtime: WarmPoolRuntimeRow; workspace: WorkspaceRow } | null>;
+  claimWarmPoolRuntime(
+    claim: WarmPoolClaim,
+  ): Promise<{ runtime: WarmPoolRuntimeRow; workspace: WorkspaceRow } | { kind: "stale" } | null>;
 }

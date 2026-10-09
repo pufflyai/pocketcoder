@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { stopWorkspaceProvider } from "./provider-termination";
 
+const createStore = createTestStoreFactory();
+
 async function fixture() {
-  const store = new MemoryStore();
+  const store = await createStore();
   const principal = await store.createPrincipal("cleanup", ["admin"], ["*"]);
   const parsed = fixtureTemplateEcho();
   const { row: template } = await store.upsertTemplate({
