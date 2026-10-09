@@ -48,17 +48,15 @@ release, but cannot be mixed with `agent`.
 
 ```sh
 bun install
-bun test                       # full suite (in-memory store; no Docker needed)
+bun test                       # full suite, using memory and disk PGlite
 
-# In-memory control plane with no durable state:
-POCKETCODER_STORE=memory bun run pcd -- server start --foreground
 ```
 
 The manifests in `examples/templates` intentionally contain placeholder image
 and gateway values. Validate them offline, but do not use that directory as a
 runnable server catalog.
 
-For durable state, set a private data folder on local disk or a block volume.
+Set a private data folder on local disk or a block volume.
 The fixed `pocketcoder` schema migrates automatically. Local admin commands
 run while the server is stopped and hold the same folder lock.
 
@@ -220,7 +218,6 @@ trusted publisher. Do not keep a publish token in the repository.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
-| `POCKETCODER_STORE` | `pglite` | `memory` for tests/single-process development |
 | `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |

@@ -13,17 +13,11 @@ bun run test      # database suites use memory and disk PGlite; Docker/cluster s
 
 ## 1. Run the server
 
-Fastest path, no database (state dies with the process):
-
-```sh
-POCKETCODER_STORE=memory bun run pcd -- server start --foreground
-```
-
 The checked-in manifests under `examples/templates` are illustrative and use
 placeholder image/gateway values. Do not point a runnable server at that
 directory; materialize or deploy a digest-pinned runtime template first.
 
-For durable state, use the embedded database on local disk or a block volume:
+Use the embedded database on local disk or a block volume:
 
 ```sh
 export POCKETCODER_DIR="$PWD/pc_data"

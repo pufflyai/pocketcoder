@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { RuntimeMetrics } from "../observability/metrics";
 import { OutboxDispatcher } from "./outbox";
 
+const createStore = createTestStoreFactory();
+
 async function storeWithEvent() {
-  const store = new MemoryStore();
+  const store = await createStore();
   const principal = await store.createPrincipal("p", ["admin"], ["*"]);
   const echo = fixtureTemplateEcho();
   const { row } = await store.upsertTemplate({

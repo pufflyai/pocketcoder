@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 describe("workspace creation", () => {
   test("creates queued workspace and is idempotent on the same key and body", async () => {
-    const { app, store, token } = await createTestServer();
+    const { app, store, token } = await createTestServer(await createStore());
     const body = createTestBody("task-1");
     const first = await app.request(
       "/v1/workspaces",
@@ -31,7 +34,7 @@ describe("workspace creation", () => {
   });
 
   test("replays an existing workspace even after the queue becomes full", async () => {
-    const { app, token } = await createTestServer({
+    const { app, token } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -61,7 +64,7 @@ describe("workspace creation", () => {
   });
 
   test("reserves queue capacity atomically across concurrent creates", async () => {
-    const { app, token, store } = await createTestServer({
+    const { app, token, store } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -83,7 +86,7 @@ describe("workspace creation", () => {
   });
 
   test("does not advertise a next page at an exact collection boundary", async () => {
-    const { app, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+    const { app, token } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     for (const id of ["page-boundary-a", "page-boundary-b"]) {
       expect(
         (
@@ -106,7 +109,7 @@ describe("workspace creation", () => {
   });
 
   test("conflicting body under the same idempotency key returns 409", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -128,7 +131,7 @@ describe("workspace creation", () => {
   });
 
   test("missing Idempotency-Key is a validation error", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request("/v1/workspaces", authed(token, { method: "POST", body: createTestBody() }));
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
@@ -139,7 +142,7 @@ describe("workspace creation", () => {
 
 describe("workspace creation diagnostics", () => {
   test("long-polls a durable workspace change cursor", async () => {
-    const { app, store, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+    const { app, store, token } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const createdRes = await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -188,7 +191,7 @@ describe("workspace creation diagnostics", () => {
   });
 
   test("returns a bounded log tail with a failed workspace", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const createdRes = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -238,7 +241,7 @@ describe("workspace creation diagnostics", () => {
   test("unauthorized template returns 403, unknown 404, full queue 429", async () => {
     // globalActiveWorkspaces: 0 keeps admission from draining the queue
     // so the queue-full path is deterministic.
-    const { app, token } = await createTestServer({
+    const { app, token } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -271,7 +274,7 @@ describe("workspace creation diagnostics", () => {
   });
 
   test("oversized launch_input is rejected by the template limit", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request(
       "/v1/workspaces",
       authed(token, {

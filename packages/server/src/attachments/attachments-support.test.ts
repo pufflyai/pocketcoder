@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import type { AttachmentDescriptor, ProtocolVersion } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import type { WSContext } from "hono/ws";
 import { type BuiltServer, buildServer } from "../app";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
 
 const PEPPER = "attachment-pepper";
 
@@ -15,8 +15,7 @@ export interface TestServer extends BuiltServer {
   relayOnlyToken: string;
 }
 
-export async function createTestServer(): Promise<TestServer> {
-  const store = new MemoryStore();
+export async function createTestServer(store: Store): Promise<TestServer> {
   const driver = new FakeDriver();
   const principal = await store.createPrincipal(
     "attachment-backend",
@@ -61,6 +60,7 @@ export async function createTestServer(): Promise<TestServer> {
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
   });
+  registerServerTestCleanup(store, built);
   return { ...built, store, token: key.token, relayOnlyToken: relayOnly.token };
 }
 

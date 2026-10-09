@@ -18,4 +18,4 @@ runtime work with PGlite or memory and with Docker or Kubernetes.
 - Builds typed lifecycle event envelopes.
 
 This package contains contracts, not scheduling or infrastructure behavior.
-Implementations live in `runtime-core`, `db`, `memory-store`, and `drivers`.
+Implementations live in `runtime-core`, `db`, and `drivers`.

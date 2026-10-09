@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import type { WSContext } from "hono/ws";
 import { authed, createTestBody, createTestServer, type TestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 describe("service relay", () => {
   async function readyWorkspace(server: TestServer) {
@@ -50,7 +53,7 @@ describe("service relay", () => {
   }
 
   test("workspace not ready returns 409; terminal returns 410", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const res = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -69,7 +72,7 @@ describe("service relay", () => {
   });
 
   test("ready but disconnected returns 503", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const res = await server.app.request(`/v1/workspaces/${id}/services/agent/status`, authed(server.token));
     expect(res.status).toBe(503);
@@ -77,7 +80,7 @@ describe("service relay", () => {
   });
 
   test("undeclared routes and query fields are rejected with 422", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {});
     const badRoute = await server.app.request(`/v1/workspaces/${id}/services/agent/shell`, authed(server.token));
@@ -97,7 +100,7 @@ describe("service relay", () => {
   });
 
   test("oversized request body returns 413", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {});
     const res = await server.app.request(
@@ -111,7 +114,7 @@ describe("service relay", () => {
   });
 
   test("relays a declared route through the live connection", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, (frame) => {
       server.hub.resolveRelay(server.hub.get(id) as never, {
@@ -127,7 +130,7 @@ describe("service relay", () => {
   });
 
   test("offers a direct AgentAPI alias without exposing the service abstraction", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const { sent } = fakeAgent(server, id, (frame) => {
       server.hub.resolveRelay(server.hub.get(id) as never, {
@@ -148,7 +151,7 @@ describe("service relay", () => {
   });
 
   test("streams a declared AgentAPI event response before upstream EOF", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     let requestId = "";
     const { conn } = fakeAgent(server, id, (frame) => {
@@ -188,7 +191,7 @@ describe("service relay", () => {
   });
 
   test("returns a compatibility error for streaming through a protocol-v4 supervisor", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {}, 4);
     const response = await server.app.request(`/v1/workspaces/${id}/agent/events`, authed(server.token));

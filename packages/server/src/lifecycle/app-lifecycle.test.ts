@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 describe("workspace lifecycle API", () => {
   test("get, list, and idempotent cancel", async () => {
-    const { app, token, store } = await createTestServer();
+    const { app, token, store } = await createTestServer(await createStore());
     const res = await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -42,7 +45,7 @@ describe("workspace lifecycle API", () => {
   });
 
   test("other principals cannot see the workspace", async () => {
-    const { app, token, limitedToken } = await createTestServer();
+    const { app, token, limitedToken } = await createTestServer(await createStore());
     const res = await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -59,7 +62,7 @@ describe("workspace lifecycle API", () => {
 
 describe("historical conversations", () => {
   test("filters the principal-scoped session index by exact metadata and time", async () => {
-    const server = await createTestServer({ globalActiveWorkspaces: 0 });
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     for (const [id, user] of [
       ["session-a", "user-1"],
       ["session-b", "user-2"],
@@ -92,7 +95,7 @@ describe("historical conversations", () => {
   });
 
   test("reads a terminal transcript with stable pages, deduplicates, and deletes content", async () => {
-    const server = await createTestServer({ globalActiveWorkspaces: 0 });
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const createdResponse = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {

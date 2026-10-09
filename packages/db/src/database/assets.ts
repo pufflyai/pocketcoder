@@ -7,7 +7,9 @@ import bundlePath from "../../node_modules/@electric-sql/pglite/dist/pglite.data
 import wasmPath from "../../node_modules/@electric-sql/pglite/dist/pglite.wasm" with { type: "file" };
 import { dependencies } from "../../package.json" with { type: "json" };
 
-let assets: Promise<{ pgliteWasmModule: WebAssembly.Module; fsBundle: Blob; loadDataDir: Blob }> | undefined;
+let assets:
+  | Promise<{ pgliteWasmModule: WebAssembly.Module; fsBundle: Blob; loadDataDir: Blob; memorySeed: () => Blob }>
+  | undefined;
 
 export function loadCoreAssets() {
   assets ??= (async () => {
@@ -23,10 +25,13 @@ export function loadCoreAssets() {
     const registry = migrations.map(({ name, hash }) => ({ name, hash }));
     if (JSON.stringify(registry) !== JSON.stringify(manifest.migrations))
       throw new Error("core seed migration drift; run bun run db:seed");
+    let memorySeed: Blob | undefined;
     return {
       pgliteWasmModule: await WebAssembly.compile(await Bun.file(new URL(wasmPath, import.meta.url)).arrayBuffer()),
       fsBundle: Bun.file(new URL(bundlePath, import.meta.url)),
       loadDataDir: new Blob([seed]),
+      // Engines copy this immutable archive into their own filesystems.
+      memorySeed: () => (memorySeed ??= new Blob([Bun.gunzipSync(seed)], { type: "application/x-tar" })),
     };
   })();
   return assets;

@@ -67,15 +67,7 @@ test.each(["source", "compiled", "bundle"] as const)(
     const invocation = mode === "compiled" ? [binary] : [process.execPath, mode === "bundle" ? binary : fixture];
     // Linux exec preserves the parent's RSS peak. Fork from a small shell first.
     const cold = Bun.spawn(
-      [
-        "sh",
-        "-c",
-        '"$@"; result=$?; exit "$result"',
-        "pc-cold-start",
-        ...invocation,
-        "inspect",
-        join(dir, "cold-data"),
-      ],
+      ["sh", "-c", '"$@"; result=$?; exit "$result"', "pc-cold-start", ...invocation, "verify", join(dir, "cold-data")],
       { cwd: dir, stdout: "pipe", stderr: "pipe" },
     );
     const coldOutput = await new Response(cold.stdout).text();
@@ -83,6 +75,14 @@ test.each(["source", "compiled", "bundle"] as const)(
     expect(coldErrors).toBe("");
     expect(await cold.exited).toBe(0);
     expect(JSON.parse(coldOutput).peakKiB * 1024).toBeLessThan(512 * 1024 ** 2);
+    expect(JSON.parse(coldOutput).admission).toEqual({
+      emptyQueue: true,
+      queuedWorkspace: true,
+      activeCounts: true,
+      warmClaim: true,
+      typedDate: true,
+      typedBinary: true,
+    });
     const data = join(dir, "data");
     const child = Bun.spawn([...invocation, "write", data], { cwd: dir, stdout: "pipe", stderr: "inherit" });
     try {

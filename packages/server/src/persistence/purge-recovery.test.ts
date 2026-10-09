@@ -2,13 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { DEFAULT_LIMITS, reconcilePersistence, type StorageRef } from "@pstdio/pocketcoder-runtime-core";
 import { buildServer } from "../app";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
 import { waitFor } from "./persistence-support.test";
 import { failedAllocation } from "./purge-support.test";
 
+const createStore = createTestStoreFactory();
+
 test("restart resumes the admitted purge without replacing its operation", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   await app.store.updateWorkspaceStorage(
     app.storage.id,
     { providerRef: { ...app.storage.providerRef, root: "/invalid-allocation" } },
@@ -26,6 +30,7 @@ test("restart resumes the admitted purge without replacing its operation", async
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
   });
+  registerServerTestCleanup(app.store, restarted);
   await app.store.updateWorkspaceStorage(app.storage.id, { providerRef: app.storage.providerRef }, new Date());
   expect(await restarted.persistence.retryPurges()).toBe(0);
   expect(await app.store.getOperation(operation.id)).toMatchObject({ state: "succeeded", attemptCount: 2 });
@@ -33,7 +38,7 @@ test("restart resumes the admitted purge without replacing its operation", async
 });
 
 test("purge requires ownership and a strict idempotent request", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const stranger = await app.store.createPrincipal("stranger", ["workspaces:purge"], []);
   const key = issueMachineKey("persistence-test-pepper");
   await app.store.insertMachineKey({
@@ -81,7 +86,7 @@ test("purge requires ownership and a strict idempotent request", async () => {
 });
 
 test("purging a source preserves its independently restored descendant and blocks new copies", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const id = crypto.randomUUID();
   const workspace = await app.store.getWorkspace(app.workspace.id);
   if (!workspace) throw new Error("Missing workspace");
@@ -136,7 +141,7 @@ test("purging a source preserves its independently restored descendant and block
 });
 
 test("purge cancels a queued restore target without waiting for its fenced admission", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const source = await app.store.getWorkspace(app.workspace.id);
   if (!source) throw new Error("Missing source workspace");
   const childId = crypto.randomUUID();
@@ -175,7 +180,7 @@ test("purge cancels a queued restore target without waiting for its fenced admis
 });
 
 test("unknown allocation ownership blocks purge before deleting any recorded content", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const unknownId = crypto.randomUUID();
   await app.storageDriver.allocate({
     storageId: unknownId,
@@ -199,7 +204,7 @@ test("unknown allocation ownership blocks purge before deleting any recorded con
 
 for (const kind of ["checkpoint", "storage"] as const) {
   test(`unattributed physical ${kind} blocks purge until ownership is reconciled`, async () => {
-    const app = await failedAllocation();
+    const app = await failedAllocation(await createStore());
     const id = crypto.randomUUID();
     const directory = join(
       String(app.storage.providerRef.root),
@@ -227,7 +232,7 @@ for (const kind of ["checkpoint", "storage"] as const) {
 }
 
 test("Kubernetes object absence without durable termination evidence cannot certify purge", async () => {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   Object.assign(app.driver, { kind: "kubernetes" });
   await app.store.updateWorkspace(
     app.workspace.id,

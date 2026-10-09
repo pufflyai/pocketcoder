@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { RuntimeMetrics } from "../observability/metrics";
 import { reconcilePersistence } from "./persistence-reconcile";
 import { reconcileProviders } from "./reconcile";
 
+const createStore = createTestStoreFactory();
+
 test("reconciliation records outcomes and durations", async () => {
-  const store = new MemoryStore();
+  const store = await createStore();
   const driver = new FakeDriver();
   const metrics = new RuntimeMetrics();
 
