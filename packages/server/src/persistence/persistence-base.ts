@@ -44,6 +44,13 @@ export interface PersistenceServiceDeps {
     cancel(workspaceId: string, checkpointIds: Set<string>): Promise<void>;
     verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
     delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    inventory(): Promise<{
+      backend: string;
+      storage_count: number;
+      checkpoint_count: number;
+      unknown_storage: string[];
+      unknown_checkpoints: string[];
+    }>;
   };
   hub: Hub;
   workspaces: WorkspaceService;
@@ -129,6 +136,10 @@ export class PersistenceContext {
 
   now(): Date {
     return this.deps.now ? this.deps.now() : new Date();
+  }
+
+  requirePersistence() {
+    if (!this.deps.checkpointTransfers) this.storageDriver();
   }
 
   storageDriver(): WorkspaceStorageDriver {

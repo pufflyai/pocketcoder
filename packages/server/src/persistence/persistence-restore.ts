@@ -40,7 +40,7 @@ export class PersistenceRestoreService {
         `launch_input exceeds the template limit of ${checkpoint.templateSnapshot.spec.maxLaunchInputBytes} bytes.`,
       );
     }
-    this.context.storageDriver();
+    this.context.requirePersistence();
     const now = this.context.now();
     const resultWorkspaceId = randomUUID();
     const operationResult = await this.context.insertOperation({

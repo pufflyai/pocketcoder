@@ -79,10 +79,10 @@ export async function privateSourceLiveFixture(provider: "docker" | "kubernetes"
     spec: {
       version: "1.0.0",
       image,
-      command: ["bun", "/supervisor.js", "supervise", "--launch-input", "/run/pocketcoder/input"],
+      command: ["pocketcoder-supervisor", "supervise", "--launch-input", "/run/pocketcoder/input"],
       setup: [{ name: "clone", command: ["bun", "-e", PRIVATE_SOURCE_SETUP], timeoutSeconds: 30 }],
       harness: { command: ["bun", "-e", PRIVATE_SOURCE_HARNESS] },
-      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "64Mi" },
+      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
       persistence: { mounts: [{ name: "worktree", target: "/worktree", maxBytes: 4 * 1024 ** 2, maxFiles: 1000 }] },
       source: {
         kind: "git" as const,

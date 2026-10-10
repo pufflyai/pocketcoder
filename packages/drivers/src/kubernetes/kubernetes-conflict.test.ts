@@ -20,17 +20,24 @@ test.each([
   let patches = 0;
   let reads = 0;
   const run = async (args: string[]) => {
-    if (args[0] === "get" && args[1] === "pods") return JSON.stringify({ items: [pod] });
-    if (args[0] === "get" && args[1] === "pod") {
+    const command = args.slice(0, 2).join(" ");
+    if (command === "get pods") return JSON.stringify({ items: [pod] });
+    if (command === "get pod") {
       reads++;
       return JSON.stringify({
         ...pod,
         metadata: { ...pod.metadata, uid: mode === "replacement" ? "other" : "original" },
       });
     }
-    if (args[0] === "get" && args[1] === "node")
+    if (command === "get node")
       return JSON.stringify({ metadata: { uid: "node" }, spec: { providerID: "aws:///zone/instance" } });
-    if (args[0] === "patch" && args[1] === "pod") {
+    if (command === "patch job") {
+      const patch = JSON.parse(args[args.indexOf("-p") + 1] as string);
+      expect(patch.metadata.uid).toBe("job");
+      expect(patch.metadata.annotations["pocketcoder.dev/pod-admitted"]).toBe("true");
+      return "";
+    }
+    if (command === "patch pod") {
       patches++;
       throw new Error(`Error from server (${mode === "forbidden" ? "Forbidden" : "Conflict"})`);
     }

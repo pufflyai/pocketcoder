@@ -54,6 +54,8 @@ export interface WorkspaceDriver {
   readonly kind: string;
   create(launch: WorkspaceLaunch): Promise<ProviderRef>;
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
+  uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
+  uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
   inspect(ref: ProviderRef): Promise<ProviderState>;
   // Runtime stop and object deletion are separate so persistence workflows
   // can snapshot a quiesced workload before deleting the provider object.
@@ -71,13 +73,12 @@ export interface WorkspaceDriver {
 }
 
 // Runtime mount refs are internal driver-neutral capabilities. Docker consumes
-// host paths or bounded disposable mounts; Kubernetes consumes PVC sources. Public APIs
+// host paths or bounded disposable mounts; Kubernetes consumes bounded emptyDir. Public APIs
 // and template manifests never contain either physical form.
 export type RuntimeMountSource =
   | { kind: "host-path"; path: string }
   | { kind: "tmpfs"; maxBytes: number; uid: number; gid: number }
-  | { kind: "empty-dir"; maxBytes: number }
-  | { kind: "pvc"; claimName: string; subPath?: string };
+  | { kind: "empty-dir"; maxBytes: number };
 
 export interface RuntimeMountRef {
   name: string;

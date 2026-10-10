@@ -29,10 +29,11 @@ async function fakeKubectl(): Promise<{ bin: string; log: string }> {
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
-const input = args.includes("apply") ? await Bun.stdin.text() : "";
+const input = (args.includes("apply") || args.includes("create")) ? await Bun.stdin.text() : "";
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input }) + "\\n");
 if (args.includes("get") && args.includes("job")) console.log(JSON.stringify({ status: { active: 1 } }));
 if (args.includes("get") && args.includes("jobs")) console.log(JSON.stringify({ items: [] }));
+if (args.includes("create")) console.log(JSON.stringify({ metadata: { uid: "secret-uid", resourceVersion: "1" } }));
 if (args.includes("version")) console.log(JSON.stringify({ serverVersion: { major: "1", minor: "33" } }));
 `,
     { mode: 0o755 },
@@ -53,7 +54,7 @@ function fixtureWorkspace(): WorkspaceRow {
       image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
       harness: { command: ["/bin/sleep", "3600"] },
       env: { SAFE_VALUE: "yes", TOKEN: "secretRef:model/key" },
-      resources: { cpu: "1", memory: "512Mi" },
+      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
       security: {
         uid: 12_345,
         gid: 23_456,
@@ -150,7 +151,7 @@ describe("Kubernetes workspace driver", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string });
     const manifests = calls
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map(
         (call) =>
           JSON.parse(call.input) as {
@@ -192,9 +193,8 @@ describe("Kubernetes workspace driver", () => {
           name: "worktree",
           target: "/workspace",
           source: {
-            kind: "pvc",
-            claimName: "workspace-data",
-            subPath: `workspaces/${workspace.id}/worktree`,
+            kind: "empty-dir",
+            maxBytes: 1024,
           },
         },
       ],
@@ -216,7 +216,7 @@ describe("Kubernetes workspace driver", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string });
     const manifests = calls
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map((call) => JSON.parse(call.input) as Record<string, unknown>);
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Job"]);
     const job = manifests[1] as {
@@ -292,7 +292,7 @@ describe("Kubernetes workspace driver", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string })
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map((call) => JSON.parse(call.input) as Record<string, unknown>);
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Secret", "Job"]);
     const providerSecret = manifests[0] as { stringData: Record<string, string> };

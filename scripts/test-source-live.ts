@@ -32,12 +32,15 @@ async function main() {
     const result = await Bun.build({ entrypoints: ["packages/supervisor/src/index.ts"], target: "bun" });
     if (!result.success) throw new Error(`Supervisor build failed: ${result.logs}`);
     await Bun.write(join(directory, "supervisor.js"), result.outputs[0]);
+    await Bun.write(join(directory, "pocketcoder-supervisor"), Bun.file("deploy/image/pocketcoder-supervisor"));
     await writeFile(
       join(directory, "Dockerfile"),
       `FROM oven/bun:1.4.2
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
-COPY supervisor.js /supervisor.js
+COPY supervisor.js /opt/pocketcoder/supervisor.js
+COPY pocketcoder-supervisor /usr/local/bin/pocketcoder-supervisor
+RUN chmod 0755 /usr/local/bin/pocketcoder-supervisor
 ENV HOME=/tmp
 WORKDIR /
 USER 10001:10001

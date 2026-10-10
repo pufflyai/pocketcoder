@@ -21,6 +21,12 @@ test("provider inspection retains node identity before termination and survives 
       if (deleted) throw new Error("Node NotFound");
       return JSON.stringify({ metadata: { uid: "node-uid" }, spec: { providerID: "aws:///eu-north-1a/i-123" } });
     }
+    if (args[0] === "patch" && args[1] === "job") {
+      const patch = JSON.parse(args[args.indexOf("-p") + 1] as string);
+      expect(patch.metadata.uid).toBe("job-uid");
+      expect(patch.metadata.annotations["pocketcoder.dev/pod-admitted"]).toBe("true");
+      return "";
+    }
     if (args[0] === "patch" && args[1] === "pod") {
       const patch = JSON.parse(args[args.indexOf("-p") + 1] as string);
       expect(patch.metadata.uid).toBe("pod-uid");
@@ -42,6 +48,10 @@ test("provider inspection retains node identity before termination and survives 
 test("inspection skips unscheduled Pods and rejects another Job's Pods", async () => {
   let owner = "job-uid";
   const run = async (args: string[]) => {
+    if (args[0] === "patch") {
+      expect(args.slice(0, 2)).toEqual(["patch", "job"]);
+      return "";
+    }
     expect(args.slice(0, 2)).toEqual(["get", "pods"]);
     return JSON.stringify({
       items: [{ metadata: { uid: "pod", ownerReferences: [{ uid: owner, kind: "Job", controller: true }] }, spec: {} }],

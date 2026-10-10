@@ -6,12 +6,14 @@ export interface KubernetesToleration {
 }
 
 export interface KubernetesSchedulingOptions {
+  runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   tolerations?: KubernetesToleration[];
 }
 
 export function schedulingFields(options: KubernetesSchedulingOptions) {
   return {
+    ...(options.runtimeClassName ? { runtimeClassName: options.runtimeClassName } : {}),
     ...(options.nodeSelector ? { nodeSelector: options.nodeSelector } : {}),
     ...(options.tolerations?.length ? { tolerations: options.tolerations } : {}),
   };

@@ -6,9 +6,11 @@ import type { WorkspaceLaunch, WorkspaceRow } from "@pstdio/pocketcoder-runtime-
 import { DEFAULT_LIMITS, Scheduler } from "@pstdio/pocketcoder-runtime-core";
 import { KubernetesDriver } from "./kubernetes";
 import { resourceName } from "./kubernetes-command";
+import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { applyRegistrySecret } from "./kubernetes-registry";
 import { registryFixture, run, waitFor } from "./kubernetes-registry-fixture";
 import { KubernetesSecretResolver } from "./kubernetes-secrets";
+import { LAUNCH_PHASE } from "./kubernetes-uncommitted";
 
 function launch(image: string): WorkspaceLaunch {
   const snapshot = snapshotOf(
@@ -160,7 +162,7 @@ test("live kubelet rejects wrong registry authority, pulls privately and removes
   }
 }, 120000);
 
-test.each(["before-job", "after-job"] as const)(
+test.each(["before-job", "after-job", "missing-receipt"] as const)(
   "registration timeout cleans an uncommitted private launch %s",
   async (stage) => {
     const namespace = `pc-registry-lost-${randomUUID().slice(0, 8)}`;
@@ -213,6 +215,21 @@ test.each(["before-job", "after-job"] as const)(
           password: randomUUID(),
         }),
       });
+      if (stage === "before-job") {
+        await run(
+          ["kubectl", "--namespace", namespace, "create", "-f", "-"],
+          JSON.stringify({
+            apiVersion: "v1",
+            kind: "Secret",
+            type: "Opaque",
+            metadata: {
+              name: `${resourceName(id)}-input`,
+              labels: { [KUBERNETES_WORKSPACE_LABEL]: id },
+              annotations: { [LAUNCH_PHASE]: "prepared", [KUBERNETES_DIGEST_ANNOTATION]: snapshot.digest },
+            },
+          }),
+        );
+      }
       if (stage === "after-job")
         await driver.create({ ...pending, workspace: (await store.getWorkspace(id)) as WorkspaceRow });
       const scheduler = new Scheduler({
@@ -224,8 +241,14 @@ test.each(["before-job", "after-job"] as const)(
         connections: { isConnected: () => false, shutdown: () => false, signal: () => false, close: () => {} },
       });
       await scheduler.tick();
-      expect(JSON.parse(await kubectl(["get", "secrets", "-o", "json"])).items).toEqual([]);
-      expect((await store.getWorkspace(id))?.state).toBe("failed");
+      if (stage === "missing-receipt") {
+        expect(JSON.parse(await kubectl(["get", "secrets", "-o", "json"])).items).toHaveLength(1);
+        expect((await store.getWorkspace(id))?.terminalAt).toBeNull();
+        expect((await store.countActive()).global).toBe(1);
+      } else {
+        expect(JSON.parse(await kubectl(["get", "secrets", "-o", "json"])).items).toEqual([]);
+        expect((await store.getWorkspace(id))?.state).toBe("failed");
+      }
       expect(JSON.parse(await kubectl(["get", "jobs", "-o", "json"])).items).toEqual([]);
     } finally {
       await store.close();

@@ -44,7 +44,7 @@ describe("portable persistence configuration", () => {
     expect(config.persistenceLimits.maxRetainedBytes).toBe(2 * 1024 ** 3);
   });
 
-  test("configures Kubernetes Jobs, PVC storage, and Secret projection", () => {
+  test("configures Kubernetes Jobs, private controller archives, and Secret projection", () => {
     const config = loadConfig({
       POCKETCODER_AUTH_PEPPER: "test-pepper",
       POCKETCODER_DRIVER: "kubernetes",
@@ -52,14 +52,12 @@ describe("portable persistence configuration", () => {
       POCKETCODER_KUBERNETES_SERVICE_ACCOUNT: "workspace",
       POCKETCODER_KUBERNETES_NODE_SELECTOR: '{"dedicated":"workspace"}',
       POCKETCODER_KUBERNETES_TOLERATIONS: '[{"operator":"Exists","effect":"NoSchedule"}]',
-      POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-      POCKETCODER_KUBERNETES_WORKSPACE_CLAIM: "workspace-data",
-      POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+      POCKETCODER_STORAGE_BACKEND: "controller-archive",
       POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
       POCKETCODER_SECRET_PROVIDER: "kubernetes",
     });
     expect(config.driverKind).toBe("kubernetes");
-    expect(config.storageBackend).toBe("kubernetes-pvc");
+    expect(config.storageBackend).toBe("controller-archive");
     expect(config.secretProvider).toBe("kubernetes");
     expect(config.kubernetesNodeSelector).toEqual({ dedicated: "workspace" });
     expect(config.kubernetesTolerations).toEqual([{ operator: "Exists", effect: "NoSchedule" }]);
@@ -71,17 +69,15 @@ describe("portable persistence configuration", () => {
       loadConfig({
         POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_STORAGE_BACKEND: "filesystem",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
       }),
     ).toThrow("POCKETCODER_CHECKPOINT_DIR");
     expect(() =>
       loadConfig({
         POCKETCODER_AUTH_PEPPER: "test-pepper",
-        POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+        POCKETCODER_STORAGE_BACKEND: "controller-archive",
         POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
       }),
-    ).toThrow("POCKETCODER_KUBERNETES_WORKSPACE_CLAIM");
+    ).toThrow("POCKETCODER_DRIVER");
   });
 
   test("rejects unknown explicit backend values instead of selecting fallbacks", () => {
@@ -107,10 +103,8 @@ describe("portable persistence configuration", () => {
       loadConfig({
         POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_DRIVER: "docker",
-        POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+        POCKETCODER_STORAGE_BACKEND: "controller-archive",
         POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
-        POCKETCODER_KUBERNETES_WORKSPACE_CLAIM: "workspace-data",
       }),
     ).toThrow("POCKETCODER_DRIVER");
     expect(() =>

@@ -4,7 +4,6 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PersistenceMount } from "@pstdio/pocketcoder-contracts";
-import { KubernetesPvcStorageDriver } from "../kubernetes/kubernetes-storage";
 import { FilesystemStorageDriver } from "./filesystem-storage";
 
 const cleanup: string[] = [];
@@ -112,35 +111,5 @@ describe("filesystem checkpoint storage", () => {
         root: paths.workspaceRoot,
       }),
     ).rejects.toThrow("opaque allocation");
-  });
-
-  test("maps the same backend contract to Kubernetes PVC subpaths", async () => {
-    const paths = await roots();
-    const driver = new KubernetesPvcStorageDriver({
-      ...paths,
-      workspaceClaimName: "pocketcoder-workspaces",
-      workspaceClaimSubPath: "runtime/workspaces",
-    });
-    const storageId = randomUUID();
-    const allocation = await driver.allocate({
-      storageId,
-      workspaceId: randomUUID(),
-      mounts,
-      uid: process.getuid?.() ?? 1000,
-      gid: process.getgid?.() ?? 1000,
-    });
-    expect(allocation.mounts).toEqual([
-      {
-        name: "worktree",
-        target: "/workspace",
-        source: {
-          kind: "pvc",
-          claimName: "pocketcoder-workspaces",
-          subPath: `runtime/workspaces/${storageId}/worktree`,
-        },
-      },
-    ]);
-    expect((await lstat(paths.workspaceRoot)).mode & 0o777).toBe(0o711);
-    expect((await lstat(String(allocation.ref.root))).mode & 0o777).toBe(0o711);
   });
 });
