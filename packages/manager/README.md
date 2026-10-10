@@ -48,7 +48,7 @@ curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
 ```
 
 Poll `GET /v1/operations/{operation.id}` from the response until `succeeded`.
-Provisioning errors leave the operation running with `provisioning_retry`; the
+Provisioning errors leave the operation running with `provision_retry`; the
 manager retries the same record. Repeating create returns the same account and
 operation after a restart. Changed input with the same request ID returns 409.
 Existing Kubernetes objects with another account identity are refused.
