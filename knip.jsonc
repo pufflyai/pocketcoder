@@ -13,7 +13,7 @@
       "ignoreDependencies": ["nx"]
     },
     ".pstdio/extensions/*": {
-      "entry": ["src/view.ts", "**/*.test.ts"]
+      "entry": ["**/*.test.ts"]
     },
     "packages/db": {
       "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts"]
