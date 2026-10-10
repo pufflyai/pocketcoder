@@ -4,7 +4,9 @@ import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { command } from "../e2e/local-process";
+import { nativeRecord } from "./artifact";
 import { nativeController } from "./controller";
+import { checkInstalledNative } from "./installed";
 
 test("one executable starts and restarts outside the checkout without Bun or adjacent assets", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-native-"));
@@ -39,6 +41,25 @@ test("one executable starts and restarts outside the checkout without Bun or adj
     );
   } finally {
     await controller.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("an installed binary restores its backup and matches its recorded embedded format", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pocketcoder-native-artifact-"));
+  const root = resolve(import.meta.dir, "../..");
+  const commit = "a".repeat(40);
+  try {
+    await command([process.execPath, "run", "build:native"], { quiet: true });
+    const binary = join(root, "out/native/pocketcoder");
+    const record = await nativeRecord(binary, commit);
+    await Bun.write(join(directory, "pocketcoder"), Bun.file(binary));
+    await Bun.write(join(directory, "native.json"), JSON.stringify(record));
+    const result = await checkInstalledNative(directory, commit);
+    expect(result.result).toBe("passed");
+    expect(result.bunInControllerPath).toBe(false);
+    expect(result.starts).toHaveLength(4);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 }, 30_000);

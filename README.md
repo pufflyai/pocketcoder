@@ -6,6 +6,7 @@ The development `pocketcoder` executable embeds PGlite, its seed and migrations.
 It needs no Bun install or source checkout. With Docker running, `pocketcoder
 serve` starts at `127.0.0.1:8090` and keeps private state in `./pc_data`.
 Follow the [commit-pinned download and workspace round trip](docs/getting-started.md#standalone-development-download).
+See [candidate installation](docs/candidate-installation.md) for all four targets and Node package consumers.
 CI measures startup, peak memory and executable size. Development builds are
 Actions artifacts named by full commit; they do not publish stable releases or
 change `latest`.

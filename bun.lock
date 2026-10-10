@@ -62,11 +62,7 @@
       "name": "@pstdio/pocketcoder-cli",
       "version": "0.8.0",
       "bin": {
-        "pcd": "dist/index.js",
-      },
-      "dependencies": {
-        "dotenv": "^17.4.2",
-        "yargs": "^17.7.2",
+        "pcd": "dist/bin.js",
       },
       "devDependencies": {
         "@pstdio/pocketcoder-auth": "workspace:*",
@@ -78,6 +74,8 @@
         "@pstdio/pocketcoder-server": "workspace:*",
         "@pstdio/pocketcoder-testkit": "workspace:*",
         "@types/yargs": "^17.0.35",
+        "dotenv": "^17.4.2",
+        "yargs": "^17.7.2",
       },
     },
     "packages/contracts": {

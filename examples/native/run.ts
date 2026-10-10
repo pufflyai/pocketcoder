@@ -11,6 +11,7 @@ import {
 import { bestEffort, command, flag, waitFor } from "../e2e/local-process";
 import { buildLocalImage } from "../local/runtime";
 import { nativeController } from "./controller";
+import { loadNativeFixture } from "./fixture";
 import { nativeTemplate } from "./template";
 
 const root = resolve(import.meta.dir, "../..");
@@ -58,12 +59,29 @@ try {
   if (!flag("--binary")) await command([process.execPath, "run", "build:native"], { quiet: true });
   const binaryBytes = (await stat(binary)).size;
   if (binaryBytes > 90_000_000) throw new Error(`Executable exceeded 90 MB: ${binaryBytes} bytes`);
-  await command(
-    [process.execPath, "build", "packages/supervisor/src/index.ts", "--target", "bun", "--outdir", "deploy/image/dist"],
-    { quiet: true },
-  );
-  const image = await buildLocalImage({ root, imageTag, context: "deploy/image", command });
-  const template = await nativeTemplate(image.image);
+  const fixture = flag("--fixture");
+  let image: { image: string };
+  let template: Awaited<ReturnType<typeof nativeTemplate>>;
+  if (fixture) {
+    const loaded = await loadNativeFixture(resolve(fixture), imageTag);
+    image = loaded;
+    template = loaded.template;
+  } else {
+    await command(
+      [
+        process.execPath,
+        "build",
+        "packages/supervisor/src/index.ts",
+        "--target",
+        "bun",
+        "--outdir",
+        "deploy/image/dist",
+      ],
+      { quiet: true },
+    );
+    image = await buildLocalImage({ root, imageTag, context: "deploy/image", command });
+    template = await nativeTemplate(image.image);
+  }
   const templates = join(directory, "templates");
   await mkdir(templates);
   await writeFile(join(templates, "echo.json"), JSON.stringify(template.manifest));
