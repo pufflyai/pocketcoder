@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Chromium } from "./chromium";
+import { browserPort } from "./chromium-startup.fixture";
 
 const executable =
   process.env.POCKETCODER_CHROMIUM_BINARY ??
@@ -20,12 +21,9 @@ async function until<T>(read: () => Promise<T>, ready: (value: T) => boolean) {
   }
 }
 
-async function connect(profile: string) {
-  const port = await until(
-    () => readFile(join(profile, "DevToolsActivePort"), "utf8").catch(() => ""),
-    (value) => value.length > 0,
-  );
-  const targets = (await fetch(`http://127.0.0.1:${port.split("\n")[0]}/json/list`).then((r) => r.json())) as {
+async function connect(profile: string, child: Bun.Subprocess) {
+  const port = await browserPort(profile, child, executable);
+  const targets = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())) as {
     type: string;
     webSocketDebuggerUrl: string;
   }[];
@@ -93,7 +91,7 @@ test("Enter submits forms and inserts a textarea newline in real Chromium", asyn
   );
   let client: Chromium | undefined;
   try {
-    client = await connect(profile);
+    client = await connect(profile, process);
     await navigate(client, server.url.href);
     await client.action({ action: "click", x: 100, y: 125 });
     await client.action({ action: "text", text: "before" });

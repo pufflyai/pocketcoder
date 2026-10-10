@@ -45,7 +45,7 @@
     "release": "bun run build && bun run pack:check && changeset publish",
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",
     "test": "bun run test:all",
-    "test:all": "bun run test:unit && bun run test:performance && bun run test:browser && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run pack:check:test",
+    "test:all": "bun run test:browser && bun run test:unit && bun run test:performance && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run pack:check:test",
     "test:kind:registry": "bun --no-env-file scripts/test-kind-registry.ts",
     "test:runtime:live": "bun scripts/test-source-live.ts --runtime",
     "test:source:live": "bun --no-env-file scripts/test-source-live.ts",

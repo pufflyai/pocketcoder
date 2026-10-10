@@ -27,6 +27,12 @@ jobs:
       - name: Lint, format-check, and detect unused code
         run: bun run check
       - run: bun run typecheck
+      - name: Prepare Docker conformance image
+        run: docker pull postgres:16-alpine
+      - name: Unit, route, e2e, and PGlite integration tests
+        env:
+          POCKETCODER_CHROMIUM_BINARY: /usr/bin/google-chrome
+        run: bun run test
       - name: Test reusable harness E2E contract
         run: bun run example:test
       - name: Validate the Pi and AgentAPI E2E fixture
@@ -51,10 +57,6 @@ jobs:
         run: |
           docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
           bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
-      - name: Unit, route, e2e, and PGlite integration tests
-        env:
-          POCKETCODER_CHROMIUM_BINARY: /usr/bin/google-chrome
-        run: bun run test
       - name: Verify the private-image workspace flow
         run: bun run example:e2e:private-image
       - name: Verify Docker checkpoint round trips
