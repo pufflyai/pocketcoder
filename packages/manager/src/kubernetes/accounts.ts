@@ -7,13 +7,14 @@ const OwnerResult = z
   .object({ token: z.string().nullable(), key: z.object({ id: z.uuid() }).passthrough() })
   .passthrough();
 export class KubernetesAccounts {
+  constructor(private readonly command = kube) {}
   async ensure(account: Account) {
-    await kube(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);
-    const cni = JSON.parse(await kube(["-n", "kube-system", "get", "daemonset", "calico-node", "-o", "json"]));
+    await this.command(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);
+    const cni = JSON.parse(await this.command(["-n", "kube-system", "get", "daemonset", "calico-node", "-o", "json"]));
     if (!cni.status.desiredNumberScheduled || cni.status.numberReady !== cni.status.desiredNumberScheduled)
       throw new Error("Calico enforcement is not ready");
     const endpoints = JSON.parse(
-      await kube([
+      await this.command([
         "-n",
         "default",
         "get",
@@ -32,17 +33,17 @@ export class KubernetesAccounts {
     for (const resource of resources) {
       const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
       if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);
-      const prior = await kube(args);
+      const prior = await this.command(args);
       if (prior && JSON.parse(prior).metadata.labels?.["pocketcoder.dev/account"] !== account.id)
         throw new Error("Account resource identity mismatch");
     }
     for (const resource of resources)
-      await kube(
+      await this.command(
         ["apply", "--server-side", "--field-manager=pocketcoder-manager", "-f", "-"],
         JSON.stringify(resource),
       );
-    await kube(["-n", account.namespace, "rollout", "status", "deployment/controller", "--timeout=120s"]);
-    await kube([
+    await this.command(["-n", account.namespace, "rollout", "status", "deployment/controller", "--timeout=120s"]);
+    await this.command([
       "-n",
       account.namespace,
       "exec",
@@ -79,6 +80,6 @@ export class KubernetesAccounts {
     ];
     if (request.replacesRequestId) args.push("--replace");
     // Plaintext exists only in this response. Repeated core request IDs return metadata and null.
-    return OwnerResult.parse(JSON.parse(await kube(args)));
+    return OwnerResult.parse(JSON.parse(await this.command(args)));
   }
 }
