@@ -45,6 +45,7 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
   const folder = dataDir !== undefined ? lockDataFolder(dataDir) : undefined;
   let client: PGlite | undefined;
   try {
+    if (folder && existsSync(join(folder.dir, "FORMAT"))) throw new Error("incompatible core data format");
     if (folder) await hooks.beforeOpen?.(folder.dir);
     const assets = await loadCoreAssets();
     const options = {

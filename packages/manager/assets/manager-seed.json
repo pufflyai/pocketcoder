@@ -1,0 +1,11 @@
+{
+  "app": "pocketcoder-manager",
+  "pgliteVersion": "0.5.8",
+  "migrations": [
+    {
+      "name": "20261010112639_exotic_wallop",
+      "hash": "62aa9d642a8050ebdf14aa8b1be413a3e31228a4c9ff8ee5661783a42603e4f5"
+    }
+  ],
+  "checksum": "d1bebac130604c3f344e1ddc2de728cc0da2ad1d18764164c33db235f0e2befa"
+}
