@@ -3,15 +3,17 @@ import { signEvent } from "@pstdio/pocketcoder-auth";
 import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools } from "@pstdio/pocketcoder-runtime-core";
 import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
+import { createControllerBackup } from "../backup/controller-backup";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
+import { createMaintenance } from "../maintenance/maintenance";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
 import { createIssuerClient } from "../secrets/issuer-client";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
+import { startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
-import { createCoordinatorTick } from "./coordinator-tick";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
   createSecretResolver,
@@ -22,7 +24,6 @@ import {
   reconcileCheckpointPreserves,
   reconcileStartup,
   requireEgressImageForRestrictedTemplates,
-  startExclusiveTimer,
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
 import { reconcileSetupLeases } from "./setup-lease-reconciliation";
@@ -58,6 +59,8 @@ export async function startPocketCoderServer(
   const initialized = await initializeController(config, log);
   config = initialized.config;
   const { store, directory } = initialized;
+  const maintenance = createMaintenance();
+  const transferOptions = checkpointTransferOptions(config);
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
   let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
@@ -97,13 +100,18 @@ export async function startPocketCoderServer(
         limits: config.limits,
         workspaceServerUrl: config.workspaceServerUrl,
         persistenceLimits: config.persistenceLimits,
-        checkpointTransferOptions: checkpointTransferOptions(config),
+        checkpointTransferOptions: transferOptions,
         ...(options.instanceId ? { instanceId: options.instanceId } : {}),
         logger,
         metrics,
         warmPools,
         readiness,
+        maintenance,
       });
+    // A backup waits for admitted background work as well as admitted requests.
+    // Scheduler finalizers can start preserves, so the scheduler settles first.
+    maintenance.settleWith(() => scheduler.drain());
+    maintenance.settleWith(() => persistence.drain());
 
     const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
     const pendingTransfers = await reconcileCheckpointPreserves(
@@ -128,57 +136,21 @@ export async function startPocketCoderServer(
       metrics,
     });
 
-    const schedulerTimer = startExclusiveTimer(
-      config.schedulerIntervalMs,
-      createCoordinatorTick({
-        store,
-        scheduler,
-        persistence,
-        workspaceLeases,
-        checkpointTransfers,
-        readiness,
-        metrics,
-      }),
-      "scheduler tick failed",
+    const timers = startBackgroundTimers({
+      config,
+      maintenance,
       log,
-    );
-    const outboxTimer = startExclusiveTimer(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed", log);
-    const policyTimer = policyReconciliation
-      ? startExclusiveTimer(
-          config.schedulerIntervalMs,
-          async () => {
-            try {
-              await policyReconciliation.tick();
-              readiness.set("policy-reconciliation", "ok");
-            } catch (error) {
-              readiness.set("policy-reconciliation", "failed");
-              throw error;
-            }
-          },
-          "policy reconciliation failed",
-          log,
-        )
-      : null;
-    const warmPoolTimer =
-      warmPool && warmPoolContinuously
-        ? startExclusiveTimer(
-            config.schedulerIntervalMs,
-            () => warmPool.reconcile(),
-            "warm pool reconciliation failed",
-            log,
-          )
-        : null;
-    const retentionTimer = startExclusiveTimer(
-      60_000,
-      async () => {
-        const { deleted, skipped } = await persistence.pruneExpired();
-        if (deleted > 0 || skipped > 0) {
-          log(`retention: deleted=${deleted} skipped=${skipped}`);
-        }
-      },
-      "retention sweep failed",
-      log,
-    );
+      outbox,
+      policyReconciliation,
+      ...(warmPool && warmPoolContinuously ? { warmPool } : {}),
+      store,
+      scheduler,
+      persistence,
+      workspaceLeases,
+      checkpointTransfers,
+      readiness,
+      metrics,
+    });
 
     let server: ReturnType<typeof Bun.serve>;
     try {
@@ -186,7 +158,12 @@ export async function startPocketCoderServer(
         directory: directory,
         store,
         pepper: config.pepper,
-        ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+        backup: createControllerBackup({
+          store,
+          maintenance,
+          ...(initialized.keyBundle ? { keys: initialized.keyBundle } : {}),
+          ...(transferOptions ? { checkpointDirectory: transferOptions.directory } : {}),
+        }),
       });
       agentServer = Bun.serve({
         hostname: config.agentHost,
@@ -203,12 +180,7 @@ export async function startPocketCoderServer(
         websocket,
       });
     } catch (error) {
-      clearInterval(schedulerTimer);
-      clearInterval(outboxTimer);
-      clearInterval(retentionTimer);
-      if (policyTimer) clearInterval(policyTimer);
-      await policyReconciliation?.drain();
-      if (warmPoolTimer) clearInterval(warmPoolTimer);
+      await timers.stop();
       throw error;
     }
 
@@ -229,12 +201,7 @@ export async function startPocketCoderServer(
         if (stopPromise) return stopPromise;
         stopPromise = (async () => {
           log("shutting down");
-          clearInterval(schedulerTimer);
-          clearInterval(outboxTimer);
-          clearInterval(retentionTimer);
-          if (policyTimer) clearInterval(policyTimer);
-          await policyReconciliation?.drain();
-          if (warmPoolTimer) clearInterval(warmPoolTimer);
+          await timers.stop();
           await checkpointTransfers?.close();
           await persistence.drain();
           await scheduler.drain();

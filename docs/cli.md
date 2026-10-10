@@ -11,7 +11,8 @@ Principal and key commands use HTTP against the running server. Set
 `POCKETCODER_URL` (default `http://127.0.0.1:8090`) and `POCKETCODER_KEY`.
 Workspaces, checkpoints, storage, pools, template catalog and doctor commands
 use the same settings. `templates import <directory>` publishes immutable versions
-over HTTP. `superuser create` uses the private local socket in `POCKETCODER_DIR`.
+over HTTP. `superuser create` and `backup create` use the private local socket in
+`POCKETCODER_DIR`.
 
 `pcd --version` prints the installed `@pstdio/pocketcoder-cli` version, and
 `pcd --help` lists the command tree. Neither needs credentials.
@@ -52,6 +53,16 @@ supported here. The agent listener defaults to `0.0.0.0:8091`; configure it
 with `POCKETCODER_AGENT_HTTP` and point `POCKETCODER_WORKSPACE_SERVER_URL`
 at that listener. Operator and agent routes are separate.
 
+
+```sh
+pcd backup create --dir ./pc_data --out <new-archive> [--timeout 30]
+pcd backup verify <archive>
+```
+
+`backup create` writes a private archive of the running controller: its database,
+keys and the checkpoint archives the database refers to, all from one point in time.
+`backup verify` checks an archive without the data folder or a running server. See
+[getting started](getting-started.md#back-up-the-controller).
 
 ```sh
 pcd server start [--foreground] [--timeout-seconds 30]

@@ -26,6 +26,7 @@ import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
+import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
 import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
@@ -66,6 +67,7 @@ export interface BuildDeps {
   metrics?: MetricSink;
   warmPools?: ResolvedWarmPool[];
   readiness?: Readiness;
+  maintenance?: Maintenance;
 }
 
 export interface BuiltServer {
@@ -245,6 +247,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   });
 
   app.use("/v1/*", machineAuth(store, pepper));
+  if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });

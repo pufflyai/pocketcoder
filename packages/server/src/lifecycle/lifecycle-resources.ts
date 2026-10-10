@@ -22,7 +22,7 @@ import type { ServerConfig } from "../config/config";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import type { ServerLog } from "./lifecycle";
 
-async function initializeStore(config: ServerConfig, log: ServerLog): Promise<Store> {
+async function initializeStore(config: ServerConfig, log: ServerLog) {
   const store = await PGliteStore.create(config.dataDir);
   await store.init();
   log(`store: pglite (${config.dataDir})`);
@@ -145,7 +145,13 @@ export async function initializeController(config: ServerConfig, log: ServerLog)
   if (config.pepper)
     return { config, store: await initializeStore(config, log), directory: await realpath(config.dataDir) };
   const controller = await openControllerStore(config.dataDir);
-  return { config: { ...config, ...controller.keys }, store: controller.store, directory: controller.dataDirectory };
+  return {
+    config: { ...config, ...controller.keys },
+    store: controller.store,
+    directory: controller.dataDirectory,
+    // Only bundle keys are exact 32-byte files that a backup can carry unchanged.
+    keyBundle: controller.keys,
+  };
 }
 
 export async function reconcileCheckpointPreserves(

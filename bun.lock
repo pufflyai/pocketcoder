@@ -94,6 +94,7 @@
         "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "drizzle-orm": "1.0.0-rc.4",
+        "zod": "^4.0.0",
       },
       "devDependencies": {
         "@pstdio/pocketcoder-testkit": "workspace:*",

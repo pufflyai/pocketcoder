@@ -2,7 +2,13 @@ import { join, resolve } from "node:path";
 import { KeyIssueResponseSchema } from "@pstdio/pocketcoder-contracts";
 import type { Flags } from "./cli-context";
 
-export async function requestLocalAdministration(flags: Flags, path: string, body?: unknown, timeoutMs = 5000) {
+// A null timeout waits for the controller; closing the CLI still ends the request.
+export async function requestLocalAdministration(
+  flags: Flags,
+  path: string,
+  body?: unknown,
+  timeoutMs: number | null = 5000,
+) {
   const directory = resolve(typeof flags.dir === "string" ? flags.dir : (process.env.POCKETCODER_DIR ?? "./pc_data"));
   let response: Response;
   try {
@@ -11,7 +17,7 @@ export async function requestLocalAdministration(flags: Flags, path: string, bod
       method: body === undefined ? "GET" : "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      ...(timeoutMs === null ? {} : { signal: AbortSignal.timeout(timeoutMs) }),
     });
   } catch (error) {
     throw new Error(
