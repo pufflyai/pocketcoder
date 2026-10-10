@@ -1,5 +1,6 @@
 export async function kube(args: string[], input?: string) {
   const child = Bun.spawn(["kubectl", "--request-timeout=30s", ...args], {
+    env: { ...process.env },
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",
