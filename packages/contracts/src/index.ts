@@ -63,6 +63,7 @@ export {
   ConversationRequestIdentitySchema,
   ConversationRequestReceiptSchema,
 } from "./conversations/identity";
+export { DisplayOpenRequestSchema, DisplaySchema } from "./displays/display";
 export {
   findNetworkRule,
   isPrivateAddress,

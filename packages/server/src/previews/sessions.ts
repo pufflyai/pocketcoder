@@ -10,6 +10,7 @@ export interface PreviewSession {
   origin: string;
   keyId: string;
   expires: number;
+  control?: boolean;
 }
 
 export class PreviewSessions {
@@ -21,11 +22,11 @@ export class PreviewSessions {
     private readonly service: WorkspaceService,
   ) {}
 
-  async mint(workspaceId: string, name: string, origin: string, keyId: string) {
+  async mint(workspaceId: string, name: string, origin: string, keyId: string, control = false) {
     this.sweep();
     if (this.tokens.size + this.sessions.size >= 4096)
       throw new ApiError("operation.conflict", "Preview session limit reached.");
-    const session = { workspaceId, name, origin, keyId, expires: Date.now() + 60 * 60_000 };
+    const session = { workspaceId, name, origin, keyId, control, expires: Date.now() + 60 * 60_000 };
     const { workspace, key } = await this.authorize(session);
     session.expires = Math.min(session.expires, workspace.deadlineAt.getTime(), key.expiresAt?.getTime() ?? Infinity);
     const token = randomBytes(32).toString("base64url");
@@ -62,8 +63,10 @@ export class PreviewSessions {
     const found = await this.store.getMachineKeyWithPrincipal(session.keyId);
     if (!found) throw new ApiError("auth.invalid_key", "Preview key no longer exists.");
     const authority = keyAuthority(found.principal, found.key, new Date());
-    if (!hasScope(authority.scopes, "previews:open"))
-      throw new ApiError("auth.invalid_key", "Preview permission was removed.");
+    const scope = session.name === "display" ? "display:view" : "previews:open";
+    if (!hasScope(authority.scopes, scope)) throw new ApiError("auth.invalid_key", "Preview permission was removed.");
+    if (session.control && !hasScope(authority.scopes, "display:control"))
+      throw new ApiError("auth.missing_scope", "Display control permission was removed.");
     const principal = { ...found.principal, templateNames: authority.templateNames };
     const workspace = await this.service.getOwned(principal, session.workspaceId);
     if (!templateAuthorized(principal, workspace.templateName))
@@ -72,7 +75,10 @@ export class PreviewSessions {
       throw new ApiError("workspace.not_ready", "Workspace preview is not active.");
     }
     const preview = workspace.templateSnapshot.spec.previews?.[session.name];
-    if (!preview) throw new ApiError("validation.invalid", "Preview is not declared by the workspace template.");
+    if (session.name === "display") {
+      if (!workspace.templateSnapshot.spec.display)
+        throw new ApiError("validation.invalid", "Display is not declared by the workspace template.");
+    } else if (!preview) throw new ApiError("validation.invalid", "Preview is not declared by the workspace template.");
     return { workspace, key: found.key, preview };
   }
 

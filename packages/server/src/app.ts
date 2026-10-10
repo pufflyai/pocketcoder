@@ -25,6 +25,7 @@ import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
+import { composeDisplays } from "./displays/displays";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
 import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
@@ -36,6 +37,7 @@ import { type PersistenceLimits, PersistenceService } from "./persistence/persis
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { disposableSourceRuntime } from "./persistence/source-runtime";
+import { ViewAdmission } from "./previews/admission";
 import { composePreviews } from "./previews/previews";
 import { relayHandler } from "./relay/relay";
 import { createIssuerClient } from "./secrets/issuer-client";
@@ -206,7 +208,10 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     },
   });
   app.onError(errorHandler(logger));
-  const previews = composePreviews({ store, service, hub });
+  const views = new ViewAdmission();
+  const previews = composePreviews({ store, service, hub, views });
+  const displays = composeDisplays({ store, service, hub, views });
+  app.use("*", displays.browser);
   app.use("*", previews.browser);
   app.use("*", requestId);
   app.use("*", requestLogging(logger));
@@ -264,6 +269,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerConversationRoutes({ app, store, service });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
+  displays.register(app);
   registerDiagnosticRoutes({ app, store, service });
   const terminalDeps = { store, hub, service };
   app.get(

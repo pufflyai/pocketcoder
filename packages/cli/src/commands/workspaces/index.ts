@@ -4,6 +4,7 @@ import { addAttachCommand } from "./attach";
 import { addCancelCommand } from "./cancel";
 import { addChatCommand } from "./chat";
 import { addCreateCommand } from "./create";
+import { addDisplayCommand } from "./display";
 import { addForwardCommand } from "./forward";
 import { addGetCommand } from "./get";
 import { addListCommand } from "./list";
@@ -24,6 +25,7 @@ export function addWorkspaceCommands(parser: Argv) {
     addCreateCommand,
     addGetCommand,
     addPreviewCommand,
+    addDisplayCommand,
     addForwardCommand,
     addLogsCommand,
     addNetworkEventsCommand,

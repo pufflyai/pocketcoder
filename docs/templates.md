@@ -380,3 +380,29 @@ with acknowledgements, capped at 16 MiB and five minutes. WebSocket queues share
 an 8 MiB budget and close stalled peers after 30 seconds. Admission allows at most
 32 streams per preview, 64 per workspace and 128 per controller; the existing HTTP
 relay may impose a lower workspace limit.
+# Desktop display
+
+Build the workspace base image, then build `deploy/image/desktop.Dockerfile` with
+that image as `BASE_IMAGE`. The standard desktop adds Xvfb, openbox, xterm and
+x11vnc. It runs as uid 10001. X and VNC accept loopback connections only.
+
+Use `examples/templates/desktop.json`. Replace its sample digest with the built
+image digest before importing it. `display: { "mode": "desktop" }` declares the
+fixed VNC endpoint. It cannot be exposed through a preview or forwarding port.
+The harness wrapper starts the desktop before its template-owned agent command.
+For a coding agent, replace the echo command with AgentAPI and the chosen agent.
+
+Open a trusted viewer with
+`pocketcoder workspaces display --id <workspace> --open`. `display:view` permits
+watching. Add `--control` and `display:control` for keyboard and pointer input.
+One controller and at most five streams may share a desktop. Clipboard and
+unsupported VNC extensions are disabled. The server checks input even when a
+caller forges the viewer's view-only setting. Revocation, grant loss, expiry and
+workspace shutdown close the stream. Watching does not extend idle lifetime.
+
+The viewer bundles noVNC 1.7.0 under MPL-2.0, with its source URL, author list and
+dependency notices served at `/license`. Run `bun run viewer:build` after editing
+the viewer source. `bun run check` checks the generated bundle and notices.
+Run `bun run example:e2e:desktop` for the real Docker round trip; add `-- --browser`
+to leave a fresh URL open for a browser check. The recipe checks the image is
+under 1.5 GB and removes the owned runtime when it ends.
