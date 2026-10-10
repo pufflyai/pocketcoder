@@ -171,10 +171,10 @@ test("real supervisor relays assets and live reload, strips authority, and close
     try {
       uploadController?.close();
     } catch {}
-    expect((await uploading).status).toBe(500);
+    expect((await uploading).status).toBe(401);
     expect(uploadRequests).toBe(0);
     await waitFor(async () => server.hub.activeStreamCount(workspace.id) === 0, 1000, "revoked HTTP requests close");
-    expect((await waiting).status).toBe(503);
+    expect((await waiting).status).toBe(401);
     expect((await request("/", { headers: { cookie } })).status).toBe(401);
     await slow.body?.cancel().catch(() => {});
   } finally {

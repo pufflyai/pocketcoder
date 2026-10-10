@@ -115,6 +115,8 @@ export async function previewHttp(
   } catch (error) {
     stop();
     finish();
+    // Revocation must report the same denial while reading a body or waiting for upstream headers.
+    await sessions.authorize(session);
     throw error;
   }
 }
