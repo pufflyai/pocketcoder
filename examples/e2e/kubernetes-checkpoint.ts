@@ -9,6 +9,7 @@ import { createHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { startKubernetesController } from "./kubernetes-controller";
+import { assertQuotaDeniedCancellation } from "./kubernetes-empty-job";
 import { assertRestoreRetry, assertRuntimeClassEnforced, cancelOnUnavailableNode } from "./kubernetes-provider-probes";
 import { waitFor } from "./local-process";
 
@@ -24,6 +25,7 @@ try {
   const serverImage = await cluster.buildImage("server");
   const api = await startKubernetesController(cluster, serverImage.tag);
   controller = api;
+  await assertQuotaDeniedCancellation(cluster, api);
   console.log(
     await cluster.run(
       [
