@@ -12,5 +12,16 @@
     "folderMillis": 1791631599000,
     "hash": "62aa9d642a8050ebdf14aa8b1be413a3e31228a4c9ff8ee5661783a42603e4f5",
     "name": "20261010112639_exotic_wallop"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"usage_samples\" (\n\t\"account_id\" uuid,\n\t\"bucket_at\" timestamp with time zone,\n\t\"sampled_at\" timestamp with time zone NOT NULL,\n\t\"workspaces\" integer,\n\t\"warm\" integer,\n\t\"volume_bytes\" bigint,\n\tCONSTRAINT \"usage_samples_pkey\" PRIMARY KEY(\"account_id\",\"bucket_at\"),\n\tCONSTRAINT \"usage_nonnegative\" CHECK (\"workspaces\" >= 0 and \"warm\" >= 0 and \"volume_bytes\" >= 0)\n);\n",
+      "\nCREATE INDEX \"usage_retention\" ON \"usage_samples\" (\"sampled_at\");",
+      "\nALTER TABLE \"usage_samples\" ADD CONSTRAINT \"usage_samples_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791664748000,
+    "hash": "a188ab86aa7b610b5ad66f9627a6bc5c0a4f79fcee734195b8e985285482a527",
+    "name": "20261010203908_slow_human_robot"
   }
 ]

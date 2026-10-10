@@ -1,5 +1,19 @@
 import { sql } from "drizzle-orm";
-import { check, jsonb, type PgTableFn, pgSchema, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  check,
+  index,
+  integer,
+  jsonb,
+  type PgTableFn,
+  pgSchema,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import type { ManagerConfig } from "../config";
 
 export function managerSchema(schema?: string) {
@@ -73,6 +87,24 @@ export function managerSchema(schema?: string) {
       ),
     ],
   );
-  return { accounts, operations, operators, bootstrapRequests };
+  const usageSamples = table(
+    "usage_samples",
+    {
+      accountId: uuid("account_id")
+        .notNull()
+        .references(() => accounts.id),
+      bucketAt: timestamp("bucket_at", { withTimezone: true }).notNull(),
+      sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+      workspaces: integer(),
+      warm: integer(),
+      volumeBytes: bigint("volume_bytes", { mode: "number" }),
+    },
+    (t) => [
+      primaryKey({ columns: [t.accountId, t.bucketAt] }),
+      index("usage_retention").on(t.sampledAt),
+      check("usage_nonnegative", sql`${t.workspaces} >= 0 and ${t.warm} >= 0 and ${t.volumeBytes} >= 0`),
+    ],
+  );
+  return { accounts, operations, operators, bootstrapRequests, usageSamples };
 }
-export const { accounts, operations, operators, bootstrapRequests } = managerSchema();
+export const { accounts, operations, operators, bootstrapRequests, usageSamples } = managerSchema();
