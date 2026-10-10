@@ -5,10 +5,12 @@ import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
+import { type PublicViewConfig, publicViewConfig } from "./public-views";
 
 type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig {
+  publicViews?: PublicViewConfig;
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
   listenHost: string;
   listenPort: number;
@@ -298,6 +300,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     throw new Error("POCKETCODER_EGRESS_IMAGE must be an immutable sha256 digest reference");
   }
   return {
+    publicViews: publicViewConfig(env.POCKETCODER_PUBLIC_VIEWS),
     listenHost: operator.listenHost,
     agentHost: agent.listenHost,
     agentPort: agent.listenPort,

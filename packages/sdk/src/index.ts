@@ -24,6 +24,7 @@ export type {
   ServerTerminalMessage,
   StorageState,
   TerminalSession,
+  ViewSessionOptions,
   WorkspaceResource,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";

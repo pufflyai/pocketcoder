@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { ApiError, hasScope } from "@pstdio/pocketcoder-contracts";
+import { ApiError, hasScope, type ViewSessionOptions } from "@pstdio/pocketcoder-contracts";
 import { keyAuthority, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { templateAuthorized, type WorkspaceService } from "../workspaces/service";
 
@@ -11,22 +11,32 @@ export interface PreviewSession {
   keyId: string;
   expires: number;
   control?: boolean;
+  mode: ViewSessionOptions["mode"];
+  parentOrigin?: string;
 }
 
 export class PreviewSessions {
   private readonly tokens = new Map<string, PreviewSession>();
   private readonly sessions = new Map<string, PreviewSession>();
+  private readonly embeds = new Map<string, PreviewSession>();
 
   constructor(
     private readonly store: Store,
     private readonly service: WorkspaceService,
   ) {}
 
-  async mint(workspaceId: string, name: string, origin: string, keyId: string, control = false) {
+  async mint(
+    workspaceId: string,
+    name: string,
+    origin: string,
+    keyId: string,
+    control = false,
+    options: ViewSessionOptions = { mode: "local" },
+  ) {
     this.sweep();
-    if (this.tokens.size + this.sessions.size >= 4096)
+    if (this.tokens.size + this.sessions.size + this.embeds.size >= 4096)
       throw new ApiError("operation.conflict", "Preview session limit reached.");
-    const session = { workspaceId, name, origin, keyId, control, expires: Date.now() + 60 * 60_000 };
+    const session = { workspaceId, name, origin, keyId, control, ...options, expires: Date.now() + 60 * 60_000 };
     const { workspace, key } = await this.authorize(session);
     session.expires = Math.min(session.expires, workspace.deadlineAt.getTime(), key.expiresAt?.getTime() ?? Infinity);
     const token = randomBytes(32).toString("base64url");
@@ -48,7 +58,20 @@ export class PreviewSessions {
     );
     const secret = randomBytes(32).toString("base64url");
     this.sessions.set(digest(secret), session);
-    return { secret, session };
+    let embedded: string | undefined;
+    if (session.mode === "embedded") {
+      embedded = randomBytes(16).toString("hex");
+      // This reference can show the cookie fallback, but cannot authorize view content or streams.
+      this.embeds.set(embedded, { ...session, expires: Math.min(session.expires, Date.now() + 60_000) });
+    }
+    return { secret, session, embedded };
+  }
+
+  async embedded(reference: string, origin: string) {
+    const session = this.embeds.get(reference);
+    if (!session || session.origin !== origin) throw new ApiError("auth.invalid_key", "Invalid embedded view.");
+    await this.authorize(session);
+    return session;
   }
 
   async lookup(secret: string, origin: string) {
@@ -83,7 +106,7 @@ export class PreviewSessions {
   }
 
   private sweep() {
-    for (const entries of [this.tokens, this.sessions]) {
+    for (const entries of [this.tokens, this.sessions, this.embeds]) {
       for (const [id, session] of entries) if (session.expires <= Date.now()) entries.delete(id);
     }
   }

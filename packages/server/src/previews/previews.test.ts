@@ -115,3 +115,21 @@ test("preview sessions cannot outlive the issuing key", async () => {
   await Bun.sleep(Math.max(0, expiresAt.getTime() - Date.now() + 1));
   expect((await server.app.request(new URL("/", url), { headers: { cookie } })).status).toBe(401);
 });
+
+test("malformed session JSON is a client validation error", async () => {
+  const server = await createTestServer(await createStore());
+  const found = await server.store.getMachineKeyWithPrincipal(server.keyId);
+  if (!found) throw new Error("Missing fixture key");
+  await server.store.updatePrincipal(
+    found.principal.id,
+    [...found.principal.scopes, "previews:open", "display:view"],
+    ["*"],
+  );
+  for (const path of ["previews/web", "display"]) {
+    const response = await server.app.request(
+      `/v1/workspaces/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/${path}`,
+      authed(server.token, { method: "POST", body: "{" }),
+    );
+    expect(response.status).toBe(400);
+  }
+});

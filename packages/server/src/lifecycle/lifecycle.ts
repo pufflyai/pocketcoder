@@ -90,6 +90,7 @@ export async function startPocketCoderServer(
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
     const { app, agentApp, websocket, scheduler, persistence, warmPool, checkpointTransfers, workspaceLeases } =
       buildServer({
+        publicViews: config.publicViews,
         issuerClient: configuredIssuer(config),
         ...(authorizeLaunch ? { authorizeLaunch } : {}),
         store,

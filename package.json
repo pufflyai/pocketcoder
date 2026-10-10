@@ -11,7 +11,7 @@
   "scripts": {
     "build": "lerna run build",
     "build:native": "bun run --cwd packages/cli compile",
-    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check",
+    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check && bun packages/server/scripts/build-domain-assets.ts --check",
     "check-licenses": "bun scripts/check-licenses.ts",
     "check-licenses:test": "bun test scripts/check-licenses.test.ts",
     "check-boundaries:test": "bun test scripts/check-boundaries.test.ts",
@@ -70,7 +70,9 @@
     "example:e2e:desktop": "bun --no-env-file examples/e2e/desktop.ts",
     "example:e2e:browser": "bun --no-env-file examples/e2e/browser.ts",
     "viewer:build": "bun scripts/build-desktop-viewer.ts",
-    "test:browser": "bun test packages/supervisor/src/displays/chromium.conformance.test.ts"
+    "test:browser": "bun test packages/supervisor/src/displays/chromium.conformance.test.ts",
+    "example:e2e:embed": "bun --no-env-file examples/e2e/embed.ts",
+    "domains:build": "bun packages/server/scripts/build-domain-assets.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -92,6 +94,7 @@
     "knip": "^6.29.0",
     "lerna": "^9.0.7",
     "nx": "^23.1.0",
+    "playwright": "1.64.0",
     "semver": "7.8.4",
     "typescript": "5.9.3"
   }
