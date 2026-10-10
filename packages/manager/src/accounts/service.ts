@@ -3,6 +3,7 @@ import type { BootstrapInputSchema } from "../config";
 import type { ManagerStore } from "../database/store";
 import { KubernetesAccounts } from "../kubernetes/accounts";
 import { ManagerError } from "./errors";
+import { reconcileOperation } from "./reconcile-operation";
 
 export function accountService(store: ManagerStore, provider = new KubernetesAccounts()) {
   let reconciliation: Promise<void> | undefined;
@@ -15,12 +16,9 @@ export function accountService(store: ManagerStore, provider = new KubernetesAcc
       reconciliation = (async () => {
         for (const operation of await store.pendingOperations()) {
           if (stopping) break;
-          const account = await store.getAccount(operation.accountId);
-          if (!account) throw new Error("Account missing");
           await store.startOperation(operation.id);
           try {
-            await provider.ensure(account);
-            await store.finishAccount(account.id, operation.id);
+            await reconcileOperation(store, provider, operation);
           } catch {
             await store.recordError(operation.id);
           }

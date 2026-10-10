@@ -48,6 +48,17 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
   });
   app.get("/v1/accounts", async (c) => c.json({ items: (await store.listAccounts()).map(accountResource) }));
+  for (const kind of ["suspend", "resume"] as const) {
+    app.post(`/v1/accounts/:id/${kind}`, async (c) => {
+      const result = await store.beginLifecycle(
+        z.uuid().parse(c.req.param("id")),
+        kind,
+        z.string().min(1).max(128).parse(c.req.header("idempotency-key")),
+        c.get("operator").expiresAt,
+      );
+      return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
+    });
+  }
   app.get("/v1/accounts/:id", async (c) => {
     const account = await store.getAccount(z.uuid().parse(c.req.param("id")));
     if (!account) throw new ManagerError(404, "account_not_found");

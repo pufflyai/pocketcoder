@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { ManagerError } from "../accounts/errors";
 import type { ManagerConfig } from "../config";
 import type { ManagerContext } from "./context";
@@ -28,7 +28,10 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
         const digest = hash(JSON.stringify(input));
         if (prior) {
           if (prior.requestDigest !== digest) throw new ManagerError(409, "idempotency_conflict");
-          const [operation] = await tx.select().from(operations).where(eq(operations.accountId, prior.id));
+          const [operation] = await tx
+            .select()
+            .from(operations)
+            .where(and(eq(operations.accountId, prior.id), eq(operations.kind, "provision")));
           if (!operation) throw new Error("Account operation missing");
           return { account: prior, operation };
         }
@@ -49,7 +52,7 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
           .returning();
         const [operation] = await tx
           .insert(operations)
-          .values({ id: randomUUID(), accountId: id, state: "pending", createdAt: at })
+          .values({ id: randomUUID(), accountId: id, requestId, state: "pending", createdAt: at })
           .returning();
         if (!account || !operation) throw new Error("Account insert failed");
         return { account, operation };
@@ -73,15 +76,23 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
     },
     async recordError(id: string) {
       validate();
-      await db.update(operations).set({ errorCode: "provisioning_retry" }).where(eq(operations.id, id));
+      const operation = await getOperation(id);
+      await db
+        .update(operations)
+        .set({ errorCode: `${operation?.kind}_retry` })
+        .where(eq(operations.id, id));
     },
-    async finishAccount(accountId: string, operationId: string) {
+    async setOperationPhase(id: string, phase: "controller" | "scale") {
+      validate();
+      await db.update(operations).set({ phase }).where(eq(operations.id, id));
+    },
+    async finishAccount(accountId: string, operationId: string, state: "ready" | "suspended" = "ready") {
       validate();
       await db.transaction(async (tx) => {
-        await tx.update(accounts).set({ state: "ready" }).where(eq(accounts.id, accountId));
+        await tx.update(accounts).set({ state }).where(eq(accounts.id, accountId));
         await tx
           .update(operations)
-          .set({ state: "succeeded", errorCode: null, completedAt: new Date() })
+          .set({ state: "succeeded", phase: "complete", errorCode: null, completedAt: new Date() })
           .where(eq(operations.id, operationId));
       });
     },

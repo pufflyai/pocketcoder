@@ -23,5 +23,21 @@
     "folderMillis": 1791664748000,
     "hash": "a188ab86aa7b610b5ad66f9627a6bc5c0a4f79fcee734195b8e985285482a527",
     "name": "20261010203908_slow_human_robot"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"operations\" DROP CONSTRAINT \"operations_account_id_key\";",
+      "\nALTER TABLE \"operations\" ADD COLUMN \"kind\" text DEFAULT 'provision' NOT NULL;",
+      "\nALTER TABLE \"operations\" ADD COLUMN \"request_id\" text DEFAULT 'provision' NOT NULL;",
+      "\nALTER TABLE \"operations\" ADD COLUMN \"phase\" text DEFAULT 'controller' NOT NULL;",
+      "\nALTER TABLE \"operations\" ADD CONSTRAINT \"operation_identity\" UNIQUE(\"account_id\",\"request_id\");",
+      "\nALTER TABLE \"operations\" ADD CONSTRAINT \"operation_kind\" CHECK (\"kind\" in ('provision','suspend','resume'));",
+      "\nALTER TABLE \"operations\" ADD CONSTRAINT \"operation_phase\" CHECK (\"phase\" in ('controller','scale','complete'));",
+      "\nALTER TABLE \"accounts\" DROP CONSTRAINT \"account_state\", ADD CONSTRAINT \"account_state\" CHECK (\"state\" in ('provisioning','ready','suspending','suspended','resuming'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791672990000,
+    "hash": "bbcdf0b1253b465678aa355bf19ea97a6c46ec4e4dfb7582c613ee9d66f2c49f",
+    "name": "20261010225630_dark_joseph"
   }
 ]
