@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { brotliCompressSync, constants } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import { readMigrationFiles } from "drizzle-orm/migrator";
@@ -25,6 +26,66 @@ async function embed(name: string, bytes: Uint8Array) {
 
 function engineFile(extension: string) {
   return Bun.file(resolve(root, `packages/db/node_modules/@electric-sql/pglite/dist/pglite.${extension}`));
+}
+
+// PGlite only dumps a running cluster, and every new database would recover that
+// dump as a crash: replay its WAL and fsync each file again. A stopped cluster opens directly.
+async function buildStoppedCluster(directory: string) {
+  const { migrateDatabase, getMigrationStatus } = await import("../packages/db/src/migrations/migrator");
+  const client = await PGlite.create({
+    dataDir: directory,
+    postgresqlconf: ["shared_buffers = 16MB"],
+    relaxedDurability: false,
+  });
+  try {
+    await migrateDatabase(client);
+    const status = await getMigrationStatus(client);
+    if (status.some((migration) => !migration.appliedAt || migration.drifted))
+      throw new Error("seed migrations are invalid");
+    const version = await client.query<{ server_version: string }>("SHOW server_version");
+    return { postgresVersion: version.rows[0]?.server_version };
+  } finally {
+    await client.close();
+  }
+}
+
+function octal(value: number, width: number) {
+  return `${value.toString(8).padStart(width, "0")}\0`;
+}
+
+// Same ustar layout as a PGlite dump, so both the memory loader and disk extraction accept it.
+function tarHeader(name: string, mode: number, size: number, mtimeMs: number, directory: boolean) {
+  if (Buffer.byteLength(name) > 100) throw new Error(`seed path is too long for ustar: ${name}`);
+  const header = Buffer.alloc(512);
+  header.write(name, 0);
+  header.write(octal(mode, 7), 100);
+  header.write(octal(0, 7), 108);
+  header.write(octal(0, 7), 116);
+  header.write(octal(size, 11), 124);
+  header.write(octal(Math.floor(mtimeMs / 1000), 11), 136);
+  header.write(directory ? "5" : "0", 156);
+  header.write("ustar\u000000", 257);
+  header.fill(" ", 148, 156);
+  const sum = header.reduce((total, byte) => total + byte, 0);
+  header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+  return header;
+}
+
+async function tarDirectory(root: string) {
+  const blocks: Uint8Array[] = [];
+  async function add(path: string) {
+    for (const entry of await readdir(join(root, path), { withFileTypes: true })) {
+      const name = `${path}/${entry.name}`;
+      const info = await stat(join(root, name));
+      const data = entry.isDirectory() ? new Uint8Array() : await Bun.file(join(root, name)).bytes();
+      blocks.push(tarHeader(name, info.mode & 0o777, data.length, info.mtimeMs, entry.isDirectory()));
+      blocks.push(data, new Uint8Array((512 - (data.length % 512)) % 512));
+      if (entry.isDirectory()) await add(name);
+    }
+  }
+  await add("");
+  blocks.push(new Uint8Array(1024));
+  return Buffer.concat(blocks);
 }
 
 if (process.argv.includes("--check")) {
@@ -53,14 +114,10 @@ if (process.argv.includes("--check")) {
 } else {
   await mkdir(assets, { recursive: true });
   await writeFile(resolve(assets, "migrations.json"), `${JSON.stringify(migrations, null, 2)}\n`);
-  const { migrateDatabase, getMigrationStatus } = await import("../packages/db/src/migrations/migrator");
-  const client = await PGlite.create({ postgresqlconf: ["shared_buffers = 16MB"], relaxedDurability: false });
+  const directory = await mkdtemp(join(tmpdir(), "pocketcoder-seed-"));
   try {
-    await migrateDatabase(client);
-    const status = await getMigrationStatus(client);
-    if (status.some((migration) => !migration.appliedAt || migration.drifted))
-      throw new Error("seed migrations are invalid");
-    const seed = Bun.gunzipSync(await (await client.dumpDataDir("gzip")).arrayBuffer());
+    const { postgresVersion } = await buildStoppedCluster(directory);
+    const seed = await tarDirectory(directory);
     const embeddedSeed = await embed("core-seed.tar.br", seed);
     const engine = {
       wasm: await embed("pglite.wasm.br", new Uint8Array(await engineFile("wasm").arrayBuffer())),
@@ -69,14 +126,14 @@ if (process.argv.includes("--check")) {
     const manifest = {
       app: "pocketcoder",
       pgliteVersion: dependencies["@electric-sql/pglite"],
-      postgresVersion: (await client.query<{ server_version: string }>("SHOW server_version")).rows[0]?.server_version,
+      postgresVersion,
       checksum: embeddedSeed.checksum,
       engine,
       migrations: registry,
     };
     await writeFile(resolve(assets, "core-seed.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-    console.log(`Built core seed (${seed.byteLength} bytes, ${status.length} migrations)`);
+    console.log(`Built core seed (${seed.byteLength} bytes, ${registry.length} migrations)`);
   } finally {
-    await client.close();
+    await rm(directory, { recursive: true, force: true });
   }
 }
