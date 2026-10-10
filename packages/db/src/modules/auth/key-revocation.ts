@@ -3,8 +3,10 @@ import { assertAuthorityScope, principalWithinAuthority } from "@pstdio/pocketco
 import { and, eq, isNull } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { lockKeyAuthority } from "./authority";
+import { revokeKeyIds, unrevokedKeyIds } from "./key-ids";
 
-export function createKeyRevocation({ db, tables: { principals, machineKeys } }: DatabaseContext) {
+export function createKeyRevocation({ db, journal, tables }: DatabaseContext) {
+  const { principals, machineKeys } = tables;
   async function lockTarget(tx: Transaction, principalId: string, actorKeyId?: string) {
     if (!actorKeyId) {
       await tx.select({ id: principals.id }).from(principals).where(eq(principals.id, principalId)).for("update");
@@ -30,6 +32,8 @@ export function createKeyRevocation({ db, tables: { principals, machineKeys } }:
           .where(eq(machineKeys.id, keyId));
         if (!identity) return false;
         await lockTarget(tx, identity.principalId, actorKeyId);
+        // Journal first: a restore must not revive a key whose revocation was ever requested.
+        journal?.append({ kind: "key_revoked", keyId, at: at.toISOString() });
         const rows = await tx
           .update(machineKeys)
           .set({ revokedAt: at })
@@ -41,11 +45,10 @@ export function createKeyRevocation({ db, tables: { principals, machineKeys } }:
     async revokePrincipalKeys(principalId: string, at: Date, actorKeyId?: string) {
       await db.transaction(async (tx) => {
         await lockTarget(tx, principalId, actorKeyId);
+        const keyIds = await unrevokedKeyIds(tx, tables, principalId);
+        journal?.append({ kind: "principal_disabled", principalId, keyIds, at: at.toISOString() });
         await tx.update(principals).set({ disabledAt: at }).where(eq(principals.id, principalId));
-        await tx
-          .update(machineKeys)
-          .set({ revokedAt: at })
-          .where(and(eq(machineKeys.principalId, principalId), isNull(machineKeys.revokedAt)));
+        await revokeKeyIds(tx, tables, keyIds, at);
       });
     },
   };

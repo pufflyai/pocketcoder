@@ -229,5 +229,12 @@
     "folderMillis": 1791551776000,
     "hash": "06804295e4b48cef7c2c837daeec546b76617e9e7144bd21893da2022f22ac7e",
     "name": "20261009131616_small_purple_man"
+  },
+  {
+    "sql": ["ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"],
+    "bps": true,
+    "folderMillis": 1791593063000,
+    "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f",
+    "name": "20261010004423_puzzling_jigsaw"
   }
 ]

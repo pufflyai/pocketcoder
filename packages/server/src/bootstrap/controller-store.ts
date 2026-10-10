@@ -74,9 +74,10 @@ async function initializeKeys(directory: string) {
   };
 }
 
-export async function openControllerStore(dataDir: string) {
+export async function openControllerStore(dataDir: string, journalDir?: string) {
   let keys: Awaited<ReturnType<typeof initializeKeys>> | undefined;
   const options: DatabaseOpenOptions = {
+    ...(journalDir ? { journalDir } : {}),
     async beforeOpen(directory) {
       keys = await initializeKeys(directory);
     },

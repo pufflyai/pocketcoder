@@ -1,0 +1,1 @@
+ALTER TABLE "checkpoint_controller_state" ADD COLUMN "journal" jsonb;

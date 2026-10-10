@@ -13,7 +13,7 @@ import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { lockKeyAuthority } from "../auth/authority";
 
-export function createTemplates({ db, tables: { templates, principals, machineKeys } }: DatabaseContext) {
+export function createTemplates({ db, journal, tables: { templates, principals, machineKeys } }: DatabaseContext) {
   const fromRow = (row: typeof templates.$inferSelect) => ({ ...row, spec: TemplateSpecSchema.parse(row.spec) });
   async function authorize(tx: Transaction, actorKeyId: string, name: string) {
     const { authority } = await lockKeyAuthority(tx, { principals, machineKeys }, actorKeyId);
@@ -70,6 +70,7 @@ export function createTemplates({ db, tables: { templates, principals, machineKe
     async retireTemplate(actorKeyId: string, name: string, version: string) {
       return db.transaction(async (tx) => {
         await authorize(tx, actorKeyId, name);
+        journal?.append({ kind: "template_retired", name, version, at: new Date().toISOString() });
         const [row] = await tx
           .update(templates)
           .set({ status: "retired", retiredAt: sql`coalesce(${templates.retiredAt}, now())` })

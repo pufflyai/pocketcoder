@@ -61,7 +61,10 @@ export async function createPGliteFixture(prefix: string, mode: "memory" | "disk
     },
     async dispose() {
       await store.close();
-      if (dir) await rm(dir, { recursive: true, force: true });
+      if (dir) {
+        await rm(dir, { recursive: true, force: true });
+        await rm(`${dir}-journal`, { recursive: true, force: true });
+      }
     },
   };
 }

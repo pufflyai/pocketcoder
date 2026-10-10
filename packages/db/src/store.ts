@@ -28,11 +28,13 @@ import { createAdmission } from "./modules/workspaces/admission";
 import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
+import { createRecovery } from "./recovery/recovery";
 
 export class PGliteStore implements Store {
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
   readonly storageReservations: ReturnType<typeof createStorageReservations>;
   readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
+  readonly recovery: ReturnType<typeof createRecovery>;
 
   static async create(dataDir?: string, options?: DatabaseOpenOptions) {
     return new PGliteStore(await createDatabaseContext(dataDir, options));
@@ -42,6 +44,7 @@ export class PGliteStore implements Store {
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.storageReservations = createStorageReservations(context);
     this.backup = (options) => writeBackup(context, options);
+    this.recovery = createRecovery(context);
     const lifecycle = createLifecycle(context);
     const content = createContentPurge(context);
     this.listWorkspaceStorage = content.listWorkspaceStorage;

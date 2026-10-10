@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
+import { bindJournal } from "../journal/binding";
 import { migrateDatabase } from "../migrations/migrator";
 import { createSchema } from "../schema";
 import { loadCoreAssets } from "./assets";
@@ -13,6 +14,30 @@ import { DurableFilesystem } from "./durable-filesystem";
 
 export interface DatabaseOpenOptions {
   beforeOpen?(directory: string): Promise<void>;
+  // Defaults to the folder recorded in the database, then to "<data folder>-journal".
+  journalDir?: string;
+}
+
+// Returns the database folder, installing the seed on first start.
+async function installDatabase(directory: string, assets: Awaited<ReturnType<typeof loadCoreAssets>>) {
+  const databaseDir = join(directory, "db");
+  if (!existsSync(databaseDir)) {
+    const stage = join(directory, ".db-staging");
+    await rm(stage, { recursive: true, force: true });
+    // Install the seed before opening the engine to avoid two WASM memory peaks.
+    await new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage);
+    if ((await readFile(join(stage, "PG_VERSION"), "utf8")).trim() !== "18")
+      throw new Error("incompatible core seed engine format");
+    await syncSeed(stage);
+    await rename(stage, databaseDir);
+    syncDirectory(directory);
+    return databaseDir;
+  }
+  if (!(await lstat(databaseDir)).isDirectory() || !(await readdir(databaseDir)).includes("PG_VERSION"))
+    throw new Error("incomplete database directory; refusing to replace existing data");
+  if ((await readFile(join(databaseDir, "PG_VERSION"), "utf8")).trim() !== "18")
+    throw new Error("incompatible database engine format");
+  return databaseDir;
 }
 
 export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpenOptions = {}) {
@@ -29,32 +54,15 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
       postgresqlconf: ["shared_buffers = 16MB"],
       startParams: PGlite.defaultStartParams.filter((param) => param !== "-F"),
     };
-    if (folder) {
-      const databaseDir = join(folder.dir, "db");
-      if (!existsSync(databaseDir)) {
-        const stage = join(folder.dir, ".db-staging");
-        await rm(stage, { recursive: true, force: true });
-        // Install the seed before opening the engine to avoid two WASM memory peaks.
-        await new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage);
-        if ((await readFile(join(stage, "PG_VERSION"), "utf8")).trim() !== "18")
-          throw new Error("incompatible core seed engine format");
-        await syncSeed(stage);
-        await rename(stage, databaseDir);
-        syncDirectory(folder.dir);
-      } else {
-        if (!(await lstat(databaseDir)).isDirectory() || !(await readdir(databaseDir)).includes("PG_VERSION"))
-          throw new Error("incomplete database directory; refusing to replace existing data");
-        if ((await readFile(join(databaseDir, "PG_VERSION"), "utf8")).trim() !== "18")
-          throw new Error("incompatible database engine format");
-      }
-      client = await PGlite.create({ ...options, fs: new DurableFilesystem(databaseDir) });
-    } else {
-      client = await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
-    }
+    client = folder
+      ? await PGlite.create({ ...options, fs: new DurableFilesystem(await installDatabase(folder.dir, assets)) })
+      : await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
     await migrateDatabase(client);
     const tables = createSchema("pocketcoder");
     const db = drizzle({ client });
     const dataWriter = await bindCheckpointWriter(db, tables, folder);
+    const journal =
+      folder && dataWriter ? await bindJournal(db, tables, folder.dir, dataWriter, hooks.journalDir) : undefined;
     let closed = false;
     const database = client;
     return {
@@ -63,6 +71,7 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
       db,
       tables,
       dataWriter,
+      journal,
       dataDir: folder?.dir,
       validateStorage: folder?.validate,
       changes: new Map<string, Set<() => void>>(),
@@ -72,6 +81,7 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
         try {
           await database.close();
         } finally {
+          journal?.close();
           folder?.close();
         }
       },

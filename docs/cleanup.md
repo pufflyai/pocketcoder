@@ -168,20 +168,27 @@ The independent operator remains able to reconcile and purge the disabled target
 
 ## Backup replay and rollout
 
+The controller records every purge, checkpoint deletion, conversation deletion, key revocation,
+principal disable or scope narrowing, secret retirement or replacement and template retirement in
+its deletion journal before the database changes. The journal lives outside the data folder and
+is never part of a backup.
+
 1. Upgrade the controller first. Startup applies known forward migrations.
-   Existing allocations and credentials remain stored in the data folder.
-2. Pin compatible reviewed CLI/controller and SDK artifacts. The existing
-   workspace protocol is unchanged; no new workspace credential is introduced.
-3. Restore database and storage backups into an isolated environment. Keep normal
-   client traffic and admission closed. Restore the independent deletion journal.
-4. Disable ordinary target-principal access before starting normal service.
-   Bootstrap a separate, explicitly constrained recovery operator if needed.
-5. Use `client.recovery.purge(principalId, workspaceId, freshExecutionId)` for each
-   journal entry. Poll `client.recovery.operation(principalId, operationId)`.
-   A historical successful receipt is never proof about restored physical data.
-6. Verify live content removal, reconcile authoritative keys, and call
-   `client.keys.revokeAll(principalId)` as authorized. Do not reactivate tenant
-   access to obtain cleanup authority. Open service only after all journals pass.
+2. Pin compatible reviewed CLI/controller and SDK artifacts. The workspace protocol is unchanged.
+3. Restore with `pcd backup restore` into a new folder. The restored controller starts in recovery
+   with only its private admin socket open, so client traffic and admission stay closed.
+4. Run `pcd recovery complete`. It requires the original journal to reach the backup's position,
+   repeats every journaled revocation and retirement, fails and removes the runtimes the backup
+   lists as running, revokes their issuer leases, and runs every journaled purge and deletion
+   again with operation keys that belong to this recovery. A historical successful receipt is
+   never proof about restored physical data.
+5. Completion moves the journal's writer claim to the restored folder, so the old folder cannot
+   start again. Restart `pcd serve` to open service. If any step fails, recovery stays closed;
+   fix the cause and run `pcd recovery complete` again.
+
+Consumers that keep their own deletion journal can still repeat purges after service opens with
+`client.recovery.purge(principalId, workspaceId, freshExecutionId)` and
+`client.recovery.operation(principalId, operationId)`.
 
 Kito K-2 owns downstream integration and hosted acceptance. Its capacity, shared
 storage, external retention, and live Kubernetes failure gates remain separate
