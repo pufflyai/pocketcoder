@@ -12,18 +12,20 @@ import type { PreviewSession, PreviewSessions } from "./sessions";
 async function boundedBody(request: Request, signal: AbortSignal) {
   const reader = request.body?.getReader();
   if (!reader) return undefined;
-  const cancel = () => void reader.cancel().catch(() => {});
-  signal.addEventListener("abort", cancel, { once: true });
+  let stop!: () => void;
+  const aborted = new Promise<never>((_, reject) => {
+    stop = () => reject(signal.reason);
+  });
+  signal.addEventListener("abort", stop, { once: true });
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     while (true) {
       signal.throwIfAborted();
-      const next = await reader.read();
+      const next = await Promise.race([reader.read(), aborted]);
       if (next.done) break;
       size += next.value.byteLength;
       if (size > PREVIEW_FRAME_BYTES) {
-        await reader.cancel();
         throw new ApiError("relay.body_too_large", "Preview body exceeds 64 KiB.");
       }
       chunks.push(next.value);
@@ -31,7 +33,9 @@ async function boundedBody(request: Request, signal: AbortSignal) {
     signal.throwIfAborted();
     return size ? Buffer.concat(chunks).toString("base64") : undefined;
   } finally {
-    signal.removeEventListener("abort", cancel);
+    signal.removeEventListener("abort", stop);
+    // Cancelling Bun's incoming body here resets the socket before denial headers reach the client.
+    reader.releaseLock();
   }
 }
 
@@ -59,6 +63,10 @@ export async function previewHttp(
   request.signal.addEventListener("abort", stop, { once: true });
   if (request.signal.aborted) stop();
   try {
+    const bodyB64 = await boundedBody(request, abort.signal);
+    // Permission can change while the body arrives, before the next periodic check.
+    await sessions.authorize(session);
+    abort.signal.throwIfAborted();
     const response = await hub.relayStream(
       session.workspaceId,
       {
@@ -67,7 +75,7 @@ export async function previewHttp(
         path: url.pathname + url.search,
         query: {},
         headers: previewRequestHeaders(request.headers),
-        body_b64: await boundedBody(request, abort.signal),
+        body_b64: bodyB64,
         deadline_ms: deadline,
       },
       16 * 1024 * 1024,
