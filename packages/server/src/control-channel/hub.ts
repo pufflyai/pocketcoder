@@ -18,6 +18,7 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
+import { PreviewSocketBridge } from "../previews/socket-bridge";
 import { RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "../terminals/terminal-bridge";
 import type { LiveConnection } from "./hub-connection";
@@ -34,6 +35,7 @@ import { CheckpointRegistry } from "./hub-checkpoints";
 export const MAX_INFLIGHT_RELAY = 16;
 
 export class Hub implements ConnectionHub {
+  readonly previewSockets = new PreviewSocketBridge((conn, payload) => this.send(conn, "preview_socket", payload));
   private readonly byWorkspace = new Map<string, LiveConnection>();
   private readonly archiveCheckpoints = new CheckpointRegistry(
     (connection) => this.byWorkspace.get(connection.workspaceId) === connection,
@@ -208,10 +210,11 @@ export class Hub implements ConnectionHub {
     workspaceId: string,
     request: Omit<ProxyRequest, "request_id">,
     maxResponseBytes: number,
+    signal?: AbortSignal,
   ): Promise<RelayStreamResponse> {
     const conn = this.byWorkspace.get(workspaceId);
     const requestId = randomUUID();
-    if (!conn?.registered) {
+    if (!conn?.registered || signal?.aborted) {
       return Promise.resolve({ request_id: requestId, headers: {}, error_code: "unreachable" });
     }
     if (conn.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
@@ -224,7 +227,7 @@ export class Hub implements ConnectionHub {
     if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
       return Promise.resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
     }
-    const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms);
+    const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms, signal);
     this.send(conn, "proxy_request", { ...request, request_id: requestId });
     return response;
   }
@@ -345,6 +348,7 @@ export class Hub implements ConnectionHub {
   }
 
   private dropPending(conn: LiveConnection, errorCode: "unreachable"): void {
+    this.previewSockets.drop(conn);
     for (const [id, pending] of conn.inflight) {
       clearTimeout(pending.timer);
       pending.resolve({ request_id: id, headers: {}, error_code: errorCode });

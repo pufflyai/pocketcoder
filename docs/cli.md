@@ -281,3 +281,33 @@ declared writable memory path can create, sync, read, and remove a sentinel.
 The probe is canceled on success, failure, or timeout; failures print the
 workspace log tail. Exit code 0 means the entire path — API, store, driver,
 container, writable mounts, supervisor, harness, and relay — works.
+
+### Open or forward a workspace webapp
+
+The template must declare the preview port. Use a controller on loopback and an
+owner key with `previews:open` outside the workspace:
+
+```sh
+pocketcoder workspaces preview --id <workspace-id> --name web --open
+pocketcoder workspaces forward --id <workspace-id> --name web --port 3001
+```
+
+`preview` prints a one-time browser URL; `--open` opens the default browser.
+`forward` binds only to `127.0.0.1` and prints its local URL. Omitting `--port`
+selects a free local port. It forwards HTTP and WebSockets for that declared
+preview only. Stop it with Ctrl-C. A revoked or expired session needs a fresh
+command. Forwarding rejects foreign Host and Origin headers.
+
+SDK callers can use `client.previews.list(workspaceId)` and
+`client.previews.open(workspaceId, "web")`. The returned URL must be opened within
+60 seconds. Keep it out of logs and share only with its intended user.
+
+Run the real Docker demo from the repository root:
+
+```sh
+bun examples/e2e/preview.ts
+```
+
+Add `--browser` to pause with a fresh URL for a browser check. Press Enter to
+finish cleanup. The demo checks HTML, CSS, live reload, token replay, loopback
+forwarding and workspace shutdown.

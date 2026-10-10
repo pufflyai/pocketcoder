@@ -186,6 +186,13 @@ export async function handleConnectedFrame(
       connection.harnessRunning = frame.payload.phase === "running";
       await handleProcessState(deps, frame);
       return;
+    case "preview_socket":
+      if (connection.protocolVersion < 10) {
+        closeProtocol(ws, "preview frame requires protocol v10");
+        return;
+      }
+      deps.hub.previewSockets.receive(connection, frame.payload);
+      return;
     case "proxy_response":
       deps.hub.resolveRelay(connection, frame.payload);
       return;
