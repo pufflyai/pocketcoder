@@ -7,9 +7,24 @@ import {
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type QueryContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import type { DeletionJournal } from "../../journal/journal";
+
+function journalOperation(journal: DeletionJournal | undefined, input: WorkspaceOperationRow) {
+  const at = input.createdAt.toISOString();
+  if (input.kind === "purge" && input.workspaceId)
+    journal?.append({ kind: "workspace_purged", principalId: input.principalId, workspaceId: input.workspaceId, at });
+  if (input.kind === "delete" && input.checkpointId)
+    journal?.append({
+      kind: "checkpoint_deleted",
+      principalId: input.principalId,
+      checkpointId: input.checkpointId,
+      at,
+    });
+}
 
 export function createOperations({
   db,
+  journal,
   schema,
   tables: { workspaceOperations: operations, workspaceCheckpoints: checkpoints, workspaces },
 }: DatabaseContext) {
@@ -55,6 +70,8 @@ export function createOperations({
           (await countIncomplete(tx)) >= options.maxIncompleteOperations
         )
           throw new OperationCapacityExceededError();
+        // Journal first, so a restore repeats every purge or checkpoint deletion that was admitted.
+        journalOperation(journal, input);
         const [row] = await tx.insert(operations).values(input).returning();
         return { operation: requiredRow(row), created: true, conflict: false };
       });

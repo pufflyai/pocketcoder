@@ -124,7 +124,7 @@ The archive is a plain tar file with mode 0600:
 | `db/` | The embedded database files, without process lock files |
 | `keys/` | `auth-pepper`, `event-signing-key` and `secret-key` |
 | `checkpoints/` | Each checkpoint archive the database refers to |
-| `manifest.json` | Format, snapshot ID, time, engine, database log position, migrations, checkpoints, and the size and SHA-256 of every member |
+| `manifest.json` | Format, snapshot ID, time, engine, database log position, deletion journal position, migrations, checkpoints, and the size and SHA-256 of every member |
 
 The controller writes a hidden `.controller.tar.partial` file in the output folder and links it
 to the final name only when it is complete. It never replaces an existing file. The output must be
@@ -138,7 +138,65 @@ that the checkpoint archives match the database's references.
 The archive holds the controller keys, which can decrypt stored secrets. Keep it private and
 encrypt it before it leaves the host. Live workspace files, Docker images and Kubernetes volume
 checkpoints are not included; a backup refuses to run when the database refers to volume checkpoints.
-Restoring an archive is a separate step that is not available yet.
+
+### The deletion journal
+
+The controller keeps a deletion journal next to its data folder, in `./pc_data-journal` by default
+(set `POCKETCODER_JOURNAL_DIR` to move it). Before a key revocation, principal disable or scope
+narrowing, secret retirement or replacement, template retirement, conversation deletion, workspace
+purge or checkpoint deletion changes the database, the controller appends it to this file and
+syncs it to disk. Re-enables and scope widenings are appended right after they commit, so a lost
+record can only leave a restored principal narrower. Each record names its exact keys, versions or
+workspaces. The journal also names the one data folder that may write. It is never part of a
+backup, so restoring an older backup cannot roll it back. Keep it on storage that survives losing
+the data folder, keep it private, and never copy it: a copy is a second journal.
+
+### Restore the controller
+
+Stop the controller, then restore the archive into a new folder and an empty checkpoint folder:
+
+```sh
+./pocketcoder backup restore backups/controller.tar --dir ./pc_restored --checkpoint-dir ./checkpoints-restored
+export POCKETCODER_DIR="$PWD/pc_restored" POCKETCODER_CHECKPOINT_DIR="$PWD/checkpoints-restored"
+./pocketcoder serve
+```
+
+`backup restore` verifies the whole archive first. It extracts it into a private staging folder,
+points the database at the new folders and renames the staging folder into place only when everything
+is written. The target must not exist. The restored folder finds the original deletion journal
+through its database; set `POCKETCODER_JOURNAL_DIR` if the journal moved.
+
+The first start is in recovery. It opens only the private admin socket: no operator or agent
+listener, no scheduler and no admission. In the second terminal:
+
+```sh
+./pocketcoder recovery status
+./pocketcoder recovery complete
+```
+
+`recovery complete` does the following, and you can run it again after any failure:
+
+1. Checks that the deletion journal reaches the backup's journal position. A missing or different
+   journal keeps recovery closed.
+2. Repeats every revocation, disable, retirement, scope change and conversation deletion in the
+   journal, in order.
+3. Fails every workspace the backup still lists as running, removes its runtime and revokes its
+   issuer leases. Old runtimes cannot reconnect. Warm pool runtimes are removed too.
+4. Resumes unfinished purges, then runs every purge and checkpoint deletion in the journal again
+   with operation keys that belong to this recovery. An old success in the restored database does
+   not prove that restored bytes are gone, so each one runs until the bytes are removed.
+5. Moves the journal's writer claim to the restored folder. After this, the old data folder refuses
+   to start. Only one controller can hold the journal at a time, so the two cannot both write while
+   they share it.
+
+Stop the old controller before you restore: it keeps serving until it stops, and recovery cannot
+take its journal while it runs.
+
+Then stop the controller with Ctrl+C and run `./pocketcoder serve` again to open service. The keys,
+checkpoints and template come back unchanged; restore a workspace from a checkpoint to continue its
+work. Runtimes started after the backup are not removed, because they may belong to another
+controller on the same Docker host; they cannot reconnect, and their workspace leases expire within
+minutes. `recovery complete` reports how many it found.
 
 ## Prerequisites
 

@@ -44,11 +44,11 @@ async function operation(id: string) {
   );
 }
 
-async function identity() {
+async function identity(dataDir = "pc_data") {
   return Promise.all(
     ["auth-pepper", "event-signing-key", "secret-key"].map(async (name) =>
       createHash("sha256")
-        .update(await readFile(join(directory, "pc_data/keys", name)))
+        .update(await readFile(join(directory, dataDir, "keys", name)))
         .digest("hex"),
     ),
   );
@@ -138,6 +138,41 @@ try {
   const verified = JSON.parse(await controller.run(["backup", "verify", backupPath]));
   if (backup.checkpoints !== 1 || verified.snapshot_id !== backup.snapshot_id || verified.checkpoints !== 1)
     throw new Error("Controller backup did not capture its checkpoint archive.");
+  // A key revoked after the backup must stay revoked on the restored controller.
+  const late = JSON.parse(await controller.run(ownerArgs.map((arg, index) => (index === 6 ? randomUUID() : arg))));
+  const revoked = await fetch(`${controller.baseUrl}/v1/principals/${late.key.principal_id}/keys/${late.key.id}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${ownerToken}` },
+  });
+  if (!revoked.ok) throw new Error("Owner key revocation failed.");
+  await controller.stop();
+  const recovery = JSON.parse(
+    await controller.run([
+      "backup",
+      "restore",
+      backupPath,
+      "--dir",
+      join(directory, "pc_restored"),
+      "--checkpoint-dir",
+      join(directory, "checkpoints-restored"),
+    ]),
+  );
+  controller.useDataFolder(join(directory, "pc_restored"), join(directory, "checkpoints-restored"));
+  await controller.start("recovery");
+  if ((await fetch(`${controller.baseUrl}/livez`).catch(() => null))?.ok)
+    throw new Error("A controller in recovery opened its operator listener.");
+  const completed = JSON.parse(await controller.run(["recovery", "complete"]));
+  if (!completed.complete || completed.recovery_id !== recovery.recovery_id)
+    throw new Error("Recovery did not complete.");
+  await controller.stop();
+  await controller.start();
+  if (JSON.stringify(before) !== JSON.stringify(await identity("pc_restored")))
+    throw new Error("Restored controller identity differs from the original.");
+  const rejected = await fetch(`${controller.baseUrl}/v1/templates`, {
+    headers: { authorization: `Bearer ${late.token}` },
+  });
+  if (rejected.status !== 401) throw new Error("A key revoked after the backup came back.");
+  await controller.run(["checkpoints", "verify", "--id", preserved.checkpoint.id], ownerToken);
   const restored = RestoreResponseSchema.parse(
     JSON.parse(
       await controller.run(
@@ -208,6 +243,7 @@ try {
           position: backup.position,
           checkpoints: backup.checkpoints,
         },
+        recovery: { recoveryId: recovery.recovery_id, events: completed.events, fenced: completed.workspaces },
         exactTree: JSON.parse(exact.stdout),
         exactBytes: Object.values(tree).reduce((total, value) => total + Buffer.from(value, "base64").length, 0),
         image: image.image,

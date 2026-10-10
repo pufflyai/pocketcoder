@@ -43,6 +43,14 @@ export async function readSnapshotState(client: PGlite, schema: string) {
   };
 }
 
+export async function readJournalId(client: PGlite, schema: string) {
+  const [row] = await rows(
+    client,
+    `SELECT journal->>'journalId' AS journal_id FROM "${schema}"."checkpoint_controller_state" WHERE id = 'controller'`,
+  );
+  return row?.journal_id ?? null;
+}
+
 export async function readMigrations(client: PGlite, schema: string) {
   const applied = await rows(
     client,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { JournalCursorSchema } from "../journal/events";
 
 export const BACKUP_FORMAT = "pocketcoder-backup/v1";
 export const MANIFEST_PATH = "manifest.json";
@@ -28,6 +29,8 @@ export const BackupManifestSchema = z.strictObject({
     position: z.string().regex(/^[0-9A-F]{1,8}\/[0-9A-F]{1,8}$/),
     migrations: z.array(z.strictObject({ name: z.string().min(1), hash: z.string().regex(/^[a-f0-9]{64}$/) })),
   }),
+  // Every deletion the database snapshot reflects is at or before this journal position.
+  journal: JournalCursorSchema,
   checkpoints: z.array(
     z.strictObject({ checkpointId: z.uuid(), transferId: z.uuid(), path: memberPath, bytes, digest }),
   ),

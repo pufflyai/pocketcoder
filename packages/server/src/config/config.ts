@@ -15,6 +15,8 @@ export interface ServerConfig {
   agentHost: string;
   agentPort: number;
   dataDir: string;
+  // Deletion journal outside the data folder; null uses the folder the database records.
+  journalDir: string | null;
   pepper: string;
   secretKey?: string;
   issuerCaFile?: string;
@@ -149,6 +151,11 @@ function bytesEnv(env: Environment, key: string, fallback: number): number {
   return value;
 }
 
+function resolveDataFolders(env: Environment): Pick<ServerConfig, "dataDir" | "journalDir"> {
+  if (env.POCKETCODER_DIR === "") throw new Error("POCKETCODER_DIR must not be empty");
+  return { dataDir: env.POCKETCODER_DIR ?? "./pc_data", journalDir: env.POCKETCODER_JOURNAL_DIR || null };
+}
+
 function resolvePepper(env: Environment) {
   const pepper = env.POCKETCODER_AUTH_PEPPER;
   return pepper ?? "";
@@ -267,7 +274,6 @@ export function configSummary(config: ServerConfig) {
 }
 
 export function loadConfig(env: Environment = process.env): ServerConfig {
-  if (env.POCKETCODER_DIR === "") throw new Error("POCKETCODER_DIR must not be empty");
   const pepper = resolvePepper(env);
   const operator = env.POCKETCODER_HTTP
     ? parseHttpAddress(env.POCKETCODER_HTTP)
@@ -297,7 +303,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     agentPort: agent.listenPort,
     launchPolicy: launchPolicyConfig(env),
     listenPort,
-    dataDir: env.POCKETCODER_DIR ?? "./pc_data",
+    ...resolveDataFolders(env),
     pepper,
     ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),
     eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,
