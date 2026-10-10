@@ -1,3 +1,4 @@
+import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type {
   PhysicalStorageAmount,
   ReadStorageCapacity,
@@ -71,7 +72,7 @@ export function checkStorageCapacity(
   for (const scope of ["workspace", "principal", "instance"] as const) {
     const maximum = storageAmount(capacity[scope]);
     if (amount.bytes > maximum.bytes - usage[scope].bytes || amount.files > maximum.files - usage[scope].files)
-      throw new Error(`Physical storage ${scope} capacity is exhausted.`);
+      throw new ApiError("storage.capacity_exhausted", `Physical storage ${scope} capacity is exhausted.`);
   }
   storageAmount(capacity.freeDisk);
   storageAmount({ bytes: capacity.freeDisk.headroomBytes, files: capacity.freeDisk.headroomFiles });
@@ -80,7 +81,7 @@ export function checkStorageCapacity(
     amount.bytes > capacity.freeDisk.bytes - capacity.freeDisk.headroomBytes - usage.outstanding.bytes ||
     amount.files > capacity.freeDisk.files - capacity.freeDisk.headroomFiles - usage.outstanding.files
   )
-    throw new Error("Physical storage free-disk headroom is exhausted.");
+    throw new ApiError("storage.capacity_exhausted", "Physical storage free-disk headroom is exhausted.");
 }
 
 export async function admitStorageOwner(

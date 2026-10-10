@@ -63,6 +63,7 @@ export {
   DisplayOpenRequestSchema,
   DisplaySchema,
 } from "./displays/display";
+export * from "./displays/screenshot";
 export {
   findNetworkRule,
   isPrivateAddress,

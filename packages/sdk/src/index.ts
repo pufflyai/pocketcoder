@@ -17,6 +17,7 @@ export type {
   PrincipalResource,
   PrincipalUpdateRequest,
   RestoreRequest,
+  ScreenshotResource,
   SecretPutRequest,
   SecretResource,
   ServerTerminalMessage,

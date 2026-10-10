@@ -21,6 +21,7 @@ export type {
   WorkspaceTransferRuntime,
 } from "./drivers/driver";
 export { buildEventEnvelope } from "./events/events";
+export * from "./stores/binary-outputs";
 export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
 export * from "./stores/checkpoint-transfers";
 export * from "./stores/leases";

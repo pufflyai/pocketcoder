@@ -2,6 +2,7 @@ import { type ExecSpec, type ProviderInput, parseDurationMs, ServerFrameSchema }
 import { AgentConnection } from "./agent/agent-connection";
 import { AgentHealthMonitor } from "./agent/agent-health";
 import { shutdownAgent } from "./agent/agent-shutdown";
+import { handleInteractiveFrame } from "./agent/interactive-frames";
 import { createSupervisorHarness } from "./agent/supervisor-harness";
 import { SupervisorTransfers } from "./agent/supervisor-transfers";
 import { AttachmentManager } from "./attachments/attachments";
@@ -18,6 +19,7 @@ import { clearSourceCredential, preflightNetwork, startNetworkMonitor } from "./
 import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
 import { quiesceArchive } from "./checkpoints/quiesce-archive";
 import { WorkspaceCredentials } from "./credentials/workspace-credentials";
+import { SupervisorScreenshots } from "./displays/screenshots";
 import { SupervisorLogs } from "./observability/supervisor-logs";
 import { SupervisorProxy } from "./proxy/supervisor-proxy";
 import { TerminalManager } from "./terminals/terminal-manager";
@@ -35,6 +37,7 @@ class Supervisor {
   private readonly proxy: SupervisorProxy;
   private readonly terminals: TerminalManager;
   private readonly transfers: SupervisorTransfers;
+  private readonly screenshots: SupervisorScreenshots;
   private readonly harness: ReturnType<typeof createSupervisorHarness>;
   private readonly credentials: WorkspaceCredentials;
   private exec: ExecSpec | null = null;
@@ -57,6 +60,7 @@ class Supervisor {
       onRegistrationFailure: () => this.exitWith(EXIT_REGISTRATION_FAILED),
       onDisconnect: () => {
         void this.proxy.closeAll();
+        void this.screenshots.cancel();
         void this.transfers.cancel().catch((error) => this.logs.log(String(error)));
       },
       isStopped: () => this.shuttingDown || (this.harness.exitCode !== null && !this.quiescing),
@@ -75,6 +79,7 @@ class Supervisor {
           },
           setQuiescing: () => {
             this.quiescing = true;
+            void this.screenshots.cancel();
             this.credentials.setQuiescing(true);
           },
           child: () => this.harness.child,
@@ -82,6 +87,7 @@ class Supervisor {
           send: this.sendFrame.bind(this),
         }),
     });
+    this.screenshots = new SupervisorScreenshots(input.server_url, () => this.exec);
     this.logs = new SupervisorLogs(this.sendFrame.bind(this));
     this.credentials = new WorkspaceCredentials({
       send: (message) => this.sendFrame(message.type, message.payload),
@@ -176,6 +182,7 @@ class Supervisor {
     const parsed = ServerFrameSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) return;
     const frame = parsed.data;
+    if (await handleInteractiveFrame(frame, this.terminals, this.attachments)) return;
     switch (frame.type) {
       case "credential_renewed":
         await this.credentials.renewed(frame.payload);
@@ -207,23 +214,15 @@ class Supervisor {
         }
         return;
       }
+      case "screenshot_capture":
+        if (!this.quiescing && !this.shuttingDown)
+          void this.screenshots.capture(frame.payload).catch(() => this.logs.log("Screenshot capture failed."));
+        return;
       case "preview_socket":
       case "proxy_request":
       case "proxy_stream_ack":
       case "proxy_stream_cancel":
         await this.proxy.handle(frame);
-        return;
-      case "terminal_open":
-        this.terminals.open(frame.payload);
-        return;
-      case "terminal_input":
-        this.terminals.input(frame.payload);
-        return;
-      case "terminal_resize":
-        this.terminals.resize(frame.payload);
-        return;
-      case "terminal_close":
-        await this.terminals.close(frame.payload);
         return;
       case "signal": {
         if (frame.payload.signal === "KILL") {
@@ -243,21 +242,6 @@ class Supervisor {
         await this.gracefulShutdown();
         return;
       }
-      case "attachment_start":
-        await this.attachments.handleStart(frame.payload);
-        return;
-      case "attachment_chunk":
-        await this.attachments.handleChunk(frame.payload);
-        return;
-      case "attachment_finish":
-        await this.attachments.handleFinish(frame.payload);
-        return;
-      case "attachment_abort":
-        await this.attachments.handleAbort(frame.payload);
-        return;
-      case "attachment_resolve":
-        await this.attachments.handleResolve(frame.payload);
-        return;
       case "prepare_checkpoint_archive":
         if (this.exec)
           await this.transfers.prepare(frame.payload, this.exec).catch((error) => this.logs.log(String(error)));
@@ -284,6 +268,7 @@ class Supervisor {
       closeTerminals: () => this.terminals.closeAll("checkpoint"),
       setQuiescing: (value) => {
         this.quiescing = value;
+        if (value) void this.screenshots.cancel();
         this.credentials.setQuiescing(value);
       },
     });
@@ -309,6 +294,7 @@ class Supervisor {
     this.credentials.setQuiescing(true);
     this.setupAbort.abort();
     this.setupCompletion.cancel();
+    await this.screenshots.cancel();
     await this.transfers.cancel();
     const exec = this.exec;
     const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
@@ -329,6 +315,7 @@ class Supervisor {
 
   private async flushAndClose(): Promise<void> {
     await this.credentials.stop();
+    await this.screenshots.cancel();
     await this.transfers.cancel();
     await this.proxy.closeAll();
     await this.terminals.closeAll("workspace_ended");

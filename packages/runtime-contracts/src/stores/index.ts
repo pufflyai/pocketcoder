@@ -31,6 +31,7 @@ export interface Store
     TerminalAuditStore,
     OutboxStore {
   checkpointTransfers: import("./checkpoint-transfers").CheckpointTransferStore;
+  binaryOutputs: import("./binary-outputs").BinaryOutputStore;
   storageReservations: import("./storage-reservations").StorageReservationStore;
 }
 

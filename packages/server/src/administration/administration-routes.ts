@@ -4,7 +4,7 @@ import {
   StoragePruneResultSchema,
   WarmPoolInventorySchema,
 } from "@pstdio/pocketcoder-contracts";
-import type { WarmPoolManager } from "@pstdio/pocketcoder-runtime-core";
+import type { Store, WarmPoolManager } from "@pstdio/pocketcoder-runtime-core";
 import type { AppEnv } from "../http/middleware";
 import { requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
@@ -12,10 +12,12 @@ import type { PersistenceService } from "../persistence/persistence";
 
 export function registerAdministrationRoutes({
   app,
+  store,
   persistence,
   warmPool,
 }: {
   app: OpenAPIHono<AppEnv>;
+  store: Store;
   persistence: PersistenceService;
   warmPool: WarmPoolManager | undefined;
 }) {
@@ -85,6 +87,7 @@ export function registerAdministrationRoutes({
       },
     }),
     async (c) => {
+      await store.binaryOutputs.prune(new Date());
       const result = await persistence.pruneExpired();
       return c.json(
         {

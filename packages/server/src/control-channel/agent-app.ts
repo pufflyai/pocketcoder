@@ -4,6 +4,7 @@ import type { WarmPoolManager } from "@pstdio/pocketcoder-runtime-core";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import type { createBunWebSocket } from "hono/bun";
+import type { Screenshots } from "../displays/screenshots";
 import { type AppEnv, errorHandler, requestId, requestLogging } from "../http/middleware";
 import type { StructuredLogger } from "../observability/observability";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
@@ -12,6 +13,7 @@ import { agentConnectValidator, agentWsEvents } from "./ws";
 import type { WsDeps } from "./ws-types";
 
 interface AgentAppDeps {
+  screenshots?: Screenshots;
   connection: WsDeps;
   poolHub: PoolConnectionHub;
   checkpointTransfers?: Pick<CheckpointTransferService, "handleUpload" | "handleDownload">;
@@ -23,6 +25,7 @@ interface AgentAppDeps {
 
 export function createAgentApp({
   connection,
+  screenshots,
   poolHub,
   checkpointTransfers,
   warmPool,
@@ -50,6 +53,7 @@ export function createAgentApp({
       ),
     );
   }
+  if (screenshots) app.put("/v1/agent/screenshots/:id", (c) => screenshots.upload(c.req.raw, c.req.param("id")));
   if (checkpointTransfers) {
     app.put("/v1/agent/checkpoints/:operationId/archive", (c) =>
       checkpointTransfers.handleUpload(c.req.raw, c.req.param("operationId")),
