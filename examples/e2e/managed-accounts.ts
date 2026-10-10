@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { accountService, createManagerApp } from "@pstdio/pocketcoder-manager";
-import { KubernetesAccounts, kube } from "@pstdio/pocketcoder-manager/kubernetes";
 import { ManagerStore } from "@pstdio/pocketcoder-manager/store";
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { freePort, waitFor } from "./local-process";
@@ -14,18 +13,7 @@ let store: Awaited<ReturnType<typeof ManagerStore.create>> | undefined;
 let server: ReturnType<typeof Bun.serve> | undefined;
 const forwards: ReturnType<typeof Bun.spawn>[] = [];
 try {
-  const managerConfig = await managerKubeconfig(cluster);
-  process.env.KUBECONFIG = managerConfig;
-  const provider = new KubernetesAccounts(async (args, input) => {
-    if (args.includes("superuser")) return kube(args, input);
-    try {
-      return await cluster.run(["kubectl", "--request-timeout=30s", ...args], input, { KUBECONFIG: managerConfig });
-    } catch (error) {
-      // Fixture-only diagnostics exclude private owner commands and their plaintext.
-      console.error(error);
-      throw error;
-    }
-  });
+  process.env.KUBECONFIG = await managerKubeconfig(cluster);
   const workspace = await cluster.buildImage("workspace");
   const controller = await cluster.buildImage("server");
   const directory = join(cluster.directory, "manager_data");
@@ -70,7 +58,7 @@ try {
     throw new Error("Interrupted create duplicated account");
   if ((await create("changed", "first-account")).status !== 409) throw new Error("Changed idempotent input accepted");
   const second = (await (await create("second", "second-account")).json()) as typeof first;
-  await accountService(store, provider).reconcile();
+  await accountService(store).reconcile();
   for (const row of [first, second]) {
     const status = (await (await request(`/v1/operations/${row.operation.id}`)).json()) as {
       state: string;
