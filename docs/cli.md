@@ -7,6 +7,10 @@ repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
 (`bun run --filter '@pstdio/pocketcoder-cli' compile`), or invoke `pcd` inside
 the server container.
 
+The installed package uses Node 22.19.0 or newer and includes native executables
+for macOS and Linux on ARM64 and x64. It runs without Bun. See
+[candidate installation](candidate-installation.md) for commit-pinned tarballs.
+
 Principal and key commands use HTTP against the running server. Set
 `POCKETCODER_URL` (default `http://127.0.0.1:8090`) and `POCKETCODER_KEY`.
 Workspaces, checkpoints, storage, pools, template catalog and doctor commands

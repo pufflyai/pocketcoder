@@ -2,6 +2,9 @@
 
 ## Standalone development download
 
+See [candidate installation](candidate-installation.md) for the four supported targets,
+package consumers, and the records kept by the download checks.
+
 Use Docker Engine, the authenticated [GitHub CLI](https://cli.github.com), and `jq`. The controller needs no Bun install, checkout, external database or SQL files.
 CI keeps development downloads as artifacts for a passing commit. They expire under GitHub's artifact retention policy and never update stable/latest.
 
@@ -23,9 +26,12 @@ gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
 gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
   --name "pocketcoder-fixture-$PC_COMMIT-$PC_ARCH" --dir fixture
 test "$(jq -r .commit native.json)" = "$PC_COMMIT" || exit 1
+test "$(jq -r .platform native.json)" = "$PC_PLATFORM" || exit 1
+test "$(jq -r .arch native.json)" = "$PC_ARCH" || exit 1
 PC_SHA=$(if command -v sha256sum >/dev/null; then sha256sum pocketcoder; else shasum -a 256 pocketcoder; fi)
 test "${PC_SHA%% *}" = "$(jq -r .sha256 native.json)" || exit 1
 chmod 755 pocketcoder
+test "$(./pocketcoder --version)" = "$(jq -r .version native.json)" || exit 1
 docker load --input fixture/echo-image.tar
 rm fixture/echo-image.tar
 PC_IMAGE_TAG=$(jq -r '.spec.image | split("@")[0]' fixture/templates/echo.json)

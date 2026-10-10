@@ -3,6 +3,20 @@ import { copyFile, mkdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { controllerPorts } from "./ports";
 
+async function startupOutput(stream: ReadableStream<Uint8Array>, started: number) {
+  const lines: string[] = [];
+  const decoder = new TextDecoder();
+  let pending = "";
+  for await (const chunk of stream) {
+    const complete = `${pending}${decoder.decode(chunk, { stream: true })}`.split("\n");
+    pending = complete.pop() ?? "";
+    lines.push(...complete.map((line) => `[${Math.round(performance.now() - started)} ms] ${line}`));
+  }
+  pending += decoder.decode();
+  if (pending) lines.push(`[${Math.round(performance.now() - started)} ms] ${pending}`);
+  return lines.join("\n");
+}
+
 export async function nativeController(binary: string, directory: string, persistence = false) {
   const executable = join(directory, "pocketcoder");
   await copyFile(binary, executable);
@@ -84,7 +98,8 @@ export async function nativeController(binary: string, directory: string, persis
       stderr: "pipe",
     });
     child = processHandle;
-    output = Promise.all([new Response(processHandle.stdout).text(), new Response(processHandle.stderr).text()]);
+    // Keep stage timing when a downloaded executable misses its startup budget.
+    output = Promise.all([startupOutput(processHandle.stdout, started), startupOutput(processHandle.stderr, started)]);
     let ready = false;
     const socket = resolve(directory, dataEnv.POCKETCODER_DIR ?? "pc_data", "admin.sock");
     while (performance.now() - started < 10_000 && child.exitCode === null) {
@@ -105,7 +120,7 @@ export async function nativeController(binary: string, directory: string, persis
     }
     if (readinessMs > 3000) {
       await stop();
-      throw new Error(`Controller exceeded 3-second readiness: ${readinessMs} ms`);
+      throw new Error(`Controller exceeded 3-second readiness: ${readinessMs} ms\n${(await output)?.join("\n")}`);
     }
   }
 
