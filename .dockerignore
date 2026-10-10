@@ -4,6 +4,10 @@ node_modules
 deploy/image/dist
 O-37
 .git
+.pstdio
+**/.terraform
+**/*.tfstate*
+**/*.tfplan
 *.log
 pc_data/
 manager_data/

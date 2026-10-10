@@ -7,6 +7,9 @@ never mount the controller volume. No shared workspace storage is required.
 This is a synthetic deployment recipe. Hosted gVisor and production recovery
 acceptance are tracked in PC-84 and the later hosted tickets.
 
+The [PC-84 pilot plan](pilot/README.md) contains the separate cluster scope,
+current cost estimate, approval boundary and remaining hosted validation.
+
 ## Prepare the deployment
 
 Use a DOKS cluster with enough CPU, memory and ephemeral storage for the declared
