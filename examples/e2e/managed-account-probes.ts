@@ -81,7 +81,7 @@ export async function assertManagedIsolation(
         other.namespace,
         `--as=system:serviceaccount:${owner.namespace}:controller`,
       ],
-      { env: { ...process.env }, stdout: "pipe", stderr: "pipe" },
+      { env: { ...process.env, ...cluster.env }, stdout: "pipe", stderr: "pipe" },
     );
     const [decision, code] = await Promise.all([
       new Response(denied.stdout).text(),

@@ -2,7 +2,10 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { createKubernetesCluster } from "./kubernetes-cluster";
 
-export async function managerKubeconfig(cluster: Awaited<ReturnType<typeof createKubernetesCluster>>) {
+export async function managerKubeconfig(
+  cluster: Awaited<ReturnType<typeof createKubernetesCluster>>,
+  internal = false,
+) {
   await cluster.kube(["-n", "default", "create", "serviceaccount", "account-manager"]);
   await cluster.kube([
     "create",
@@ -13,7 +16,16 @@ export async function managerKubeconfig(cluster: Awaited<ReturnType<typeof creat
   ]);
   const token = await cluster.kube(["-n", "default", "create", "token", "account-manager", "--duration=30m"]);
   const original = JSON.parse(
-    await cluster.run(["kubectl", "config", "view", "--kubeconfig", cluster.kubeconfig, "--raw", "-o", "json"]),
+    await cluster.run([
+      "kubectl",
+      "config",
+      "view",
+      "--kubeconfig",
+      internal ? join(cluster.directory, "internal-kubeconfig") : cluster.kubeconfig,
+      "--raw",
+      "-o",
+      "json",
+    ]),
   );
   const path = join(cluster.directory, "manager-kubeconfig");
   // This finite fixture authority stays on the host, outside account controllers and workspaces.

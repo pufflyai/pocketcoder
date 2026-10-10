@@ -229,14 +229,14 @@ export async function runHarnessE2E(config: HarnessE2EConfig, fetchImpl: FetchLi
         }
         return body.status === "stable" ? body.status : null;
       },
-      config.readyTimeoutMs,
+      config.readyTimeoutMs ?? 120_000,
       pollIntervalMs,
       "the agent to be ready for input",
     );
 
     const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
     const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
-    const baselineId = before.reduce((maximum, message) => Math.max(maximum, messageId(message)), -1);
+    const baselineId = before.reduce<number>((maximum, message) => Math.max(maximum, messageId(message)), -1);
     let liveUpdatesPromise: Promise<string[]> | null = null;
     let liveUpdatesController: AbortController | null = null;
     if (config.expectedLiveUpdates) {

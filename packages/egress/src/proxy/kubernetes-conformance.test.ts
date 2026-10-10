@@ -113,7 +113,7 @@ conformanceTest(
                     },
                   },
                   startupProbe: {
-                    httpGet: { path: "/readyz", port: 18082 },
+                    exec: { command: ["/usr/local/bin/pocketcoder-egress", "health"] },
                     periodSeconds: 1,
                     failureThreshold: 30,
                   },
@@ -134,6 +134,8 @@ conformanceTest(
                   command: ["sh", "-c", workloadScript],
                   securityContext: {
                     runAsNonRoot: true,
+                    runAsUser: 101,
+                    runAsGroup: 102,
                     allowPrivilegeEscalation: false,
                     readOnlyRootFilesystem: true,
                     capabilities: { drop: ["ALL"] },
@@ -156,6 +158,10 @@ conformanceTest(
       expect(logs.stdout).toContain('"path":"/allowed"');
       expect(logs.stdout).toContain('"decision":"deny"');
       expect(logs.stdout).not.toContain("credential=redacted");
+    } catch (error) {
+      console.error(await kubectl(["logs", "job/workspace", "-n", namespace, "-c", "egress"], undefined, true));
+      console.error(await kubectl(["describe", "pods", "-n", namespace, "-l", "job-name=workspace"], undefined, true));
+      throw error;
     } finally {
       await kubectl(["delete", "namespace", namespace, "--wait=false"], undefined, true);
     }

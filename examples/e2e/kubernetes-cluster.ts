@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { dockerImageConfigDigest } from "../../scripts/image-config";
 import { installCalico } from "./kubernetes-calico";
 import { command } from "./local-process";
 
 const NODE_IMAGE = "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5";
 export const ROOT = resolve(import.meta.dir, "../..");
 
-export async function createKubernetesCluster(options: { networkPolicy?: boolean } = {}) {
+export async function createKubernetesCluster(options: { networkPolicy?: boolean; nodeImage?: string } = {}) {
   const name = `pc-restore-${randomUUID().slice(0, 8)}`;
   const directory = await mkdtemp(join(tmpdir(), "pc-kubernetes-"));
   const kubeconfig = join(directory, "kubeconfig");
@@ -34,8 +35,9 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
         new Response(child.stderr).text(),
         child.exited,
       ]);
+      if (code && args[1] === "test") console.error(stdout, stderr);
       if (code) throw new Error(`${args[0]} ${args[1]} failed: ${stderr.trim().slice(0, 2000)}`);
-      if (args[0] === "bun" && args[1] === "test") return `${stdout}${stderr}`.trim();
+      if (args[1] === "test") return `${stdout}${stderr}`.trim();
       return stdout.trim();
     } finally {
       clearTimeout(timeout);
@@ -59,7 +61,7 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       "--name",
       name,
       "--image",
-      NODE_IMAGE,
+      options.nodeImage ?? NODE_IMAGE,
       "--config",
       config,
       "--kubeconfig",
@@ -97,6 +99,39 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       await run(["kind", "get", "kubeconfig", "--name", name, "--internal"]),
       { mode: 0o600 },
     );
+    async function verifyLoadedImage(node: string, digest: string, expectedId: string) {
+      let manifest = JSON.parse(
+        await run(["docker", "exec", node, "ctr", "--namespace", "k8s.io", "content", "get", digest]),
+      );
+      if (manifest.manifests) {
+        const arch = process.arch === "x64" ? "amd64" : process.arch;
+        const child = manifest.manifests.find(
+          (entry: { platform?: { architecture: string } }) => entry.platform?.architecture === arch,
+        );
+        if (!child) throw new Error("Loaded candidate image architecture is missing");
+        manifest = JSON.parse(
+          await run(["docker", "exec", node, "ctr", "--namespace", "k8s.io", "content", "get", child.digest]),
+        );
+      }
+      if (manifest.config?.digest !== expectedId) throw new Error("Kind image differs from scanned Docker image ID");
+    }
+    async function loadImage(tag: string, configDigest?: string) {
+      await run(["kind", "load", "docker-image", "--name", name, tag]);
+      const reference = tag.includes("/") ? tag : `docker.io/library/${tag}`;
+      const listing = await run(["docker", "exec", nodes[0] as string, "ctr", "--namespace", "k8s.io", "images", "ls"]);
+      const digest = listing
+        .split("\n")
+        .find((line) => line.startsWith(`${reference} `))
+        ?.split(/\s+/)[2];
+      if (!digest || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error("Loaded image digest is missing");
+      const imageId = await run(["docker", "inspect", "--format", "{{.Id}}", tag]);
+      const expectedId = configDigest ?? (await dockerImageConfigDigest(tag, directory));
+      for (const node of nodes) await verifyLoadedImage(node, digest, expectedId);
+      const image = `${reference.split(":")[0]}@${digest}`;
+      for (const node of nodes)
+        await run(["docker", "exec", node, "ctr", "--namespace", "k8s.io", "images", "tag", reference, image]);
+      return { image, tag, imageId, configDigest: expectedId };
+    }
     async function buildImage(role: "workspace" | "server") {
       const tag = `pocketcoder-${role}:${name}`;
       images.push(tag);
@@ -109,18 +144,7 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       } else {
         await command(["docker", "build", "-f", "deploy/image/server.Dockerfile", "-t", tag, "."], { quiet: true });
       }
-      await run(["kind", "load", "docker-image", "--name", name, tag]);
-      const reference = `docker.io/library/${tag}`;
-      const listing = await run(["docker", "exec", nodes[0] as string, "ctr", "--namespace", "k8s.io", "images", "ls"]);
-      const digest = listing
-        .split("\n")
-        .find((line) => line.startsWith(`${reference} `))
-        ?.split(/\s+/)[2];
-      if (!digest || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error("Loaded image digest is missing");
-      const image = `${reference.split(":")[0]}@${digest}`;
-      for (const node of nodes)
-        await run(["docker", "exec", node, "ctr", "--namespace", "k8s.io", "images", "tag", reference, image]);
-      return { image, tag };
+      return loadImage(tag);
     }
     return {
       name,
@@ -131,6 +155,7 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       kube,
       run,
       buildImage,
+      loadImage,
       close,
       async echoTemplate(image: string) {
         const template = JSON.parse(await readFile(join(ROOT, "examples/harnesses/echo/template.json"), "utf8"));

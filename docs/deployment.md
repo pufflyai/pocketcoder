@@ -2,35 +2,50 @@
 
 ## Container images
 
-CI publishes three images to the GitHub Container Registry on every push to
-`main` and on version tags (see `.github/workflows/images.yml`):
+The [candidate image workflow](../.github/workflows/images.yml) builds six roles
+from one source commit for Linux amd64 and arm64:
 
-- `ghcr.io/<owner>/<repo>/server` — pocketcoder-server plus `pcd`
-  (`/usr/local/bin/pcd`, backed by `/opt/pocketcoder/cli/index.js`), Docker CLI, and
-  `kubectl`.
-  Built from [`deploy/image/server.Dockerfile`](../deploy/image/server.Dockerfile).
-- `ghcr.io/<owner>/<repo>/workspace` — a minimal workspace base image with the
-  `pocketcoder-supervisor`, checksum-pinned AgentAPI, and a loopback echo harness, useful for probe
-  templates and as a starting point for real agent images. Built from
-  [`deploy/image/Dockerfile`](../deploy/image/Dockerfile).
-- `ghcr.io/<owner>/<repo>/egress` — the sidecar proxy that enforces
-  `network.mode: restricted` templates. Set `POCKETCODER_EGRESS_IMAGE` to its
-  digest; without it, restricted templates cannot start. Built from
-  [`packages/egress/Dockerfile`](../packages/egress/Dockerfile).
+| Role | Contents | Recipe |
+| --- | --- | --- |
+| `server` | Controller, public `pocketcoder` command, Docker CLI and kubectl | [server.Dockerfile](../deploy/image/server.Dockerfile) |
+| `workspace` | Supervisor, AgentAPI and echo harness | [Dockerfile](../deploy/image/Dockerfile) |
+| `desktop` | Workspace runtime with an X11 desktop and VNC | [desktop.Dockerfile](../deploy/image/desktop.Dockerfile) |
+| `browser` | Workspace runtime with Chromium | [browser.Dockerfile](../deploy/image/browser.Dockerfile) |
+| `egress` | Restricted-network sidecar proxy | [Egress Dockerfile](../packages/egress/Dockerfile) |
+| `manager` | Managed-account operator service and kubectl | [manager.Dockerfile](../deploy/image/manager.Dockerfile) |
+
+Every image must pass Trivy 0.74.0 with zero HIGH or CRITICAL findings, including
+findings without an upstream fix. CI keeps the scanner/database versions, scan
+reports, SBOMs and exact image archives. Native Ubuntu runners exercise those
+archives through Docker and Kubernetes before any registry writes. Desktop
+images must stay below 1.5 GB. See [candidate images](candidate-images.md) for
+the build, scan and role checks.
+
+Publication uses only `ghcr.io/<owner>/<repo>/<role>:candidate-<full-commit>`
+and architecture tags ending in `-amd64` or `-arm64`. The `published.json`
+artifact records immutable architecture and multi-architecture digests. Use
+those recorded digests in deployments; candidate publication does not update
+`stable` or `latest`.
+
+Set `POCKETCODER_EGRESS_IMAGE` to the recorded egress digest. Without it,
+restricted templates cannot start. The bundled kubectl 1.35.9 permits Kubernetes
+API server versions 1.34–1.36 under the [version skew policy](https://kubernetes.io/releases/version-skew-policy/#kubectl).
+The candidate flow uses a pinned Kind 0.33.0 fixture with Kubernetes 1.35 nodes;
+existing checks with Kubernetes 1.37 nodes do not prove supported kubectl version compatibility.
 
 Real coding-agent images extend the workspace base and install only their agent
 CLI and application environment. If they use another base, they must provide
-the supported checksum-pinned AgentAPI at `/usr/local/bin/agentapi` and the
+the supported AgentAPI at `/usr/local/bin/agentapi` and the
 supervisor. Keep everything runnable by the template's non-root uid. Always
 reference images by digest in templates — mutable tags are rejected.
 
-Promote a source template after building its workspace image with `pcd
+Promote a source template after building its workspace image with `pocketcoder
 templates render`. The renderer accepts the immutable image reference and
 typed deployment overrides, validates the final manifest, and derives its
 version from the normalized content:
 
 ```sh
-pcd templates render templates/codex.yaml \
+pocketcoder templates render templates/codex.yaml \
   --image "registry.example/codex@sha256:<64-hex-digest>" \
   --out deploy/templates
 ```
@@ -39,33 +54,19 @@ Mount only the rendered output directory at `POCKETCODER_TEMPLATE_DIR`. Keep
 the source manifest unchanged so the same build inputs reproduce the same
 deployment file and version.
 
-Publishing the versioned CLI automatically creates the matching `v<version>`
-tag. That tag publishes semver image tags and creates or updates the matching
-GitHub release with a `pocketcoder-image-digests.txt` asset and the exact
-server and workspace digest references in the release notes. Pin a deployment
-to the recorded value, for example:
+Pin a deployment to the candidate digest recorded in `published.json`:
 
 ```yaml
 services:
   server:
-    image: ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>
+    image: ghcr.io/pufflyai/pocketcoder/server@sha256:<candidate-digest>
 ```
 
-While the repository/package is private, authenticate Docker with a classic
-GitHub personal access token that has `read:packages`; authorize the token for
-organization SSO when required:
-
-```sh
-export CR_PAT='<classic-personal-access-token>'
-printf '%s' "$CR_PAT" | docker login ghcr.io -u '<github-user>' --password-stdin
-docker pull ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>
-```
-
-GitHub Actions in another repository can use `GITHUB_TOKEN` after that
-repository has been granted read access to the package; give the job
-`packages: read` and log in with `github.actor` plus
-`secrets.GITHUB_TOKEN`. Do not put registry tokens into templates, launch
-input, or workspace images.
+Private pulls require expiring, read-only registry authority held outside all
+workspaces. GitHub Actions can use its job-scoped `GITHUB_TOKEN` after the
+repository has package read access; give the job `packages: read` and log in
+with `github.actor` and `secrets.GITHUB_TOKEN`. Keep registry credentials out
+of templates, launch input and workspace images.
 
 Build locally:
 
@@ -107,11 +108,11 @@ mkdir -p "$POCKETCODER_HOST_DATA_ROOT"/{input,workspaces,checkpoints}
 docker compose -f deploy/compose/docker-compose.yaml --profile full up -d
 ```
 
-Set `POCKETCODER_SERVER_IMAGE` to an exact release digest and use `--no-build`
+Set `POCKETCODER_SERVER_IMAGE` to an exact candidate digest and use `--no-build`
 to consume the published control plane without a local checkout build:
 
 ```sh
-export POCKETCODER_SERVER_IMAGE='ghcr.io/pufflyai/pocketcoder/server@sha256:<release-digest>'
+export POCKETCODER_SERVER_IMAGE='ghcr.io/pufflyai/pocketcoder/server@sha256:<candidate-digest>'
 docker compose -f deploy/compose/docker-compose.yaml --profile full pull server
 docker compose -f deploy/compose/docker-compose.yaml --profile full up -d --no-build server
 ```

@@ -5,7 +5,9 @@ import { join, resolve } from "node:path";
 import { KeyIssueResponseSchema, type TemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { buildLocalImage } from "../local/runtime";
-import { command, freePort, waitFor } from "./local-process";
+import { controllerPorts } from "../native/ports";
+import { startDockerImageController } from "./image-controller";
+import { command, waitFor } from "./local-process";
 
 export async function startDisplayDemo(
   mode: "desktop" | "browser",
@@ -15,10 +17,13 @@ export async function startDisplayDemo(
   const root = resolve(import.meta.dir, "../..");
   const directory = await mkdtemp(join(tmpdir(), `pc-${mode}-demo-`));
   const dataDir = join(directory, "pc_data");
-  const operatorPort = freePort(),
-    agentPort = freePort();
+  const ports = controllerPorts();
+  const operatorPort = ports.operator,
+    agentPort = ports.agent;
+  ports.release();
   const baseUrl = `http://127.0.0.1:${operatorPort}`;
-  const cli = ["bun", "--no-env-file", "packages/cli/src/index.ts"];
+  let cli = ["bun", "--no-env-file", "packages/cli/src/index.ts"];
+  let imageController: Awaited<ReturnType<typeof startDockerImageController>> | undefined;
   let controller: ReturnType<typeof Bun.spawn> | undefined;
   let client: PocketCoderClient | undefined;
   let workspaceId: string | undefined;
@@ -26,26 +31,35 @@ export async function startDisplayDemo(
     if (client && workspaceId) await client.workspaces.cancel(workspaceId).catch(() => {});
     controller?.kill("SIGTERM");
     await controller?.exited;
+    await imageController?.close();
     await rm(directory, { recursive: true, force: true });
   }
   try {
-    await command(
-      ["bun", "build", "packages/supervisor/src/index.ts", "--target", "bun", "--outdir", "deploy/image/dist"],
-      { quiet: true },
-    );
-    await buildLocalImage({ root, imageTag: "pocketcoder-workspace:dev", context: "deploy/image", command });
-    const image = await buildLocalImage({
-      root,
-      imageTag: `pocketcoder-${mode}:dev`,
-      context: "deploy/image",
-      dockerfile: `deploy/image/${mode}.Dockerfile`,
-      command,
-    });
+    const candidateImage = process.env[`POCKETCODER_SMOKE_${mode.toUpperCase()}_IMAGE`];
+    let image: { image: string };
+    if (candidateImage) image = { image: candidateImage };
+    else {
+      await command(
+        ["bun", "build", "packages/supervisor/src/index.ts", "--target", "bun", "--outdir", "deploy/image/dist"],
+        { quiet: true },
+      );
+      await buildLocalImage({ root, imageTag: "pocketcoder-workspace:dev", context: "deploy/image", command });
+      image = await buildLocalImage({
+        root,
+        imageTag: `pocketcoder-${mode}:dev`,
+        context: "deploy/image",
+        dockerfile: `deploy/image/${mode}.Dockerfile`,
+        command,
+      });
+    }
     const size = Number(
       (
-        await command(["docker", "image", "inspect", `pocketcoder-${mode}:dev`, "--format", "{{.Size}}"], {
-          quiet: true,
-        })
+        await command(
+          ["docker", "image", "inspect", candidateImage ?? `pocketcoder-${mode}:dev`, "--format", "{{.Size}}"],
+          {
+            quiet: true,
+          },
+        )
       ).stdout,
     );
     if (mode === "desktop" && size >= 1_500_000_000) throw new Error("Desktop image exceeds 1.5 GB.");
@@ -55,22 +69,33 @@ export async function startDisplayDemo(
     const templates = join(directory, "templates");
     await mkdir(templates);
     await Bun.write(join(templates, `${mode}.json`), JSON.stringify(template));
-    controller = Bun.spawn([...cli, "serve", "--dir", dataDir], {
-      cwd: root,
-      env: {
-        ...process.env,
-        POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
-        POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
-        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
-        POCKETCODER_STORAGE_BACKEND: "disabled",
-        POCKETCODER_SECRET_PROVIDER: "disabled",
-        POCKETCODER_WARM_POOLS: "[]",
-        POCKETCODER_INPUT_DIR: join(directory, "inputs"),
-        ...environment,
-      },
-      stdout: "ignore",
-      stderr: "inherit",
-    });
+    const serverImage = process.env.POCKETCODER_SMOKE_SERVER_IMAGE;
+    if (serverImage) {
+      imageController = await startDockerImageController({
+        image: serverImage,
+        directory,
+        operatorPort,
+        agentPort,
+        environment,
+      });
+      cli = imageController.cli;
+    } else
+      controller = Bun.spawn([...cli, "serve", "--dir", dataDir], {
+        cwd: root,
+        env: {
+          ...process.env,
+          POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
+          POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
+          POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
+          POCKETCODER_STORAGE_BACKEND: "disabled",
+          POCKETCODER_SECRET_PROVIDER: "disabled",
+          POCKETCODER_WARM_POOLS: "[]",
+          POCKETCODER_INPUT_DIR: join(directory, "inputs"),
+          ...environment,
+        },
+        stdout: "ignore",
+        stderr: "inherit",
+      });
     await waitFor(
       () =>
         fetch(`${baseUrl}/readyz`)
@@ -102,11 +127,8 @@ export async function startDisplayDemo(
       ),
     );
     if (!owner.token) throw new Error("Owner token was not issued.");
-    await command([...cli, "templates", "import", templates], {
-      env: { POCKETCODER_URL: baseUrl, POCKETCODER_KEY: owner.token },
-      quiet: true,
-    });
     const authorized = new PocketCoderClient({ baseUrl, apiKey: owner.token });
+    await authorized.raw("/v1/templates", { method: "POST", body: JSON.stringify({ manifest: template }) });
     client = authorized;
     const workspace = await authorized.workspaces.create({ externalId: randomUUID(), templateName: mode });
     workspaceId = workspace.id;
