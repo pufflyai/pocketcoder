@@ -24,11 +24,6 @@ spec:
       env:
         - name: POCKETCODER_DIR
           value: /var/lib/pocketcoder-controller/pc_data
-        - name: POCKETCODER_AUTH_PEPPER
-          valueFrom:
-            secretKeyRef:
-              name: pocketcoder-server
-              key: auth-pepper
       volumeMounts:
         - name: controller-data
           mountPath: /var/lib/pocketcoder-controller

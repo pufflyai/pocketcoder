@@ -1,15 +1,12 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { workspaceJobManifest } from "./kubernetes-manifests";
-import { KubernetesPvcStorageDriver } from "./kubernetes-storage";
 
 function render(mounts: RuntimeMountRef[]) {
   const workspace = fixtureWorkspace();
-  workspace.templateSnapshot.spec.resources.ephemeralStorage = "64Mi";
+  workspace.templateSnapshot.spec.resources.ephemeralStorage = "128Mi";
   return workspaceJobManifest(
     {
       workspace,
@@ -36,109 +33,18 @@ test("source mounts use bounded emptyDir and full ephemeral storage requests and
   const pod = render([{ name: "source", target: "/worktree", source: { kind: "empty-dir", maxBytes: 4 * 1024 ** 2 } }]);
   expect(pod.volumes).toContainEqual({ name: "persistent-0", emptyDir: { sizeLimit: "4194304" } });
   expect(pod.containers[0]?.resources).toMatchObject({
-    requests: { "ephemeral-storage": "64Mi" },
-    limits: { "ephemeral-storage": "64Mi" },
+    requests: { "ephemeral-storage": "128Mi" },
+    limits: { "ephemeral-storage": "128Mi" },
   });
   expect(() =>
     render([{ name: "source", target: "/worktree", source: { kind: "empty-dir", maxBytes: 128 * 1024 ** 2 } }]),
   ).toThrow("full ephemeral-storage");
 });
 
-test("shares a PVC volume while preserving each directory and mount permission", () => {
-  const pod = render([
-    {
-      name: "home",
-      target: "/home/onefin",
-      source: { kind: "pvc", claimName: "workspace-data", subPath: "workspaces/one/home" },
-    },
-    {
-      name: "local",
-      target: "/local",
-      source: { kind: "host-path", path: "/srv/local" },
-    },
-    {
-      name: "state",
-      target: "/var/onefin/state",
-      readOnly: true,
-      source: { kind: "pvc", claimName: "workspace-data", subPath: "workspaces/one/state" },
-    },
-    {
-      name: "reference",
-      target: "/reference",
-      readOnly: true,
-      source: { kind: "pvc", claimName: "reference-data" },
-    },
-  ]);
-  expect(pod.volumes.filter((volume) => "persistentVolumeClaim" in volume)).toEqual([
-    { name: "persistent-0", persistentVolumeClaim: { claimName: "workspace-data" } },
-    { name: "persistent-3", persistentVolumeClaim: { claimName: "reference-data" } },
-  ]);
-  expect(pod.volumes.filter((volume) => "hostPath" in volume)).toEqual([
-    { name: "persistent-1", hostPath: { path: "/srv/local", type: "Directory" } },
-  ]);
-  const expectedMounts = [
-    {
-      name: "persistent-0",
-      mountPath: "/home/onefin",
-      subPath: "workspaces/one/home",
-      readOnly: false,
-    },
-    { name: "persistent-1", mountPath: "/local", readOnly: false },
-    {
-      name: "persistent-0",
-      mountPath: "/var/onefin/state",
-      subPath: "workspaces/one/state",
-      readOnly: true,
-    },
-    { name: "persistent-3", mountPath: "/reference", readOnly: true },
-  ];
-  expect(pod.containers[0]?.volumeMounts.filter((mount) => mount.name.startsWith("persistent-"))).toEqual(
-    expectedMounts,
-  );
-  const names = pod.volumes.map((volume) => volume.name);
-  expect(new Set(names).size).toBe(names.length);
-  for (const mount of pod.containers[0]?.volumeMounts ?? []) {
-    expect(names).toContain(mount.name);
-  }
-});
-
 test("renders a workspace without persistent mounts", () => {
   const pod = render([]);
   expect(pod.volumes.some((volume) => volume.name.startsWith("persistent-"))).toBe(false);
   expect(pod.containers[0]?.volumeMounts.some((mount) => mount.name.startsWith("persistent-"))).toBe(false);
-});
-
-test("keeps storage allocations in separate subpaths when sharing the claim", async () => {
-  const storage = new KubernetesPvcStorageDriver({
-    workspaceRoot: join(tmpdir(), "manifest-workspaces"),
-    checkpointRoot: join(tmpdir(), "manifest-checkpoints"),
-    workspaceClaimName: "workspace-data",
-  });
-  const mounts = [
-    { name: "home", target: "/home/onefin", maxBytes: 1024, maxFiles: 10 },
-    { name: "state", target: "/var/onefin/state", maxBytes: 1024, maxFiles: 10 },
-  ];
-  for (const id of ["first-restore", "second-restore"]) {
-    const pod = render(await storage.runtimeMounts({ kind: "filesystem", id }, mounts));
-    expect(pod.volumes.filter((volume) => "persistentVolumeClaim" in volume)).toEqual([
-      { name: "persistent-0", persistentVolumeClaim: { claimName: "workspace-data" } },
-    ]);
-    const expectedMounts = [
-      {
-        name: "persistent-0",
-        mountPath: "/home/onefin",
-        subPath: `workspaces/${id}/home`,
-        readOnly: false,
-      },
-      {
-        name: "persistent-0",
-        mountPath: "/var/onefin/state",
-        subPath: `workspaces/${id}/state`,
-        readOnly: false,
-      },
-    ];
-    expect(pod.containers[0]?.volumeMounts.filter((mount) => mount.name === "persistent-0")).toEqual(expectedMounts);
-  }
 });
 
 function fixtureWorkspace(): WorkspaceRow {
@@ -222,3 +128,23 @@ function fixtureWorkspace(): WorkspaceRow {
     outputs: {},
   };
 }
+
+test("budgets disposable mounts plus writable-layer and log headroom", () => {
+  expect(() =>
+    render([{ name: "work", target: "/work", source: { kind: "empty-dir", maxBytes: 128 * 1024 ** 2 } }]),
+  ).toThrow("full ephemeral-storage");
+});
+
+test("initializes emptyDir roots without inherited setgid before the workspace starts", () => {
+  const pod = render([{ name: "work", target: "/work", source: { kind: "empty-dir", maxBytes: 1024 } }]);
+  expect(pod.initContainers?.[0]).toMatchObject({
+    name: "pocketcoder-storage",
+    command: [
+      "pocketcoder-supervisor",
+      "prepare-storage",
+      JSON.stringify({ uid: 12345, gid: 23456, targets: ["/work"] }),
+    ],
+    securityContext: { runAsUser: 0, capabilities: { drop: ["ALL"], add: ["CHOWN", "FOWNER"] } },
+    volumeMounts: [{ name: "persistent-0", mountPath: "/work" }],
+  });
+});

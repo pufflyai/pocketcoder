@@ -6,7 +6,7 @@ import type { ServerConfig } from "../config/config";
 import type { CheckpointTransferOptions } from "../persistence/checkpoint-runtime";
 
 export function checkpointTransferOptions(config: ServerConfig): CheckpointTransferOptions | undefined {
-  if (config.driverKind !== "docker" || config.storageBackend !== "filesystem" || !config.checkpointDir) return;
+  if (config.storageBackend === "disabled" || !config.checkpointDir) return;
   mkdirSync(config.checkpointDir, { recursive: true, mode: 0o700 });
   const directory = realpathSync(config.checkpointDir);
   const limits = config.persistenceLimits;

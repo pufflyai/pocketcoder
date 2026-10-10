@@ -50,7 +50,7 @@ describe("DigitalOcean manifest preflight", () => {
   test("rejects a bootstrap admin image with a different valid digest", () => {
     const documents = validDocuments();
     const admin = documents.find((document) => document.kind === "Pod") as PodFixture;
-    const server = documents[4] as DeploymentFixture;
+    const server = documents[2] as DeploymentFixture;
     admin.spec.containers[0].image = server.spec.template.spec.containers[0].image.replace(
       "1234567890abcdef".repeat(4),
       "abcdef0123456789".repeat(4),
@@ -63,16 +63,16 @@ describe("DigitalOcean manifest preflight", () => {
   test("accepts a bootstrap admin image matching the server digest", () => {
     const documents = validDocuments();
     const admin = documents.find((document) => document.kind === "Pod") as PodFixture;
-    const server = documents[4] as DeploymentFixture;
+    const server = documents[2] as DeploymentFixture;
     expect(admin.spec.containers[0].image).toBe(server.spec.template.spec.containers[0].image);
     expect(validateRenderedManifest(manifest(documents))).toEqual([]);
   });
 
   test("rejects mutable and obvious placeholder image references", () => {
     const documents = validDocuments();
-    const deployment = documents[4] as DeploymentFixture;
+    const deployment = documents[2] as DeploymentFixture;
     deployment.spec.template.spec.containers[0].image = "registry.example/server:latest";
-    const template = documents[5] as ConfigMapFixture;
+    const template = documents[3] as ConfigMapFixture;
     template.data["persistent-echo.json"] = JSON.stringify({
       spec: { image: `registry.example/workspace@sha256:${"a".repeat(64)}` },
     });
@@ -87,7 +87,7 @@ describe("DigitalOcean manifest preflight", () => {
 
   test("requires certificate configuration and narrow source ranges for public access", () => {
     const documents = validDocuments();
-    const service = documents[6] as ServiceFixture;
+    const service = documents[4] as ServiceFixture;
     service.spec = { type: "LoadBalancer", loadBalancerSourceRanges: ["0.0.0.0/0"] };
     service.metadata.annotations = {
       "service.beta.kubernetes.io/do-loadbalancer-protocol": "https",
@@ -101,14 +101,14 @@ describe("DigitalOcean manifest preflight", () => {
 
   test("requires a digest-pinned Pi image and a hardened session gateway", () => {
     const documents = validDocuments();
-    const templates = documents[5] as ConfigMapFixture;
+    const templates = documents[3] as ConfigMapFixture;
     templates.data["pi-harness.json"] = JSON.stringify({
       spec: {
         image: "registry.example/pocketcoder-pi:latest",
         agent: { env: { PI_GATEWAY_BEARER: "standing-token" } },
       },
     });
-    const gateway = documents[8] as DeploymentFixture;
+    const gateway = documents[6] as DeploymentFixture;
     gateway.spec.template.spec.containers[0].image = "registry.example/gateway:latest";
     const podSpec = gateway.spec.template.spec as unknown as Record<string, unknown>;
     podSpec.automountServiceAccountToken = true;
@@ -125,7 +125,7 @@ describe("DigitalOcean manifest preflight", () => {
 
   test("requires Pi and the gateway to use the same allowed model", () => {
     const documents = validDocuments();
-    const gateway = documents[8] as unknown as {
+    const gateway = documents[6] as unknown as {
       spec: {
         template: {
           spec: { containers: Array<{ env: Array<Record<string, unknown>> }> };

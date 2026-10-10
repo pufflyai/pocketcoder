@@ -39,7 +39,7 @@ test.each(["docker", "kubernetes"] as const)(
         const pods = JSON.parse(await f.kubectl(["get", "pods", "-o", "json"]));
         const spec = pods.items[0].spec;
         expect(spec.volumes).toContainEqual({ name: "persistent-0", emptyDir: { sizeLimit: "4194304" } });
-        expect(spec.containers[0].resources.limits["ephemeral-storage"]).toBe("64Mi");
+        expect(spec.containers[0].resources.limits["ephemeral-storage"]).toBe("128Mi");
         expect(JSON.stringify(spec)).not.toContain(f.issuer.authorization);
         expect(JSON.stringify(spec)).not.toContain(f.issuer.controls.captured);
       }

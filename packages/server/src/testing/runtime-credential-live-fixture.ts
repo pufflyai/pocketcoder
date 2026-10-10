@@ -139,13 +139,13 @@ export async function runtimeCredentialLiveFixture(
     spec: {
       version: "1.0.0",
       image,
-      command: ["bun", "/supervisor.js", "supervise", "--launch-input", "/run/pocketcoder/input"],
+      command: ["pocketcoder-supervisor", "supervise", "--launch-input", "/run/pocketcoder/input"],
       harness: { command: ["bun", "-e", HARNESS] },
       env: { RUNTIME_TOKEN_FILE: "secretRef:runtime", ISSUER_CA: f.issuer.ca, RESOURCE_URL: f.issuer.resourceUrl },
       ...(checkpoint
         ? { persistence: { mounts: [{ name: "worktree", target: "/worktree", maxBytes: 1_048_576, maxFiles: 100 }] } }
         : {}),
-      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "64Mi" },
+      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
       services: {
         agent: {
           baseUrl: "http://127.0.0.1:8080",

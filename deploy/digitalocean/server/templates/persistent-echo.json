@@ -15,7 +15,11 @@
         "POCKETCODER_ECHO_STATE": "/state/messages.json"
       }
     },
-    "resources": { "cpu": "1", "memory": "256Mi" },
+    "resources": {
+      "cpu": "1",
+      "memory": "256Mi",
+      "ephemeralStorage": "2Gi"
+    },
     "timeouts": {
       "start": "1m",
       "maxAge": "30m",
@@ -27,9 +31,19 @@
       "agent": {
         "baseUrl": "http://127.0.0.1:3284",
         "routes": [
-          { "method": "GET", "path": "/status" },
-          { "method": "GET", "path": "/messages", "query": ["after"] },
-          { "method": "POST", "path": "/message" }
+          {
+            "method": "GET",
+            "path": "/status"
+          },
+          {
+            "method": "GET",
+            "path": "/messages",
+            "query": ["after"]
+          },
+          {
+            "method": "POST",
+            "path": "/message"
+          }
         ]
       }
     },

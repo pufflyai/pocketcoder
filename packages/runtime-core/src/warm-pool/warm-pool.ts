@@ -9,6 +9,7 @@ import type { ProviderRef, WorkspaceDriver } from "../driver";
 import type { SecretFactory } from "../scheduler/scheduler";
 import type { Store, WarmPoolRuntimeRow, WorkspaceRow } from "../types";
 import type { ResolvedWarmPool, WarmPoolConnections, WarmPoolInventory, WarmPoolMetrics } from "./warm-pool-config";
+import { cleanupWarmProvider } from "./warm-provider-cleanup";
 
 export {
   type ResolvedWarmPool,
@@ -82,7 +83,16 @@ export class WarmPoolManager {
     if ("kind" in claimed) return "deferred";
     if (!this.deps.connections.assign(claimed.runtime.id, input)) {
       this.metrics.leaseFailures += 1;
-      await this.destroy(claimed.runtime, "assignment_connection_lost");
+      if (!(await this.destroy(claimed.runtime, "assignment_connection_lost"))) {
+        await this.deps.store.transition(row.id, {
+          from: ["provisioning"],
+          to: "terminating",
+          reason: "launch_failed",
+          at: this.now(),
+          patch: { terminalIntent: "failed" },
+        });
+        return "deferred";
+      }
       await this.deps.store.transition(row.id, {
         from: ["provisioning"],
         to: "queued",
@@ -133,14 +143,17 @@ export class WarmPoolManager {
     }
   }
 
-  private async destroy(row: WarmPoolRuntimeRow, reason: string): Promise<void> {
+  private async destroy(row: WarmPoolRuntimeRow, reason: string): Promise<boolean> {
     await this.deps.store.updateWarmPoolRuntime(row.id, { state: "draining", failureCode: reason }, this.now());
     this.deps.connections.close(row.id);
-    if (row.providerRef) {
-      await this.deps.driver.stop(row.providerRef as ProviderRef, 1).catch(() => {});
-      await this.deps.driver.remove(row.providerRef as ProviderRef).catch(() => {});
+    try {
+      await cleanupWarmProvider(this.deps.store, this.deps.driver, row, this.now());
+    } catch (error) {
+      this.deps.onError?.(`warm-pool.cleanup.${row.id}`, error);
+      return false;
     }
     await this.deps.store.updateWarmPoolRuntime(row.id, { state: "failed", failureCode: reason }, this.now());
+    return true;
   }
 
   private async create(pool: ResolvedWarmPool): Promise<void> {
@@ -194,10 +207,11 @@ export class WarmPoolManager {
       this.metrics.replenishFailures += 1;
       await this.deps.store.updateWarmPoolRuntime(
         id,
-        { state: "failed", failureCode: "provider_create_failed" },
+        { state: "draining", failureCode: "provider_create_failed" },
         this.now(),
       );
       this.deps.onError?.(`warm-pool.create.${id}`, error);
+      await this.destroy(row, "provider_create_failed");
     }
   }
 
@@ -217,6 +231,10 @@ export class WarmPoolManager {
   }
 
   private async reconcileRow(row: WarmPoolRuntimeRow, pool: ResolvedWarmPool | undefined, now: Date): Promise<void> {
+    if (row.state === "draining") {
+      await this.destroy(row, row.failureCode ?? "provider_cleanup");
+      return;
+    }
     const reason = await this.cleanupReason(row, pool, now);
     if (reason) {
       if (row.state !== "failed") {
@@ -235,26 +253,31 @@ export class WarmPoolManager {
     const configured = new Map(this.deps.pools.map((pool) => [pool.templateRow.digest, pool]));
     const rows = await this.deps.store.listWarmPoolRuntimes();
     const known = new Map(rows.map((row) => [row.id, row]));
+    const quarantined = new Set<string>();
     for (const provider of await this.deps.driver.listWarm()) {
       const row = known.get(provider.runtimeId);
       if (!row || row.templateDigest !== provider.templateDigest || row.driverKind !== this.deps.driver.kind) {
-        this.metrics.staleCleanups += 1;
-        await this.deps.driver.stop(provider.ref, 1).catch(() => {});
-        await this.deps.driver.remove(provider.ref).catch(() => {});
+        quarantined.add(provider.runtimeId);
+        this.deps.onError?.(
+          `warm-pool.unknown.${provider.runtimeId}`,
+          new Error("Unknown warm provider; left for inspection"),
+        );
         continue;
       }
-      if (!row.providerRef && row.state === "provisioning") {
+      if (!row.providerRef && ["provisioning", "draining"].includes(row.state)) {
         await this.deps.store.updateWarmPoolRuntime(row.id, { providerRef: provider.ref }, now);
         row.providerRef = provider.ref;
       }
     }
     for (const row of rows) {
+      if (quarantined.has(row.id)) continue;
       await this.reconcileRow(row, configured.get(row.templateDigest), now);
     }
     const fresh = await this.deps.store.listWarmPoolRuntimes();
     for (const pool of this.deps.pools) {
       const available = fresh.filter(
-        (row) => row.templateDigest === pool.templateRow.digest && ["provisioning", "ready"].includes(row.state),
+        (row) =>
+          row.templateDigest === pool.templateRow.digest && ["provisioning", "ready", "draining"].includes(row.state),
       ).length;
       for (let i = available; i < pool.minReady; i += 1) await this.create(pool);
     }

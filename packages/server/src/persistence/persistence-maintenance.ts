@@ -14,6 +14,7 @@ export class PersistenceMaintenanceService {
     unknown_storage: string[];
     unknown_checkpoints: string[];
   }> {
+    if (this.context.deps.checkpointTransfers) return this.context.deps.checkpointTransfers.inventory();
     const driver = this.context.storageDriver();
     const [storage, checkpoints] = await Promise.all([driver.listStorage(), driver.listCheckpoints()]);
     const unknownStorage: string[] = [];

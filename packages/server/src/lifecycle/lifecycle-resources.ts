@@ -6,7 +6,6 @@ import {
   FileSecretResolver,
   FilesystemStorageDriver,
   KubernetesDriver,
-  KubernetesPvcStorageDriver,
   KubernetesSecretResolver,
   type RegistryResolver,
 } from "@pstdio/pocketcoder-drivers";
@@ -64,9 +63,10 @@ export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: Re
     return new KubernetesDriver({
       ...egress,
       namespace: config.kubernetesNamespace,
-      captureTerminationEvidence: Boolean(config.launchPolicy),
+      captureTerminationEvidence: true,
       nodeSelector: config.kubernetesNodeSelector ?? undefined,
       tolerations: config.kubernetesTolerations,
+      runtimeClassName: config.kubernetesRuntimeClass ?? undefined,
       ...(config.kubernetesServiceAccount ? { serviceAccountName: config.kubernetesServiceAccount } : {}),
     });
   }
@@ -74,14 +74,6 @@ export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: Re
 }
 
 export function createStorageDriver(config: ServerConfig) {
-  if (config.storageBackend === "kubernetes-pvc") {
-    return new KubernetesPvcStorageDriver({
-      workspaceRoot: config.workspaceDataDir as string,
-      checkpointRoot: config.checkpointDir as string,
-      workspaceClaimName: config.kubernetesWorkspaceClaim as string,
-      workspaceClaimSubPath: config.kubernetesWorkspaceSubPath,
-    });
-  }
   if (config.storageBackend === "filesystem") {
     return new FilesystemStorageDriver({
       workspaceRoot: config.workspaceDataDir as string,

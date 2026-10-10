@@ -32,7 +32,7 @@ export interface ServerConfig {
   // host path mounted into the server at the same absolute path so the
   // daemon can resolve the bind mounts.
   inputDir: string | null;
-  storageBackend: "disabled" | "filesystem" | "kubernetes-pvc";
+  storageBackend: "disabled" | "filesystem" | "controller-archive";
   workspaceDataDir: string | null;
   checkpointDir: string | null;
   secretProvider: "disabled" | "file" | "kubernetes";
@@ -41,8 +41,7 @@ export interface ServerConfig {
   kubernetesServiceAccount: string | null;
   kubernetesNodeSelector: Record<string, string> | null;
   kubernetesTolerations: KubernetesToleration[];
-  kubernetesWorkspaceClaim: string | null;
-  kubernetesWorkspaceSubPath: string;
+  kubernetesRuntimeClass: string | null;
   // URL workspaces use to reach this server; with the Docker driver on a
   // developer machine this is typically http://host.docker.internal:<port>.
   workspaceServerUrl: string;
@@ -163,13 +162,11 @@ function resolvePepper(env: Environment) {
   return pepper ?? "";
 }
 
-function resolveStorage(
-  env: Environment,
-): Pick<ServerConfig, "storageBackend" | "workspaceDataDir" | "checkpointDir" | "kubernetesWorkspaceClaim"> {
+function resolveStorage(env: Environment): Pick<ServerConfig, "storageBackend" | "workspaceDataDir" | "checkpointDir"> {
   const storageBackend = enumEnv(
     env,
     "POCKETCODER_STORAGE_BACKEND",
-    ["disabled", "filesystem", "kubernetes-pvc"] as const,
+    ["disabled", "filesystem", "controller-archive"] as const,
     "disabled",
   );
   const workspaceDataDir = env.POCKETCODER_WORKSPACE_DATA_DIR ?? null;
@@ -179,19 +176,13 @@ function resolveStorage(
       "POCKETCODER_WORKSPACE_DATA_DIR and POCKETCODER_CHECKPOINT_DIR are required when persistent storage is enabled",
     );
   }
-  if (storageBackend === "kubernetes-pvc" && (!workspaceDataDir || !checkpointDir)) {
-    throw new Error(
-      "the Kubernetes PVC must be mounted into the server at POCKETCODER_WORKSPACE_DATA_DIR and POCKETCODER_CHECKPOINT_DIR",
-    );
-  }
-  if (storageBackend === "kubernetes-pvc" && !env.POCKETCODER_KUBERNETES_WORKSPACE_CLAIM) {
-    throw new Error("POCKETCODER_KUBERNETES_WORKSPACE_CLAIM is required for kubernetes-pvc storage");
+  if (storageBackend === "controller-archive" && !checkpointDir) {
+    throw new Error("POCKETCODER_CHECKPOINT_DIR is required for controller-archive storage");
   }
   return {
     storageBackend,
     workspaceDataDir,
     checkpointDir,
-    kubernetesWorkspaceClaim: env.POCKETCODER_KUBERNETES_WORKSPACE_CLAIM ?? null,
   };
 }
 
@@ -249,8 +240,8 @@ function assertCompatibleBackends(
   storage: ReturnType<typeof resolveStorage>,
   secrets: ReturnType<typeof resolveSecrets>,
 ): void {
-  if (driverKind === "docker" && storage.storageBackend === "kubernetes-pvc") {
-    throw new Error("POCKETCODER_DRIVER=docker cannot use kubernetes-pvc storage");
+  if (driverKind === "docker" && storage.storageBackend === "controller-archive") {
+    throw new Error("POCKETCODER_DRIVER=docker cannot use controller-archive storage");
   }
   if (driverKind === "kubernetes" && storage.storageBackend === "filesystem") {
     throw new Error("POCKETCODER_STORAGE_BACKEND=filesystem cannot be used with Kubernetes");
@@ -322,7 +313,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     kubernetesServiceAccount: env.POCKETCODER_KUBERNETES_SERVICE_ACCOUNT ?? null,
     kubernetesNodeSelector: scheduling.nodeSelector ?? null,
     kubernetesTolerations: scheduling.tolerations ?? [],
-    kubernetesWorkspaceSubPath: env.POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH ?? "workspaces",
+    kubernetesRuntimeClass: scheduling.runtimeClassName ?? null,
     workspaceServerUrl: httpUrlEnv(
       env,
       "POCKETCODER_WORKSPACE_SERVER_URL",

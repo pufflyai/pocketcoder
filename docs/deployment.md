@@ -144,9 +144,32 @@ create-time setup over the authenticated supervisor connection.
 ## Kubernetes
 
 The Kubernetes runtime driver creates one namespaced Job and short-lived input
-Secret per workspace. The PVC storage adapter gives every execution an opaque
-subdirectory on a server-mounted claim; restore copies an immutable checkpoint
-into a new subdirectory before Job admission.
+Secret per workspace. Each declared persistence mount uses a bounded `emptyDir`.
+Checkpoint bytes stream through the separate authenticated agent listener into a
+private controller archive. A restore uses a new pod and fresh mounts on any
+allowed node. The supervisor verifies and installs exact files before setup and
+agent readiness. Workspace pods never mount controller storage.
+
+Set `POCKETCODER_STORAGE_BACKEND=controller-archive` and
+`POCKETCODER_CHECKPOINT_DIR` inside the controller's private block volume. No
+shared live or checkpoint PVC is required. Set each template's
+`resources.ephemeralStorage` to at least the sum of its mount limits plus 64 MiB
+for logs and its writable layer. Requests and limits use the same value. The
+trusted egress sidecar has its own resource budget. Writable memory paths,
+including transfer staging in `/tmp`, remain bounded by their 256 MiB volume
+limit and the workspace memory limit.
+
+Set `POCKETCODER_KUBERNETES_RUNTIME_CLASS` to the installed RuntimeClass name,
+for example `gvisor`. Every workspace and warm pod requests that exact class.
+Missing or unusable handlers fail admission; there is no runtime fallback.
+Install the handler on each selected node and review its scheduling and overhead
+settings. See [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/)
+and [local ephemeral storage](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#local-ephemeral-storage).
+
+Run `bun run example:e2e:kubernetes-checkpoint` with Docker, kind and kubectl.
+The isolated two-node fixture verifies exact binary files before restore setup,
+a working echo agent, RuntimeClass selection and owned pod cleanup. It deletes
+its own cluster and private controller data. Hosted gVisor proof is tracked in PC-84.
 
 Restricted templates require Kubernetes 1.29 or newer with the `SidecarContainers` feature
 enabled; 1.33 or newer is recommended because native sidecars are stable there. PocketCoder adds a
@@ -160,15 +183,12 @@ workspace container remains non-root, capability-free, read-only, and unable to 
 contains separate controller/workspace service accounts, least-privilege
 Role/RoleBinding, a single-replica server Deployment, Service, and PVC:
 
-For a maintained DOKS recipe with DigitalOcean workspace NFS and a separate block volume for PGlite,
-two-phase migration, strict image preflight, and optional public HTTPS, see the
+For a DOKS recipe with a private controller block volume, strict image preflight
+and optional public HTTPS, see the
 [DigitalOcean Kubernetes example](../deploy/digitalocean/README.md).
 
 ```sh
 kubectl create namespace pocketcoder
-kubectl -n pocketcoder create secret generic pocketcoder-server \
-  --from-literal=database-url='postgres://…' \
-  --from-literal=auth-pepper="$(openssl rand -base64 32)"
 kubectl -n pocketcoder create configmap pocketcoder-templates \
   --from-file=/path/to/reviewed/templates
 kubectl -n pocketcoder apply -f deploy/kubernetes/pocketcoder.yaml
@@ -176,9 +196,7 @@ kubectl -n pocketcoder apply -f deploy/kubernetes/pocketcoder.yaml
 
 Supply deployment-reviewed template manifests, then replace the image and PVC
 storage class/size first. The manifests under `examples/templates` contain
-placeholder image references and are not production defaults. Multi-node deployments
-need an RWX-capable claim because the server and workspace Jobs mount it;
-single-node development clusters may use an appropriate RWO class. Run one
+placeholder image references and are not production defaults. Run one
 server replica—the connection hub and scheduler are intentionally
 single-active. Workspace Jobs use the unprivileged `pocketcoder-workspace`
 service account, not the controller account.
@@ -268,17 +286,16 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:8091` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |
 | `POCKETCODER_INPUT_DIR` | OS tempdir | Provider input files (must be host-shared when the server is containerized) |
 | `POCKETCODER_DRIVER` | `docker` | `docker` or `kubernetes` runtime |
-| `POCKETCODER_STORAGE_BACKEND` | `disabled` | `filesystem`/`docker-local` or `kubernetes-pvc` |
-| `POCKETCODER_WORKSPACE_DATA_DIR` | required with storage | Active allocation root or mounted PVC directory |
-| `POCKETCODER_CHECKPOINT_DIR` | required with storage | Immutable checkpoint root or mounted PVC directory |
+| `POCKETCODER_STORAGE_BACKEND` | `disabled` | `filesystem` for Docker or `controller-archive` for Kubernetes |
+| `POCKETCODER_WORKSPACE_DATA_DIR` | required with storage | Docker filesystem adapter root |
+| `POCKETCODER_CHECKPOINT_DIR` | required with storage | Private controller archive directory |
 | `POCKETCODER_SECRET_PROVIDER` | `disabled` | `file` or `kubernetes` |
 | `POCKETCODER_SECRET_ROOT` | required for file secrets | Deployment-owned local secret root |
 | `POCKETCODER_KUBERNETES_NAMESPACE` | `default` | Namespace for Jobs and input Secrets |
 | `POCKETCODER_KUBERNETES_SERVICE_ACCOUNT` | none | Service account assigned to workspace Jobs |
 | `POCKETCODER_KUBERNETES_NODE_SELECTOR` | none | JSON object that selects nodes for workspace and warm-pool Jobs |
 | `POCKETCODER_KUBERNETES_TOLERATIONS` | `[]` | JSON array of `NoSchedule` tolerations for workspace and warm-pool Jobs |
-| `POCKETCODER_KUBERNETES_WORKSPACE_CLAIM` | required for PVC | Claim mounted by server and workspace Jobs |
-| `POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH` | `workspaces` | Opaque allocation prefix in the claim |
+| `POCKETCODER_KUBERNETES_RUNTIME_CLASS` | none | Exact RuntimeClass for workspace and warm pods; no fallback |
 | `POCKETCODER_MAX_RETAINED_BYTES` | `500Gi` | Global checkpoint quota |
 | `POCKETCODER_MAX_RETAINED_BYTES_PER_PRINCIPAL` | `100Gi` | Per-principal checkpoint quota |
 | `POCKETCODER_MAX_CHECKPOINTS_PER_PRINCIPAL` | `100` | Per-principal ready checkpoint count |
@@ -325,8 +342,10 @@ Unbound providers contain only template identity and a single-use pool enrollmen
   ([security model](security.md)).
 - **Backups**: checkpoints survive runtime removal but are not disaster recovery.
   `pcd backup create` captures the database, keys and controller checkpoint archives
-  together. Kubernetes PVC checkpoints are not supported by it yet.
+  together for Docker and Kubernetes.
 - **Retention**: the server sweeps expired ready checkpoints every minute.
   `pcd storage doctor|list-orphans|prune` provides explicit
   inventory and maintenance; unknown physical objects are reported and never
   auto-deleted.
+
+The controller needs namespaced Pod patch permission to retain termination evidence, plus read-only Node identity access. Bind `pocketcoder-node-identity` to the controller ServiceAccount in the deployed namespace. Workspace ServiceAccounts have no API token. Missing evidence keeps cleanup and capacity release pending.

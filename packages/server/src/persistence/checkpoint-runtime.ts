@@ -18,12 +18,15 @@ export function composeCheckpointRuntime(
   options: CheckpointTransferOptions | undefined,
 ) {
   if (!options) return {};
-  if (driver.kind !== "docker" || storageDriver?.kind !== "filesystem") {
-    throw new Error("Checkpoint transfers require the Docker driver and configured filesystem persistence");
+  if (driver.kind !== "docker" && driver.kind !== "kubernetes") {
+    throw new Error("Checkpoint transfers require Docker or Kubernetes");
+  }
+  if (driver.kind === "docker" && storageDriver?.kind !== "filesystem") {
+    throw new Error("Docker checkpoint transfers require configured filesystem persistence");
   }
   const checkpointTransfers = createCheckpointTransferService({ ...options, store, hub });
   const transferRuntime: WorkspaceTransferRuntime = {
-    prepareStorage: (workspace) => prepareDisposableRuntimeStorage(store, storageDriver.kind, workspace, new Date()),
+    prepareStorage: (workspace) => prepareDisposableRuntimeStorage(store, driver.kind, workspace, new Date()),
     cleanupWorkspace: async (workspace) => {
       await checkpointTransfers.cleanup(workspace.id);
       const storage = await store.getWorkspaceStorage(workspace.id);
