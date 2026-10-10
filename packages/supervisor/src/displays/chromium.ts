@@ -5,6 +5,7 @@ import {
   type BrowserAction,
   PREVIEW_FRAME_BYTES,
 } from "@pstdio/pocketcoder-contracts";
+import { chromiumTarget, openChromiumSocket } from "./chromium-discovery";
 import { FramePublisher } from "./frame-publisher";
 
 interface Packet {
@@ -30,46 +31,16 @@ const keys: Record<string, number> = {
   PageDown: 34,
 };
 
-export async function connectChromium(frame: (bytes: Uint8Array) => void, closed: () => void) {
-  const response = await fetch("http://127.0.0.1:9222/json/list", { signal: AbortSignal.timeout(5000) });
-  const text = await response.text();
-  if (!response.ok || text.length > PREVIEW_FRAME_BYTES) throw new Error("Browser discovery failed.");
-  const targets = JSON.parse(text) as { type: string; webSocketDebuggerUrl: string }[];
-  const target = targets.find((entry) => entry.type === "page");
-  if (!target) throw new Error("Browser page is missing.");
-  const url = new URL(target.webSocketDebuggerUrl);
-  if (
-    url.protocol !== "ws:" ||
-    url.hostname !== "127.0.0.1" ||
-    url.port !== "9222" ||
-    !/^\/devtools\/page\/[\w-]+$/.test(url.pathname)
-  )
-    throw new Error("Browser debugging endpoint must stay on loopback.");
+export async function connectChromium(frame: (bytes: Uint8Array) => void, closed: () => void, signal?: AbortSignal) {
+  const deadline = AbortSignal.timeout(5000);
+  const setup = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  const url = await chromiumTarget(setup);
   const socket = new WebSocket(url);
   const client = new Chromium(socket, frame, closed);
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      socket.close();
-      reject(new Error("Browser connection timed out."));
-    }, 5000);
-    socket.onopen = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    socket.onerror = () => {
-      clearTimeout(timer);
-      reject(new Error("Browser connection failed."));
-    };
-    socket.addEventListener(
-      "close",
-      () => {
-        clearTimeout(timer);
-        reject(new Error("Browser closed during connection."));
-      },
-      { once: true },
-    );
-  });
+  const abort = () => client.close();
+  setup.addEventListener("abort", abort, { once: true });
   try {
+    await openChromiumSocket(socket, setup);
     await client.command("Page.enable");
     await client.command("Emulation.setDeviceMetricsOverride", {
       width: BROWSER_WIDTH,
@@ -83,10 +54,13 @@ export async function connectChromium(frame: (bytes: Uint8Array) => void, closed
       maxWidth: BROWSER_WIDTH,
       maxHeight: BROWSER_HEIGHT,
     });
+    setup.throwIfAborted();
     return client;
   } catch (error) {
     client.close();
     throw error;
+  } finally {
+    setup.removeEventListener("abort", abort);
   }
 }
 

@@ -50,6 +50,7 @@ export async function createPGliteFixture(prefix: string, mode: "memory" | "disk
     spec: parsed.manifest.spec,
   });
   return {
+    directory: dir,
     parsed,
     principal,
     schema: context.schema,

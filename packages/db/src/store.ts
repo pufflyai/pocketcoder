@@ -12,6 +12,7 @@ import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
 import { createNetworkAudit } from "./modules/network-audit/repository";
 import { createOutbox } from "./modules/outbox/repository";
+import { createBinaryOutputs } from "./modules/outputs/binary-outputs";
 import { createOutputs } from "./modules/outputs/repository";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
 import { createContentPurge } from "./modules/persistence/content";
@@ -32,6 +33,7 @@ import { createRecovery } from "./recovery/recovery";
 
 export class PGliteStore implements Store {
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
+  readonly binaryOutputs: ReturnType<typeof createBinaryOutputs>;
   readonly storageReservations: ReturnType<typeof createStorageReservations>;
   readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
   readonly recovery: ReturnType<typeof createRecovery>;
@@ -42,6 +44,7 @@ export class PGliteStore implements Store {
 
   constructor(context: DatabaseContext) {
     this.checkpointTransfers = createCheckpointTransfers(context);
+    this.binaryOutputs = createBinaryOutputs(context);
     this.storageReservations = createStorageReservations(context);
     this.backup = (options) => writeBackup(context, options);
     this.recovery = createRecovery(context);
