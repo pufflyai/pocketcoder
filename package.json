@@ -73,7 +73,9 @@
     "test:browser": "bun test packages/supervisor/src/displays/chromium.conformance.test.ts",
     "example:e2e:embed": "bun --no-env-file examples/e2e/embed.ts",
     "domains:build": "bun packages/server/scripts/build-domain-assets.ts",
-    "example:e2e:screenshots": "bun --no-env-file examples/e2e/screenshots.ts"
+    "example:e2e:screenshots": "bun --no-env-file examples/e2e/screenshots.ts",
+    "example:e2e:kubernetes-launch": "bun --no-env-file examples/e2e/kubernetes-launch.ts",
+    "example:e2e:kubernetes-checkpoint": "bun --no-env-file examples/e2e/kubernetes-checkpoint.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

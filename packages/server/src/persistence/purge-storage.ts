@@ -44,8 +44,8 @@ function checkpointTargets(
   });
 }
 
-async function purgeTransferredStorage(
-  context: PersistenceContext,
+export async function purgeTransferredStorage(
+  context: { deps: Pick<PersistenceContext["deps"], "store" | "checkpointTransfers">; now(): Date },
   workspace: WorkspaceRow,
   allocations: WorkspaceStorageRow[],
   checkpoints: WorkspaceCheckpointRow[],
@@ -54,6 +54,8 @@ async function purgeTransferredStorage(
   if (!transfers) throw new Error("Checkpoint transfer service is unavailable");
   const { store } = context.deps;
   await transfers.cleanup(workspace.id);
+  if ((await transfers.inventory()).unknown_checkpoints.length)
+    throw new PurgeOwnershipError("Unrecorded checkpoint requires reconciliation");
   for (const checkpoint of checkpoints) {
     if (
       checkpoint.principalId !== workspace.principalId ||
@@ -91,7 +93,10 @@ export async function purgeStorage(context: PersistenceContext, workspace: Works
   const { store, storageDriver } = context.deps;
   const allocations = await store.listWorkspaceStorage(workspace.id);
   const checkpoints = await store.listCheckpoints(workspace.principalId, { workspaceId: workspace.id });
-  if (context.deps.checkpointTransfers && allocations.every((row) => row.providerRef.kind === "tmpfs")) {
+  if (
+    context.deps.checkpointTransfers &&
+    allocations.every((row) => row.providerRef.kind === "tmpfs" || row.providerRef.kind === "empty-dir")
+  ) {
     await purgeTransferredStorage(context, workspace, allocations, checkpoints);
     return;
   }

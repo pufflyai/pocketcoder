@@ -19,7 +19,7 @@ rules:
     verbs: ["create", "get", "list", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "delete"]
+    verbs: ["get", "list", "patch", "delete"]
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["create", "get", "patch", "delete"]
@@ -36,6 +36,31 @@ roleRef:
   kind: Role
   name: pocketcoder-controller
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pocketcoder-node-identity
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pocketcoder-node-identity
+subjects:
+  - kind: ServiceAccount
+    name: pocketcoder-controller
+    namespace: pocketcoder
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pocketcoder-node-identity
+---
 # Use local disk or a block storage class. Never place PGlite on NFS/EFS.
 # Fence a failed node before moving this volume; RWO is not a writer lock.
 apiVersion: v1
@@ -47,18 +72,6 @@ spec:
   resources:
     requests:
       storage: 10Gi
----
-# Replace the storage class/size as needed. Multi-node clusters should use an
-# RWX-capable class because the server and workspace Jobs mount the same claim.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pocketcoder-workspaces
-spec:
-  accessModes: ["ReadWriteMany"]
-  resources:
-    requests:
-      storage: 100Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -104,26 +117,15 @@ spec:
             - name: POCKETCODER_KUBERNETES_SERVICE_ACCOUNT
               value: pocketcoder-workspace
             - name: POCKETCODER_STORAGE_BACKEND
-              value: kubernetes-pvc
-            - name: POCKETCODER_KUBERNETES_WORKSPACE_CLAIM
-              value: pocketcoder-workspaces
-            - name: POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH
-              value: workspaces
-            - name: POCKETCODER_WORKSPACE_DATA_DIR
-              value: /var/lib/pocketcoder/workspaces
+              value: controller-archive
             - name: POCKETCODER_CHECKPOINT_DIR
-              value: /var/lib/pocketcoder/checkpoints
+              value: /var/lib/pocketcoder-controller/checkpoints
             - name: POCKETCODER_TEMPLATE_DIR
               value: /etc/pocketcoder/templates
             - name: POCKETCODER_SECRET_PROVIDER
               value: kubernetes
             - name: POCKETCODER_DIR
               value: /var/lib/pocketcoder-controller/pc_data
-            - name: POCKETCODER_AUTH_PEPPER
-              valueFrom:
-                secretKeyRef:
-                  name: pocketcoder-server
-                  key: auth-pepper
           readinessProbe:
             httpGet:
               path: /readyz
@@ -135,8 +137,6 @@ spec:
           volumeMounts:
             - name: controller-data
               mountPath: /var/lib/pocketcoder-controller
-            - name: data
-              mountPath: /var/lib/pocketcoder
             - name: templates
               mountPath: /etc/pocketcoder/templates
               readOnly: true
@@ -144,9 +144,6 @@ spec:
         - name: controller-data
           persistentVolumeClaim:
             claimName: pocketcoder-data
-        - name: data
-          persistentVolumeClaim:
-            claimName: pocketcoder-workspaces
         - name: templates
           configMap:
             name: pocketcoder-templates

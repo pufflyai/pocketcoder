@@ -4,5 +4,4 @@ namespace: pocketcoder
 resources:
   - namespace.yaml
   - service-accounts.yaml
-  - nfs.yaml
   - controller-data.yaml

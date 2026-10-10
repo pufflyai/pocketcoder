@@ -74,7 +74,7 @@ export class PreservePersistenceService {
     ) {
       throw new ApiError("validation.invalid", "retention may not exceed the template checkpoint policy");
     }
-    this.context.storageDriver();
+    this.context.requirePersistence();
     const checkpointId = randomUUID();
     const operationId = randomUUID();
     const now = this.context.now();

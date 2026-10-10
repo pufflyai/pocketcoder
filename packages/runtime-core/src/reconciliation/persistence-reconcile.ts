@@ -49,9 +49,10 @@ async function reconcileVerification(
   checkpoint: WorkspaceCheckpointRow,
   now: Date,
 ): Promise<void> {
+  if (!deps.storageDriver) return;
   if (checkpoint.state !== "ready" || !checkpoint.providerRef || !checkpoint.manifest) return;
   try {
-    await deps.storageDriver?.verifyCheckpoint(checkpoint.providerRef as CheckpointRef, checkpoint.manifest);
+    await deps.storageDriver.verifyCheckpoint(checkpoint.providerRef as CheckpointRef, checkpoint.manifest);
     await deps.store.updateOperation(operation.id, { state: "succeeded", completedAt: now }, now);
   } catch {
     await deps.store.updateOperation(
@@ -68,9 +69,9 @@ async function reconcileDeletion(
   checkpoint: WorkspaceCheckpointRow,
   now: Date,
 ): Promise<void> {
-  if (!checkpoint.providerRef) return;
+  if (!deps.storageDriver || !checkpoint.providerRef) return;
   try {
-    await deps.storageDriver?.deleteCheckpoint(checkpoint.providerRef as CheckpointRef);
+    await deps.storageDriver.deleteCheckpoint(checkpoint.providerRef as CheckpointRef);
     await deps.store.updateCheckpoint(checkpoint.id, { state: "deleted", deletedAt: now }, now);
     await deps.store.updateOperation(operation.id, { state: "succeeded", completedAt: now }, now);
   } catch {
@@ -217,7 +218,12 @@ async function reconcilePersistenceState(
 export async function reconcilePersistence(deps: PersistenceReconcileDeps): Promise<void> {
   const storageDriver = deps.storageDriver;
   if (!storageDriver) {
-    await measureReconciliation(deps.metrics, "persistence", true, async () => {});
+    await measureReconciliation(deps.metrics, "persistence", !deps.reconcileCheckpointOperation, async () => {
+      if (!deps.reconcileCheckpointOperation) return;
+      const now = deps.now?.() ?? new Date();
+      for (const operation of await deps.store.listIncompleteOperations())
+        await reconcileOperation(deps, operation, now);
+    });
     return;
   }
   await measureReconciliation(deps.metrics, "persistence", false, () =>

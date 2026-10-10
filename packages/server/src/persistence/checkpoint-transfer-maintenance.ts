@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readdir } from "node:fs/promises";
 import { openCheckpointArchivePublication } from "@pstdio/pocketcoder-db/checkpoints";
 import type { Store, WorkspaceCheckpointRow } from "@pstdio/pocketcoder-runtime-core";
 import type { TransferLifetime } from "./checkpoint-transfer-lifetime";
@@ -20,6 +21,20 @@ export function createCheckpointTransferMaintenance(store: Store, lifetime: Tran
     return row;
   }
   return {
+    async inventory() {
+      const rows = await store.checkpointTransfers.listUnsettled();
+      const paths = new Set(rows.flatMap((row) => (row.stagePath ? [row.stagePath] : [])));
+      const allocations = await Promise.all(
+        (await store.listNonterminal()).map((workspace) => store.getWorkspaceStorage(workspace.id)),
+      );
+      return {
+        backend: "controller-archive",
+        storage_count: allocations.filter((row) => row && row.state !== "deleted").length,
+        checkpoint_count: rows.filter((row) => row.direction === "upload" && row.state === "complete").length,
+        unknown_storage: [] as string[],
+        unknown_checkpoints: (await readdir(directory)).filter((path) => !paths.has(path)).sort(),
+      };
+    },
     async verify(checkpoint: WorkspaceCheckpointRow) {
       const row = await publication(checkpoint);
       const owner = openCheckpointArchivePublication(

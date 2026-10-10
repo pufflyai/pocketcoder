@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { join } from "node:path";
-import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
+
 import { DEFAULT_LIMITS, reconcilePersistence } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { eq } from "drizzle-orm";
@@ -13,10 +12,6 @@ test.each(["connected", "preserving"] as const)(
   async (state) => {
     const f = await checkpointHttpFixture();
     const driver = new FakeDriver();
-    const storageDriver = new FilesystemStorageDriver({
-      workspaceRoot: join(f.directory, "live"),
-      checkpointRoot: join(f.directory, "legacy"),
-    });
     const built = buildServer({
       store: f.store,
       driver,
@@ -27,7 +22,6 @@ test.each(["connected", "preserving"] as const)(
     const persistence = new PersistenceService({
       store: f.store,
       driver,
-      storageDriver,
       hub: f.hub,
       scheduler: built.scheduler,
       workspaces: built.service,
@@ -43,7 +37,6 @@ test.each(["connected", "preserving"] as const)(
       await reconcilePersistence({
         store: f.store,
         driver,
-        storageDriver,
         reconcileCheckpointOperation: persistence.reconcileCheckpointOperation,
       });
       expect((await f.store.getOperation(f.operationId))?.state).toBe(state === "connected" ? "failed" : "pending");

@@ -7,6 +7,7 @@ export async function prepareDisposableRuntimeStorage(
   workspace: WorkspaceRow,
   at: Date,
 ) {
+  const kind = providerKind === "kubernetes" ? "empty-dir" : "tmpfs";
   const mounts = workspace.templateSnapshot.spec.persistence.mounts;
   if (mounts.length === 0) return [];
   let storage = await store.getWorkspaceStorage(workspace.id);
@@ -17,7 +18,7 @@ export async function prepareDisposableRuntimeStorage(
       workspaceId: workspace.id,
       principalId: workspace.principalId,
       providerKind,
-      providerRef: { kind: "tmpfs", id },
+      providerRef: { kind, id },
       state: workspace.restoredFromCheckpointId ? "restoring" : "ready",
       mountManifest: mounts,
       logicalBytes: null,
@@ -29,7 +30,7 @@ export async function prepareDisposableRuntimeStorage(
       lastErrorCode: null,
     });
   }
-  if (storage.providerRef.kind !== "tmpfs" || storage.state === "deleted") {
+  if (storage.providerRef.kind !== kind || storage.state === "deleted") {
     throw new Error("Disposable runtime storage is unavailable");
   }
   const { uid, gid } = workspace.templateSnapshot.spec.security;
@@ -37,7 +38,7 @@ export async function prepareDisposableRuntimeStorage(
     (mount): RuntimeMountRef => ({
       name: mount.name,
       target: mount.target,
-      source: { kind: "tmpfs", maxBytes: mount.maxBytes, uid, gid },
+      source: kind === "empty-dir" ? { kind, maxBytes: mount.maxBytes } : { kind, maxBytes: mount.maxBytes, uid, gid },
     }),
   );
 }

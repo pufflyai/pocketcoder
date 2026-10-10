@@ -8,56 +8,25 @@ import type {
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { type KubernetesToleration, resourceRequirements, schedulingFields } from "./kubernetes-scheduling";
 
+import { storageInitializer } from "./kubernetes-storage-init";
+
 interface ManifestOptions {
   podFinalizers?: string[];
   serviceAccountName?: string;
   imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   egressImage?: string;
   imagePullSecret?: string;
+  runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   tolerations?: KubernetesToleration[];
 }
 
-function volumeForMount(mount: RuntimeMountRef, name: string) {
-  if (mount.source.kind === "tmpfs") throw new Error("Docker disposable mounts cannot be used by Kubernetes");
-  if (mount.source.kind === "empty-dir") {
-    return {
-      volume: { name, emptyDir: { sizeLimit: String(mount.source.maxBytes) } },
-      mount: { name, mountPath: mount.target, readOnly: false },
-    };
-  }
-  if (mount.source.kind === "pvc") {
-    return {
-      volume: { name, persistentVolumeClaim: { claimName: mount.source.claimName } },
-      mount: {
-        name,
-        mountPath: mount.target,
-        readOnly: mount.readOnly ?? false,
-        ...(mount.source.subPath ? { subPath: mount.source.subPath } : {}),
-      },
-    };
-  }
-  return {
-    volume: { name, hostPath: { path: mount.source.path, type: "Directory" } },
-    mount: { name, mountPath: mount.target, readOnly: mount.readOnly ?? false },
-  };
-}
-
 function persistentVolumes(mounts: RuntimeMountRef[]) {
-  const claims = new Map<string, string>();
-  const volumes: ReturnType<typeof volumeForMount>["volume"][] = [];
-  const volumeMounts = mounts.map((mount, index) => {
-    const existing = mount.source.kind === "pvc" ? claims.get(mount.source.claimName) : undefined;
-    const rendered = volumeForMount(mount, existing ?? `persistent-${index}`);
-    if (!existing) {
-      volumes.push(rendered.volume);
-      if (mount.source.kind === "pvc") {
-        // CSI identifies the backing volume once, so each claim needs one Pod volume.
-        claims.set(mount.source.claimName, rendered.volume.name);
-      }
-    }
-    return rendered.mount;
+  const volumes = mounts.map((mount, index) => {
+    if (mount.source.kind !== "empty-dir") throw new Error("Kubernetes workspace mounts require bounded emptyDir");
+    return { name: `persistent-${index}`, emptyDir: { sizeLimit: String(mount.source.maxBytes) } };
   });
+  const volumeMounts = mounts.map((mount, index) => ({ name: `persistent-${index}`, mountPath: mount.target }));
   return { volumes, volumeMounts };
 }
 
@@ -94,6 +63,7 @@ function egressContainer(options: ManifestOptions) {
     image: options.egressImage,
     imagePullPolicy: options.imagePullPolicy,
     restartPolicy: "Always",
+    resources: resourceRequirements({ cpu: "100m", memory: "128Mi", ephemeralStorage: "64Mi" }),
     securityContext: {
       runAsUser: 0,
       runAsGroup: 0,
@@ -148,7 +118,8 @@ export function workspaceJobManifest(
   if (disposableBytes) {
     const value = spec.resources.ephemeralStorage;
     const bytes = value ? Number.parseInt(value, 10) * (value.endsWith("Gi") ? 1024 ** 3 : 1024 ** 2) : 0;
-    if (bytes < disposableBytes) throw new Error("Source storage requires full ephemeral-storage requests and limits.");
+    if (bytes < disposableBytes + 64 * 1024 ** 2)
+      throw new Error("Source storage requires full ephemeral-storage requests and limits.");
   }
   const persistent = persistentVolumes(launch.mounts);
   const secrets = launch.secrets.map(volumeForSecret);
@@ -175,7 +146,10 @@ export function workspaceJobManifest(
             fsGroupChangePolicy: "OnRootMismatch",
             seccompProfile: { type: spec.security.seccomp },
           },
-          ...(restricted ? { initContainers: [egressContainer(options)] } : {}),
+          initContainers: [
+            ...storageInitializer(spec, launch.mounts, options.imagePullPolicy),
+            ...(restricted ? [egressContainer(options)] : []),
+          ],
           containers: [
             {
               name: "workspace",
@@ -185,7 +159,10 @@ export function workspaceJobManifest(
               env: Object.entries(spec.env)
                 .filter(([, value]) => !value.startsWith("secretRef:"))
                 .map(([name, value]) => ({ name, value })),
-              resources: resourceRequirements(spec.resources),
+              resources: resourceRequirements({
+                ...spec.resources,
+                ephemeralStorage: spec.resources.ephemeralStorage ?? "64Mi",
+              }),
               securityContext: {
                 runAsUser: spec.security.uid,
                 runAsGroup: spec.security.gid,
@@ -260,7 +237,10 @@ export function warmJobManifest(
               imagePullPolicy: options.imagePullPolicy,
               command: spec.command,
               env: Object.entries(spec.env).map(([name, value]) => ({ name, value })),
-              resources: resourceRequirements(spec.resources),
+              resources: resourceRequirements({
+                ...spec.resources,
+                ephemeralStorage: spec.resources.ephemeralStorage ?? "64Mi",
+              }),
               securityContext: {
                 runAsUser: spec.security.uid,
                 runAsGroup: spec.security.gid,
