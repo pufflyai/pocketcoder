@@ -39,7 +39,7 @@ export async function createTestServer(
   store: Store,
   limits = {},
   readiness?: Readiness,
-  options: Pick<BuildDeps, "publicViews"> = {},
+  options: Pick<BuildDeps, "publicViews" | "screenshotOptions"> = {},
 ): Promise<TestServer> {
   const driver = new FakeDriver();
   const principal = await store.createPrincipal(

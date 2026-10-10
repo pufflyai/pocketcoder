@@ -26,6 +26,7 @@ import {
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
 import { RecoveryRequiredError, startRecoveryController } from "./recovery-controller";
+import { screenshotOptions } from "./screenshot-config";
 
 export { RecoveryRequiredError, startRecoveryController };
 
@@ -88,34 +89,46 @@ export async function startPocketCoderServer(
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const { app, agentApp, websocket, scheduler, persistence, warmPool, checkpointTransfers, workspaceLeases } =
-      buildServer({
-        publicViews: config.publicViews,
-        issuerClient: configuredIssuer(config),
-        ...(authorizeLaunch ? { authorizeLaunch } : {}),
-        store,
-        driver,
-        ...(storageDriver ? { storageDriver } : {}),
-        ...(secretResolver ? { secretResolver } : {}),
-        pepper: config.pepper,
-        ...(config.secretKey ? { secretKey: config.secretKey } : {}),
-        eventSigningKey: config.eventSigningKey,
-        egressImage: config.egressImage,
-        limits: config.limits,
-        workspaceServerUrl: config.workspaceServerUrl,
-        persistenceLimits: config.persistenceLimits,
-        checkpointTransferOptions: transferOptions,
-        ...(options.instanceId ? { instanceId: options.instanceId } : {}),
-        logger,
-        metrics,
-        warmPools,
-        readiness,
-        maintenance,
-      });
+    const {
+      app,
+      agentApp,
+      websocket,
+      scheduler,
+      persistence,
+      warmPool,
+      checkpointTransfers,
+      workspaceLeases,
+      screenshots,
+    } = buildServer({
+      publicViews: config.publicViews,
+      screenshotOptions: screenshotOptions(config),
+      issuerClient: configuredIssuer(config),
+      ...(authorizeLaunch ? { authorizeLaunch } : {}),
+      store,
+      driver,
+      ...(storageDriver ? { storageDriver } : {}),
+      ...(secretResolver ? { secretResolver } : {}),
+      pepper: config.pepper,
+      ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+      eventSigningKey: config.eventSigningKey,
+      egressImage: config.egressImage,
+      limits: config.limits,
+      workspaceServerUrl: config.workspaceServerUrl,
+      persistenceLimits: config.persistenceLimits,
+      checkpointTransferOptions: transferOptions,
+      ...(options.instanceId ? { instanceId: options.instanceId } : {}),
+      logger,
+      metrics,
+      warmPools,
+      readiness,
+      maintenance,
+    });
     // A backup waits for admitted background work as well as admitted requests.
     // Scheduler finalizers can start preserves, so the scheduler settles first.
     maintenance.settleWith(() => scheduler.drain());
     maintenance.settleWith(() => persistence.drain());
+    maintenance.settleWith(() => screenshots?.drain() ?? Promise.resolve());
+    await store.binaryOutputs.prune(new Date());
 
     const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
     const pendingTransfers = await reconcileCheckpointPreserves(
@@ -206,6 +219,7 @@ export async function startPocketCoderServer(
         stopPromise = (async () => {
           log("shutting down");
           await timers.stop();
+          await screenshots?.close();
           await checkpointTransfers?.close();
           await persistence.drain();
           await scheduler.drain();

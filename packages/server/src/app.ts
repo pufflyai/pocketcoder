@@ -26,6 +26,8 @@ import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { composeDisplays } from "./displays/displays";
+import { registerScreenshotRoutes } from "./displays/screenshot-routes";
+import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
 import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
@@ -52,6 +54,7 @@ import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
+  screenshotOptions?: ScreenshotOptions;
   publicViews?: import("./config/public-views").PublicViewConfig;
   authorizeLaunch?: SchedulerDeps["authorizeLaunch"];
   store: Store;
@@ -76,6 +79,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  screenshots?: Screenshots;
   app: OpenAPIHono<AppEnv>;
   agentApp: ReturnType<typeof createAgentApp>;
   websocket: ReturnType<typeof createBunWebSocket<ServerWebSocket>>["websocket"];
@@ -139,6 +143,11 @@ function registerHealthRoutes(app: OpenAPIHono<AppEnv>, deps: BuildDeps) {
   });
 }
 
+function composeScreenshots(deps: BuildDeps, hub: Hub, service: WorkspaceService) {
+  if (deps.screenshotOptions)
+    return createScreenshots({ store: deps.store, hub, service, options: deps.screenshotOptions });
+}
+
 export function buildServer(deps: BuildDeps): BuiltServer {
   const { store, driver, pepper, limits } = deps;
   const logger = deps.logger ?? createStructuredLogger(() => {});
@@ -178,6 +187,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     onError: (context, err) => log(`scheduler ${context}: ${String(err)}`),
   });
   const service = new WorkspaceService({ store, scheduler, limits });
+  const screenshots = composeScreenshots(deps, hub, service);
   const persistence = new PersistenceService({
     store,
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
@@ -236,6 +246,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   };
   const agentApp = createAgentApp({
     connection: wsDeps,
+    screenshots,
     poolHub,
     ...(checkpointTransfers ? { checkpointTransfers } : {}),
     warmPool,
@@ -265,7 +276,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
   registerOperatorRecoveryRoutes(app, store, persistence);
-  registerAdministrationRoutes({ app, persistence, warmPool });
+  registerAdministrationRoutes({ app, store, persistence, warmPool });
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
@@ -273,6 +284,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
   displays.register(app);
+  registerScreenshotRoutes(app, { store, service, screenshots });
   registerDiagnosticRoutes({ app, store, service });
   const terminalDeps = { store, hub, service };
   app.get(
@@ -334,6 +346,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   return {
     app,
+    screenshots,
     agentApp,
     websocket,
     hub,
