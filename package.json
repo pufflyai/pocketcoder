@@ -11,7 +11,7 @@
   "scripts": {
     "build": "lerna run build",
     "build:native": "bun run --cwd packages/cli compile",
-    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check",
+    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check",
     "check-licenses": "bun scripts/check-licenses.ts",
     "check-licenses:test": "bun test scripts/check-licenses.test.ts",
     "check-boundaries:test": "bun test scripts/check-boundaries.test.ts",
@@ -66,7 +66,9 @@
     "example:e2e:docker-checkpoint-purge": "bun --no-env-file examples/e2e/docker-checkpoint-purge.ts",
     "example:e2e:docker-checkpoint-repeat": "bun --no-env-file examples/e2e/docker-checkpoint-repeat.ts",
     "example:e2e:native": "bun --no-env-file examples/native/run.ts",
-    "example:e2e:preview": "bun --no-env-file examples/e2e/preview.ts"
+    "example:e2e:preview": "bun --no-env-file examples/e2e/preview.ts",
+    "example:e2e:desktop": "bun --no-env-file examples/e2e/desktop.ts",
+    "viewer:build": "bun scripts/build-desktop-viewer.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

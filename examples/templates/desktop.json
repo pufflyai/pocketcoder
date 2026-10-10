@@ -1,0 +1,24 @@
+{
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": { "name": "desktop", "description": "Non-root desktop with loopback VNC" },
+  "spec": {
+    "version": "1.0.0",
+    "image": "pocketcoder-desktop@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "harness": { "command": ["bun", "/opt/pocketcoder/desktop-harness.ts", "bun", "/opt/pocketcoder/echo-harness.ts"] },
+    "display": { "mode": "desktop" },
+    "env": { "DISPLAY": ":99" },
+    "resources": { "cpu": "1", "memory": "768Mi" },
+    "services": {
+      "agent": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "routes": [
+          { "method": "GET", "path": "/status" },
+          { "method": "GET", "path": "/messages" },
+          { "method": "POST", "path": "/message" }
+        ]
+      }
+    },
+    "timeouts": { "terminateGrace": "3s" }
+  }
+}

@@ -31,7 +31,7 @@ export const PreviewSocketPayload = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("open"),
     request_id: z.uuid(),
-    name: PreviewNameSchema,
+    name: z.union([PreviewNameSchema, z.literal("display")]),
     path: z.string().max(8192),
     origin: z.url(),
     cookie: z.string().max(8192).optional(),

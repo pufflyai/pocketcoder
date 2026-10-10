@@ -15,6 +15,7 @@ export async function previewWebSocket(
   connection: LiveConnection,
   hub: Hub,
   release: () => void,
+  input?: (bytes: Uint8Array) => Uint8Array[],
 ) {
   const url = new URL(c.req.url);
   let id: string | undefined;
@@ -51,11 +52,23 @@ export async function previewWebSocket(
         }, 250);
         timer.unref();
       },
-      onMessage: (event) =>
+      onMessage: (event) => {
+        if (input) {
+          try {
+            if (typeof event.data === "string") throw new Error("Display input must be binary.");
+            for (const bytes of input(new Uint8Array(event.data as ArrayBuffer)))
+              hub.previewSockets.output(prepared.id, bytes);
+          } catch {
+            hub.previewSockets.close(prepared.id);
+            done();
+          }
+          return;
+        }
         hub.previewSockets.output(
           prepared.id,
           typeof event.data === "string" ? event.data : new Uint8Array(event.data as ArrayBuffer),
-        ),
+        );
+      },
       onClose: () => {
         hub.previewSockets.close(prepared.id);
         done();

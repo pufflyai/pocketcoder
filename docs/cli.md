@@ -311,3 +311,10 @@ bun examples/e2e/preview.ts
 Add `--browser` to pause with a fresh URL for a browser check. Press Enter to
 finish cleanup. The demo checks HTML, CSS, live reload, token replay, loopback
 forwarding and workspace shutdown.
+# Workspace desktop
+
+`pocketcoder workspaces display --id <workspace> --open` opens a trusted desktop
+viewer for a template with `display.mode` set to `desktop`. Add `--control` for
+keyboard and pointer control. The key needs `display:view`, and control also
+needs `display:control`. The URL is single-use and lasts 60 seconds. The viewer
+session ends within one hour, the key expiry or the workspace deadline.

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import {
   ApiError,
@@ -10,6 +9,7 @@ import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "../control-channel/hub";
 import { type AppEnv, requireScope } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
+import type { ViewAdmission } from "./admission";
 import { previewHttp } from "./http";
 import { PreviewSessions } from "./sessions";
 import { previewWebSocket } from "./websocket";
@@ -22,22 +22,8 @@ function localApiOrigin(raw: string) {
   return url;
 }
 
-export function composePreviews(deps: { store: Store; service: WorkspaceService; hub: Hub }) {
+export function composePreviews(deps: { store: Store; service: WorkspaceService; hub: Hub; views: ViewAdmission }) {
   const sessions = new PreviewSessions(deps.store, deps.service);
-  const active = new Map<string, { workspace: string; name: string }>();
-  function reserve(workspace: string, name: string) {
-    const entries = [...active.values()];
-    if (
-      active.size >= 128 ||
-      entries.filter((entry) => entry.workspace === workspace).length >= 64 ||
-      entries.filter((entry) => entry.workspace === workspace && entry.name === name).length >= 32
-    ) {
-      throw new ApiError("operation.conflict", "Preview stream limit reached.");
-    }
-    const id = randomUUID();
-    active.set(id, { workspace, name });
-    return () => active.delete(id);
-  }
 
   const browser: import("hono").MiddlewareHandler<AppEnv> = async (c, next) => {
     const url = new URL(c.req.url);
@@ -69,7 +55,7 @@ export function composePreviews(deps: { store: Store; service: WorkspaceService;
     if (!connection?.registered) throw new ApiError("workspace.disconnected", "Workspace supervisor is unavailable.");
     if (connection.protocolVersion < PREVIEW_MIN_PROTOCOL_VERSION)
       throw new ApiError("relay.streaming_unsupported", "Previews require supervisor protocol v10.");
-    const release = reserve(session.workspaceId, session.name);
+    const release = deps.views.reserve(session.workspaceId, session.name);
     if (!websocket) {
       try {
         return await previewHttp(c.req.raw, session, sessions, deps.hub, release);

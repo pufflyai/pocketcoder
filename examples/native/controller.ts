@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { freePort } from "../e2e/local-process";
+import { controllerPorts } from "./ports";
 
 export async function nativeController(binary: string, directory: string, persistence = false) {
   const executable = join(directory, "pocketcoder");
@@ -11,8 +11,10 @@ export async function nativeController(binary: string, directory: string, persis
   const docker = Bun.which("docker");
   if (!docker) throw new Error("Docker is required for controller reconciliation.");
   await symlink(docker, join(tools, "docker"));
-  const port = freePort();
-  const agentPort = freePort();
+  const reservation = controllerPorts();
+  const port = reservation.operator;
+  const agentPort = reservation.agent;
+  reservation.release();
   const baseUrl = `http://127.0.0.1:${port}`;
   const env = {
     PATH: tools,
