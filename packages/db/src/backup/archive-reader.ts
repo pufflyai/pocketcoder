@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { closeSync, constants, mkdirSync, openSync, readSync, writeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { closeSync, constants, fsyncSync, mkdirSync, openSync, readSync, writeSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileChunks } from "./file-chunks";
 import {
   type BackupManifest,
@@ -32,24 +32,29 @@ function assertPlacement(member: TarMember, members: BackupMember[], directories
   if (parent !== "." && !directories.has(parent)) throw new Error(`Backup member precedes its folder: ${member.path}`);
 }
 
-// Hashes a file member; database members are also extracted so the snapshot can be opened.
-async function readFileMember(file: number, member: TarMember, offset: number, scratch: string) {
-  const extract = member.path.startsWith("db/")
-    ? openSync(join(scratch, member.path), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
-    : undefined;
+// Chooses where a member is extracted; members without a place are only hashed.
+export type Placement = (path: string) => string | undefined;
+
+async function readFileMember(file: number, member: TarMember, offset: number, place: Placement) {
+  const target = place(member.path);
+  const extract =
+    target === undefined
+      ? undefined
+      : openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   const hash = createHash("sha256");
   try {
     for await (const chunk of fileChunks(file, member.size, () => {}, offset)) {
       hash.update(chunk);
       if (extract !== undefined) writeSync(extract, chunk);
     }
+    if (extract !== undefined) fsyncSync(extract);
   } finally {
     if (extract !== undefined) closeSync(extract);
   }
   return { path: member.path, type: "file" as const, bytes: member.size, digest: `sha256:${hash.digest("hex")}` };
 }
 
-export async function scanArchive(file: number, size: number, scratch: string) {
+export async function scanArchive(file: number, size: number, place: Placement) {
   const members: BackupMember[] = [];
   const directories = new Set<string>();
   let manifest: BackupManifest | undefined;
@@ -67,9 +72,10 @@ export async function scanArchive(file: number, size: number, scratch: string) {
       assertPlacement(member, members, directories);
       if (member.type === "directory") {
         directories.add(member.path);
-        if (member.path.startsWith("db")) mkdirSync(join(scratch, member.path), { mode: 0o700 });
+        const target = place(member.path);
+        if (target !== undefined) mkdirSync(target, { mode: 0o700 });
         members.push({ path: member.path, type: "directory" });
-      } else members.push(await readFileMember(file, member, offset, scratch));
+      } else members.push(await readFileMember(file, member, offset, place));
     }
     offset += member.size + tarPadding(member.size);
   }

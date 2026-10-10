@@ -56,6 +56,7 @@ export async function writeBackup(context: DatabaseContext, options: BackupOptio
       createdAt,
       engine: { pglite: seed.pgliteVersion, postgres: seed.postgresVersion },
       database: { position: snapshot.position, migrations: snapshot.migrations },
+      journal: snapshot.journal,
       checkpoints,
       members: [...archive.members],
     };
@@ -66,6 +67,7 @@ export async function writeBackup(context: DatabaseContext, options: BackupOptio
       ...published,
       snapshotId: manifest.snapshotId,
       position: snapshot.position,
+      journal: snapshot.journal,
       checkpoints: checkpoints.length,
     };
   } catch (error) {

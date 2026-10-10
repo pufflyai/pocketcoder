@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { freePort } from "../e2e/local-process";
 
 export async function nativeController(binary: string, directory: string, persistence = false) {
@@ -33,6 +34,8 @@ export async function nativeController(binary: string, directory: string, persis
         }
       : {}),
   };
+  // A restored controller runs from its own data and checkpoint folders.
+  let dataEnv: Record<string, string> = {};
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let output: Promise<string[]> | undefined;
   const measurements: { readinessMs: number; peakMemoryBytes?: number }[] = [];
@@ -40,7 +43,7 @@ export async function nativeController(binary: string, directory: string, persis
   async function run(args: string[], key?: string) {
     const command = Bun.spawn([executable, ...args], {
       cwd: directory,
-      env: { ...env, POCKETCODER_URL: baseUrl, POCKETCODER_KEY: key },
+      env: { ...env, ...dataEnv, POCKETCODER_URL: baseUrl, POCKETCODER_KEY: key },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -69,16 +72,26 @@ export async function nativeController(binary: string, directory: string, persis
     if (/DrizzleQueryError|protocol error: internal error/.test(logs)) throw new Error(logs);
   }
 
-  async function start() {
+  // Recovery mode opens only the private admin socket, so it is ready when that socket exists.
+  async function start(mode: "service" | "recovery" = "service") {
     const started = performance.now();
-    const processHandle = Bun.spawn([executable, "serve"], { cwd: directory, env, stdout: "pipe", stderr: "pipe" });
+    const processHandle = Bun.spawn([executable, "serve"], {
+      cwd: directory,
+      env: { ...env, ...dataEnv },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     child = processHandle;
     output = Promise.all([new Response(processHandle.stdout).text(), new Response(processHandle.stderr).text()]);
     let ready = false;
+    const socket = resolve(directory, dataEnv.POCKETCODER_DIR ?? "pc_data", "admin.sock");
     while (performance.now() - started < 10_000 && child.exitCode === null) {
-      ready = await fetch(`${baseUrl}/readyz`)
-        .then((r) => r.ok)
-        .catch(() => false);
+      ready =
+        mode === "recovery"
+          ? existsSync(socket)
+          : await fetch(`${baseUrl}/readyz`)
+              .then((r) => r.ok)
+              .catch(() => false);
       if (ready) break;
       await Bun.sleep(10);
     }
@@ -94,5 +107,9 @@ export async function nativeController(binary: string, directory: string, persis
     }
   }
 
-  return { executable, baseUrl, run, start, stop, measurements };
+  function useDataFolder(dataDir: string, checkpointDir: string) {
+    dataEnv = { POCKETCODER_DIR: dataDir, POCKETCODER_CHECKPOINT_DIR: checkpointDir };
+  }
+
+  return { executable, baseUrl, run, start, stop, useDataFolder, measurements };
 }

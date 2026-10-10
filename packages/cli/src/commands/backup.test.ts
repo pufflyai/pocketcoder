@@ -42,6 +42,7 @@ test("backup create writes an archive of the running controller that verify acce
   } finally {
     await running.stop();
     await rm(directory, { recursive: true, force: true });
+    await rm(`${directory}-journal`, { recursive: true, force: true });
     await rm(out, { recursive: true, force: true });
   }
 }, 60_000);

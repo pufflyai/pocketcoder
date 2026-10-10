@@ -3,25 +3,19 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { PGlite } from "@electric-sql/pglite";
-import { NodeFS } from "@electric-sql/pglite/nodefs";
 import seed from "../../assets/core-seed.json" with { type: "json" };
-import { loadCoreAssets } from "../database/assets";
 import { scanArchive } from "./archive-reader";
 import { KEY_NAMES } from "./manifest";
-import { readMigrations, readPublications } from "./snapshot-queries";
+import { openRawDatabase } from "./raw-database";
+import { readJournalId, readMigrations, readPublications } from "./snapshot-queries";
 
 async function readDatabase(directory: string) {
-  const assets = await loadCoreAssets();
-  const client = await PGlite.create({
-    pgliteWasmModule: assets.pgliteWasmModule,
-    fsBundle: assets.fsBundle,
-    fs: new NodeFS(directory),
-  });
+  const client = await openRawDatabase(directory);
   try {
     return {
       migrations: await readMigrations(client, "pocketcoder"),
       publications: await readPublications(client, "pocketcoder"),
+      journalId: await readJournalId(client, "pocketcoder"),
     };
   } finally {
     await client.close();
@@ -35,7 +29,9 @@ export async function verifyBackup(path: string) {
   try {
     const stat = fstatSync(file);
     if (!stat.isFile()) throw new Error("Backup archive must be a regular file.");
-    const { manifest, members } = await scanArchive(file, stat.size, scratch);
+    const { manifest, members } = await scanArchive(file, stat.size, (member) =>
+      member === "db" || member.startsWith("db/") ? join(scratch, member) : undefined,
+    );
     if (!isDeepStrictEqual(manifest.members, members)) throw new Error("Backup members differ from the manifest.");
     if (manifest.engine.pglite !== seed.pgliteVersion || manifest.engine.postgres !== seed.postgresVersion)
       throw new Error("Backup database engine differs from this PocketCoder build.");
@@ -55,6 +51,8 @@ export async function verifyBackup(path: string) {
       !isDeepStrictEqual(database.migrations, known)
     )
       throw new Error("Backup database format is unknown to this PocketCoder build.");
+    if (database.journalId !== manifest.journal.journalId)
+      throw new Error("Backup journal position belongs to a different deletion journal.");
     const referenced = database.publications.map((publication) => ({
       checkpointId: publication.checkpointId,
       transferId: publication.transferId,

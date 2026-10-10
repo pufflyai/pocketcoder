@@ -57,11 +57,17 @@ at that listener. Operator and agent routes are separate.
 ```sh
 pcd backup create --dir ./pc_data --out <new-archive> [--timeout 30]
 pcd backup verify <archive>
+pcd backup restore <archive> --dir <new-data-folder> [--checkpoint-dir <empty-folder>]
+pcd recovery status [--dir <data-folder>]
+pcd recovery complete [--dir <data-folder>]
 ```
 
 `backup create` writes a private archive of the running controller: its database,
 keys and the checkpoint archives the database refers to, all from one point in time.
-`backup verify` checks an archive without the data folder or a running server. See
+`backup verify` checks an archive without the data folder or a running server.
+`backup restore` writes a verified archive into a new folder that starts in recovery. `recovery
+complete` replays the deletion journal, fences the old runtimes and grants, and moves the journal's
+writer claim to the restored folder; restart `serve` afterwards. See
 [getting started](getting-started.md#back-up-the-controller).
 
 ```sh

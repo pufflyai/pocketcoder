@@ -76,7 +76,8 @@ export async function api(path: string, init: RequestInit = {}) {
 }
 
 export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
-  const store = await PGliteStore.create(process.env.POCKETCODER_DIR ?? "./pc_data");
+  const journalDir = process.env.POCKETCODER_JOURNAL_DIR;
+  const store = await PGliteStore.create(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
   try {
     return await fn(store);
   } finally {

@@ -5,6 +5,7 @@ import { addDoctorCommand } from "./doctor";
 import { addKeyCommands } from "./keys";
 import { addPoolCommands } from "./pools";
 import { addPrincipalCommands } from "./principals";
+import { addRecoveryCommands } from "./recovery";
 import { addSecretCommands } from "./secrets";
 import { addServeCommand } from "./serve";
 import { addServerCommands } from "./server";
@@ -19,6 +20,7 @@ export function addCommands(parser: Argv) {
     addSuperuserCommands,
     addServerCommands,
     addBackupCommands,
+    addRecoveryCommands,
     addPrincipalCommands,
     addKeyCommands,
     addTemplateCommands,

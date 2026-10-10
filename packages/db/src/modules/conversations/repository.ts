@@ -13,6 +13,7 @@ export function createConversations(context: DatabaseContext) {
   const requestReceipts = createConversationRequests(context);
   const {
     db,
+    journal,
     tables: { workspaceConversations: conversations, workspaceConversationMessages: messages },
   } = context;
   return {
@@ -92,6 +93,7 @@ export function createConversations(context: DatabaseContext) {
         });
     },
     async deleteConversation(workspaceId: string, at: Date) {
+      journal?.append({ kind: "conversation_deleted", workspaceId, at: at.toISOString() });
       await db.transaction(async (tx) => {
         await tx.delete(messages).where(eq(messages.workspaceId, workspaceId));
         await tx

@@ -8,7 +8,7 @@ import { destinationOpen, destinationRenameNoReplace, destinationStat, destinati
 import type { DestinationStat } from "./destination-stat";
 import type { VerifiedCheckpointArchive } from "./verified-archive";
 
-function identity(stat: DestinationStat): CheckpointStageIdentity {
+export function publicationIdentity(stat: DestinationStat): CheckpointStageIdentity {
   return {
     allocatedBytes: String(stat.blocks * 512n),
     device: String(stat.dev),
@@ -22,7 +22,7 @@ function identity(stat: DestinationStat): CheckpointStageIdentity {
   };
 }
 function same(stat: DestinationStat, expected: CheckpointStageIdentity) {
-  const actual = identity(stat);
+  const actual = publicationIdentity(stat);
   if (
     !stat.isFile() ||
     stat.nlink !== 1n ||
@@ -91,7 +91,7 @@ export function createCheckpointArchivePublication(
     folder.close();
     throw error;
   }
-  const original = identity(fstatSync(file, { bigint: true }));
+  const original = publicationIdentity(fstatSync(file, { bigint: true }));
   let name = stage;
   let sealed: CheckpointStageIdentity | undefined;
   let published = false;
@@ -114,7 +114,7 @@ export function createCheckpointArchivePublication(
     )
       throw new Error("Checkpoint archive publication custody changed.");
     if (sealed) same(held, sealed);
-    same(named, identity(held));
+    same(named, publicationIdentity(held));
   }
   function validate() {
     check();
@@ -127,7 +127,7 @@ export function createCheckpointArchivePublication(
     validate,
     identity() {
       validate();
-      return identity(fstatSync(file, { bigint: true }));
+      return publicationIdentity(fstatSync(file, { bigint: true }));
     },
     write(verified: VerifiedCheckpointArchive) {
       if (writing) throw new Error("Checkpoint archive publication is already writing.");
@@ -154,7 +154,7 @@ export function createCheckpointArchivePublication(
           )
             throw new Error("Checkpoint publication differs from its verified archive.");
           fsyncSync(file);
-          sealed = identity(fstatSync(file, { bigint: true }));
+          sealed = publicationIdentity(fstatSync(file, { bigint: true }));
           validate();
           await proveContents(file, verified.receipt.archiveBytes, verified.receipt.archiveDigest, validate);
           proven = true;
@@ -172,7 +172,7 @@ export function createCheckpointArchivePublication(
       destinationRenameNoReplace(folder.descriptor, name, folder.descriptor, target);
       name = target;
       // Rename changes ctime; the held inode and all content metadata remain authoritative.
-      const after = identity(fstatSync(file, { bigint: true }));
+      const after = publicationIdentity(fstatSync(file, { bigint: true }));
       same(fstatSync(file, { bigint: true }), { ...sealed, ctimeNs: after.ctimeNs });
       sealed = after;
       validate();

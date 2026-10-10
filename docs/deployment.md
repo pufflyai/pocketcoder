@@ -248,13 +248,16 @@ Local principal, key and template database commands take the same folder lock.
 Run them while the server is stopped. Keep the auth pepper stable across restarts.
 Use `pcd backup create --out <file>` on the running server to capture the database,
 keys and checkpoint archives at one point in time (see [getting started](getting-started.md#back-up-the-controller)).
-Copying files from a running server is not a consistent backup.
+Copying files from a running server is not a consistent backup. Keep the deletion journal
+(`POCKETCODER_JOURNAL_DIR`) outside every backup; `pcd backup restore` and `pcd recovery complete`
+replay it so a restore cannot revive deleted data.
 
 ## Configuration reference
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
+| `POCKETCODER_JOURNAL_DIR` | folder recorded in the database, else `<POCKETCODER_DIR>-journal` | Deletion journal outside the data folder; restores replay it |
 | `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |

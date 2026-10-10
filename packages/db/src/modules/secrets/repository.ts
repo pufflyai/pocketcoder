@@ -7,7 +7,7 @@ import { requiredRow } from "../../database/required-row";
 import { lockKeyAuthority } from "../auth/authority";
 import { fenceWorkspaceLeaseRows } from "./lease-fence";
 
-export function createSecrets({ db, tables }: DatabaseContext) {
+export function createSecrets({ db, journal, tables }: DatabaseContext) {
   const { secrets, secretVersions } = tables;
   const metadata = (row: typeof secrets.$inferSelect) => ({
     name: row.name,
@@ -24,6 +24,15 @@ export function createSecrets({ db, tables }: DatabaseContext) {
       return db.transaction(async (tx) => {
         await authorize(tx, actorKeyId);
         await lock(tx, secret.name, 4);
+        // A replaced value must not come back with a restore, so the old version is journaled as retired.
+        const [replaced] = await tx.select().from(secrets).where(eq(secrets.name, secret.name));
+        if (replaced && !replaced.retiredAt)
+          journal?.append({
+            kind: "secret_retired",
+            name: secret.name,
+            versionId: replaced.versionId,
+            at: new Date().toISOString(),
+          });
         await tx.insert(secretVersions).values({ ...secret, createdAt: sql`now()` });
         const [row] = await tx
           .insert(secrets)
@@ -63,6 +72,7 @@ export function createSecrets({ db, tables }: DatabaseContext) {
           .where(eq(secrets.name, name))
           .returning();
         if (!row) throw new ApiError("secret.not_found", "Unknown stored secret.");
+        journal?.append({ kind: "secret_retired", name, versionId: row.versionId, at: new Date().toISOString() });
         const consumers = await tx
           .selectDistinct({ id: tables.workspaceLeases.workspaceId })
           .from(tables.workspaceLeases)
