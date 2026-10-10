@@ -95,6 +95,8 @@ test("real supervisor relays assets and live reload, strips authority, and close
   const done = supervise(path);
   let socket: WebSocket | undefined;
   const headerAbort = new AbortController();
+  const cleanupAbort = new AbortController();
+  const requests: Promise<Response>[] = [];
   try {
     await waitFor(
       async () => (await server.store.getWorkspace(workspace.id))?.state === "ready",
@@ -104,8 +106,18 @@ test("real supervisor relays assets and live reload, strips authority, and close
     expect(await client.previews.list(workspace.id)).toEqual([{ name: "web", port: Number(webapp.port) }]);
     const minted = await client.previews.open(workspace.id, "web");
     const preview = new URL(minted.url);
-    const request = (path: string, init: RequestInit = {}) =>
-      fetch(`${baseUrl}${path}`, { ...init, redirect: "manual", headers: { host: preview.host, ...init.headers } });
+    const request = (path: string, init: RequestInit = {}) => {
+      const pending = fetch(`${baseUrl}${path}`, {
+        ...init,
+        redirect: "manual",
+        signal: AbortSignal.any([cleanupAbort.signal, ...(init.signal ? [init.signal] : [])]),
+        headers: { host: preview.host, ...init.headers },
+      });
+      // Cancellation can precede the assertion that awaits this request.
+      void pending.catch(() => {});
+      requests.push(pending);
+      return pending;
+    };
     const exchange = await request(preview.pathname + preview.search);
     expect(exchange.status).toBe(303);
     const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
@@ -123,6 +135,10 @@ test("real supervisor relays assets and live reload, strips authority, and close
       (await request("/", { method: "POST", headers: { cookie, origin: preview.origin }, body: "ok" })).status,
     ).toBe(200);
     const slow = await request("/slow", { headers: { cookie } });
+    const slowBody = slow.arrayBuffer().then(
+      () => "completed",
+      () => "closed",
+    );
     await waitFor(async () => server.hub.activeStreamCount(workspace.id) === 1, 1000, "slow stream");
     expect((await client.workspaces.get(workspace.id)).state).toBe("ready");
     const liveUrl = new URL(`${baseUrl}/reload`);
@@ -176,11 +192,13 @@ test("real supervisor relays assets and live reload, strips authority, and close
     await waitFor(async () => server.hub.activeStreamCount(workspace.id) === 0, 1000, "revoked HTTP requests close");
     expect((await waiting).status).toBe(401);
     expect((await request("/", { headers: { cookie } })).status).toBe(401);
-    await slow.body?.cancel().catch(() => {});
+    expect(await slowBody).toBe("closed");
   } finally {
     headerAbort.abort();
+    cleanupAbort.abort();
     socket?.close();
     server.hub.shutdown(workspace.id, "test complete");
+    await Promise.allSettled(requests);
     await done;
     await listener.stop(true);
     await webapp.stop(true);
