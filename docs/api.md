@@ -29,6 +29,69 @@ Failures return the stable error envelope used everywhere:
 
 Secret values, SQL/provider errors, and stack traces never appear in errors.
 
+## Preview and display sessions
+
+`POST /v1/workspaces/{id}/previews/{name}` needs `previews:open`.
+`POST /v1/workspaces/{id}/display` needs `display:view`; `control: true` also
+needs `display:control`. Both return `{ url, expires_at }`. Preview names and
+display mode come from the workspace's immutable template.
+
+Supply `session` with one of these modes:
+
+| Session | Use | Cookie and framing |
+| --- | --- | --- |
+| `{ mode: "local" }` | Loopback HTTP controller; this is the default | Host-only, HttpOnly, SameSite=Lax; framing denied |
+| `{ mode: "top_level" }` | Public HTTPS view in its own tab | Secure `__Host-pc-view`, HttpOnly, SameSite=Lax; framing denied |
+| `{ mode: "embedded", parentOrigin: "https://app.example.org" }` | One configured parent application | Secure `__Host-pc-view`, HttpOnly, SameSite=None, Partitioned; only the exact parent and the view itself may frame it |
+
+The SDK accepts `{ session }` in `client.previews.open(id, name, options)` and
+`client.displays.open(id, control, options)`. Mint on your application's backend;
+keep its finite machine key there. Do not put a machine key in an iframe or a
+workspace. The one-time URL expires after 60 seconds and exchanges its token
+before any view content loads. The session ends within one hour, key expiry or
+the workspace deadline. Revoke, disable and grant loss close active streams;
+reconnect checks current authority.
+
+Set `POCKETCODER_PUBLIC_VIEWS` to JSON on the controller, for example:
+
+```json
+{
+  "apiOrigin": "https://api.example.org",
+  "origin": "https://views.example.net",
+  "parents": ["https://app.example.org"],
+  "trustedIngress": ["127.0.0.1"]
+}
+```
+
+The API, parent applications and public views must use different registrable
+domains from the views. A registrable domain is the name a tenant can own, such
+as `example.co.uk`; private public suffixes such as `github.io` also count.
+Point wildcard view DNS and TLS at the controller ingress. Only listed ingress
+peer IPs may supply `X-Forwarded-Host` and `X-Forwarded-Proto: https`. Other
+forwarding headers cannot select the public origin. Cookies have no Domain
+attribute. Platform cookies and authorization headers never reach workspace
+services. Unsafe requests and browser sockets require the exact view Origin.
+The reserved display host serves trusted viewer assets only.
+
+An embedded view first checks its cookie at a clean URL. When cookies are
+blocked, it shows an explicit message and sends
+`{ type: "pocketcoder.view_unavailable" }` to its bound parent. Accept this
+message only when both `event.origin` equals the returned view origin and
+`event.source` equals your iframe's `contentWindow`.
+
+Always provide an **Open in a new tab** link. Point it at an authenticated route
+on your application backend with `target="_blank" rel="noopener noreferrer"`.
+When clicked, that route mints a fresh `top_level` session and redirects to its
+one-time URL. This keeps the fallback fresh and starts a real top-level
+navigation, including in browsers that block third-party cookies. Do not reuse
+the iframe token or a saved fallback URL. Partitioned-cookie support varies
+with browser settings; use the fallback when the cookie check fails.
+
+Run `bun run example:e2e:embed --keep` for Chromium and Firefox with third-party
+cookies blocked. The fixture uses separate HTTPS domains, real Docker Chromium
+frames, and a fresh top-level fallback. It uses a temporary self-signed
+certificate in its test contexts and removes its workspace afterward.
+
 ## Principals and keys
 
 ```text

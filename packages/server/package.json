@@ -23,19 +23,21 @@
     "typecheck": "tsc --project ./tsconfig.json --noEmit && tsc --project ./src/displays/client/tsconfig.json"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^1.1.0",
     "@pstdio/pocketcoder-auth": "workspace:*",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-db": "workspace:*",
     "@pstdio/pocketcoder-drivers": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",
-    "@hono/zod-openapi": "^1.1.0",
     "hono": "^4.8.0",
+    "tldts-core": "7.4.18",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@novnc/novnc": "1.7.0",
     "@pstdio/pocketcoder-sdk": "workspace:*",
     "@pstdio/pocketcoder-supervisor": "workspace:*",
-    "@pstdio/pocketcoder-testkit": "workspace:*"
+    "@pstdio/pocketcoder-testkit": "workspace:*",
+    "tldts": "7.4.18"
   }
 }

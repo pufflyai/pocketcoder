@@ -1,9 +1,9 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import {
   ApiError,
-  PREVIEW_COOKIE,
   PREVIEW_MIN_PROTOCOL_VERSION,
   PreviewNameSchema,
+  PreviewOpenRequestSchema,
 } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "../control-channel/hub";
@@ -12,44 +12,29 @@ import type { WorkspaceService } from "../workspaces/service";
 import type { ViewAdmission } from "./admission";
 import { previewHttp } from "./http";
 import { PreviewSessions } from "./sessions";
+import { viewExchange } from "./view-exchange";
+import type { ViewPolicy } from "./view-policy";
 import { previewWebSocket } from "./websocket";
 
-function localApiOrigin(raw: string) {
-  const url = new URL(raw);
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) {
-    throw new ApiError("validation.invalid", "Local previews require a loopback HTTP controller.");
-  }
-  return url;
-}
-
-export function composePreviews(deps: { store: Store; service: WorkspaceService; hub: Hub; views: ViewAdmission }) {
+export function composePreviews(deps: {
+  store: Store;
+  service: WorkspaceService;
+  hub: Hub;
+  views: ViewAdmission;
+  policy: ViewPolicy;
+}) {
   const sessions = new PreviewSessions(deps.store, deps.service);
 
   const browser: import("hono").MiddlewareHandler<AppEnv> = async (c, next) => {
-    const url = new URL(c.req.url);
-    if (!url.hostname.endsWith(".localhost")) return next();
-    // This listener is local-only. Forwarded host headers never choose a destination.
-    if (url.protocol !== "http:" || !/^[0-9a-f]{32}-[a-z][a-z0-9-]{0,19}\.localhost$/.test(url.hostname))
-      return c.notFound();
+    const url = deps.policy.requestUrl(c);
+    const host = deps.policy.host(url);
+    if (!host) return next();
+    if ("invalid" in host || !PreviewNameSchema.safeParse(host.name).success) return c.notFound();
     c.header("referrer-policy", "no-referrer");
     c.header("cache-control", "no-store");
-    if (url.pathname === "/.pc/open") {
-      const token = url.searchParams.get("token") ?? "";
-      const { secret, session } = await sessions.exchange(token, url.origin);
-      c.header(
-        "set-cookie",
-        `${PREVIEW_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor((session.expires - Date.now()) / 1000)}`,
-      );
-      return c.redirect("/", 303);
-    }
-    const cookie =
-      c.req
-        .header("cookie")
-        ?.split(";")
-        .map((part) => part.trim())
-        .find((part) => part.startsWith(`${PREVIEW_COOKIE}=`))
-        ?.slice(PREVIEW_COOKIE.length + 1) ?? "";
-    const session = await sessions.lookup(cookie, url.origin);
+    const exchanged = await viewExchange(c, url, deps.policy, sessions);
+    if (exchanged) return exchanged;
+    const session = await sessions.lookup(deps.policy.secret(c.req.header("cookie"), url), url.origin);
     const websocket = validatePreviewRequest(c.req.raw, url);
     const connection = deps.hub.get(session.workspaceId);
     if (!connection?.registered) throw new ApiError("workspace.disconnected", "Workspace supervisor is unavailable.");
@@ -58,7 +43,7 @@ export function composePreviews(deps: { store: Store; service: WorkspaceService;
     const release = deps.views.reserve(session.workspaceId, session.name);
     if (!websocket) {
       try {
-        return await previewHttp(c.req.raw, session, sessions, deps.hub, release);
+        return await previewHttp(c.req.raw, session, sessions, deps.hub, release, deps.policy.framing(session));
       } catch (error) {
         release();
         throw error;
@@ -81,11 +66,17 @@ export function composePreviews(deps: { store: Store; service: WorkspaceService;
       const name = PreviewNameSchema.safeParse(c.req.param("name"));
       if (!name.success) throw new ApiError("validation.invalid", "Invalid preview name.");
       const id = c.req.param("id");
-      const url = localApiOrigin(c.req.url);
-      url.hostname = `${id.replaceAll("-", "")}-${name.data}.localhost`;
-      url.pathname = "/.pc/open";
-      url.search = "";
-      const minted = await sessions.mint(id, name.data, url.origin, c.get("keyId"));
+      const body = await c.req.text();
+      let input: unknown = {};
+      try {
+        if (body) input = JSON.parse(body);
+      } catch {
+        throw new ApiError("validation.invalid", "Invalid preview request JSON.");
+      }
+      const parsed = PreviewOpenRequestSchema.safeParse(input);
+      if (!parsed.success) throw new ApiError("validation.invalid", "Invalid preview request.");
+      const url = deps.policy.mintUrl(deps.policy.requestUrl(c), id, name.data, parsed.data.session);
+      const minted = await sessions.mint(id, name.data, url.origin, c.get("keyId"), false, parsed.data.session);
       url.searchParams.set("token", minted.token);
       c.header("cache-control", "no-store");
       return c.json({ url: url.href, expires_at: new Date(minted.expires).toISOString() }, 201);

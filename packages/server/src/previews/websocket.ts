@@ -31,7 +31,7 @@ export async function previewWebSocket(
       request_id: randomUUID(),
       name: session.name,
       path: url.pathname + url.search,
-      origin: url.origin,
+      origin: session.origin,
       cookie: previewRequestHeaders(c.req.raw.headers).cookie,
       protocols,
     });

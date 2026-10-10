@@ -121,6 +121,7 @@ export {
 export * from "./previews/headers";
 export * from "./previews/preview";
 export * from "./previews/socket-flow";
+export * from "./previews/view-session";
 export {
   CheckpointListQuerySchema,
   CheckpointPageSchema,

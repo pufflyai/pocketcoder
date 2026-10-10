@@ -45,6 +45,7 @@ export async function previewHttp(
   sessions: PreviewSessions,
   hub: Hub,
   release: () => void,
+  framing = "frame-ancestors 'none'",
 ) {
   const url = new URL(request.url);
   const deadline = Math.max(1, Math.min(300_000, session.expires - Date.now()));
@@ -111,6 +112,11 @@ export async function previewHttp(
     const headers = new Headers(previewResponseHeaders(new Headers(response.headers)));
     for (const cookie of previewCookies(new Headers((response.cookies ?? []).map((value) => ["set-cookie", value]))))
       headers.append("set-cookie", cookie);
+    // Separate CSP policies intersect, so the app's restrictions cannot be weakened.
+    headers.append("content-security-policy", framing);
+    const frameOptions = headers.get("x-frame-options")?.trim().toUpperCase();
+    if (frameOptions === "DENY") headers.append("content-security-policy", "frame-ancestors 'none'");
+    if (frameOptions === "SAMEORIGIN") headers.append("content-security-policy", "frame-ancestors 'self'");
     headers.set("referrer-policy", "no-referrer");
     headers.set("x-content-type-options", "nosniff");
     const status = response.status ?? 200;

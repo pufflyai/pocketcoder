@@ -13,7 +13,7 @@ import {
   fixtureTemplateSleep,
   fixtureTemplateTerminal,
 } from "@pstdio/pocketcoder-testkit";
-import { type BuiltServer, buildServer } from "../app";
+import { type BuildDeps, type BuiltServer, buildServer } from "../app";
 import type { Readiness } from "../observability/health";
 import { registerServerTestCleanup } from "./test-server-cleanup";
 
@@ -35,7 +35,12 @@ export function createTestBody(externalId: string = randomUUID()) {
   });
 }
 
-export async function createTestServer(store: Store, limits = {}, readiness?: Readiness): Promise<TestServer> {
+export async function createTestServer(
+  store: Store,
+  limits = {},
+  readiness?: Readiness,
+  options: Pick<BuildDeps, "publicViews"> = {},
+): Promise<TestServer> {
   const driver = new FakeDriver();
   const principal = await store.createPrincipal(
     "test-backend",
@@ -89,6 +94,7 @@ export async function createTestServer(store: Store, limits = {}, readiness?: Re
     });
   }
   const built = buildServer({
+    ...options,
     store,
     driver,
     pepper: SERVER_TEST_PEPPER,
