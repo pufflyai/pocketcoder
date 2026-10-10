@@ -12,6 +12,7 @@ export interface RelayStreamResponse {
   request_id: string;
   status?: number;
   headers: Record<string, string>;
+  cookies?: string[];
   body?: ReadableStream<Uint8Array>;
   error_code?: StreamError;
 }
@@ -28,6 +29,7 @@ export interface RelayStreamChannel {
   maxBytes: number;
   pendingChunk: { seq: number; bytes: Uint8Array } | null;
   pullWaiting: boolean;
+  cleanup: () => void;
 }
 
 interface StreamConnection {
@@ -46,7 +48,13 @@ export class RelayStreamRegistry<TConnection extends StreamConnection> {
     private readonly send: SendStreamFrame<TConnection>,
   ) {}
 
-  open(connection: TConnection, requestId: string, maxBytes: number, deadlineMs: number): Promise<RelayStreamResponse> {
+  open(
+    connection: TConnection,
+    requestId: string,
+    maxBytes: number,
+    deadlineMs: number,
+    signal?: AbortSignal,
+  ): Promise<RelayStreamResponse> {
     return new Promise((resolve) => {
       let controller!: ReadableStreamDefaultController<Uint8Array>;
       let channel!: RelayStreamChannel;
@@ -80,8 +88,12 @@ export class RelayStreamRegistry<TConnection extends StreamConnection> {
         maxBytes,
         pendingChunk: null,
         pullWaiting: false,
+        cleanup: () => signal?.removeEventListener("abort", abort),
       };
+      const abort = () => this.cancel(connection, requestId, "workspace_disconnected");
       connection.streams.set(requestId, channel);
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
     });
   }
 
@@ -93,6 +105,7 @@ export class RelayStreamRegistry<TConnection extends StreamConnection> {
       request_id: payload.request_id,
       status: payload.status,
       headers: payload.headers,
+      cookies: payload.cookies,
       body: channel.body,
     });
   }
@@ -148,6 +161,7 @@ export class RelayStreamRegistry<TConnection extends StreamConnection> {
   drop(connection: TConnection): void {
     for (const channel of connection.streams.values()) {
       clearTimeout(channel.timer);
+      channel.cleanup();
       if (channel.started) {
         channel.controller.error(new Error("workspace disconnected"));
       } else {
@@ -202,6 +216,7 @@ export class RelayStreamRegistry<TConnection extends StreamConnection> {
 
   private finish(connection: TConnection, channel: RelayStreamChannel): void {
     clearTimeout(channel.timer);
+    channel.cleanup();
     if (connection.streams.get(channel.requestId) === channel) {
       connection.streams.delete(channel.requestId);
     }

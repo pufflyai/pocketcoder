@@ -19,8 +19,7 @@ import { prepareCheckpoint } from "./checkpoints/checkpoint-coordinator";
 import { quiesceArchive } from "./checkpoints/quiesce-archive";
 import { WorkspaceCredentials } from "./credentials/workspace-credentials";
 import { SupervisorLogs } from "./observability/supervisor-logs";
-import { relayProxyRequest } from "./proxy/proxy-relay";
-import { ProxyStreamCoordinator } from "./proxy/proxy-stream";
+import { SupervisorProxy } from "./proxy/supervisor-proxy";
 import { TerminalManager } from "./terminals/terminal-manager";
 
 export async function supervise(inputPath: string): Promise<number> {
@@ -33,7 +32,7 @@ class Supervisor {
   private readonly logs: SupervisorLogs;
   private readonly healthMonitor: AgentHealthMonitor;
   private readonly attachments: AttachmentManager;
-  private readonly proxyStreams: ProxyStreamCoordinator;
+  private readonly proxy: SupervisorProxy;
   private readonly terminals: TerminalManager;
   private readonly transfers: SupervisorTransfers;
   private readonly harness: ReturnType<typeof createSupervisorHarness>;
@@ -57,7 +56,7 @@ class Supervisor {
       onMessage: (raw) => void this.handleMessage(raw),
       onRegistrationFailure: () => this.exitWith(EXIT_REGISTRATION_FAILED),
       onDisconnect: () => {
-        void this.proxyStreams.cancelAll();
+        void this.proxy.closeAll();
         void this.transfers.cancel().catch((error) => this.logs.log(String(error)));
       },
       isStopped: () => this.shuttingDown || (this.harness.exitCode !== null && !this.quiescing),
@@ -72,7 +71,7 @@ class Supervisor {
           prepareHook: () => this.quiesce(operationId, deadlineMs),
           closeSessions: async () => {
             await this.terminals.closeAll("checkpoint");
-            await this.proxyStreams.cancelAll();
+            await this.proxy.closeAll();
           },
           setQuiescing: () => {
             this.quiescing = true;
@@ -98,7 +97,13 @@ class Supervisor {
       isQuiesced: () => this.quiescing && !this.shuttingDown,
       exit: this.exitWith.bind(this),
     });
-    this.proxyStreams = new ProxyStreamCoordinator(this.sendFrame.bind(this));
+    this.proxy = new SupervisorProxy({
+      exec: () => this.exec,
+      isQuiescing: () => this.quiescing,
+      send: this.sendFrame.bind(this),
+      onAgentTurn: () => this.healthMonitor.setAgentState("running"),
+      probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
+    });
     this.terminals = new TerminalManager(() => this.exec, this.sendFrame.bind(this));
     this.attachments = new AttachmentManager(this.sendFrame.bind(this));
     this.healthMonitor = new AgentHealthMonitor({
@@ -202,21 +207,11 @@ class Supervisor {
         }
         return;
       }
+      case "preview_socket":
       case "proxy_request":
-        await relayProxyRequest(frame.payload, {
-          exec: () => this.exec,
-          isQuiescing: () => this.quiescing,
-          send: this.sendFrame.bind(this),
-          onAgentTurn: () => this.healthMonitor.setAgentState("running"),
-          probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
-          relayStream: (request, service, route) => this.proxyStreams.relay(request, service, route),
-        });
-        return;
       case "proxy_stream_ack":
-        this.proxyStreams.handleAck(frame.payload);
-        return;
       case "proxy_stream_cancel":
-        await this.proxyStreams.handleCancel(frame.payload);
+        await this.proxy.handle(frame);
         return;
       case "terminal_open":
         this.terminals.open(frame.payload);
@@ -319,7 +314,7 @@ class Supervisor {
     const graceMs = exec ? parseDurationMs(exec.timeouts.terminateGrace) : 15_000;
     await shutdownAgent(graceMs, {
       closeSessions: async () => {
-        await this.proxyStreams.cancelAll();
+        await this.proxy.closeAll();
         await this.terminals.closeAll("workspace_ended");
       },
       syncMessages: async (signal) => {
@@ -335,7 +330,7 @@ class Supervisor {
   private async flushAndClose(): Promise<void> {
     await this.credentials.stop();
     await this.transfers.cancel();
-    await this.proxyStreams.cancelAll();
+    await this.proxy.closeAll();
     await this.terminals.closeAll("workspace_ended");
     // Give queued frames a moment to flush before closing.
     await new Promise((resolve) => setTimeout(resolve, 250));

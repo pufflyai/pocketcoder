@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import { createDatabaseContext } from "../database/context";
 import { PGliteStore } from "../store";
 import { createPGliteFixture, insertTestWorkspace } from "../test-fixtures";
@@ -130,11 +131,26 @@ test("recovery repeats later retirements, narrowing and conversation deletion by
 }, 30_000);
 
 test("recovery stays closed without the journal that covers the backup", async () => {
-  const { f, out, archive } = await backedUp();
+  const f = await createPGliteFixture("pc-recovery-journal", "disk");
+  cleanup.push(f.dispose);
+  const target = f.context.dataDir as string;
+  const journal = f.context.journal;
+  if (!journal) throw new Error("Missing fixture journal");
+  // Restore persists this state; archive publication is covered by the round-trip test above.
+  await f.context.db
+    .update(f.context.tables.controllerState)
+    .set({
+      recovery: {
+        format: "pocketcoder-recovery/v1",
+        recoveryId: randomUUID(),
+        snapshotId: randomUUID(),
+        journal: journal.head(),
+        createdAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(f.context.tables.controllerState.id, "controller"));
   await f.store.close();
-  const target = join(out, "restored");
-  await restoreBackup({ archive, dataDir: target });
-  const elsewhere = join(out, "other-journal");
+  const elsewhere = `${target}-other-journal`;
   await expect(createDatabaseContext(target, { journalDir: elsewhere })).rejects.toThrow("missing");
   expect(existsSync(elsewhere)).toBe(false);
 });

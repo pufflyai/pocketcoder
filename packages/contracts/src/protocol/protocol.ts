@@ -11,6 +11,7 @@ import {
 } from "../attachments/attachment";
 import { ConversationMessageInputSchema } from "../conversations/conversation";
 import { CONVERSATION_RESTORE_CAPABILITIES } from "../persistence/persistence";
+import { PreviewSocketPayload } from "../previews/preview";
 import { ExecSpecSchema } from "./protocol-exec";
 
 export {
@@ -78,11 +79,11 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, 7, 8, PROTOCOL_VERSION] as const;
+export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, 6, 7, 8, 9, PROTOCOL_VERSION] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -105,6 +106,7 @@ const EnvelopeBase = z.object({
     z.literal(6),
     z.literal(7),
     z.literal(8),
+    z.literal(9),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -198,6 +200,7 @@ export const RestoreStatusPayload = z.object({
 export const ConversationMessagePayload = ConversationMessageInputSchema;
 
 export const AgentFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
@@ -255,7 +258,7 @@ export const RegisteredAckPayload = z.object({
 export const ProxyRequestPayload = z.object({
   request_id: z.uuid(),
   service: z.string(),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
   path: z.string(),
   query: z.record(z.string(), z.string()).default({}),
   headers: z.record(z.string(), z.string()).default({}),
@@ -281,6 +284,7 @@ export const PrepareCheckpointPayload = z.object({
 });
 
 export const ServerFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renewed"), payload: CredentialRenewedPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed_ack"), payload: CredentialInstalledPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete_ack"), payload: z.object({ request_id: z.uuid() }) }),

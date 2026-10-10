@@ -320,10 +320,30 @@ export function isNormalizedPath(path: string): boolean {
 
 export function validateTemplateSpec(spec: TemplateSpec, ctx: z.RefinementCtx): void {
   validateServices(spec, ctx);
+  validatePreviews(spec, ctx);
   validateEnvironment(spec, ctx);
   validateOutputs(spec, ctx);
   validateWritableMemoryPaths(spec, ctx);
   validatePersistence(spec, ctx);
   validateNetworkEnvironment(spec, ctx);
   validateTerminal(spec, ctx);
+}
+
+function validatePreviews(spec: TemplateSpec, ctx: z.RefinementCtx) {
+  const servicePorts = new Set(
+    Object.values(templateServices(spec))
+      .filter((service) => isLoopbackBaseUrl(service.baseUrl))
+      .map((service) => {
+        const url = new URL(service.baseUrl);
+        return Number(url.port || 80);
+      }),
+  );
+  for (const [name, preview] of Object.entries(spec.previews ?? {})) {
+    if (servicePorts.has(preview.port))
+      ctx.addIssue({
+        code: "custom",
+        path: ["spec", "previews", name, "port"],
+        message: "preview port is reserved by a template service",
+      });
+  }
 }
