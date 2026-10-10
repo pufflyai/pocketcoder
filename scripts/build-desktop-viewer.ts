@@ -32,12 +32,22 @@ headers.sort();
 const license = `noVNC 1.7.0. Source: https://github.com/novnc/noVNC/tree/v1.7.0\nBundled without source changes.\n\n${licenses.join("\n\n")}\n\nSource notices\n${headers.join("\n\n")}`;
 const noticeBundle = brotliCompressSync(license);
 const licenseTarget = resolve(output, "noVNC-LICENSE.br");
+const browser = await Bun.build({
+  entrypoints: [resolve(root, "packages/server/src/displays/client/browser-viewer.ts")],
+  target: "browser",
+  minify: true,
+});
+if (!browser.success || !browser.outputs[0]) throw new Error(String(browser.logs));
+const browserBundle = brotliCompressSync(await browser.outputs[0].text());
+const browserTarget = resolve(output, "browser-viewer.br");
 if (process.argv.includes("--check")) {
   if (!(await readFile(target)).equals(bundle))
     throw new Error("Run bun scripts/build-desktop-viewer.ts to rebuild the viewer.");
   if (!(await readFile(licenseTarget)).equals(noticeBundle)) throw new Error("Rebuild desktop viewer license notices.");
+  if (!(await readFile(browserTarget)).equals(browserBundle)) throw new Error("Rebuild the browser viewer.");
 } else {
   await mkdir(output, { recursive: true });
   await Bun.write(target, bundle);
   await Bun.write(licenseTarget, noticeBundle);
+  await Bun.write(browserTarget, browserBundle);
 }

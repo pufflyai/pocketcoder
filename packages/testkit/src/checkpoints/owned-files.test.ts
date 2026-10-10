@@ -13,7 +13,18 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { trackCheckpointFiles } from "./owned-files";
+import { descriptorPath, trackCheckpointFiles } from "./owned-files";
+
+test("a descriptor closed after inventory has no path to adopt", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "pc-closed-fd-")));
+  try {
+    const fd = openSync(join(root, "closed"), "wx+");
+    closeSync(fd);
+    expect(descriptorPath(fd)).toBe("");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("checkpoint ownership follows native identities through unrelated closure and FD reuse", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "pc-owned-files-")));

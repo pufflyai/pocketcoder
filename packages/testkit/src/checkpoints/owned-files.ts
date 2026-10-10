@@ -7,8 +7,16 @@ const darwin =
         __fcntl: { args: [FFIType.i32, FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
       })
     : undefined;
-function descriptorPath(fd: number) {
-  if (!darwin) return readlinkSync(`/proc/self/fd/${fd}`);
+export function descriptorPath(fd: number) {
+  if (!darwin) {
+    try {
+      return readlinkSync(`/proc/self/fd/${fd}`);
+    } catch (error) {
+      // A native HTTP or database worker can close a descriptor after inventory.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+      throw error;
+    }
+  }
   const buffer = Buffer.alloc(4096);
   if (darwin.symbols.__fcntl(fd, 50, ptr(buffer)) !== 0) return "";
   return buffer.toString("utf8", 0, buffer.indexOf(0));

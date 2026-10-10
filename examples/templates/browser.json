@@ -1,0 +1,23 @@
+{
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": { "name": "browser", "description": "Non-root Chromium with loopback display control" },
+  "spec": {
+    "version": "1.0.0",
+    "image": "pocketcoder-browser@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "harness": { "command": ["bun", "/opt/pocketcoder/browser-harness.ts", "bun", "/opt/pocketcoder/echo-harness.ts"] },
+    "display": { "mode": "browser" },
+    "resources": { "cpu": "1", "memory": "768Mi" },
+    "services": {
+      "agent": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "routes": [
+          { "method": "GET", "path": "/status" },
+          { "method": "GET", "path": "/messages" },
+          { "method": "POST", "path": "/message" }
+        ]
+      }
+    },
+    "timeouts": { "terminateGrace": "3s" }
+  }
+}

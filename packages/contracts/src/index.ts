@@ -63,7 +63,15 @@ export {
   ConversationRequestIdentitySchema,
   ConversationRequestReceiptSchema,
 } from "./conversations/identity";
-export { DisplayOpenRequestSchema, DisplaySchema } from "./displays/display";
+export { BROWSER_IMAGE_BYTES, BrowserFrames, browserFrameChunks } from "./displays/browser-frames";
+export {
+  BROWSER_HEIGHT,
+  BROWSER_WIDTH,
+  type BrowserAction,
+  BrowserActionSchema,
+  DisplayOpenRequestSchema,
+  DisplaySchema,
+} from "./displays/display";
 export {
   findNetworkRule,
   isPrivateAddress,
