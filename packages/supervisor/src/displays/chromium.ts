@@ -178,6 +178,7 @@ export class Chromium {
           type: "keyDown",
           key: action.key,
           windowsVirtualKeyCode: keys[action.key],
+          ...(action.key === "Enter" ? { text: "\r", unmodifiedText: "\r" } : {}),
         });
         await this.command("Input.dispatchKeyEvent", {
           type: "keyUp",

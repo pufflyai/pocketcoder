@@ -419,6 +419,9 @@ viewport is 1280 by 800. Use `pocketcoder workspaces display --id <id> --open`
 to view it, or add `--control` to navigate, click and type. Viewing requires
 `display:view`; control also requires `display:control`.
 
+The viewer controls one page. New tabs and popup windows have no selection
+control. Use the navigation action to open a link in the controlled page.
+
 Browser control accepts only these actions: HTTP/HTTPS navigation without URL
 credentials, a left click, up to 1024 characters of text, a bounded vertical
 scroll, and Enter, Tab, Backspace, Delete, Escape, arrow, Home, End and Page keys.
