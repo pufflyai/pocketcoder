@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rename, rm, symlink } from "node:fs/promises";
+import { mkdtemp, rename, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PGliteStore } from "@pstdio/pocketcoder-db";
@@ -42,4 +42,18 @@ test("manager rejects a redirected database and an empty folder argument", async
   await symlink(join(path, "outside"), join(path, "db"));
   await expect(managerContext(path)).rejects.toThrow("database directory");
   await expect(managerContext("")).rejects.toThrow("empty");
+});
+
+test("generated catalog caches stay private across startup and restart", async () => {
+  const path = await directory();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const manager = await managerContext(path);
+    try {
+      for (const cache of ["db/global/pg_internal.init", "db/base/5/pg_internal.init"]) {
+        expect((await stat(join(path, cache))).mode & 0o777).toBe(0o600);
+      }
+    } finally {
+      await manager.close();
+    }
+  }
 });

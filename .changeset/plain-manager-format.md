@@ -2,4 +2,4 @@
 "@pstdio/pocketcoder-cli": patch
 ---
 
-Reject manager data when opening a core controller database.
+Keep manager data separate from core data and keep generated database files private.
