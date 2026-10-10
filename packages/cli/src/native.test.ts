@@ -15,7 +15,16 @@ test("the package launcher runs the native CLI on Node without Bun in PATH", asy
     expect(build.success).toBe(true);
     const binary = join(directory, "native", `${process.platform}-${process.arch}`, "pocketcoder");
     const compile = Bun.spawn(
-      [process.execPath, "build", join(import.meta.dir, "index.ts"), "--compile", "--minify", "--outfile", binary],
+      [
+        process.execPath,
+        "build",
+        join(import.meta.dir, "index.ts"),
+        "--compile",
+        "--minify",
+        "--format=cjs",
+        "--outfile",
+        binary,
+      ],
       { stdout: "ignore", stderr: "pipe" },
     );
     expect(await compile.exited).toBe(0);

@@ -18,6 +18,7 @@ for (const target of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"])
       join(root, "src/index.ts"),
       "--compile",
       "--minify",
+      "--format=cjs",
       `--target=bun-${target}`,
       "--outfile",
       executable,
