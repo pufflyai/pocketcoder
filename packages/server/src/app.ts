@@ -39,6 +39,7 @@ import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { disposableSourceRuntime } from "./persistence/source-runtime";
 import { ViewAdmission } from "./previews/admission";
 import { composePreviews } from "./previews/previews";
+import { ViewPolicy } from "./previews/view-policy";
 import { relayHandler } from "./relay/relay";
 import { createIssuerClient } from "./secrets/issuer-client";
 import { createWorkspaceLeaseService } from "./secrets/lease-service";
@@ -51,6 +52,7 @@ import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
+  publicViews?: import("./config/public-views").PublicViewConfig;
   authorizeLaunch?: SchedulerDeps["authorizeLaunch"];
   store: Store;
   driver: WorkspaceDriver & { cleanupInput?(workspaceId: string): Promise<void> };
@@ -209,8 +211,9 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   });
   app.onError(errorHandler(logger));
   const views = new ViewAdmission();
-  const previews = composePreviews({ store, service, hub, views });
-  const displays = composeDisplays({ store, service, hub, views });
+  const viewPolicy = new ViewPolicy(deps.publicViews);
+  const previews = composePreviews({ store, service, hub, views, policy: viewPolicy });
+  const displays = composeDisplays({ store, service, hub, views, policy: viewPolicy });
   app.use("*", displays.browser);
   app.use("*", previews.browser);
   app.use("*", requestId);

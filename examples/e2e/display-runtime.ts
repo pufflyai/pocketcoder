@@ -7,7 +7,11 @@ import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { buildLocalImage } from "../local/runtime";
 import { command, freePort, waitFor } from "./local-process";
 
-export async function startDisplayDemo(mode: "desktop" | "browser", prepare?: (template: TemplateManifest) => void) {
+export async function startDisplayDemo(
+  mode: "desktop" | "browser",
+  prepare?: (template: TemplateManifest) => void,
+  environment: Record<string, string> = {},
+) {
   const root = resolve(import.meta.dir, "../..");
   const directory = await mkdtemp(join(tmpdir(), `pc-${mode}-demo-`));
   const dataDir = join(directory, "pc_data");
@@ -62,6 +66,7 @@ export async function startDisplayDemo(mode: "desktop" | "browser", prepare?: (t
         POCKETCODER_SECRET_PROVIDER: "disabled",
         POCKETCODER_WARM_POOLS: "[]",
         POCKETCODER_INPUT_DIR: join(directory, "inputs"),
+        ...environment,
       },
       stdout: "ignore",
       stderr: "inherit",
