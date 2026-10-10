@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { browserPort } from "./chromium-startup.fixture";
+import { browserPort, nativeState } from "./chromium-startup.fixture";
+
+test.skipIf(process.platform !== "linux")("startup diagnostics survive an exited Linux process", async () => {
+  const child = Bun.spawn([process.execPath, "-e", "process.exit(7)"], { stdout: "ignore", stderr: "ignore" });
+  await child.exited;
+  expect(nativeState(child.pid)).toContain("inspectionError");
+});
 
 test("browser startup reports an exited child without waiting for readiness", async () => {
   const profile = await mkdtemp(join(tmpdir(), "pocketcoder-browser-exit-"));

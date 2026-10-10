@@ -31,7 +31,7 @@ jobs:
         run: docker pull postgres:16-alpine
       - name: Unit, route, e2e, and PGlite integration tests
         env:
-          POCKETCODER_CHROMIUM_BINARY: /usr/bin/google-chrome
+          POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
         run: bun run test
       - name: Test reusable harness E2E contract
         run: bun run example:test
