@@ -6,6 +6,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { type ControllerBackup, registerBackupRoute } from "../backup/controller-backup";
 import { startAdminSocket } from "./admin-socket";
+import { registerUsageRuntimeRoute } from "./usage-runtime";
 
 const OwnerRequestSchema = z.strictObject({
   name: z.literal("owner").default("owner"),
@@ -52,6 +53,7 @@ export async function startLocalAdmin(deps: {
     return context.json(result, result.token ? 201 : 200);
   });
   registerBackupRoute(app, deps.backup);
+  registerUsageRuntimeRoute(app, store);
   // The controller retains its writer lock until these handlers have settled.
   return startAdminSocket(deps.directory, app.fetch);
 }

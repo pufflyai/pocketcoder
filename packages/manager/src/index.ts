@@ -1,4 +1,4 @@
-import { accountService, createManagerApp } from "./app";
+import { accountService, createManagerApp, usageSampler } from "./app";
 import { ManagerConfigSchema } from "./config";
 import { ManagerStore } from "./database/store";
 
@@ -20,6 +20,7 @@ if (process.argv[2] === "operator") {
       : {}),
   });
   const service = accountService(store);
+  const usage = usageSampler(store);
   const app = createManagerApp(store, config, service);
   const endpoint = new URL(`http://${process.env.POCKETCODER_MANAGER_HTTP ?? "127.0.0.1:8092"}`);
   const server = Bun.serve({
@@ -32,13 +33,18 @@ if (process.argv[2] === "operator") {
     void service.reconcile().catch(() => console.error("Manager reconciliation failed"));
   }, 2000);
   void service.reconcile().catch(() => console.error("Manager reconciliation failed"));
+  const usageTimer = setInterval(() => {
+    void usage.sample().catch(() => console.error("Manager usage sampling failed"));
+  }, 60_000);
+  void usage.sample().catch(() => console.error("Manager usage sampling failed"));
   let closing = false;
   const close = async () => {
     if (closing) return;
     closing = true;
     clearInterval(timer);
+    clearInterval(usageTimer);
     await server.stop(true);
-    await service.close();
+    await Promise.all([service.close(), usage.close()]);
     await store.close();
     process.exit(0);
   };
