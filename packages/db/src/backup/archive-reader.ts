@@ -47,7 +47,9 @@ async function readFileMember(file: number, member: TarMember, offset: number, p
       hash.update(chunk);
       if (extract !== undefined) writeSync(extract, chunk);
     }
-    if (extract !== undefined) fsyncSync(extract);
+    // Database scratch is disposable; restore flushes the full stage before publication.
+    // Checkpoints live outside that stage and need their own durable file flush.
+    if (extract !== undefined && member.path.startsWith("checkpoints/")) fsyncSync(extract);
   } finally {
     if (extract !== undefined) closeSync(extract);
   }

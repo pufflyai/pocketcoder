@@ -7,6 +7,7 @@ export const ProxyStreamStartPayload = z.object({
   request_id: z.uuid(),
   status: z.number().int().min(100).max(599),
   headers: z.record(z.string(), z.string()),
+  cookies: z.array(z.string().max(4096)).max(16).optional(),
 });
 
 export const ProxyStreamChunkPayload = z.object({

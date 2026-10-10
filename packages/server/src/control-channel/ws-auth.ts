@@ -139,6 +139,7 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
     harness: { ...harness, env: materializeSecretEnv(harness.env) },
     env: materializeSecretEnv(spec.env),
     services: snapshotServices(row.templateSnapshot),
+    previews: spec.previews,
     terminal: spec.terminal
       ? {
           command: spec.terminal.command,

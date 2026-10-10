@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CONVERSATION_RESTORE_CAPABILITIES, LAUNCH_MODES, SourceDescriptorSchema } from "../persistence/persistence";
+import { PreviewsSchema } from "../previews/preview";
 import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "../templates/template";
 import { RestoreTransferSpecSchema } from "./protocol-checkpoint";
 
@@ -16,6 +17,7 @@ export const ExecSpecSchema = z.object({
   harness: HarnessSchema,
   env: z.record(z.string(), z.string()),
   services: z.record(z.string(), ServiceSchema),
+  previews: PreviewsSchema.optional(),
   terminal: z
     .object({
       command: z.array(z.string().min(1)).min(1),

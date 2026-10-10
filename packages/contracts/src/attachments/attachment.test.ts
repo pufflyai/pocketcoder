@@ -122,7 +122,7 @@ describe("attachment manifest", () => {
   });
 });
 
-describe("protocol v9", () => {
+describe("protocol v10", () => {
   const envelope = {
     v: PROTOCOL_VERSION,
     workspace_id: randomUUID(),
@@ -131,9 +131,9 @@ describe("protocol v9", () => {
     sent_at: new Date().toISOString(),
   };
 
-  test("supports versions 1 through 9 and keeps capability gates distinct", () => {
-    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    expect(PROTOCOL_VERSION).toBe(9);
+  test("supports versions 1 through 10 and keeps capability gates distinct", () => {
+    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(PROTOCOL_VERSION).toBe(10);
     expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
     expect(STREAMING_MIN_PROTOCOL_VERSION).toBe(5);
     expect(SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION).toBe(8);

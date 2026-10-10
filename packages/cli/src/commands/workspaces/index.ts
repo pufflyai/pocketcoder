@@ -4,12 +4,14 @@ import { addAttachCommand } from "./attach";
 import { addCancelCommand } from "./cancel";
 import { addChatCommand } from "./chat";
 import { addCreateCommand } from "./create";
+import { addForwardCommand } from "./forward";
 import { addGetCommand } from "./get";
 import { addListCommand } from "./list";
 import { addLogsCommand } from "./logs";
 import { addNetworkEventsCommand } from "./network-events";
 import { addOutputsCommand } from "./outputs";
 import { addPreserveCommand } from "./preserve";
+import { addPreviewCommand } from "./preview";
 import { addPurgeCommand } from "./purge";
 import { addRecreateCommand } from "./recreate";
 import { addRestoreCommand } from "./restore";
@@ -21,6 +23,8 @@ export function addWorkspaceCommands(parser: Argv) {
     addListCommand,
     addCreateCommand,
     addGetCommand,
+    addPreviewCommand,
+    addForwardCommand,
     addLogsCommand,
     addNetworkEventsCommand,
     addTerminalSessionsCommand,

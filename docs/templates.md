@@ -342,3 +342,41 @@ CLI, the `pocketcoder-supervisor` binary or bundle, a passwd entry
 for the template uid, and a working directory readable by that uid. See
 [`deploy/image/Dockerfile`](../deploy/image/Dockerfile) for a minimal example
 and the [deployment guide](deployment.md) for building and pinning.
+
+### Local web previews
+
+Declare each webapp port in the immutable template. These ports are separate from
+AgentAPI and other platform services. The app must listen inside the workspace.
+
+```json
+"previews": {
+  "web": { "port": 3000 }
+}
+```
+
+Names start with a lowercase letter and contain at most 20 lowercase letters,
+numbers or hyphens. `display` and `pc-*` names are reserved. Ports must be between
+1024 and 65535; AgentAPI, VNC, display and debugging ports are reserved.
+
+A caller with `previews:open` and current ownership can mint a browser URL.
+Each workspace and preview has its own full UUID hostname under `.localhost`.
+Local previews require an HTTP controller on loopback. Hosted and embedded views
+are delivered in later slices.
+
+The one-time URL expires after 60 seconds. Opening it creates a host-only,
+HttpOnly, SameSite=Lax cookie and redirects to `/` before serving workspace HTML.
+The browser session lasts at most one hour, the issuing key's remaining lifetime,
+and the workspace deadline. Permission loss, revocation or workspace shutdown
+closes active streams. A controller restart requires a fresh URL.
+
+HTTP assets, relative redirects and WebSockets use the supervisor's existing
+outbound connection. Unsafe methods and WebSocket upgrades require the exact
+preview Origin. Platform headers and cookies are removed before relay. App
+cookies stay on their preview host; reserved names and Domain cookies are dropped.
+Passive requests and live reload do not refresh workspace idle time.
+
+Requests and WebSocket messages are capped at 64 KiB. HTTP responses are streamed
+with acknowledgements, capped at 16 MiB and five minutes. WebSocket queues share
+an 8 MiB budget and close stalled peers after 30 seconds. Admission allows at most
+32 streams per preview, 64 per workspace and 128 per controller; the existing HTTP
+relay may impose a lower workspace limit.
