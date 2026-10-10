@@ -88,6 +88,58 @@ Stop the controller before deleting this disposable demo directory, after `works
 Remove the echo image using the image reference in the template when finished.
 For a source-based check of binary size, readiness, peak memory, restart and exact restored bytes, run `bun run example:e2e:native`.
 
+### Back up the controller
+
+While the controller runs, write a backup from the second terminal in `pc-native`:
+
+```sh
+mkdir -m 700 -p backups
+./pocketcoder backup create --out backups/controller.tar
+./pocketcoder backup verify backups/controller.tar
+```
+
+`backup create` talks to the running controller through the private socket in `./pc_data`
+(use `--dir` for another folder). It needs no key. It prints the archive path, size,
+SHA-256 digest, snapshot ID and database log position.
+
+The backup describes one point in time:
+
+- It opens a short maintenance window. New API writes get `503 maintenance.active` with
+  `Retry-After: 1`, and background work such as the scheduler and retention pauses.
+  Reads, health checks and workspace heartbeats continue.
+- Requests, preserves and scheduler work that already started finish first.
+- The controller then copies its database while no query runs, and opens every checkpoint
+  archive that copy refers to. Reads and heartbeats wait during this copy. It is short: under
+  2 seconds for a 670 MB database on a laptop SSD. Writes resume right after.
+- It copies those checkpoint archives last. Deleting a checkpoint now does not change the backup.
+
+`--timeout` (default 30 seconds) limits the window. If writes do not settle in time, or the
+command stops early, no archive is written and writes resume. Backup needs the controller key
+bundle in the data folder; a controller started with keys from environment variables refuses it.
+
+The archive is a plain tar file with mode 0600:
+
+| Member | Content |
+| --- | --- |
+| `db/` | The embedded database files, without process lock files |
+| `keys/` | `auth-pepper`, `event-signing-key` and `secret-key` |
+| `checkpoints/` | Each checkpoint archive the database refers to |
+| `manifest.json` | Format, snapshot ID, time, engine, database log position, migrations, checkpoints, and the size and SHA-256 of every member |
+
+The controller writes a hidden `.controller.tar.partial` file in the output folder and links it
+to the final name only when it is complete. It never replaces an existing file. The output must be
+outside the data folder and the checkpoint folder. If the process is killed, delete any leftover
+`.partial` file.
+
+`backup verify` reads only the archive. It checks every member against the manifest, opens the
+copied database in a temporary folder, checks that this build knows its migrations, and checks
+that the checkpoint archives match the database's references.
+
+The archive holds the controller keys, which can decrypt stored secrets. Keep it private and
+encrypt it before it leaves the host. Live workspace files, Docker images and Kubernetes volume
+checkpoints are not included; a backup refuses to run when the database refers to volume checkpoints.
+Restoring an archive is a separate step that is not available yet.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) 1.4.2+
@@ -154,7 +206,7 @@ registration and reconnect credentials tied to that workspace. The supported
 path in this demonstration uses unrestricted networking and no persistent mount.
 A runtime that needs provider authority must use credentials scoped to its
 workspace that expire with it; never copy an owner, controller or registry key
-into a template or workspace. The issuer/private-pull matrix and backup/recovery
+into a template or workspace. The issuer/private-pull matrix and controller restore
 remain separate development work. This command proves the local flow, not the
 full 1.0 release.
 

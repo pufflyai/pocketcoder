@@ -1,4 +1,5 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
+import { type BackupOptions, writeBackup } from "./backup/write-backup";
 import {
   createDatabaseContext,
   createLifecycle,
@@ -31,6 +32,7 @@ import { createTransitions } from "./modules/workspaces/transitions";
 export class PGliteStore implements Store {
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
   readonly storageReservations: ReturnType<typeof createStorageReservations>;
+  readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
 
   static async create(dataDir?: string, options?: DatabaseOpenOptions) {
     return new PGliteStore(await createDatabaseContext(dataDir, options));
@@ -39,6 +41,7 @@ export class PGliteStore implements Store {
   constructor(context: DatabaseContext) {
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.storageReservations = createStorageReservations(context);
+    this.backup = (options) => writeBackup(context, options);
     const lifecycle = createLifecycle(context);
     const content = createContentPurge(context);
     this.listWorkspaceStorage = content.listWorkspaceStorage;
