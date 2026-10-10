@@ -24,4 +24,4 @@ not a library for workspace code.
 The real browser input test needs Chrome or Chromium installed. Set
 `POCKETCODER_CHROMIUM_BINARY` for a custom executable. It uses a temporary profile
 and a separate loopback debugging port, then removes both. The full test suite
-runs this test through `test:integration`.
+runs this test in its own Bun process through `test:browser`.
