@@ -3,6 +3,8 @@ import type { Account, ManagerStore } from "../database/store";
 import { kube } from "./command";
 import { accountManifests } from "./manifests";
 
+export { kube } from "./command";
+
 const OwnerResult = z
   .object({ token: z.string().nullable(), key: z.object({ id: z.uuid() }).passthrough() })
   .passthrough();
