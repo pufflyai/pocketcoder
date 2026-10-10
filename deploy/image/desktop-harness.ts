@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { desktopIsManaged, desktopWindow, windowManagerIsReady } from "./desktop-readiness";
 
 const command = process.argv.slice(2);
 if (!command.length) throw new Error("A template-owned agent command is required.");
@@ -9,6 +10,16 @@ const spawn = (args: string[]) => {
   children.push(child);
   return child;
 };
+async function probe(args: string[]) {
+  const child = Bun.spawn(args, {
+    env: { ...process.env, DISPLAY: ":99" },
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const text = await new Response(child.stdout).text();
+  await child.exited;
+  return text;
+}
 async function stop() {
   if (stopping) return;
   stopping = true;
@@ -27,6 +38,10 @@ try {
     await Bun.sleep(25);
   }
   spawn(["openbox"]);
+  while (!windowManagerIsReady(await probe(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"]))) {
+    if (stopping || Date.now() >= deadline) throw new Error("Desktop window manager did not start.");
+    await Bun.sleep(25);
+  }
   spawn([
     "x11vnc",
     "-display",
@@ -43,13 +58,9 @@ try {
   ]);
   spawn(["xterm", "-title", "PocketCoder desktop", "-geometry", "100x30+60+60"]);
   while (true) {
-    const probe = Bun.spawn(["xwininfo", "-root", "-tree"], {
-      env: { ...process.env, DISPLAY: ":99" },
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const windows = await new Response(probe.stdout).text();
-    if ((await probe.exited) === 0 && windows.includes("PocketCoder desktop")) break;
+    // Openbox's frame can have the same title. Input readiness belongs to the client window.
+    const window = desktopWindow(await probe(["xwininfo", "-root", "-tree"]));
+    if (window && desktopIsManaged(await probe(["xprop", "-id", window, "_NET_WM_DESKTOP"]))) break;
     if (stopping || Date.now() >= deadline) throw new Error("Desktop terminal did not become visible.");
     await Bun.sleep(25);
   }
