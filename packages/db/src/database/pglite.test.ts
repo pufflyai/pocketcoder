@@ -17,6 +17,8 @@ test("first start migrates a private data folder and restart keeps committed row
     await store.close();
     store = await PGliteStore.create(dir);
     expect(await store.getPrincipal(principal.id)).toEqual(principal);
+    for (const cache of ["db/global/pg_internal.init", "db/base/5/pg_internal.init"])
+      expect((await stat(join(dir, cache))).mode & 0o777).toBe(0o600);
   } finally {
     await store?.close();
     await rm(dir, { recursive: true, force: true });

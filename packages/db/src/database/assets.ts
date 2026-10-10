@@ -4,9 +4,9 @@ import { brotliDecompressSync } from "node:zlib";
 import manifest from "../../assets/core-seed.json" with { type: "json" };
 import seedPath from "../../assets/core-seed.tar.br" with { type: "file" };
 import migrations from "../../assets/migrations.json" with { type: "json" };
-import bundlePath from "../../assets/pglite.data.br" with { type: "file" };
-import wasmPath from "../../assets/pglite.wasm.br" with { type: "file" };
 import { dependencies } from "../../package.json" with { type: "json" };
+
+import { loadDatabaseEngine } from "./engine-assets";
 
 let assets:
   | Promise<{ pgliteWasmModule: WebAssembly.Module; fsBundle: Blob; loadDataDir: Blob; memorySeed: () => Blob }>
@@ -33,8 +33,7 @@ export function loadCoreAssets() {
     const seed = Bun.gzipSync(await unpack(seedPath, manifest.checksum, "core seed"));
     let memorySeed: Blob | undefined;
     return {
-      pgliteWasmModule: await WebAssembly.compile(await unpack(wasmPath, manifest.engine.wasm.checksum, "core WASM")),
-      fsBundle: new Blob([await unpack(bundlePath, manifest.engine.data.checksum, "core data")]),
+      ...(await loadDatabaseEngine()),
       // Disk controllers keep the small archive; only memory stores need a shared inflated copy.
       loadDataDir: new Blob([seed]),
       // Engines copy this immutable archive into their own filesystems.
