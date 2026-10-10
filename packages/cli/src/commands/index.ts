@@ -1,4 +1,5 @@
 import type { Argv } from "yargs";
+import { addBackupCommands } from "./backup";
 import { addCheckpointCommands } from "./checkpoints";
 import { addDoctorCommand } from "./doctor";
 import { addKeyCommands } from "./keys";
@@ -17,6 +18,7 @@ export function addCommands(parser: Argv) {
     addServeCommand,
     addSuperuserCommands,
     addServerCommands,
+    addBackupCommands,
     addPrincipalCommands,
     addKeyCommands,
     addTemplateCommands,

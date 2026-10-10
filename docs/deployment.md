@@ -246,8 +246,9 @@ checksum drift stop startup. Schema changes require `bun run db:generate`;
 
 Local principal, key and template database commands take the same folder lock.
 Run them while the server is stopped. Keep the auth pepper stable across restarts.
-Back up the database, its auth pepper, signing identity and checkpoint storage
-together while the server is stopped. Live copy is not a consistent backup.
+Use `pcd backup create --out <file>` on the running server to capture the database,
+keys and checkpoint archives at one point in time (see [getting started](getting-started.md#back-up-the-controller)).
+Copying files from a running server is not a consistent backup.
 
 ## Configuration reference
 
@@ -319,9 +320,9 @@ Unbound providers contain only template identity and a single-use pool enrollmen
   `secretRef:` references. Any credential a workspace *can* read must be
   per-workspace and expire with it — never a shared or standing bearer
   ([security model](security.md)).
-- **Backups**: filesystem/PVC checkpoints survive runtime removal but are not
-  disaster recovery unless the checkpoint root and embedded database are backed up
-  together.
+- **Backups**: checkpoints survive runtime removal but are not disaster recovery.
+  `pcd backup create` captures the database, keys and controller checkpoint archives
+  together. Kubernetes PVC checkpoints are not supported by it yet.
 - **Retention**: the server sweeps expired ready checkpoints every minute.
   `pcd storage doctor|list-orphans|prune` provides explicit
   inventory and maintenance; unknown physical objects are reported and never
