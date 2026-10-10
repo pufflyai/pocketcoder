@@ -145,7 +145,7 @@ export async function runtimeCredentialLiveFixture(
       ...(checkpoint
         ? { persistence: { mounts: [{ name: "worktree", target: "/worktree", maxBytes: 1_048_576, maxFiles: 100 }] } }
         : {}),
-      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "64Mi" },
+      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
       services: {
         agent: {
           baseUrl: "http://127.0.0.1:8080",
