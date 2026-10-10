@@ -61,6 +61,10 @@ async function navigate(client: Chromium, url: string) {
 }
 
 test("Enter submits forms and inserts a textarea newline in real Chromium", async () => {
+  // Load the installed executable without retaining it; cold Linux page I/O can stall startup.
+  let executableBytes = 0;
+  for await (const chunk of Bun.file(executable).stream()) executableBytes += chunk.byteLength;
+  console.log(`Browser fixture: loaded ${executableBytes} executable bytes.`);
   const profile = await mkdtemp(join(tmpdir(), "pocketcoder-chromium-"));
   let submitted = 0;
   const server = Bun.serve({
