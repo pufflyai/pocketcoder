@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-export const PREVIEW_MIN_PROTOCOL_VERSION = 10;
-export const PREVIEW_FRAME_BYTES = 65_536;
-export const PREVIEW_QUEUE_BYTES = 8 * 1024 * 1024;
-export const PREVIEW_COOKIE = "pc-preview-session";
+export { PREVIEW_COOKIE, PREVIEW_FRAME_BYTES, PREVIEW_MIN_PROTOCOL_VERSION, PREVIEW_QUEUE_BYTES } from "./limits";
 export const PreviewNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,19}$/)

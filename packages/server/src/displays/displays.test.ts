@@ -55,3 +55,44 @@ test("display sessions require current view and control grants and never serve w
   await server.store.updatePrincipal(found.principal.id, found.principal.scopes, ["*"]);
   expect((await server.app.request(new URL("/", url), { headers: { cookie } })).status).toBe(401);
 });
+
+test("a browser template opens the trusted browser viewer", async () => {
+  const server = await createTestServer(await createStore());
+  const found = await server.store.getMachineKeyWithPrincipal(server.keyId);
+  const template = await server.store.getTemplate("fixture-echo");
+  if (!found || !template) throw new Error("Missing fixture");
+  await server.store.updatePrincipal(found.principal.id, [...found.principal.scopes, "display:view"], ["*"]);
+  await server.store.upsertTemplate({
+    ...template,
+    version: "2.0.0",
+    digest: `sha256:${"f".repeat(64)}`,
+    spec: { ...template.spec, display: { mode: "browser" } },
+  });
+  const created = await server.app.request(
+    "/v1/workspaces",
+    authed(server.token, {
+      method: "POST",
+      headers: { "idempotency-key": randomUUID() },
+      body: createTestBody(),
+    }),
+  );
+  expect(created.status).toBe(201);
+  const { id } = (await created.json()) as { id: string };
+  await server.scheduler.tick();
+  await server.store.transition(id, { from: ["provisioning"], to: "connected", at: new Date() });
+  await server.store.transition(id, { from: ["connected"], to: "ready", at: new Date() });
+  const opened = await server.app.request(
+    `/v1/workspaces/${id}/display`,
+    authed(server.token, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ control: false }),
+    }),
+  );
+  expect(opened.status).toBe(201);
+  const { url } = (await opened.json()) as { url: string };
+  const exchanged = await server.app.request(url);
+  const cookie = exchanged.headers.get("set-cookie")?.split(";")[0] ?? "";
+  const page = await server.app.request(new URL("/", url), { headers: { cookie } });
+  expect(await page.text()).toContain("PocketCoder browser");
+});

@@ -68,6 +68,7 @@
     "example:e2e:native": "bun --no-env-file examples/native/run.ts",
     "example:e2e:preview": "bun --no-env-file examples/e2e/preview.ts",
     "example:e2e:desktop": "bun --no-env-file examples/e2e/desktop.ts",
+    "example:e2e:browser": "bun --no-env-file examples/e2e/browser.ts",
     "viewer:build": "bun scripts/build-desktop-viewer.ts"
   },
   "devDependencies": {
