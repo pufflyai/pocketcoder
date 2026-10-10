@@ -1,0 +1,73 @@
+name: synthetic pilot images
+
+on:
+  push:
+    branches: [feature/pocketcoder-1-0]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: manager
+            context: .
+            file: deploy/image/manager.Dockerfile
+          - name: server
+            context: .
+            file: deploy/image/server.Dockerfile
+          - name: workspace
+            context: deploy/image
+            file: deploy/image/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Bundle workspace supervisor
+        if: matrix.name == 'workspace'
+        run: |
+          bun install --frozen-lockfile
+          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build candidate image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.name }}:pilot-${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=pilot-${{ matrix.name }}
+          cache-to: type=gha,scope=pilot-${{ matrix.name }},mode=max
+      - name: Record immutable image and source
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          printf '%s@%s\nsource=%s\n' "$IMAGE" "$DIGEST" "$SOURCE_SHA" > "$RUNNER_TEMP/${{ matrix.name }}.txt"
+          cat "$RUNNER_TEMP/${{ matrix.name }}.txt" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pilot-${{ matrix.name }}-${{ github.sha }}
+          path: ${{ runner.temp }}/${{ matrix.name }}.txt
