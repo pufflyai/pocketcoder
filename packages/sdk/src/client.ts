@@ -3,6 +3,7 @@ import { AgentApi, AttachmentsApi } from "./resources/attachments/attachments";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
+import { DisplaysApi } from "./resources/displays/displays";
 import { KeysApi, RecoveryApi } from "./resources/keys/keys";
 import { PreviewsApi } from "./resources/previews/previews";
 import { PrincipalsApi } from "./resources/principals/principals";
@@ -18,6 +19,7 @@ export class PocketCoderClient {
   readonly templates: TemplatesApi;
   readonly workspaces: WorkspacesApi;
   readonly previews: PreviewsApi;
+  readonly displays: DisplaysApi;
   readonly attachments: AttachmentsApi;
   readonly agent: AgentApi;
   readonly conversations: ConversationsApi;
@@ -38,6 +40,7 @@ export class PocketCoderClient {
     this.templates = new TemplatesApi(this.transport);
     this.workspaces = new WorkspacesApi(this.transport);
     this.previews = new PreviewsApi(this.transport);
+    this.displays = new DisplaysApi(this.transport);
     this.attachments = new AttachmentsApi(this.transport);
     this.agent = new AgentApi(this.transport, this.workspaces);
     this.conversations = new ConversationsApi(this.transport);

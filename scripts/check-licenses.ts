@@ -12,6 +12,7 @@ export const ALLOWED_LICENSES = [
   "CC0-1.0",
   "ISC",
   "MIT",
+  "MPL-2.0",
   "Python-2.0",
 ] as const;
 

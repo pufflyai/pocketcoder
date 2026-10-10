@@ -140,6 +140,7 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
     env: materializeSecretEnv(spec.env),
     services: snapshotServices(row.templateSnapshot),
     previews: spec.previews,
+    display: spec.display,
     terminal: spec.terminal
       ? {
           command: spec.terminal.command,
