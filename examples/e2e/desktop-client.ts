@@ -91,14 +91,14 @@ export async function connectDesktop(baseUrl: string, origin: URL, cookie: strin
     key(0xff0d, false);
   }
   function click(x: number, y: number) {
-    const message = Buffer.alloc(6);
-    message[0] = 5;
-    message[1] = 1;
-    message.writeUInt16BE(x, 2);
-    message.writeUInt16BE(y, 4);
-    socket.send(message);
-    message[1] = 0;
-    socket.send(message);
+    for (const mask of [0, 1, 0]) {
+      const message = Buffer.alloc(6);
+      message[0] = 5;
+      message[1] = mask;
+      message.writeUInt16BE(x, 2);
+      message.writeUInt16BE(y, 4);
+      socket.send(message);
+    }
   }
   return { socket, closed, capture, type, click };
 }

@@ -5,6 +5,7 @@ import {
   type PreviewSocketMessage,
   previewTarget,
 } from "@pstdio/pocketcoder-contracts";
+import { BrowserSockets } from "../displays/browser-sockets";
 import { DesktopSockets } from "../displays/desktop-sockets";
 
 export class SupervisorPreviewSockets {
@@ -14,15 +15,24 @@ export class SupervisorPreviewSockets {
   >();
   private readonly budget = new PreviewQueueBudget();
   private readonly desktop: DesktopSockets;
+  private readonly browser: BrowserSockets;
 
   constructor(
     private readonly exec: () => ExecSpec | null,
     private readonly send: (message: PreviewSocketMessage) => void,
   ) {
     this.desktop = new DesktopSockets(exec, send, this.budget);
+    this.browser = new BrowserSockets(exec, send, this.budget);
   }
 
   receive(message: PreviewSocketMessage) {
+    if (
+      (message.op === "open" && message.name === "display" && this.exec()?.display?.mode === "browser") ||
+      this.browser.owns(message.request_id)
+    ) {
+      this.browser.receive(message);
+      return;
+    }
     if ((message.op === "open" && message.name === "display") || this.desktop.owns(message.request_id)) {
       this.desktop.receive(message);
       return;
@@ -71,6 +81,7 @@ export class SupervisorPreviewSockets {
   }
 
   closeAll() {
+    this.browser.closeAll();
     this.desktop.closeAll();
     for (const { flow } of this.sockets.values()) flow.close();
   }

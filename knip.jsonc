@@ -6,6 +6,7 @@
       "entry": [
         "deploy/image/echo-harness.ts",
         "deploy/image/desktop-harness.ts",
+        "deploy/image/browser-harness.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
         "examples/**/*.test.ts"
@@ -23,7 +24,8 @@
       "entry": [
         "src/**/*.test.ts",
         "src/persistence/checkpoint-transfer-crash-fixture.ts",
-        "src/displays/client/desktop-viewer.ts"
+        "src/displays/client/desktop-viewer.ts",
+        "src/displays/client/browser-viewer.ts"
       ]
     },
     "packages/remote": {
