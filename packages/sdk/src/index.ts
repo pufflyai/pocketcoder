@@ -1,4 +1,5 @@
 export type {
+  BrowserAction,
   CheckpointResource,
   CheckpointState,
   KeyIssueRequest,

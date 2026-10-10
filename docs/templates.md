@@ -406,3 +406,29 @@ the viewer source. `bun run check` checks the generated bundle and notices.
 Run `bun run example:e2e:desktop` for the real Docker round trip; add `-- --browser`
 to leave a fresh URL open for a browser check. The recipe checks the image is
 under 1.5 GB and removes the owned runtime when it ends.
+# Browser display
+
+Build the base workspace image, then build `deploy/image/browser.Dockerfile`.
+Use `examples/templates/browser.json` and replace its image placeholder with the
+actual digest. The image runs Chromium as UID 10001. Its profile and temporary
+files use the workspace's bounded `/tmp`. CDP listens only on `127.0.0.1:9222`.
+The browser and agent processes stop when the workspace ends.
+
+Declare `display: { mode: "browser" }` in the immutable template. The browser
+viewport is 1280 by 800. Use `pocketcoder workspaces display --id <id> --open`
+to view it, or add `--control` to navigate, click and type. Viewing requires
+`display:view`; control also requires `display:control`.
+
+The viewer controls one page. New tabs and popup windows have no selection
+control. Use the navigation action to open a link in the controlled page.
+
+Browser control accepts only these actions: HTTP/HTTPS navigation without URL
+credentials, a left click, up to 1024 characters of text, a bounded vertical
+scroll, and Enter, Tab, Backspace, Delete, Escape, arrow, Home, End and Page keys.
+Raw CDP, arbitrary method names and JavaScript evaluation are rejected. Each
+display allows five viewers and one controller. Frames update at most 15 times
+per second. Large images use bounded chunks; a slow viewer cannot hold Chromium
+frame acknowledgements or agent traffic.
+
+Run `bun run example:e2e:browser` with Docker running to check real navigation,
+detailed frames, input, permission denial, expiry, reconnect and cleanup.
