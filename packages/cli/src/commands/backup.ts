@@ -1,12 +1,12 @@
 import { resolve } from "node:path";
-import { verifyBackup } from "@pstdio/pocketcoder-db/backup";
+import { restoreBackup, verifyBackup } from "@pstdio/pocketcoder-db/backup";
 import type { Argv } from "yargs";
 import { need } from "../command/cli-context";
 import { requestLocalAdministration } from "../command/local-admin";
 import { addAction, addResource } from "./command";
 
 export function addBackupCommands(parser: Argv) {
-  return addResource(parser, "backup", "Create and check controller backups", (commands) => {
+  return addResource(parser, "backup", "Create, check and restore controller backups", (commands) => {
     addAction(
       commands,
       "create",
@@ -35,6 +35,41 @@ export function addBackupCommands(parser: Argv) {
           null,
         );
         console.log(JSON.stringify(receipt, null, 2));
+      },
+    );
+    addAction(
+      commands,
+      "restore <file>",
+      "Restore a backup into a new data folder that starts in recovery",
+      (command) =>
+        command
+          .positional("file", { type: "string", demandOption: true })
+          .option("dir", { type: "string", demandOption: true, description: "New data folder; it must not exist" })
+          .option("checkpoint-dir", {
+            type: "string",
+            description: "Empty folder for restored checkpoint archives (default: POCKETCODER_CHECKPOINT_DIR)",
+          }),
+      async (flags) => {
+        const checkpointDir = flags["checkpoint-dir"] ?? process.env.POCKETCODER_CHECKPOINT_DIR;
+        const restored = await restoreBackup({
+          archive: resolve(need(flags, "file")),
+          dataDir: resolve(need(flags, "dir")),
+          ...(typeof checkpointDir === "string" ? { checkpointDir: resolve(checkpointDir) } : {}),
+        });
+        console.log(
+          JSON.stringify(
+            {
+              directory: restored.directory,
+              recovery_id: restored.recovery.recoveryId,
+              snapshot_id: restored.recovery.snapshotId,
+              journal: restored.recovery.journal,
+              checkpoints: restored.checkpoints,
+              next: "Start pocketcoder serve on this folder, then run pocketcoder recovery complete.",
+            },
+            null,
+            2,
+          ),
+        );
       },
     );
     return addAction(

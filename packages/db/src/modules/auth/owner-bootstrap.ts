@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type { MachineKeyRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { revokeKeyIds, unrevokedKeyIds } from "./key-ids";
 
-export function createOwnerBootstrap({ db, tables: { principals, machineKeys } }: DatabaseContext) {
-  return async (input: Omit<MachineKeyRow, "principalId"> & { issuanceRequestId: string }, replace: boolean) =>
-    db.transaction(async (tx) => {
+export function createOwnerBootstrap({ db, journal, tables }: DatabaseContext) {
+  const { principals, machineKeys } = tables;
+  return async (input: Omit<MachineKeyRow, "principalId"> & { issuanceRequestId: string }, replace: boolean) => {
+    let reenabled: { principalId: string; at: Date } | undefined;
+    const result = await db.transaction(async (tx) => {
       if (!input.expiresAt || input.expiresAt <= new Date())
         throw new ApiError("validation.invalid", "Owner credentials require a future expiry.");
       await tx
@@ -36,11 +39,13 @@ export function createOwnerBootstrap({ db, tables: { principals, machineKeys } }
           created: false,
           conflict: existing.issuanceRequestDigest !== input.issuanceRequestDigest,
         };
-      if (replace)
-        await tx
-          .update(machineKeys)
-          .set({ revokedAt: new Date() })
-          .where(and(eq(machineKeys.principalId, principal.id), isNull(machineKeys.revokedAt)));
+      const at = new Date();
+      if (replace) {
+        const keyIds = await unrevokedKeyIds(tx, tables, principal.id);
+        journal?.append({ kind: "keys_revoked", principalId: principal.id, keyIds, at: at.toISOString() });
+        await revokeKeyIds(tx, tables, keyIds, at);
+      }
+      if (principal.disabledAt) reenabled = { principalId: principal.id, at };
       const owner = requiredRow(
         (
           await tx
@@ -64,4 +69,13 @@ export function createOwnerBootstrap({ db, tables: { principals, machineKeys } }
       );
       return { key, principal: owner, created: true, conflict: false };
     });
+    // Granting records follow the commit: if one is lost, a restore keeps the owner disabled.
+    if (reenabled)
+      journal?.append({
+        kind: "principal_enabled",
+        principalId: reenabled.principalId,
+        at: reenabled.at.toISOString(),
+      });
+    return result;
+  };
 }

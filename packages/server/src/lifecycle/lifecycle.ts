@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { signEvent } from "@pstdio/pocketcoder-auth";
 import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools } from "@pstdio/pocketcoder-runtime-core";
 import { startLocalAdmin } from "../administration/local-admin";
@@ -9,13 +8,13 @@ import { createMaintenance } from "../maintenance/maintenance";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
-import { createIssuerClient } from "../secrets/issuer-client";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
 import { startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
+  configuredIssuer,
   createSecretResolver,
   createStorageDriver,
   createWorkspaceDriver,
@@ -26,6 +25,10 @@ import {
   requireEgressImageForRestrictedTemplates,
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
+import { RecoveryRequiredError, startRecoveryController } from "./recovery-controller";
+
+export { RecoveryRequiredError, startRecoveryController };
+
 import { reconcileSetupLeases } from "./setup-lease-reconciliation";
 
 export type ServerLog = (message: string) => void;
@@ -38,10 +41,6 @@ export interface RunningPocketCoderServer {
 }
 
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
-
-function configuredIssuer(config: ServerConfig) {
-  return createIssuerClient(config.issuerCaFile ? { ca: readFileSync(config.issuerCaFile, "utf8") } : {});
-}
 
 function cleanupState(pending: number) {
   return pending > 0 ? "pending" : "ok";
@@ -59,6 +58,10 @@ export async function startPocketCoderServer(
   const initialized = await initializeController(config, log);
   config = initialized.config;
   const { store, directory } = initialized;
+  if (await store.recovery.recoveryState()) {
+    await store.close();
+    throw new RecoveryRequiredError();
+  }
   const maintenance = createMaintenance();
   const transferOptions = checkpointTransferOptions(config);
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
@@ -227,7 +230,10 @@ export async function runPocketCoderServerUntilSignal(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<void> {
-  const running = await startPocketCoderServer(config, options);
+  const running = await startPocketCoderServer(config, options).catch((error) => {
+    if (!(error instanceof RecoveryRequiredError)) throw error;
+    return startRecoveryController(config, options);
+  });
   await new Promise<void>((resolve, reject) => {
     let stopping = false;
     const shutdown = () => {

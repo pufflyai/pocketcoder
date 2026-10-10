@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { PGliteStore } from "@pstdio/pocketcoder-db";
 import {
@@ -20,10 +21,11 @@ import {
 import { openControllerStore } from "../bootstrap/controller-store";
 import type { ServerConfig } from "../config/config";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
+import { createIssuerClient } from "../secrets/issuer-client";
 import type { ServerLog } from "./lifecycle";
 
 async function initializeStore(config: ServerConfig, log: ServerLog) {
-  const store = await PGliteStore.create(config.dataDir);
+  const store = await PGliteStore.create(config.dataDir, config.journalDir ? { journalDir: config.journalDir } : {});
   await store.init();
   log(`store: pglite (${config.dataDir})`);
   return store;
@@ -144,7 +146,7 @@ export function startExclusiveTimer(
 export async function initializeController(config: ServerConfig, log: ServerLog) {
   if (config.pepper)
     return { config, store: await initializeStore(config, log), directory: await realpath(config.dataDir) };
-  const controller = await openControllerStore(config.dataDir);
+  const controller = await openControllerStore(config.dataDir, config.journalDir ?? undefined);
   return {
     config: { ...config, ...controller.keys },
     store: controller.store,
@@ -165,4 +167,8 @@ export async function reconcileCheckpointPreserves(
     if (operation.kind === "preserve" && operation.state === "running") await recover(operation);
   }
   return pending;
+}
+
+export function configuredIssuer(config: ServerConfig) {
+  return createIssuerClient(config.issuerCaFile ? { ca: readFileSync(config.issuerCaFile, "utf8") } : {});
 }

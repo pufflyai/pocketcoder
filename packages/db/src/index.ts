@@ -9,6 +9,7 @@ export {
   type MigrationStatus,
   migrateDatabase,
 } from "./migrations/migrator";
+export type { RecoveryState } from "./recovery/state";
 export {
   eventOutbox,
   machineKeys,

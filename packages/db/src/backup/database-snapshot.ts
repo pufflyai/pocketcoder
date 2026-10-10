@@ -44,6 +44,9 @@ export async function captureDatabase(
       check();
       context.validateStorage?.();
       const state = await readSnapshotState(client, context.schema);
+      // Journal records are written before their database change, so this head covers the snapshot.
+      const journal = context.journal?.head();
+      if (!journal) throw new Error("Backup requires the deletion journal.");
       if (state.publications.length && !checkpointDirectory)
         throw new Error("Backup needs the checkpoint directory that holds referenced archives.");
       const opened: (Publication & { file: PublishedArchive })[] = [];
@@ -54,7 +57,7 @@ export async function captureDatabase(
             file: openPublishedArchive(checkpointDirectory as string, publication.name, publication.identity),
           });
         await copyTree(archive, dataDir, "db", check);
-        return { position: state.position, migrations: state.migrations, publications: opened };
+        return { position: state.position, migrations: state.migrations, journal, publications: opened };
       } catch (error) {
         for (const publication of opened) publication.file.close();
         throw error;

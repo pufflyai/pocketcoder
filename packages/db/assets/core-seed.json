@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "d9379f6cc528551ea8bd0f060e567895a00a384321edca1d6b8b76f876cafa8f",
+  "checksum": "03335f170300ace0edb70cd93a208b84364b45b514e16a7933c1e884c928e5a7",
   "engine": {
     "wasm": {
       "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
@@ -65,6 +65,10 @@
     {
       "name": "20261009131616_small_purple_man",
       "hash": "06804295e4b48cef7c2c837daeec546b76617e9e7144bd21893da2022f22ac7e"
+    },
+    {
+      "name": "20261010004423_puzzling_jigsaw",
+      "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f"
     }
   ]
 }

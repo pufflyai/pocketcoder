@@ -7,6 +7,8 @@ export function createTransferControllerTable(table: PgTableFn<string | undefine
       id: text("id").primaryKey(),
       sourceWriter: jsonb("source_writer").$type<SourceWriter>(),
       recovery: jsonb("recovery").$type<unknown>(),
+      // The deletion journal this data folder reports to; it lives outside the data folder.
+      journal: jsonb("journal").$type<{ journalId: string; directory: string }>(),
     }),
   };
 }
