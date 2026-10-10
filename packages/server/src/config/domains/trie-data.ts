@@ -1,12 +1,12 @@
 /// <reference path="../../displays/viewer-assets.d.ts" />
+import { readFileSync } from "node:fs";
 import { brotliDecompressSync } from "node:zlib";
 import licensePath from "./LICENSE.br" with { type: "file" };
 import triePath from "./trie.br" with { type: "file" };
 
 // Compression keeps the full ICANN and private suffix data within the native release budget.
-const data = JSON.parse(
-  brotliDecompressSync(await Bun.file(new URL(triePath, import.meta.url)).arrayBuffer()).toString(),
-) as {
+// Synchronous reads let the native CLI avoid asynchronous module setup at startup.
+const data = JSON.parse(brotliDecompressSync(readFileSync(new URL(triePath, import.meta.url))).toString()) as {
   nodeFlags: number[];
   edgeStart: number[];
   edgeChild: number[];
@@ -22,4 +22,4 @@ export const edgeLength = new Uint16Array(data.edgeLength);
 export const labelText = data.labelText;
 export const rulesRoot = data.rulesRoot;
 export const exceptionsRoot = data.exceptionsRoot;
-await Bun.file(new URL(licensePath, import.meta.url)).arrayBuffer();
+readFileSync(new URL(licensePath, import.meta.url));
