@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { installCalico } from "./kubernetes-calico";
 import { command } from "./local-process";
 
 const NODE_IMAGE = "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5";
 export const ROOT = resolve(import.meta.dir, "../..");
 
-export async function createKubernetesCluster() {
+export async function createKubernetesCluster(options: { networkPolicy?: boolean } = {}) {
   const name = `pc-restore-${randomUUID().slice(0, 8)}`;
   const directory = await mkdtemp(join(tmpdir(), "pc-kubernetes-"));
   const kubeconfig = join(directory, "kubeconfig");
@@ -49,7 +50,7 @@ export async function createKubernetesCluster() {
   try {
     await writeFile(
       config,
-      "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n  - role: control-plane\n  - role: worker\n",
+      `kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnodes:\n  - role: control-plane\n  - role: worker\n${options.networkPolicy ? "networking:\n  disableDefaultCNI: true\n  podSubnet: 10.244.0.0/16\n" : ""}`,
     );
     await run([
       "kind",
@@ -64,8 +65,9 @@ export async function createKubernetesCluster() {
       "--kubeconfig",
       kubeconfig,
       "--wait",
-      "60s",
+      options.networkPolicy ? "0s" : "60s",
     ]);
+    if (options.networkPolicy) await installCalico(kube);
     const nodes = [`${name}-control-plane`, `${name}-worker`];
     await kube(["taint", "nodes", nodes[0] as string, "node-role.kubernetes.io/control-plane-"]);
     for (const node of nodes) {

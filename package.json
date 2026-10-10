@@ -11,7 +11,7 @@
   "scripts": {
     "build": "lerna run build",
     "build:native": "bun run --cwd packages/cli compile",
-    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check && bun packages/server/scripts/build-domain-assets.ts --check",
+    "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check && bun packages/server/scripts/build-domain-assets.ts --check && bun packages/manager/scripts/build-seed.ts --check",
     "check-licenses": "bun scripts/check-licenses.ts",
     "check-licenses:test": "bun test scripts/check-licenses.test.ts",
     "check-boundaries:test": "bun test scripts/check-boundaries.test.ts",
@@ -75,7 +75,11 @@
     "domains:build": "bun packages/server/scripts/build-domain-assets.ts",
     "example:e2e:screenshots": "bun --no-env-file examples/e2e/screenshots.ts",
     "example:e2e:kubernetes-launch": "bun --no-env-file examples/e2e/kubernetes-launch.ts",
-    "example:e2e:kubernetes-checkpoint": "bun --no-env-file examples/e2e/kubernetes-checkpoint.ts"
+    "example:e2e:kubernetes-checkpoint": "bun --no-env-file examples/e2e/kubernetes-checkpoint.ts",
+    "manager:generate": "bun run --cwd packages/manager db:generate && bun run manager:seed",
+    "manager:seed": "bun run --cwd packages/manager db:seed",
+    "manager:start": "bun --no-env-file packages/manager/src/index.ts",
+    "example:e2e:managed-accounts": "bun --no-env-file examples/e2e/managed-accounts.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -99,6 +103,7 @@
     "nx": "^23.1.0",
     "playwright": "1.64.0",
     "semver": "7.8.4",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@pstdio/pocketcoder-manager": "workspace:*"
   }
 }
