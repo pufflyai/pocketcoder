@@ -7,6 +7,7 @@ import { AccountInputSchema, BootstrapInputSchema, type ManagerConfig, ManagerCo
 import type { Account, ManagerStore } from "./database/store";
 
 export { accountService } from "./accounts/service";
+export { usageSampler } from "./usage/sampler";
 export function accountResource(account: Account) {
   return {
     id: account.id,
@@ -57,6 +58,7 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     if (!operation) throw new ManagerError(404, "operation_not_found");
     return c.json(operation);
   });
+  app.get("/v1/accounts/:id/usage", async (c) => c.json(await store.getUsage(z.uuid().parse(c.req.param("id")))));
   app.post("/v1/accounts/:id/owner", async (c) =>
     c.json(
       await service.bootstrap(
