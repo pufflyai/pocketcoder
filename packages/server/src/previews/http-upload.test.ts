@@ -109,3 +109,47 @@ test("an oversized open upload receives 413 before EOF and never reaches the wor
     await fixture.close();
   }
 }, 10_000);
+
+test("revocation at upload EOF is checked before any request reaches the app", async () => {
+  const fixture = await createPreviewFlow();
+  let body: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const abort = new AbortController();
+  let upload: Promise<Response> | undefined;
+  try {
+    await waitFor(
+      async () => (await fixture.server.store.getWorkspace(fixture.workspace.id))?.state === "ready",
+      5000,
+      "ready",
+    );
+    const opened = new URL((await fixture.client.previews.open(fixture.workspace.id, "web")).url);
+    const headers = { host: opened.host };
+    const exchange = await fetch(`${fixture.baseUrl}${opened.pathname}${opened.search}`, {
+      headers,
+      redirect: "manual",
+    });
+    const cookie = exchange.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+    upload = fetch(`${fixture.baseUrl}/delayed-upload`, {
+      method: "POST",
+      headers: { ...headers, cookie, origin: opened.origin },
+      signal: abort.signal,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          body = controller;
+          controller.enqueue(new Uint8Array([1]));
+        },
+      }),
+    });
+    void upload.catch(() => {});
+    await Bun.sleep(400);
+    await fixture.server.store.revokeMachineKey(fixture.server.keyId, new Date());
+    body?.close();
+    const response = await upload;
+    expect(response.status).toBe(401);
+    expect(fixture.uploadRequests).toBe(0);
+    await response.text();
+  } finally {
+    abort.abort();
+    if (upload) await Promise.allSettled([upload]);
+    await fixture.close();
+  }
+}, 10_000);
