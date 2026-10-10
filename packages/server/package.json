@@ -20,7 +20,7 @@
     "dev": "bun --watch ./src/index.ts",
     "start": "bun ./src/index.ts",
     "test": "bun test",
-    "typecheck": "tsc --project ./tsconfig.json --noEmit"
+    "typecheck": "tsc --project ./tsconfig.json --noEmit && tsc --project ./src/displays/client/tsconfig.json"
   },
   "dependencies": {
     "@pstdio/pocketcoder-auth": "workspace:*",
@@ -33,6 +33,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@novnc/novnc": "1.7.0",
     "@pstdio/pocketcoder-sdk": "workspace:*",
     "@pstdio/pocketcoder-supervisor": "workspace:*",
     "@pstdio/pocketcoder-testkit": "workspace:*"

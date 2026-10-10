@@ -5,6 +5,7 @@ import {
   type PreviewSocketMessage,
   previewTarget,
 } from "@pstdio/pocketcoder-contracts";
+import { DesktopSockets } from "../displays/desktop-sockets";
 
 export class SupervisorPreviewSockets {
   private readonly sockets = new Map<
@@ -12,13 +13,20 @@ export class SupervisorPreviewSockets {
     { socket: WebSocket; flow: PreviewSocketFlow; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly budget = new PreviewQueueBudget();
+  private readonly desktop: DesktopSockets;
 
   constructor(
     private readonly exec: () => ExecSpec | null,
     private readonly send: (message: PreviewSocketMessage) => void,
-  ) {}
+  ) {
+    this.desktop = new DesktopSockets(exec, send, this.budget);
+  }
 
   receive(message: PreviewSocketMessage) {
+    if ((message.op === "open" && message.name === "display") || this.desktop.owns(message.request_id)) {
+      this.desktop.receive(message);
+      return;
+    }
     if (message.op !== "open") {
       this.sockets.get(message.request_id)?.flow.receive(message);
       return;
@@ -63,6 +71,7 @@ export class SupervisorPreviewSockets {
   }
 
   closeAll() {
+    this.desktop.closeAll();
     for (const { flow } of this.sockets.values()) flow.close();
   }
 }

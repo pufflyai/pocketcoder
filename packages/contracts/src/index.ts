@@ -54,6 +54,7 @@ export {
   type ConversationResumeReason,
   type ConversationRole,
 } from "./conversations/conversation";
+export { DisplayOpenRequestSchema, DisplaySchema } from "./displays/display";
 export {
   findNetworkRule,
   isPrivateAddress,

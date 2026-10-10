@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isDuration } from "../common/duration";
+import { DisplaySchema } from "../displays/display";
 import { NetworkPolicySchema } from "../network/network";
 import { LAUNCH_MODES, OutputDeclarationSchema, PersistenceSpecSchema } from "../persistence/persistence";
 import { PreviewsSchema } from "../previews/preview";
@@ -189,6 +190,7 @@ const TemplateSpecInputSchema = z
     harness: HarnessSchema.optional(),
     terminal: TerminalSchema.optional(),
     previews: PreviewsSchema.optional(),
+    display: DisplaySchema.optional(),
     env: EnvSchema.default({}),
     resources: ResourcesSchema,
     timeouts: TimeoutsSchema.prefault({}),
