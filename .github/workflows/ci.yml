@@ -52,6 +52,8 @@ jobs:
           docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
           bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
       - name: Unit, route, e2e, and PGlite integration tests
+        env:
+          POCKETCODER_CHROMIUM_BINARY: /usr/bin/google-chrome
         run: bun run test
       - name: Verify the private-image workspace flow
         run: bun run example:e2e:private-image

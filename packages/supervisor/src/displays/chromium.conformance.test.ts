@@ -89,7 +89,7 @@ test("Enter submits forms and inserts a textarea newline in real Chromium", asyn
       `--user-data-dir=${profile}`,
       "about:blank",
     ],
-    { stdout: "ignore", stderr: "ignore" },
+    { stdout: "ignore", stderr: "inherit" },
   );
   let client: Chromium | undefined;
   try {
