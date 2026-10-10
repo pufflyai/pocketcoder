@@ -53,7 +53,11 @@ async function inspect(client: Chromium, expression: string) {
 async function navigate(client: Chromium, url: string) {
   await client.action({ action: "navigate", url });
   await until(
-    () => inspect(client, "document.readyState === 'complete' && Boolean(document.querySelector('textarea'))"),
+    () =>
+      inspect(
+        client,
+        `location.href === ${JSON.stringify(url)} && document.readyState === 'complete' && Boolean(document.querySelector('textarea'))`,
+      ),
     (ready) => ready === true,
   );
 }
@@ -96,7 +100,7 @@ test("Enter submits forms and inserts a textarea newline in real Chromium", asyn
     await client.action({ action: "key", key: "Enter" });
     await client.action({ action: "text", text: "after" });
     expect(await inspect(client, "document.querySelector('textarea').value")).toBe("before\nafter");
-    await navigate(client, server.url.href);
+    await navigate(client, `${server.url.href}?form`);
     await client.action({ action: "click", x: 100, y: 25 });
     await client.action({ action: "text", text: "hello" });
     await client.action({ action: "key", key: "Enter" });
