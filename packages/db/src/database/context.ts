@@ -38,7 +38,7 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
         await new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage);
         if ((await readFile(join(stage, "PG_VERSION"), "utf8")).trim() !== "18")
           throw new Error("incompatible core seed engine format");
-        syncSeed(stage);
+        await syncSeed(stage);
         await rename(stage, databaseDir);
         syncDirectory(folder.dir);
       } else {

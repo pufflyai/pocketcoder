@@ -2,7 +2,7 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "d5dd968c387b0a636cd32b656e9397c07780c47bd8cb542edfbcc58ba06ba732",
+  "checksum": "d9379f6cc528551ea8bd0f060e567895a00a384321edca1d6b8b76f876cafa8f",
   "engine": {
     "wasm": {
       "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
