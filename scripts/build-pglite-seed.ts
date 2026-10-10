@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { brotliCompressSync, constants } from "node:zlib";
+import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { dependencies } from "../packages/db/package.json" with { type: "json" };
@@ -17,7 +17,13 @@ function checksum(bytes: Uint8Array) {
 }
 
 async function embed(name: string, bytes: Uint8Array) {
-  const compressed = brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } });
+  const compressed = brotliCompressSync(bytes, {
+    params: {
+      [constants.BROTLI_PARAM_QUALITY]: 11,
+      // Database pages repeat across more than the default 4 MB window.
+      [constants.BROTLI_PARAM_LGWIN]: name === "core-seed.tar.br" ? 24 : 22,
+    },
+  });
   const path = resolve(assets, name);
   await writeFile(`${path}.tmp`, compressed);
   await rename(`${path}.tmp`, path);
@@ -88,7 +94,18 @@ async function tarDirectory(root: string) {
   return Buffer.concat(blocks);
 }
 
-if (process.argv.includes("--check")) {
+if (process.argv.includes("--recompress-seed")) {
+  const path = resolve(assets, "core-seed.json");
+  const manifest = await Bun.file(path).json();
+  const compressed = await Bun.file(resolve(assets, "core-seed.tar.br")).bytes();
+  if (checksum(compressed) !== manifest.checksum) throw new Error("core seed checksum drift");
+  const seed = brotliDecompressSync(compressed);
+  const result = await embed("core-seed.tar.br", seed);
+  const restored = brotliDecompressSync(await Bun.file(resolve(assets, "core-seed.tar.br")).bytes());
+  if (checksum(seed) !== checksum(restored)) throw new Error("core seed recompression changed database bytes");
+  await writeFile(path, `${JSON.stringify({ ...manifest, checksum: result.checksum }, null, 2)}\n`);
+  console.log(JSON.stringify({ sourceChecksum: checksum(seed), restoredChecksum: checksum(restored) }));
+} else if (process.argv.includes("--check")) {
   const saved = await Bun.file(resolve(assets, "migrations.json")).json();
   if (JSON.stringify(saved) !== JSON.stringify(migrations))
     throw new Error("embedded migrations are stale; run bun run db:seed");

@@ -125,3 +125,4 @@ export {
   type WarmPoolMetrics,
   warmPoolFingerprint,
 } from "./warm-pool/warm-pool";
+export { cleanupWarmProvider } from "./warm-pool/warm-provider-cleanup";

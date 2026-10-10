@@ -7,6 +7,7 @@ import { createManagerApp } from "../app";
 import { accountRepository } from "../database/account-repository";
 import { bootstrapRepository } from "../database/bootstrap-repository";
 import { managerContext } from "../database/context";
+import { lifecycleRepository } from "../database/lifecycle-repository";
 import { ManagerStore } from "../database/store";
 import { usageRepository } from "./repository";
 import { retainedSince } from "./window";
@@ -155,6 +156,7 @@ test("usage survives restart, counts each minute once, and exposes observation g
   let store: ManagerStore = {
     ...accountRepository(context),
     ...bootstrapRepository(context),
+    ...lifecycleRepository(context),
     ...usageRepository(context),
     close: () => context.close(),
   };

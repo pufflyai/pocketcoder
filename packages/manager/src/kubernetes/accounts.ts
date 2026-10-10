@@ -1,13 +1,17 @@
 import { z } from "zod";
 import type { Account, ManagerStore } from "../database/store";
 import { kube } from "./command";
+import { kubernetesLifecycle } from "./lifecycle";
 import { accountManifests } from "./manifests";
 
 const OwnerResult = z
   .object({ token: z.string().nullable(), key: z.object({ id: z.uuid() }).passthrough() })
   .passthrough();
 export class KubernetesAccounts {
-  constructor(private readonly command = kube) {}
+  readonly lifecycle;
+  constructor(private readonly command = kube) {
+    this.lifecycle = kubernetesLifecycle(command);
+  }
   async ensure(account: Account) {
     await this.command(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);
     const cni = JSON.parse(await this.command(["-n", "kube-system", "get", "daemonset", "calico-node", "-o", "json"]));

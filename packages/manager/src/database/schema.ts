@@ -27,11 +27,11 @@ export function managerSchema(schema?: string) {
       requestId: text("request_id").notNull().unique(),
       requestDigest: text("request_digest").notNull(),
       plan: jsonb().$type<ManagerConfig>().notNull(),
-      state: text().$type<"provisioning" | "ready">().notNull(),
+      state: text().$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming">().notNull(),
       bootstrapRequestId: uuid("bootstrap_request_id"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     },
-    (t) => [check("account_state", sql`${t.state} in ('provisioning','ready')`)],
+    (t) => [check("account_state", sql`${t.state} in ('provisioning','ready','suspending','suspended','resuming')`)],
   );
   const operations = table(
     "operations",
@@ -39,14 +39,21 @@ export function managerSchema(schema?: string) {
       id: uuid().primaryKey(),
       accountId: uuid("account_id")
         .notNull()
-        .unique()
         .references(() => accounts.id),
+      kind: text().$type<"provision" | "suspend" | "resume">().notNull().default("provision"),
+      requestId: text("request_id").notNull().default("provision"),
+      phase: text().$type<"controller" | "scale" | "complete">().notNull().default("controller"),
       state: text().$type<"pending" | "running" | "succeeded">().notNull(),
       errorCode: text("error_code"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
       completedAt: timestamp("completed_at", { withTimezone: true }),
     },
-    (t) => [check("operation_state", sql`${t.state} in ('pending','running','succeeded')`)],
+    (t) => [
+      unique("operation_identity").on(t.accountId, t.requestId),
+      check("operation_kind", sql`${t.kind} in ('provision','suspend','resume')`),
+      check("operation_phase", sql`${t.phase} in ('controller','scale','complete')`),
+      check("operation_state", sql`${t.state} in ('pending','running','succeeded')`),
+    ],
   );
   const operators = table(
     "operators",

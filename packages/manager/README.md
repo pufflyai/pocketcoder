@@ -48,7 +48,7 @@ curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
 ```
 
 Poll `GET /v1/operations/{operation.id}` from the response until `succeeded`.
-Provisioning errors leave the operation running with `provisioning_retry`; the
+Provisioning errors leave the operation running with `provision_retry`; the
 manager retries the same record. Repeating create returns the same account and
 operation after a restart. Changed input with the same request ID returns 409.
 Existing Kubernetes objects with another account identity are refused.
@@ -124,3 +124,55 @@ count. These figures are estimates for operators, not billing measurements.
 `bun run example:e2e:managed-accounts` also checks the usage endpoint with a real
 workspace, warm pod, retained finished job and deleting pod. It verifies private
 volume measurement, account separation and retry deduplication.
+Suspend an account with `POST /v1/accounts/{id}/suspend` and an `Idempotency-Key`.
+Resume it with `POST /v1/accounts/{id}/resume` and a new key. Both return 202 with
+an account and a durable operation. They need the same finite operator authority
+as creation. Poll `GET /v1/operations/{operation.id}` until `succeeded`.
+
+```sh
+curl -X POST -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  -H 'Idempotency-Key: suspend-one' \
+  "http://127.0.0.1:8092/v1/accounts/$ACCOUNT_ID/suspend"
+# Poll the returned operation before continuing.
+curl -X POST -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  -H 'Idempotency-Key: resume-one' \
+  "http://127.0.0.1:8092/v1/accounts/$ACCOUNT_ID/resume"
+```
+
+Suspension first stores an admission fence on the account controller's private
+volume. Requests already admitted settle; new mutations and credential issuance
+stop. Connected workspaces with persistent mounts are checkpointed. Other
+workspaces are canceled. Active and warm runtimes are removed with the existing
+termination proof, and issuer leases must be revoked or proven expired. The
+manager then verifies that no jobs or workspace pods remain before scaling the
+controller to zero. Its volume and saved data remain intact.
+
+An unreachable runtime, uncertain termination, issuer outage or unfinished
+checkpoint leaves the account `suspending`. The operation retains its phase and
+reports `suspend_retry`. Keep the runtime reachable and restore the failed
+service, then let the manager retry. Do not force scale-down or remove the
+private fence. Restarting the manager or controller keeps the same operation
+and admission fence. Repeating the same key returns its recorded operation;
+using it for another action returns 409. Another lifecycle operation is refused
+until the pending one succeeds.
+
+Resume scales the controller up with admission still fenced. It reconciles
+saved state and issuer authority and verifies saved checkpoints before opening
+admission. A failure leaves `resuming` with `resume_retry`. It does not rerun
+workspaces or completed lifecycle effects. Use the existing checkpoint restore
+API to start a new workspace with fresh authority. Existing owner keys retain
+their original expiry; replace an expired or lost owner through the owner API.
+Owner bootstrap is refused while an account is suspended or changing state.
+
+The controller maintenance API exists only on its private mode 0600 admin
+socket: `GET /v1/account`, and `POST /v1/account/suspend` or
+`POST /v1/account/resume` with `{"request_id":"YOUR_UUID"}`. The manager uses its
+finite host-side Kubernetes authority to reach that socket. No maintenance
+route or manager credential is exposed to a workspace or public listener.
+
+Local validation: `bun run example:e2e:managed-account-lifecycle`. It uses a
+synthetic isolated Kind account and cleans up its own cluster. To use a local
+workspace image built by a separate candidate image check, set
+`POCKETCODER_E2E_WORKSPACE_IMAGE` to that image tag. The demo loads it into its
+owned cluster and leaves the source image intact. Local success
+does not prove the DigitalOcean runtime, hosted HTTPS or customer enablement.

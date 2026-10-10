@@ -82,7 +82,8 @@
     "manager:generate": "bun run --cwd packages/manager db:generate && bun run manager:seed",
     "manager:seed": "bun run --cwd packages/manager db:seed",
     "manager:start": "bun --no-env-file packages/manager/src/index.ts",
-    "example:e2e:managed-accounts": "bun --no-env-file examples/e2e/managed-accounts.ts"
+    "example:e2e:managed-accounts": "bun --no-env-file examples/e2e/managed-accounts.ts",
+    "example:e2e:managed-account-lifecycle": "bun --no-env-file examples/e2e/managed-account-lifecycle.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

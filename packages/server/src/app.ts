@@ -103,7 +103,12 @@ function workspaceSecretFactory(pepper: string) {
 function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
   const vault = deps.secretKey ? createSecretVault(deps.store, Buffer.from(deps.secretKey, "base64url")) : undefined;
   const workspaceLeases = vault
-    ? createWorkspaceLeaseService({ store: deps.store, vault, issuer: deps.issuerClient ?? createIssuerClient() })
+    ? createWorkspaceLeaseService({
+        store: deps.store,
+        vault,
+        issuer: deps.issuerClient ?? createIssuerClient(),
+        admissionFenced: () => deps.maintenance?.fenced ?? false,
+      })
     : undefined;
   const checkpointRuntime = composeCheckpointRuntime(
     deps.store,
@@ -170,6 +175,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     : undefined;
   const persistenceHolder: { service?: PersistenceService } = {};
   const scheduler = new Scheduler({
+    admissionFenced: () => deps.maintenance?.fenced ?? false,
     ...(deps.authorizeLaunch ? { authorizeLaunch: deps.authorizeLaunch } : {}),
     store,
     driver,

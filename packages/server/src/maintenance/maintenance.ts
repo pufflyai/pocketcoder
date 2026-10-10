@@ -5,14 +5,16 @@ import type { AppEnv } from "../http/middleware";
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function refuse(): never {
-  throw new ApiError("maintenance.active", "The controller is taking a backup. Retry shortly.");
+  throw new ApiError("maintenance.active", "Controller mutations are paused. Retry shortly.");
 }
 
 // A maintenance window stops new mutations, waits for admitted ones to settle and then
 // runs one exclusive step. Reads, heartbeats and other control-channel traffic continue.
 export function createMaintenance() {
   let active = false;
+  let fenced = false;
   const admitted = new Set<Promise<unknown>>();
+  const requests = new Set<Promise<unknown>>();
   const settlers: (() => Promise<unknown>)[] = [];
 
   // Stops when the window gives up, so a timed-out backup leaves no loop behind.
@@ -23,18 +25,37 @@ export function createMaintenance() {
     } while (admitted.size && !deadline.aborted);
   }
 
-  async function admit<T>(work: () => Promise<T>) {
-    if (active) refuse();
+  async function admit<T>(work: () => Promise<T>, kind: "task" | "request" = "task") {
+    if (active || fenced) refuse();
     const task = work();
     admitted.add(task);
-    const remove = () => admitted.delete(task);
+    if (kind === "request") requests.add(task);
+    const remove = () => {
+      admitted.delete(task);
+      requests.delete(task);
+    };
     task.then(remove, remove);
     return await task;
   }
 
   return {
     get active() {
-      return active;
+      return active || fenced;
+    },
+    get fenced() {
+      return fenced;
+    },
+    get admittedRequests() {
+      return requests.size;
+    },
+    fence() {
+      fenced = true;
+    },
+    release() {
+      fenced = false;
+    },
+    drain() {
+      return settle(new AbortController().signal);
     },
     admit,
     // Background work that owns its own scheduling, such as persistence tasks.
@@ -44,12 +65,12 @@ export function createMaintenance() {
     // Timer ticks skip a window instead of failing; the next tick catches up.
     pausable(work: () => Promise<void>) {
       return async () => {
-        if (!active) await admit(work);
+        if (!active && !fenced) await admit(work);
       };
     },
     // The deadline covers settling and the exclusive step. Writes resume on every exit.
     async run<T>(timeoutMs: number, signal: AbortSignal, step: (check: () => void) => Promise<T>) {
-      if (active) refuse();
+      if (active || fenced) refuse();
       active = true;
       const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
       const check = () => {
@@ -86,9 +107,9 @@ export function maintenanceGate(maintenance: Maintenance): MiddlewareHandler<App
   return async (c, next) => {
     if (READ_METHODS.has(c.req.method)) return next();
     if (maintenance.active) {
-      const error = new ApiError("maintenance.active", "The controller is taking a backup. Retry shortly.");
+      const error = new ApiError("maintenance.active", "Controller mutations are paused. Retry shortly.");
       return c.json(errorEnvelope(error.code, error.message, c.get("requestId")), 503, { "retry-after": "1" });
     }
-    await maintenance.admit(next);
+    await maintenance.admit(next, "request");
   };
 }

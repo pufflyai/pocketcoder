@@ -9,11 +9,13 @@ export function createWorkspaceLeaseService({
   vault,
   issuer,
   now = () => new Date(),
+  admissionFenced = () => false,
 }: {
   store: WorkspaceLeaseStore;
   vault: ReturnType<typeof createSecretVault>;
   issuer: ReturnType<typeof createIssuerClient>;
   now?: () => Date;
+  admissionFenced?: () => boolean;
 }) {
   const unavailable = () => new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
   async function deliver(
@@ -21,6 +23,7 @@ export function createWorkspaceLeaseService({
     row: Awaited<ReturnType<typeof store.requestWorkspaceLease>>,
   ) {
     if (
+      admissionFenced() ||
       config.type === "registry" ||
       ["revoking", "revoked", "expired"].includes(row.state) ||
       row.requestExpiresAt <= now() ||
@@ -35,8 +38,9 @@ export function createWorkspaceLeaseService({
       Buffer.byteLength(result.credential),
       now(),
     );
-    const delivered = issued?.state !== "revoking" && (await store.recordWorkspaceLeaseDelivered(row.id, now()));
-    if (!delivered) {
+    const delivered =
+      !admissionFenced() && issued?.state !== "revoking" && (await store.recordWorkspaceLeaseDelivered(row.id, now()));
+    if (!delivered || admissionFenced()) {
       await revoke(row.id);
       throw unavailable();
     }
@@ -57,6 +61,7 @@ export function createWorkspaceLeaseService({
     purpose: WorkspaceLeasePurpose,
     requestId: string = randomUUID(),
   ) {
+    if (admissionFenced()) throw unavailable();
     const existing = (await store.listWorkspaceLeases(workspaceId)).find(
       (row) => row.secretName === name && row.requestId === requestId,
     );

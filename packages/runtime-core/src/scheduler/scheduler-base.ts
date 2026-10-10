@@ -87,6 +87,7 @@ export interface SchedulerDeps {
   workspaceServerUrl: string;
   warmPool?: WarmPoolManager;
   authorizeLaunch?: (workspace: WorkspaceRow) => Promise<boolean>;
+  admissionFenced?: () => boolean;
   preserveByPolicy?: (row: WorkspaceRow, trigger: "idle" | "deadline" | "clean_exit" | "failure") => Promise<boolean>;
   now?: () => Date;
   onError?: (context: string, err: unknown) => void;
