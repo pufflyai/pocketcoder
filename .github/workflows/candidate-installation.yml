@@ -59,10 +59,6 @@ jobs:
         with:
           name: pocketcoder-${{ env.CANDIDATE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/native
-      - uses: actions/download-artifact@v4
-        with:
-          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
-          path: ${{ runner.temp }}/packages
       - name: Start a real Docker daemon on macOS
         if: matrix.platform == 'darwin'
         env:
@@ -88,6 +84,11 @@ jobs:
         run: |
           bun run example:e2e:native -- --binary "$RUNNER_TEMP/native/pocketcoder" --fixture "$RUNNER_TEMP/fixture" > "$RUNNER_TEMP/validation/workspace.json"
           cat "$RUNNER_TEMP/validation/workspace.json"
+      # Native startup does not need the large package tarballs or their disk writes.
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/packages
       - name: Install downloaded CLI, SDK and remote packages in a clean consumer
         run: |
           bun run candidate:packages check "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/packages.log"
