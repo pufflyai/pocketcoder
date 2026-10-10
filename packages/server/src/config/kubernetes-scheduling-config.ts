@@ -59,9 +59,17 @@ function parseTolerations(raw: string | undefined): KubernetesToleration[] {
 }
 
 export function resolveKubernetesScheduling(env: Environment): KubernetesSchedulingOptions {
+  const runtimeClassName = env.POCKETCODER_KUBERNETES_RUNTIME_CLASS;
+  if (
+    runtimeClassName !== undefined &&
+    (runtimeClassName.length > 253 || !/^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/.test(runtimeClassName))
+  ) {
+    throw new Error("POCKETCODER_KUBERNETES_RUNTIME_CLASS must be a Kubernetes resource name");
+  }
   const nodeSelector = parseNodeSelector(env.POCKETCODER_KUBERNETES_NODE_SELECTOR);
   const tolerations = parseTolerations(env.POCKETCODER_KUBERNETES_TOLERATIONS);
   return {
+    ...(runtimeClassName ? { runtimeClassName } : {}),
     ...(nodeSelector ? { nodeSelector } : {}),
     ...(tolerations.length ? { tolerations } : {}),
   };

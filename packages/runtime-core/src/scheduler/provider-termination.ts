@@ -3,7 +3,7 @@ import type { WorkspaceRow, WorkspaceStore } from "../types";
 
 type TerminationWorkspace = Pick<WorkspaceRow, "id" | "providerKind" | "providerRef">;
 
-function sameProvider(current: TerminationWorkspace | null, expected: TerminationWorkspace) {
+export function sameProvider(current: TerminationWorkspace | null, expected: TerminationWorkspace) {
   return (
     current?.providerKind === expected.providerKind &&
     current?.providerRef?.id === expected.providerRef?.id &&
@@ -49,16 +49,38 @@ export async function stopWorkspaceProvider(
 }
 
 export async function cleanupUncommittedProvider(
+  store: Pick<WorkspaceStore, "updateWorkspace" | "getWorkspace">,
   driver: WorkspaceDriver,
   workspace: WorkspaceRow,
   graceSeconds: number,
 ) {
-  // A provider may exist even when its create response or database write was lost.
-  for (const found of await driver.list()) {
-    if (found.workspaceId !== workspace.id) continue;
-    if (found.templateDigest !== workspace.templateDigest) throw new Error("Uncommitted provider template mismatch");
-    await driver.stop(found.ref, graceSeconds);
-    await driver.remove(found.ref);
+  const current = await store.getWorkspace(workspace.id);
+  if (current?.providerRef) {
+    await stopWorkspaceProvider(store, driver, current, graceSeconds, new Date());
+  } else if (driver.uncommittedProvider) {
+    const ref = await driver.uncommittedProvider(workspace);
+    await store.updateWorkspace(workspace.id, { providerKind: driver.kind, providerRef: ref }, new Date());
+    await stopWorkspaceProvider(
+      store,
+      driver,
+      { id: workspace.id, providerKind: driver.kind, providerRef: ref },
+      graceSeconds,
+      new Date(),
+    );
+  } else {
+    if (driver.kind === "kubernetes") throw new Error("Kubernetes admission proof is unavailable");
+    for (const found of await driver.list()) {
+      if (found.workspaceId !== workspace.id) continue;
+      if (found.templateDigest !== workspace.templateDigest) throw new Error("Uncommitted provider template mismatch");
+      await store.updateWorkspace(workspace.id, { providerKind: driver.kind, providerRef: found.ref }, new Date());
+      await stopWorkspaceProvider(
+        store,
+        driver,
+        { id: workspace.id, providerKind: driver.kind, providerRef: found.ref },
+        graceSeconds,
+        new Date(),
+      );
+    }
   }
   await driver.purgeInput(workspace.id);
 }

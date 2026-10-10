@@ -146,9 +146,11 @@ export class SchedulerAdmission {
       limits: this.context.deps.limits,
     });
     if (!claimed) return false;
+    let providerCreationStarted = false;
     try {
       const mounts = await this.prepareStorage(claimed);
       const runtimeSecrets = await this.resolveRuntimeSecrets(claimed);
+      providerCreationStarted = true;
       const ref = await driver.create({
         workspace: claimed,
         input,
@@ -160,14 +162,14 @@ export class SchedulerAdmission {
     } catch (err) {
       this.context.report(`launch.${row.id}`, err);
       const at = this.context.now();
-      if (!(await this.cleanupFailedLaunch(claimed))) return false;
+      if (!(await this.cleanupFailedLaunch(claimed, providerCreationStarted))) return false;
       if (claimed.launchAttempts < this.context.deps.limits.maxLaunchAttempts) {
         // No provider object was created; the bounded requeue is legal.
         await store.transition(row.id, {
           from: ["provisioning"],
           to: "queued",
           at,
-          patch: { registrationDigest: null, registrationExpiresAt: null },
+          patch: { providerKind: null, providerRef: null, registrationDigest: null, registrationExpiresAt: null },
         });
       } else {
         const failurePatch = await this.context.captureLaunchFailure(row.id, err, at);
@@ -198,9 +200,15 @@ export class SchedulerAdmission {
     return [];
   }
 
-  private async cleanupFailedLaunch(row: WorkspaceRow) {
+  private async cleanupFailedLaunch(row: WorkspaceRow, providerCreationStarted: boolean) {
+    if (!providerCreationStarted) return true;
     try {
-      await cleanupUncommittedProvider(this.context.deps.driver, row, this.context.graceSeconds(row));
+      await cleanupUncommittedProvider(
+        this.context.deps.store,
+        this.context.deps.driver,
+        row,
+        this.context.graceSeconds(row),
+      );
       return true;
     } catch (error) {
       // Registration expiry retries cleanup without declaring the failed launch settled.

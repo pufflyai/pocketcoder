@@ -1,7 +1,7 @@
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 
 // The runtime owns source-only bytes, so a controller needs no shared volume.
-// Checkpoint restore remains unavailable until the cross-node slice is delivered.
+// The configured controller archive runtime handles checkpoint restores.
 export function disposableSourceRuntime(provider: "docker" | "kubernetes") {
   return {
     async prepareStorage(workspace: WorkspaceRow) {

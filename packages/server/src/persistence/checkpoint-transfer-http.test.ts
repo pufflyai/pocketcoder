@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { statfsSync, statSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkpointHttpFixture } from "./checkpoint-transfer-fixture.test";
 
@@ -45,6 +45,14 @@ test("real HTTP upload publishes verified exact bytes before preserve returns", 
     expect(await readFile(join(f.directory, name))).toEqual(f.raw);
     expect(await readdir(f.directory)).toEqual([name]);
     expect((await f.store.checkpointTransfers.get(grant.transfer_id))?.state).toBe("complete");
+    await writeFile(join(f.directory, "unknown.tar"), "operator evidence");
+    expect(await f.service.inventory()).toMatchObject({
+      backend: "controller-archive",
+      checkpoint_count: 1,
+      unknown_storage: [],
+      unknown_checkpoints: ["unknown.tar"],
+    });
+    expect(await readFile(join(f.directory, "unknown.tar"), "utf8")).toBe("operator evidence");
   } finally {
     await f.dispose();
   }

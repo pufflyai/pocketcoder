@@ -40,7 +40,11 @@
     "env": {
       "HOME": "/home/agent"
     },
-    "resources": { "cpu": "1", "memory": "1Gi" },
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi",
+      "ephemeralStorage": "2Gi"
+    },
     "timeouts": {
       "start": "5m",
       "maxAge": "1h",

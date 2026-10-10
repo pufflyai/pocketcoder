@@ -62,42 +62,6 @@ function validateImages(documents: KubeObject[], errors: string[]) {
   }
 }
 
-function validateStorage(documents: KubeObject[], errors: string[]) {
-  const volume = named(documents, "PersistentVolume", "pocketcoder-digitalocean-nfs");
-  if (!volume) {
-    errors.push("pocketcoder-digitalocean-nfs PersistentVolume is missing");
-  } else {
-    const modes = at(volume, "spec", "accessModes");
-    if (!Array.isArray(modes) || !modes.includes("ReadWriteMany")) {
-      errors.push("DigitalOcean NFS PersistentVolume must use ReadWriteMany");
-    }
-    if (at(volume, "spec", "persistentVolumeReclaimPolicy") !== "Retain") {
-      errors.push("DigitalOcean NFS PersistentVolume must use Retain");
-    }
-    if (at(volume, "spec", "storageClassName") !== "") {
-      errors.push("DigitalOcean NFS PersistentVolume must disable dynamic provisioning");
-    }
-    const server = at(volume, "spec", "nfs", "server");
-    const path = at(volume, "spec", "nfs", "path");
-    if (typeof server !== "string" || server === "") errors.push("NFS server is required");
-    if (typeof path !== "string" || !path.startsWith("/")) {
-      errors.push("NFS export path must be absolute");
-    }
-  }
-  const claim = named(documents, "PersistentVolumeClaim", "pocketcoder-workspaces");
-  if (!claim) {
-    errors.push("pocketcoder-workspaces PersistentVolumeClaim is missing");
-    return;
-  }
-  const modes = at(claim, "spec", "accessModes");
-  if (!Array.isArray(modes) || !modes.includes("ReadWriteMany")) {
-    errors.push("pocketcoder-workspaces must use ReadWriteMany");
-  }
-  if (at(claim, "spec", "storageClassName") !== "") {
-    errors.push("pocketcoder-workspaces must disable dynamic storage provisioning");
-  }
-}
-
 function validateServiceAccounts(documents: KubeObject[], errors: string[]) {
   for (const name of ["pocketcoder-controller", "pocketcoder-workspace"]) {
     if (!named(documents, "ServiceAccount", name)) errors.push(`${name} ServiceAccount is missing`);
@@ -214,7 +178,6 @@ export function validateRenderedManifest(rendered: string) {
     errors.push("rendered manifest contains unresolved REPLACE_ placeholders");
   }
   validateImages(documents, errors);
-  validateStorage(documents, errors);
   validateServiceAccounts(documents, errors);
   validateServer(documents, errors);
   validateControllerData(documents, errors);

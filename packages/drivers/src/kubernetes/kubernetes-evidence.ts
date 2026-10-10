@@ -1,40 +1,11 @@
+import { ADMISSION_ANNOTATION, hasNoPodAdmission } from "./kubernetes-empty-evidence";
+import type { ContainerStatus, Resource } from "./kubernetes-evidence-types";
+
 export const EVIDENCE_FINALIZER = "pocketcoder.dev/termination-evidence";
 export const EVIDENCE_ANNOTATION = "pocketcoder.dev/termination-evidence";
 const NODE_ANNOTATION = "pocketcoder.dev/termination-node";
 
 type Command = (args: string[]) => Promise<string>;
-interface Metadata {
-  name?: string;
-  uid?: string;
-  resourceVersion?: string;
-  deletionTimestamp?: string;
-  annotations?: Record<string, string>;
-  labels?: Record<string, string>;
-  finalizers?: string[];
-  ownerReferences?: { uid: string; kind: string; controller?: boolean }[];
-}
-interface ContainerStatus {
-  name: string;
-  containerID?: string;
-  state: { terminated?: { exitCode: number; finishedAt?: string; containerID?: string; reason?: string } };
-}
-interface Resource {
-  metadata: Metadata;
-  spec: {
-    nodeName?: string;
-    providerID?: string;
-    suspend?: boolean;
-    containers?: { name: string }[];
-    initContainers?: { name: string }[];
-    ephemeralContainers?: { name: string }[];
-  };
-  status?: {
-    conditions?: { type: string; status: string }[];
-    containerStatuses?: ContainerStatus[];
-    initContainerStatuses?: ContainerStatus[];
-    ephemeralContainerStatuses?: ContainerStatus[];
-  };
-}
 
 async function patch(run: Command, kind: string, name: string, value: unknown) {
   await run(["patch", kind, name, "--type=merge", "-p", JSON.stringify(value)]);
@@ -172,6 +143,10 @@ async function retainCurrent(run: Command, pod: Resource) {
 export async function retainNodeIdentities(run: Command, name: string, jobUid: string) {
   const pods = await podsFor(run, name);
   if (pods.some((pod) => !owned(pod, jobUid))) throw new Error("Termination provider changed");
+  if (pods.length)
+    await patch(run, "job", name, {
+      metadata: { uid: jobUid, annotations: { [ADMISSION_ANNOTATION]: "true" } },
+    });
   for (const pod of pods) {
     // Persist while the node exists; autoscaling can remove it before stop runs.
     if (pod.spec.nodeName && !pod.metadata.annotations?.[NODE_ANNOTATION]) await retain(run, pod);
@@ -262,15 +237,19 @@ export async function captureTermination(run: Command, name: string, graceSecond
 async function captureJobTermination(run: Command, name: string, graceSeconds: number, job: Resource, jobUid: string) {
   const initial = await podsFor(run, name);
   if (!initial.length) {
-    if (!(await retainedProof(run, name, jobUid))) throw new Error("Termination evidence unavailable");
-    await releasePods(run, name, jobUid);
-    return;
+    if (await retainedProof(run, name, jobUid)) {
+      await releasePods(run, name, jobUid);
+      return;
+    }
+    if (!hasNoPodAdmission(job, EVIDENCE_FINALIZER)) throw new Error("Termination evidence unavailable");
   }
   if (initial.some((pod) => !owned(pod, jobUid))) throw new Error("Termination evidence unavailable");
   const nodes: Record<string, unknown> = {};
   await retainNodes(run, initial, nodes);
   await patch(run, "job", name, { metadata: { uid: job.metadata.uid }, spec: { suspend: true } });
   const confirmed = await stoppedJob(run, name, jobUid, Date.now() + (graceSeconds + 5) * 1000);
+  if (!initial.length && !hasNoPodAdmission(confirmed, EVIDENCE_FINALIZER))
+    throw new Error("Termination evidence unavailable");
   const retained = await podsFor(run, name);
   if (
     retained.length !== initial.length ||
@@ -300,8 +279,19 @@ async function captureJobTermination(run: Command, name: string, graceSeconds: n
       const proof = {
         job: {
           metadata: { uid: job.metadata.uid, labels: job.metadata.labels },
-          spec: { suspend: confirmed.spec.suspend },
-          status: { conditions: confirmed.status?.conditions },
+          spec: {
+            suspend: confirmed.spec.suspend,
+            template: { metadata: { finalizers: confirmed.spec.template?.metadata?.finalizers } },
+          },
+          status: {
+            conditions: confirmed.status?.conditions,
+            active: confirmed.status?.active,
+            ready: confirmed.status?.ready,
+            terminating: confirmed.status?.terminating,
+            succeeded: confirmed.status?.succeeded,
+            failed: confirmed.status?.failed,
+            uncountedTerminatedPods: confirmed.status?.uncountedTerminatedPods,
+          },
         },
         pods: pods.map(podEvidence),
         nodes,

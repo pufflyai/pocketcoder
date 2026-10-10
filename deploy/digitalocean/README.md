@@ -1,312 +1,83 @@
-# PocketCoder on DigitalOcean Kubernetes
+# DigitalOcean Kubernetes example
 
-This example deploys one PocketCoder server to DigitalOcean Kubernetes (DOKS).
-It uses embedded PGlite on a private block volume and workspace Network File Storage (NFS). The
-default Service is private. The test workspace uses the credential-free
-`persistent-echo` harness. A second flow runs the real Pi coding agent through
-a private, single-session model gateway.
+Run one controller with embedded PGlite and checkpoint archives on its own
+`do-block-storage` volume. Workspace Jobs use bounded `emptyDir` mounts. They
+never mount the controller volume. No shared workspace storage is required.
 
-The example configures Kubernetes resources. It does not create or delete
-DigitalOcean cloud resources.
+This is a synthetic deployment recipe. Hosted gVisor and production recovery
+acceptance are tracked in PC-84 and the later hosted tickets.
 
-## Before you start
+## Prepare the deployment
 
-Use an operator machine with Bash, Bun 1.4.2, `doctl`, and `kubectl`. Keep
-`doctl` credentials on that machine. Never run `doctl auth init` in a
-PocketCoder workspace.
+Use a DOKS cluster with enough CPU, memory and ephemeral storage for the declared
+workspace limits. Install the selected RuntimeClass handler on the workspace
+node pool. Set `POCKETCODER_KUBERNETES_RUNTIME_CLASS` in the deployment patch;
+PocketCoder requests that exact class without a fallback.
 
-Prepare these resources in one DigitalOcean project:
+Build and publish immutable server and workspace images. Replace every
+`REPLACE_` image and model field in `server`, `bootstrap` and `pi-gateway`.
+The persistent echo and Pi template examples include pod storage budgets. Keep
+mount limits plus at least 64 MiB for the writable layer and logs within each
+budget. Transfer staging also needs enough workspace memory.
 
-- A DOKS cluster on Kubernetes 1.33 or newer.
-- A DigitalOcean NFS share reachable by that cluster. Use the same VPC and
-  region. Record its private host, export path, size, and tier.
-- A DigitalOcean block volume through the `do-block-storage` class for PGlite.
-  The controller data folder must never use the workspace NFS share.
-- Exact server and workspace image references from one release.
-- Exact Pi and Pi gateway image references if you will run the coding-agent
-  flow.
-- A registry pull Secret if either image is private.
+Render the storage and server resources:
 
-DigitalOcean NFS enforces root squashing. The server therefore runs as uid/gid
-10001. The NFS example follows DigitalOcean's static `ReadWriteMany` PV/PVC
-setup and uses `nconnect=8`. See the [DigitalOcean NFS guide](https://docs.digitalocean.com/products/kubernetes/how-to/use-nfs-storage/).
-
-Keep the controller data separate from workspace storage. PGlite needs local
-or block storage. Keep one writer and fence a failed node before moving its
-volume. A `ReadWriteOnce` claim does not replace the process's kernel lock.
-
-## Prepare an ignored working copy
-
-Do not put deployment secrets in this directory. It holds only non-secret
-render inputs.
-
-```bash
-mkdir -p .pocketcoder
-cp -R deploy/kubernetes .pocketcoder/kubernetes
-cp -R deploy/digitalocean .pocketcoder/digitalocean
+```sh
+kubectl apply -k deploy/digitalocean/storage
+kubectl kustomize deploy/digitalocean/server > /tmp/pocketcoder-server.yaml
+kubectl kustomize deploy/digitalocean/bootstrap > /tmp/pocketcoder-admin.yaml
+bun run example:digitalocean:check /tmp/pocketcoder-server.yaml /tmp/pocketcoder-admin.yaml
+kubectl apply -f /tmp/pocketcoder-server.yaml
+kubectl -n pocketcoder rollout status deployment/pocketcoder-server
 ```
 
-Edit these files under `.pocketcoder/`:
+The private controller generates and stores its keys once. Its data and deletion
+journal stay on the private block volume. Never mount that volume in a workspace.
+Run one controller replica with the Recreate strategy. A block volume does not
+replace the controller writer lock. Fence a failed node before moving its volume.
 
-- `digitalocean/storage/nfs.yaml`: replace the NFS host and export path. Set
-  both storage sizes to the NFS share size.
-- `digitalocean/server/pvc-patch.yaml`: set the same PVC size.
-- `digitalocean/bootstrap/kustomization.yaml`: replace the server repository and
-  digest.
-- `digitalocean/server/kustomization.yaml`: use the same server repository and
-  digest.
-- `digitalocean/server/templates/persistent-echo.json`: replace the workspace
-  repository and digest.
-- `digitalocean/server/templates/pi-harness.json`: replace the Pi repository,
-  digest, and allowed model.
-- `digitalocean/pi-gateway/kustomization.yaml`: replace the gateway repository
-  and digest.
-- `digitalocean/pi-gateway/gateway.yaml`: set the same allowed model.
+## Claim finite owner authority
 
-Every image must use `repo@sha256:<64 lowercase hex>`. Mutable tags, repeated
-placeholder digests and unresolved `REPLACE_` values fail preflight.
-Use the same exact image for the admin Pod and server.
+After the controller is ready, use its local administration socket through an
+operator-only `kubectl exec`:
 
-Render and check every phase before applying anything:
-
-```bash
-kubectl kustomize .pocketcoder/digitalocean/storage >/tmp/pocketcoder-storage.yaml
-kubectl kustomize .pocketcoder/digitalocean/bootstrap >/tmp/pocketcoder-bootstrap.yaml
-kubectl kustomize .pocketcoder/digitalocean/server >/tmp/pocketcoder-server.yaml
-kubectl kustomize .pocketcoder/digitalocean/pi-gateway >/tmp/pocketcoder-pi-gateway.yaml
-bun run example:digitalocean:check \
-  /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-bootstrap.yaml \
-  /tmp/pocketcoder-server.yaml \
-  /tmp/pocketcoder-pi-gateway.yaml
+```sh
+kubectl -n pocketcoder exec deployment/pocketcoder-server --   pcd superuser create --dir /var/lib/pocketcoder-controller/pc_data   --automation --expires '<UTC timestamp at most 24 hours ahead>'   --request-id '<new UUID>' --json
 ```
 
-The rendered files contain no secret values.
+The token is returned once. Store it only in the operator's process or private
+credential store. Repeating the same request reconciles the issued key without
+returning its plaintext. Replace a lost key through the explicit local admin
+replacement path. Never put owner or operator authority in a workspace Secret.
 
-## Apply storage
+Port-forward the operator Service to localhost. Publish reviewed templates with
+`pcd templates import`, create an echo workspace, preserve it, and restore its
+checkpoint after moving scheduling to a different node. Readiness requires the
+verified restore and a working agent. The local equivalent is
+`bun run example:e2e:kubernetes-checkpoint`.
 
-Connect `kubectl` to the intended cluster and confirm its version and nodes:
+## Optional Pi gateway and public HTTPS
 
-```bash
-doctl kubernetes cluster kubeconfig save <cluster-name>
-kubectl version
-kubectl get nodes
-kubectl apply -k .pocketcoder/digitalocean/storage
-kubectl -n pocketcoder wait pvc/pocketcoder-workspaces \
-  --for=jsonpath='{.status.phase}'=Bound --timeout=120s
-```
+The `pi-gateway` manifests keep provider credentials outside workspace pods. Mint
+a separate workspace-scoped gateway bearer with a finite expiry before launch.
+The bearer must expire with that workspace; never reuse a standing session
+bearer across workspaces. Restricted egress and the selected RuntimeClass must
+be tested together on the actual cell.
 
-The PV uses `Retain`. Removing the Kubernetes object does not delete the NFS
-share.
+The public Service overlay requires a real DigitalOcean certificate and narrow
+`loadBalancerSourceRanges`. Review it before applying. Embedded public views
+also require a separate registrable domain and the forwarding configuration in
+[deployment.md](../../docs/deployment.md).
 
-## Create server secrets
+## Backup and cleanup
 
-Use an external secret manager when one is available. This local alternative
-uses hidden input and a mode-0700 temporary directory. Values do not enter shell
-history or the repository.
+Use `pcd backup create` to freeze and capture the controller database, keys and
+referenced archives together. Keep the deletion journal outside the backup
+rollback boundary. Encrypt off-node archives with a separately held key and
+include retained versions in account purge. Test fresh-volume restore before
+using customer data.
 
-```bash
-secret_directory="$(mktemp -d)"
-chmod 0700 "$secret_directory"
-openssl rand -base64 32 >"$secret_directory/auth-pepper"
-kubectl -n pocketcoder create secret generic pocketcoder-server \
-  --from-file=auth-pepper="$secret_directory/auth-pepper"
-rm -r -- "$secret_directory"
-unset secret_directory
-```
-
-If the Secret already exists, update it through the same trusted process. Do
-not copy its values into a manifest, ConfigMap, template, log, or report.
-
-For private images, create one namespace pull Secret from a Docker config held
-outside the repository, then attach it to both service accounts:
-
-```bash
-kubectl -n pocketcoder create secret generic pocketcoder-registry \
-  --type=kubernetes.io/dockerconfigjson \
-  --from-file=.dockerconfigjson=/path/outside/repository/config.json
-kubectl -n pocketcoder patch serviceaccount pocketcoder-controller \
-  -p '{"imagePullSecrets":[{"name":"pocketcoder-registry"}]}'
-kubectl -n pocketcoder patch serviceaccount pocketcoder-workspace \
-  -p '{"imagePullSecrets":[{"name":"pocketcoder-registry"}]}'
-```
-
-The kubelet reads this Secret. Workspace containers do not mount it, have no
-service-account token, and have no controller RBAC.
-
-## Bootstrap and start the server
-
-Run the temporary admin Pod while the controller is stopped. It mounts only
-controller data and receives no Kubernetes API token. On an existing install,
-first scale the controller to zero and wait for its old Pod to terminate.
-
-```bash
-kubectl apply -k .pocketcoder/digitalocean/bootstrap
-kubectl -n pocketcoder wait pod/pocketcoder-admin --for=condition=Ready --timeout=5m
-```
-
-## Start the controller and issue a bounded backend key
-
-Principal and key commands now use HTTP against the running controller. This
-cookbook requires a bounded owner credential from the deployment's protected
-bootstrap setup. The local socket and bootstrap envelope are part of PC-60;
-complete that setup before using a fresh account. Do not reopen the data folder
-from an admin Pod to issue keys while the controller runs.
-
-```bash
-kubectl -n pocketcoder delete pod pocketcoder-admin --wait=true
-kubectl apply -k .pocketcoder/digitalocean/server
-kubectl -n pocketcoder rollout status deployment/pocketcoder-server --timeout=5m
-kubectl -n pocketcoder port-forward service/pocketcoder-server 7080:7080
-```
-
-With the bounded owner key in `POCKETCODER_KEY`, create the backend and record its
-returned ID. Set the key expiry within the owner's remaining lifetime:
-
-```bash
-export POCKETCODER_URL=http://127.0.0.1:7080
-pcd principals create --name digitalocean-example \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
-  --templates persistent-echo,pi-harness --json
-pcd keys issue --principal-id "$BACKEND_PRINCIPAL_ID" --request-id "$ISSUANCE_ID" \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
-  --templates persistent-echo,pi-harness --expires "$SHORT_EXPIRY" --json
-```
-
-Use the returned backend key for the workload checks below. Keep it and the owner
-key outside every workspace.
-
-Keep one server replica with the `Recreate` strategy. Startup loads the seed or
-opens the existing database, checks history and applies pending migrations.
-In another terminal, check `/livez` and `/readyz` before running the flow below.
-
-## Run the echo and persistence checks
-
-First prove launch, relay, response, cancellation, and terminal state:
-
-```bash
-POCKETCODER_EXAMPLE_TEMPLATE=persistent-echo \
-POCKETCODER_EXAMPLE_EXPECT='pocketcoder example ok' \
-bun run example:e2e
-```
-
-Then create a second workspace and exercise NFS checkpoint restore. Every
-identifier below comes from JSON output, not human-formatted text.
-
-```bash
-workspace_id="$(
-  bun run pcd -- workspaces create \
-    --template persistent-echo \
-    --external-id digitalocean-persistence-check \
-    --wait --json | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.id)'
-)"
-preserve_json="$(bun run pcd -- workspaces preserve --id "$workspace_id")"
-checkpoint_id="$(
-  printf '%s' "$preserve_json" | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.checkpoint.id)'
-)"
-unset preserve_json
-
-for attempt in $(seq 1 60); do
-  checkpoint_state="$(
-    bun run pcd -- checkpoints get --id "$checkpoint_id" | \
-    bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.state)'
-  )"
-  [ "$checkpoint_state" = ready ] && break
-  [ "$checkpoint_state" = failed ] && exit 1
-  sleep 2
-done
-[ "$checkpoint_state" = ready ]
-bun run pcd -- checkpoints verify --id "$checkpoint_id"
-
-restored_workspace_id="$(
-  bun run pcd -- workspaces restore \
-    --checkpoint "$checkpoint_id" \
-    --external-id digitalocean-persistence-restore | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.workspace.id)'
-)"
-
-for attempt in $(seq 1 60); do
-  restored_state="$(
-    bun run pcd -- workspaces get --id "$restored_workspace_id" | \
-    bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.state)'
-  )"
-  [ "$restored_state" = ready ] && break
-  sleep 2
-done
-[ "$restored_state" = ready ]
-bun run pcd -- workspaces cancel --id "$restored_workspace_id"
-bun run pcd -- checkpoints delete --id "$checkpoint_id"
-```
-
-The evidence to record is the workspace id, ready time, echo response, terminal
-state, checkpoint id, and restored workspace id. Redact the machine key and
-database URL.
-
-## Run DOKS/NFS conformance
-
-Use a digest-pinned small image that contains POSIX `sh`, `stat`, and core file
-tools. This opt-in test creates server-owned opaque paths, mounts only one
-workspace `subPath`, writes as uid 10001, checks that a sibling path cannot be
-read, checks checkpoint I/O, and cleans up its Job, Pods, allocations, and
-checkpoint path even after failure.
-
-```bash
-POCKETCODER_KUBERNETES_CONFORMANCE=1 \
-POCKETCODER_KUBERNETES_NAMESPACE=pocketcoder \
-POCKETCODER_KUBERNETES_WORKSPACE_CLAIM=pocketcoder-workspaces \
-POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH=workspaces \
-POCKETCODER_KUBERNETES_CONFORMANCE_IMAGE='registry.example/conformance@sha256:<64-hex-digest>' \
-POCKETCODER_DIGITALOCEAN_REGION='<region>' \
-POCKETCODER_DIGITALOCEAN_NFS_TIER='<tier>' \
-bun test packages/drivers/src/kubernetes/kubernetes-conformance.test.ts
-```
-
-Save its JSON output with the DOKS version, region, NFS tier, path modes, and
-probe result. This real-cluster result is required before calling the example
-supported.
-
-## Run Pi remotely
-
-Follow the [Pi session guide](./PI.md) to create the short-lived gateway
-Secret, start one bounded gateway, launch Pi, connect a terminal or remote Pi
-client, and tear the session down.
-
-## Optional public HTTPS
-
-Public access is outside the default apply path. Edit
-`digitalocean/public-https/kustomization.yaml` in the ignored copy. Provide a
-real DigitalOcean certificate name and explicit source CIDRs. Preflight rejects
-unresolved certificates and `0.0.0.0/0` or `::/0`.
-
-```bash
-kubectl kustomize .pocketcoder/digitalocean/public-https \
-  >/tmp/pocketcoder-public.yaml
-bun run example:digitalocean:check \
-  /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-public.yaml
-kubectl apply -k .pocketcoder/digitalocean/public-https
-curl --fail https://<pocketcoder-host>/readyz
-```
-
-DigitalOcean terminates TLS on port 443 and forwards HTTP inside the cluster.
-Machine-key authentication still applies. See the [DOKS load balancer settings](https://docs.digitalocean.com/products/kubernetes/how-to/configure-load-balancers/).
-
-## Cleanup
-
-Unset the short-lived key first:
-
-```bash
-unset POCKETCODER_KEY POCKETCODER_URL
-kubectl delete -k .pocketcoder/digitalocean/pi-gateway --ignore-not-found
-kubectl -n pocketcoder delete secret pocketcoder-pi-gateway-session --ignore-not-found
-kubectl delete namespace pocketcoder
-kubectl delete persistentvolume pocketcoder-digitalocean-nfs
-```
-
-The retained NFS share, controller block volume, DOKS cluster, registry,
-and load balancer can continue to incur cost. Review each one in DigitalOcean
-and delete it only through a separate, explicit operator action. Back up and
-restore the embedded database, auth pepper, signing identity and NFS checkpoints
-together while the controller is stopped. NFS alone is not disaster recovery.
+Delete owned workspace data through the API and wait for successful operations
+before removing the controller. Deleting a namespace or PVC is not proof that
+retained backups are gone. Remove the deployment and retained block volume only
+when its current deletion and backup inventory proves cleanup.

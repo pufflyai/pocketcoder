@@ -19,23 +19,6 @@ export function validDocuments() {
       automountServiceAccountToken: false,
     },
     {
-      apiVersion: "v1",
-      kind: "PersistentVolume",
-      metadata: { name: "pocketcoder-digitalocean-nfs" },
-      spec: {
-        accessModes: ["ReadWriteMany"],
-        persistentVolumeReclaimPolicy: "Retain",
-        storageClassName: "",
-        nfs: { server: "10.10.0.5", path: "/example/share" },
-      },
-    },
-    {
-      apiVersion: "v1",
-      kind: "PersistentVolumeClaim",
-      metadata: { name: "pocketcoder-workspaces" },
-      spec: { accessModes: ["ReadWriteMany"], storageClassName: "" },
-    },
-    {
       apiVersion: "apps/v1",
       kind: "Deployment",
       metadata: { name: "pocketcoder-server" },

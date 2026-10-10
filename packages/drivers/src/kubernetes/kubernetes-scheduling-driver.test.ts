@@ -22,8 +22,10 @@ async function fakeKubectl() {
     script,
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
-const input = await Bun.stdin.text();
-appendFileSync(${JSON.stringify(log)}, input + "\\n");
+const args = process.argv.slice(2);
+const input = (args.includes("create") || args.includes("apply")) ? await Bun.stdin.text() : "";
+if (input) appendFileSync(${JSON.stringify(log)}, input + "\\n");
+if (args.includes("create")) console.log(JSON.stringify({ metadata: { uid: "secret-uid", resourceVersion: "1" } }));
 `,
     { mode: 0o755 },
   );

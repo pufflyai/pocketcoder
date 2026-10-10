@@ -6,6 +6,7 @@ import type {
   WarmRuntimeLaunch,
   WorkspaceDriver,
   WorkspaceLaunch,
+  WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
 import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
 import type { RegistryResolver } from "../registry/registry";
@@ -17,7 +18,7 @@ import {
   readTerminationEvidence,
   retainNodeIdentities,
 } from "./kubernetes-evidence";
-import { KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
+import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { workspaceJobManifest } from "./kubernetes-manifests";
 import { applyRegistrySecret } from "./kubernetes-registry";
 import {
@@ -26,6 +27,12 @@ import {
   validateToleration,
 } from "./kubernetes-scheduling";
 import { stopKubernetesJob } from "./kubernetes-stop";
+import {
+  claimLaunchPhase,
+  LAUNCH_PHASE,
+  type LaunchMetadata,
+  uncommittedKubernetesProvider,
+} from "./kubernetes-uncommitted";
 import { createKubernetesWarm } from "./kubernetes-warm";
 
 export {
@@ -48,6 +55,7 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly namespace: string;
   private readonly kubectlBin: string;
   private readonly serviceAccountName: string | undefined;
+  private readonly runtimeClassName: string | undefined;
   private readonly nodeSelector: Record<string, string> | undefined;
   private readonly tolerations: KubernetesToleration[] | undefined;
   private readonly imagePullPolicy: "Always" | "IfNotPresent" | "Never";
@@ -65,6 +73,10 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
     this.kubectlBin = options.kubectlBin ?? "kubectl";
     this.serviceAccountName = options.serviceAccountName;
+    this.runtimeClassName = options.runtimeClassName;
+    if (this.runtimeClassName !== undefined && !isKubernetesName(this.runtimeClassName)) {
+      throw new Error("runtimeClassName must be a Kubernetes resource name");
+    }
     if (this.serviceAccountName && !isKubernetesName(this.serviceAccountName)) {
       throw new Error("serviceAccountName must be a Kubernetes resource name");
     }
@@ -96,10 +108,28 @@ export class KubernetesDriver implements WorkspaceDriver {
     const name = resourceName(workspace.id);
     const inputSecret = `${name}-input`;
     const restricted = spec.network.mode === "restricted";
-    if (restricted) await this.requireNativeSidecars();
     const egressSecret = `${name}-egress`;
     const registrySecret = `${name}-registry`;
-    try {
+    {
+      const inputManifest = {
+        apiVersion: "v1",
+        kind: "Secret",
+        metadata: {
+          name: inputSecret,
+          labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
+          annotations: { [LAUNCH_PHASE]: "prepared", [KUBERNETES_DIGEST_ANNOTATION]: workspace.templateDigest },
+        },
+        type: "Opaque",
+        stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
+      };
+      const receipt = JSON.parse(
+        await kubectl(
+          this.kubectlBin,
+          this.namespace,
+          ["create", "-f", "-", "-o", "json"],
+          JSON.stringify(inputManifest),
+        ),
+      ) as { metadata: LaunchMetadata };
       if (spec.imagePullSecret) {
         if (!this.resolveRegistry) throw new Error("Stored registry credentials are unavailable");
         await applyRegistrySecret(
@@ -110,17 +140,10 @@ export class KubernetesDriver implements WorkspaceDriver {
           await this.resolveRegistry(spec.imagePullSecret, spec.image),
         );
       }
-      const inputManifest = {
-        apiVersion: "v1",
-        kind: "Secret",
-        metadata: {
-          name: inputSecret,
-          labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
-        },
-        type: "Opaque",
-        stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
-      };
-      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(inputManifest));
+
+      if (this.runtimeClassName)
+        await kubectl(this.kubectlBin, this.namespace, ["get", "runtimeclass", this.runtimeClassName, "-o", "name"]);
+      if (restricted) await this.requireNativeSidecars();
       if (restricted) {
         await kubectl(
           this.kubectlBin,
@@ -140,6 +163,7 @@ export class KubernetesDriver implements WorkspaceDriver {
 
       const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
         serviceAccountName: this.serviceAccountName,
+        runtimeClassName: this.runtimeClassName,
         nodeSelector: this.nodeSelector,
         tolerations: this.tolerations,
         imagePullPolicy: this.imagePullPolicy,
@@ -147,6 +171,12 @@ export class KubernetesDriver implements WorkspaceDriver {
         ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
         egressImage: this.egress.egressImage,
       });
+      await claimLaunchPhase(
+        (args) => kubectl(this.kubectlBin, this.namespace, args),
+        inputSecret,
+        receipt.metadata,
+        "submitting",
+      );
       await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
       return {
         kind: this.kind,
@@ -157,30 +187,37 @@ export class KubernetesDriver implements WorkspaceDriver {
         ...(restricted ? { egressSecret } : {}),
         namespace: this.namespace,
       };
-    } catch (error) {
-      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", registrySecret, "--ignore-not-found"]);
-      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]).catch(
-        () => {},
-      );
-      if (restricted) {
-        await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", egressSecret, "--ignore-not-found"]).catch(
-          () => {},
-        );
-      }
-      throw error;
     }
+  }
+
+  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest">) {
+    return uncommittedKubernetesProvider(
+      (args) => kubectl(this.kubectlBin, this.namespace, args),
+      this.namespace,
+      workspace,
+    );
+  }
+
+  uncommittedWarmProvider(runtime: { id: string; templateDigest: string }) {
+    return uncommittedKubernetesProvider(
+      (args) => kubectl(this.kubectlBin, this.namespace, args),
+      this.namespace,
+      runtime,
+      true,
+    );
   }
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
     if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
-    if (launch.template.spec.network.mode === "restricted") await this.requireNativeSidecars();
     return createKubernetesWarm(launch, {
       namespace: this.namespace,
       kubectlBin: this.kubectlBin,
       serviceAccountName: this.serviceAccountName,
+      runtimeClassName: this.runtimeClassName,
       nodeSelector: this.nodeSelector,
       tolerations: this.tolerations,
       imagePullPolicy: this.imagePullPolicy,
+      requireNativeSidecars: () => this.requireNativeSidecars(),
       captureEvidence: this.captureEvidence,
       egress: this.egress,
     });
