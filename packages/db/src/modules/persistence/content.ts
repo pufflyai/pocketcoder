@@ -1,6 +1,8 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import { and, eq, notInArray } from "drizzle-orm";
 import type { DatabaseContext, QueryContext } from "../../database/context";
+import { purgeBinaryOutputs } from "../outputs/binary-output-delete";
+import { lockStorageCapacity } from "./reservation-capacity";
 
 // Writers and purge admission take the same row lock. A delayed write cannot
 // commit after the deletion fence or race the final database cleanup.
@@ -19,19 +21,22 @@ export async function requireContentWritable(tx: QueryContext, tables: DatabaseC
   }
 }
 
-export function createContentPurge({ db, tables }: DatabaseContext) {
+export function createContentPurge(context: DatabaseContext) {
+  const { db, tables } = context;
   return {
     async listWorkspaceStorage(workspaceId: string) {
       return db.select().from(tables.workspaceStorage).where(eq(tables.workspaceStorage.workspaceId, workspaceId));
     },
     async purgeWorkspaceContent(workspaceId: string, at: Date) {
       await db.transaction(async (tx) => {
+        await lockStorageCapacity(context, tx);
         const [workspace] = await tx
           .select()
           .from(tables.workspaces)
           .where(eq(tables.workspaces.id, workspaceId))
           .for("update");
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
+        await purgeBinaryOutputs(context, tx, workspaceId, at);
         const [pending] = await tx
           .select({ id: tables.workspaceLeases.id })
           .from(tables.workspaceLeases)

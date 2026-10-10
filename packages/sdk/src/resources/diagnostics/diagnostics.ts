@@ -8,6 +8,7 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { z } from "zod";
 import { type CursorListQuery, type Page, page, queryString } from "../../transport/common";
+import { responseError } from "../../transport/errors";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
 
 class WorkspaceCursorApi<T> {
@@ -40,7 +41,17 @@ export class NetworkEventsApi extends WorkspaceCursorApi<NetworkEvent> {
 }
 
 export class OutputsApi extends WorkspaceCursorApi<OutputResource> {
+  private readonly binaryTransport: PocketCoderTransport;
+  async download(workspaceId: string, outputId: string, options: RequestOptions = {}) {
+    const response = await this.binaryTransport.raw(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}/outputs/${encodeURIComponent(outputId)}/content`,
+      options,
+    );
+    if (!response.ok) throw responseError(response, await response.json());
+    return response;
+  }
   constructor(transport: PocketCoderTransport) {
     super(transport, "outputs", OutputPageSchema);
+    this.binaryTransport = transport;
   }
 }

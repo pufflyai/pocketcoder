@@ -236,5 +236,20 @@
     "folderMillis": 1791593063000,
     "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f",
     "name": "20261010004423_puzzling_jigsaw"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"binary_outputs\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"key_id\" uuid NOT NULL,\n\t\"reservation_id\" uuid NOT NULL UNIQUE,\n\t\"connection_epoch\" integer NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"grant_digest\" bytea,\n\t\"data\" bytea,\n\t\"bytes\" integer,\n\t\"digest\" text,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"retained_until\" timestamp with time zone NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"binary_outputs_state\" CHECK (\"state\" IN ('capturing','ready','deleted')),\n\tCONSTRAINT \"binary_outputs_size\" CHECK (\"data\" IS NULL OR octet_length(\"data\") BETWEEN 1 AND 4194304),\n\tCONSTRAINT \"binary_outputs_content\" CHECK ((\"state\" = 'ready') = (\"data\" IS NOT NULL))\n);\n",
+      "\nCREATE INDEX \"binary_outputs_workspace\" ON \"binary_outputs\" (\"workspace_id\",\"state\");",
+      "\nCREATE INDEX \"binary_outputs_expiry\" ON \"binary_outputs\" (\"state\",\"expires_at\",\"retained_until\");",
+      "\nALTER TABLE \"binary_outputs\" ADD CONSTRAINT \"binary_outputs_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"binary_outputs\" ADD CONSTRAINT \"binary_outputs_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"binary_outputs\" ADD CONSTRAINT \"binary_outputs_key_id_machine_keys_id_fkey\" FOREIGN KEY (\"key_id\") REFERENCES \"machine_keys\"(\"id\");",
+      "\nALTER TABLE \"binary_outputs\" ADD CONSTRAINT \"binary_outputs_reservation_id_storage_reservations_id_fkey\" FOREIGN KEY (\"reservation_id\") REFERENCES \"storage_reservations\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791625675000,
+    "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1",
+    "name": "20261010094755_colorful_kabuki"
   }
 ]

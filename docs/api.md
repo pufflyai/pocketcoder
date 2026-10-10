@@ -450,6 +450,42 @@ Workspace gates match the relay (`workspace.not_ready`, `workspace.terminal`,
 activity for the idle timeout. Existing machine keys do not gain
 `attachments:write` automatically; operators grant it explicitly.
 
+## Screenshots
+
+`POST /v1/workspaces/{id}/display/screenshot` takes `{}` and requires
+`display:view`. The workspace must be ready and declare a desktop or browser
+display. A supervisor on protocol v11 captures the current display. The result
+is a small output reference with `kind: "screenshot"`, `id`, `workspace_id`,
+`content_type`, `bytes`, `digest` and `expires_at`. No image bytes appear in JSON.
+Capture has a 10-second deadline and a 4 MiB PNG limit. At most four captures
+run per controller and one per supervisor. A failed or canceled request may
+have captured the display; inspect outputs before retrying.
+
+`GET /v1/workspaces/{id}/outputs/{outputId}/content` requires `outputs:read`
+and workspace ownership. It returns a private PNG download with `no-store`.
+The reference also appears in the ordinary workspace outputs list.
+
+```ts
+const screenshot = await client.displays.capture(workspaceId);
+const response = await client.outputs.download(workspaceId, screenshot.id);
+const bytes = await response.arrayBuffer();
+```
+
+Before capture starts, the controller reserves 12 MiB plus 64 KiB from the
+shared workspace, principal and instance storage quotas. This covers the
+bounded image, database writes and upload staging. The full charge stays until
+retention or purge removes the bytes. Limits use `POCKETCODER_MAX_RETAINED_BYTES`
+and `POCKETCODER_MAX_RETAINED_BYTES_PER_PRINCIPAL`, with disk headroom checked
+before admission. Excess capture returns `storage.capacity_exhausted`.
+
+Screenshots expire after 24 hours. Expired bytes are unreadable immediately;
+startup and the retention sweep delete them and release their reservations.
+The admin storage prune endpoint also runs this sweep. Workspace purge deletes
+screenshots with other workspace data. Publication rechecks the current key,
+connection epoch and purge fence, so a late capture cannot restore deleted data.
+Screenshots live in the private controller database and its backups. Restored
+backups still apply retention deadlines and the existing purge journal.
+
 ## Attach, checkpoints, and restore
 
 Attach is ordinary use of the existing workspace and allowlisted relay; it

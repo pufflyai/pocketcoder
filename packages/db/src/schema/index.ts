@@ -2,6 +2,7 @@ import { pgSchema, pgTable } from "drizzle-orm/pg-core";
 import { assertValidSchema } from "../database-schema";
 import { createAccessTables } from "./access";
 import { createActivityTables } from "./activity";
+import { createBinaryOutputTables } from "./binary-outputs";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
 import { createLeaseTables } from "./leases";
 import { createPersistenceTables } from "./persistence";
@@ -25,6 +26,7 @@ export function createSchema(schema?: string) {
     ...createActivityTables(table, workspaces),
     ...persistence,
     ...reservations,
+    ...createBinaryOutputTables(table, access, workspaces, reservations),
     ...createCheckpointTransferTables(table, access, workspaces, persistence, reservations),
     ...createTransferControllerTable(table),
   };
@@ -44,6 +46,7 @@ export const {
   workspaceTerminalSessions,
   warmPoolRuntimes,
   workspaceOutputs,
+  binaryOutputs,
   workspaceConversations,
   workspaceConversationMessages,
   workspaceStateHistory,
