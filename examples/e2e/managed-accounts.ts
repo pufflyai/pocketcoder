@@ -6,6 +6,7 @@ import { createKubernetesCluster } from "./kubernetes-cluster";
 import { freePort, waitFor } from "./local-process";
 import { managerKubeconfig } from "./managed-account-kubeconfig";
 import { assertManagedIsolation, runManagedEcho } from "./managed-account-probes";
+import { assertManagedUsage } from "./managed-account-usage";
 
 const cluster = await createKubernetesCluster({ networkPolicy: true });
 const originalConfig = process.env.KUBECONFIG;
@@ -117,6 +118,7 @@ try {
   const manifest = await cluster.echoTemplate(workspace.image);
   manifest.spec.resources.ephemeralStorage = "128Mi";
   const running = await runManagedEcho(owners[0] as (typeof owners)[number], manifest);
+  await assertManagedUsage(cluster, store, first.account.id, request);
   await assertManagedIsolation(cluster, owners, running.workspaceId);
   console.log(
     JSON.stringify(
@@ -127,6 +129,8 @@ try {
         ownerBootstrap: "finite, once; lost response replaced",
         isolation: "separate controller/PGlite PVC, quota, RBAC and enforced Calico cross-account denial",
         echo: "working agent",
+        usage:
+          "one active workspace; warm capacity separate; finished and deleting pods ignored; private volume measured; retry counted once",
         runtimeClass: "pc-runc",
       },
       null,

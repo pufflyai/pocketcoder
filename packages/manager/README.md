@@ -78,3 +78,49 @@ launch jobs there. Workspaces receive no Kubernetes token or controller volume.
 
 Production layout, gVisor, encrypted account/manager backups and customer
 enablement belong to the following hosted-service tickets.
+
+## Estimated usage
+
+The manager samples each ready account at startup and once per minute. Read
+`GET /v1/accounts/{id}/usage` with the same finite operator token:
+
+```sh
+curl -H "Authorization: Bearer $OPERATOR_TOKEN" \
+  http://127.0.0.1:8092/v1/accounts/YOUR_ACCOUNT_UUID/usage
+```
+
+The response includes `estimated_workspace_seconds`, `observed_peak`,
+`estimated_warm_seconds`, `observed_warm_peak`, `volume_bytes`, `sampled_at`
+and `coverage`. Only running, non-deleting workspace containers count. Finished
+jobs retained by Kubernetes do not count. Assigned warm runtimes count as
+workspaces; available warm capacity has its own estimate and peak.
+
+Each successful count represents its UTC minute. The estimate multiplies that
+count by the minute's seconds, clipped to account creation, the retention window
+and the response time. The first observation for an account and minute wins,
+including a failed observation. Retries and manager restarts cannot add the same
+minute twice. Reads do not trigger sampling.
+
+Coverage reports the time range, expected and recorded samples, successful
+workspace and volume samples, and observed and gap seconds for each source.
+Failed observations use null values. Missed minutes, including manager downtime,
+are gaps. An estimate or peak with no successful workspace sample is null;
+a successful observation of no running workspaces is zero. `sampled_at` is the
+latest attempt, even when it failed. `volume_bytes` is null when that attempt's
+storage observation failed; it does not silently reuse an older value.
+
+Volume bytes come from `du -s -B1 -x /private` in the account controller. This is
+allocated space in its private volume, including database, checkpoints and staged
+files. It excludes workspace ephemeral storage and off-node backups. The
+controller's mode 0600 admin socket supplies warm assignment IDs; no operator
+key is minted or sent into a workspace for sampling.
+
+Samples are kept for 13 calendar months and older samples are removed on each
+sampling pass, even if no accounts are ready. The endpoint reports the retained
+window. Workspaces that start and finish between observations can be missed.
+Counts can change within a minute, and the peak is only the highest observed
+count. These figures are estimates for operators, not billing measurements.
+
+`bun run example:e2e:managed-accounts` also checks the usage endpoint with a real
+workspace, warm pod, retained finished job and deleting pod. It verifies private
+volume measurement, account separation and retry deduplication.
