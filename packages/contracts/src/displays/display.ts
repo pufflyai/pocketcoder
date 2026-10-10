@@ -1,7 +1,11 @@
 import { z } from "zod";
+import { ViewSessionSchema } from "../previews/view-session";
 
 export const DisplaySchema = z.strictObject({ mode: z.enum(["desktop", "browser"]) });
-export const DisplayOpenRequestSchema = z.strictObject({ control: z.boolean().default(false) });
+export const DisplayOpenRequestSchema = z.strictObject({
+  control: z.boolean().default(false),
+  session: ViewSessionSchema.default({ mode: "local" }),
+});
 
 export const BROWSER_WIDTH = 1280;
 export const BROWSER_HEIGHT = 800;
