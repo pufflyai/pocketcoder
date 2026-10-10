@@ -131,6 +131,13 @@ try {
   if (JSON.stringify(before) !== JSON.stringify(await identity()))
     throw new Error("Controller identity changed after preserve.");
   await controller.run(["checkpoints", "verify", "--id", preserved.checkpoint.id], ownerToken);
+  // The controller's peak memory, checked when it stops, includes this live backup.
+  const backupPath = join(directory, "backups", "controller.tar");
+  await mkdir(join(directory, "backups"), { mode: 0o700 });
+  const backup = JSON.parse(await controller.run(["backup", "create", "--out", backupPath]));
+  const verified = JSON.parse(await controller.run(["backup", "verify", backupPath]));
+  if (backup.checkpoints !== 1 || verified.snapshot_id !== backup.snapshot_id || verified.checkpoints !== 1)
+    throw new Error("Controller backup did not capture its checkpoint archive.");
   const restored = RestoreResponseSchema.parse(
     JSON.parse(
       await controller.run(
@@ -195,6 +202,12 @@ try {
         sourceId: source.id,
         destinationId: destination.id,
         checkpointId: preserved.checkpoint.id,
+        backup: {
+          bytes: backup.bytes,
+          digest: backup.digest,
+          position: backup.position,
+          checkpoints: backup.checkpoints,
+        },
         exactTree: JSON.parse(exact.stdout),
         exactBytes: Object.values(tree).reduce((total, value) => total + Buffer.from(value, "base64").length, 0),
         image: image.image,

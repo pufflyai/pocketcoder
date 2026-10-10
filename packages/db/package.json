@@ -25,7 +25,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/test-fixtures.ts",
-    "./checkpoints": "./src/checkpoints.ts"
+    "./checkpoints": "./src/checkpoints.ts",
+    "./backup": "./src/backup.ts"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -40,7 +41,8 @@
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.4"
+    "drizzle-orm": "1.0.0-rc.4",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@pstdio/pocketcoder-testkit": "workspace:*",

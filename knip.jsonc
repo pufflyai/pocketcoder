@@ -16,7 +16,7 @@
       "entry": ["src/view.ts", "**/*.test.ts"]
     },
     "packages/db": {
-      "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts"]
+      "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts", "src/backup/memory-fixture.ts"]
     },
     "packages/server": {
       "entry": ["src/**/*.test.ts", "src/persistence/checkpoint-transfer-crash-fixture.ts"]

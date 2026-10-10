@@ -61,6 +61,9 @@ export const ERROR_CODES = {
   "attachment.conflict": 409,
   "attachment.unsupported": 409,
   "attachment.interrupted": 503,
+  "maintenance.active": 503,
+  "maintenance.timeout": 503,
+  "backup.failed": 409,
   "internal.error": 500,
 } as const;
 

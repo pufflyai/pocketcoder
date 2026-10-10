@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
+import { type ControllerBackup, registerBackupRoute } from "../backup/controller-backup";
 import { startAdminSocket } from "./admin-socket";
 
 const OwnerRequestSchema = z.strictObject({
@@ -13,7 +14,12 @@ const OwnerRequestSchema = z.strictObject({
   automation: z.boolean().optional(),
   replace: z.boolean().optional(),
 });
-export async function startLocalAdmin(deps: { directory: string; store: Store; pepper: string }) {
+export async function startLocalAdmin(deps: {
+  directory: string;
+  store: Store;
+  pepper: string;
+  backup: ControllerBackup;
+}) {
   const app = new Hono();
   const store = deps.store;
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (context) => context.json({ error: "body too large" }, 413) }));
@@ -45,6 +51,7 @@ export async function startLocalAdmin(deps: { directory: string; store: Store; p
     );
     return context.json(result, result.token ? 201 : 200);
   });
+  registerBackupRoute(app, deps.backup);
   // The controller retains its writer lock until these handlers have settled.
   return startAdminSocket(deps.directory, app.fetch);
 }
