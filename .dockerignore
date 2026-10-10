@@ -5,3 +5,5 @@ deploy/image/dist
 O-37
 .git
 *.log
+pc_data/
+manager_data/

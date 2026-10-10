@@ -13,6 +13,7 @@
         "@lizenz/checker": "0.0.1",
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-db": "workspace:*",
+        "@pstdio/pocketcoder-manager": "workspace:*",
         "@pstdio/pocketcoder-remote": "workspace:*",
         "@pstdio/pocketcoder-runtime-core": "workspace:*",
         "@pstdio/pocketcoder-sdk": "workspace:*",
@@ -120,6 +121,20 @@
       "dependencies": {
         "@pstdio/pocketcoder-contracts": "workspace:*",
         "zod": "^4.3.6",
+      },
+    },
+    "packages/manager": {
+      "name": "@pstdio/pocketcoder-manager",
+      "version": "0.1.0",
+      "dependencies": {
+        "@electric-sql/pglite": "0.5.8",
+        "@pstdio/pocketcoder-db": "workspace:*",
+        "drizzle-orm": "1.0.0-rc.4",
+        "hono": "^4.8.0",
+        "zod": "^4.0.0",
+      },
+      "devDependencies": {
+        "drizzle-kit": "1.0.0-rc.4",
       },
     },
     "packages/remote": {
@@ -710,6 +725,8 @@
     "@pstdio/pocketcoder-example-oss-agentapi": ["@pstdio/pocketcoder-example-oss-agentapi@workspace:examples/harnesses/oss"],
 
     "@pstdio/pocketcoder-example-pi-agentapi": ["@pstdio/pocketcoder-example-pi-agentapi@workspace:examples/harnesses/pi"],
+
+    "@pstdio/pocketcoder-manager": ["@pstdio/pocketcoder-manager@workspace:packages/manager"],
 
     "@pstdio/pocketcoder-remote": ["@pstdio/pocketcoder-remote@workspace:packages/remote"],
 

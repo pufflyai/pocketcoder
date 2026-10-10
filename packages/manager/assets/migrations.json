@@ -1,0 +1,16 @@
+[
+  {
+    "sql": [
+      "CREATE TABLE \"accounts\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"name\" text NOT NULL,\n\t\"namespace\" text NOT NULL UNIQUE,\n\t\"request_id\" text NOT NULL UNIQUE,\n\t\"request_digest\" text NOT NULL,\n\t\"plan\" jsonb NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"bootstrap_request_id\" uuid,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"account_state\" CHECK (\"state\" in ('provisioning','ready'))\n);\n",
+      "\nCREATE TABLE \"bootstrap_requests\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"account_id\" uuid NOT NULL,\n\t\"request_id\" uuid NOT NULL,\n\t\"request_digest\" text NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"replaces_request_id\" uuid,\n\t\"state\" text NOT NULL,\n\t\"key_id\" uuid,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"bootstrap_identity\" UNIQUE(\"account_id\",\"request_id\"),\n\tCONSTRAINT \"bootstrap_state\" CHECK (\"state\" in ('pending','completed')),\n\tCONSTRAINT \"bootstrap_expiry\" CHECK (isfinite(\"expires_at\") and \"expires_at\" > \"created_at\" and \"expires_at\" <= \"created_at\" + interval '24 hours')\n);\n",
+      "\nCREATE TABLE \"operations\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"account_id\" uuid NOT NULL UNIQUE,\n\t\"state\" text NOT NULL,\n\t\"error_code\" text,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"completed_at\" timestamp with time zone,\n\tCONSTRAINT \"operation_state\" CHECK (\"state\" in ('pending','running','succeeded'))\n);\n",
+      "\nCREATE TABLE \"operators\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"digest\" text NOT NULL UNIQUE,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"operator_expiry\" CHECK (isfinite(\"expires_at\") and \"expires_at\" > \"created_at\" and \"expires_at\" <= \"created_at\" + interval '24 hours')\n);\n",
+      "\nALTER TABLE \"bootstrap_requests\" ADD CONSTRAINT \"bootstrap_requests_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\");",
+      "\nALTER TABLE \"operations\" ADD CONSTRAINT \"operations_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791631599000,
+    "hash": "62aa9d642a8050ebdf14aa8b1be413a3e31228a4c9ff8ee5661783a42603e4f5",
+    "name": "20261010112639_exotic_wallop"
+  }
+]
