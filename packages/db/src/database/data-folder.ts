@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   closeSync,
   constants,
   fchmodSync,
@@ -12,6 +11,7 @@ import {
   realpathSync,
   type Stats,
 } from "node:fs";
+import { open } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { canonicalPathCheck } from "./canonical-path";
 import { openDataDirectory } from "./directory-identity";
@@ -120,20 +120,50 @@ export function syncDirectory(directory: string) {
   }
 }
 
-export function syncSeed(directory: string) {
-  chmodSync(directory, 0o700);
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) syncSeed(path);
-    else {
-      const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+type SeedEntry = { path: string; directory: boolean };
+
+function seedEntries(directory: string): SeedEntry[] {
+  return [
+    { path: directory, directory: true },
+    ...readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      return entry.isDirectory() ? seedEntries(path) : [{ path, directory: false }];
+    }),
+  ];
+}
+
+async function syncSeedEntry(entry: SeedEntry) {
+  const handle = await open(
+    entry.path,
+    constants.O_RDONLY | (entry.directory ? constants.O_DIRECTORY : constants.O_NOFOLLOW),
+  );
+  try {
+    await handle.chmod(entry.directory ? 0o700 : 0o600);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+// Every seed file is new, so each fsync waits for a journal commit. When another
+// process shares the disk, one-at-a-time fsyncs wait for its commits too; overlapping
+// them lets one commit cover many seed files.
+const SEED_SYNC_WIDTH = 32;
+
+export async function syncSeed(directory: string) {
+  const entries = seedEntries(directory);
+  let next = 0;
+  async function syncNext() {
+    for (let entry = entries[next++]; entry; entry = entries[next++]) {
       try {
-        fchmodSync(descriptor, 0o600);
-        fsyncSync(descriptor);
-      } finally {
-        closeSync(descriptor);
+        await syncSeedEntry(entry);
+      } catch (error) {
+        next = entries.length;
+        throw error;
       }
     }
   }
-  syncDirectory(directory);
+  // The caller releases the folder lock when this fails, so every worker stops first.
+  const results = await Promise.allSettled(Array.from({ length: SEED_SYNC_WIDTH }, syncNext));
+  for (const result of results) if (result.status === "rejected") throw result.reason;
 }
