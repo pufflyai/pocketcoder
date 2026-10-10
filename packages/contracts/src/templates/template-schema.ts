@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isDuration } from "../common/duration";
 import { NetworkPolicySchema } from "../network/network";
 import { LAUNCH_MODES, OutputDeclarationSchema, PersistenceSpecSchema } from "../persistence/persistence";
+import { PreviewsSchema } from "../previews/preview";
 import { SecretNameSchema } from "../secrets/secret";
 import { isAbsolutePath, SECRET_REFERENCE_PREFIX } from "./template-constants";
 
@@ -187,6 +188,7 @@ const TemplateSpecInputSchema = z
     agent: AgentSchema.optional(),
     harness: HarnessSchema.optional(),
     terminal: TerminalSchema.optional(),
+    previews: PreviewsSchema.optional(),
     env: EnvSchema.default({}),
     resources: ResourcesSchema,
     timeouts: TimeoutsSchema.prefault({}),

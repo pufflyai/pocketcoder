@@ -22,6 +22,7 @@ export const SCOPES = [
   "conversations:write",
   "conversations:delete",
   "services:relay",
+  "previews:open",
   "attachments:write",
   "logs:read",
   "network:read",
