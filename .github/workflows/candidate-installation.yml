@@ -1,0 +1,104 @@
+name: candidate installation
+
+on:
+  workflow_call:
+
+permissions: {}
+
+env:
+  BUN_VERSION: 1.4.2
+  CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Pack candidate packages from the same source commit
+        run: bun run candidate:packages pack "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
+
+  install:
+    needs: packages
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
+          - { runner: macos-15, platform: darwin, arch: arm64 }
+          - { runner: macos-15-intel, platform: darwin, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocketcoder-${{ env.CANDIDATE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native
+      - name: Start a real Docker daemon on macOS
+        if: matrix.platform == 'darwin'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install colima docker qemu lima-additional-guestagents
+          # Cross-architecture QEMU uses software emulation on hosted Apple Silicon.
+          # It does not require nested virtualization. Only Linux runs workspace images.
+          colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
+          docker info
+      - name: Verify downloaded binary startup, owner, restart and backup recovery
+        run: |
+          mkdir -p "$RUNNER_TEMP/validation"
+          bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/native.json"
+          cat "$RUNNER_TEMP/validation/native.json"
+      - uses: actions/download-artifact@v4
+        if: matrix.platform == 'linux'
+        with:
+          name: pocketcoder-fixture-${{ env.CANDIDATE_COMMIT }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/fixture
+      - name: Run downloaded Docker workspace, preserve and resume
+        if: matrix.platform == 'linux'
+        run: |
+          bun run example:e2e:native -- --binary "$RUNNER_TEMP/native/pocketcoder" --fixture "$RUNNER_TEMP/fixture" > "$RUNNER_TEMP/validation/workspace.json"
+          cat "$RUNNER_TEMP/validation/workspace.json"
+      # Native startup does not need the large package tarballs or their disk writes.
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/packages
+      - name: Install downloaded CLI, SDK and remote packages in a clean consumer
+        run: |
+          bun run candidate:packages check "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/packages.log"
+          cat "$RUNNER_TEMP/validation/packages.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocketcoder-installation-${{ env.CANDIDATE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/validation
+          if-no-files-found: warn
+      - name: Remove macOS Docker daemon
+        if: always() && matrix.platform == 'darwin'
+        run: colima delete --force

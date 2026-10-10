@@ -31,6 +31,9 @@
     "packages/remote": {
       "entry": ["src/**/*.test.ts"]
     },
+    "packages/cli": {
+      "entry": ["src/bin.ts", "src/**/*.test.ts"]
+    },
     "examples/harnesses/*": {
       "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]
     },

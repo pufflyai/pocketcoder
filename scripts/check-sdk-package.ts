@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { checkPackageCommands } from "./check-package-commands";
 
 async function run(command: string[], cwd: string) {
   const child = Bun.spawn(command, { cwd, stdout: "inherit", stderr: "inherit" });
@@ -8,7 +9,7 @@ async function run(command: string[], cwd: string) {
   if (exitCode !== 0) throw new Error(`${command[0]} exited with code ${exitCode}`);
 }
 
-async function pack(packageDir: string, destination: string, label: string) {
+export async function packPackage(packageDir: string, destination: string, label: string) {
   const before = new Set(await readdir(destination));
   await run(["bun", "pm", "pack", "--destination", destination, "--ignore-scripts", "--quiet"], resolve(packageDir));
   const tarballName = (await readdir(destination)).find((entry) => entry.endsWith(".tgz") && !before.has(entry));
@@ -36,13 +37,23 @@ export async function installPackedDependencies(tempDir: string, tarballs: Recor
   await run(["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")], tempDir);
 }
 
-export async function checkSdkPackage(packageDir: string, remotePackageDir?: string) {
+export async function checkSdkPackage(packageDir: string, remotePackageDir: string, cliPackageDir: string) {
+  const directory = await mkdtemp(join(tmpdir(), "pocketcoder-package-tarballs-"));
+  try {
+    await checkPackedPackages({
+      "@pstdio/pocketcoder-sdk": await packPackage(packageDir, directory, "SDK"),
+      "@pstdio/pocketcoder-remote": await packPackage(remotePackageDir, directory, "remote"),
+      "@pstdio/pocketcoder-cli": await packPackage(cliPackageDir, directory, "CLI"),
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+export async function checkPackedPackages(tarballs: Record<string, string>) {
   const tempDir = await mkdtemp(join(tmpdir(), "pocketcoder-sdk-consumer-"));
 
   try {
-    const sdkTarball = await pack(packageDir, tempDir, "SDK");
-    const remoteTarball = remotePackageDir ? await pack(remotePackageDir, tempDir, "remote") : undefined;
-
     await Bun.write(
       join(tempDir, "tsconfig.json"),
       `${JSON.stringify(
@@ -75,7 +86,6 @@ const useWorkspace = (workspace: WorkspaceResource) => workspace.id;
 const client = new PocketCoderClient({
   baseUrl: "https://pocketcoder.test",
   apiKey: "workspace-scoped-key",
-  fetch: async () => Response.json({ items: [], next_cursor: null }),
 });
 const resolver = new WorkspaceTurnResolver({
   client,
@@ -102,20 +112,11 @@ assert.equal(typeof createRemoteExtension, "function");
 assert.equal(typeof createRemoteExtension(), "function");
 
 let request;
-const client = new PocketCoderClient({
-  baseUrl: "https://pocketcoder.test/",
-  apiKey: "workspace-scoped-key",
-  fetch: async (input, init) => {
-    request = new Request(input, init);
-    return Response.json({ items: [], next_cursor: null });
-  },
+const server = createServer((incoming, response) => {
+  request = incoming;
+  response.setHeader("content-type", "application/json");
+  response.end(JSON.stringify({ items: [], next_cursor: null }));
 });
-
-assert.deepEqual(await client.templates.list(), []);
-assert.equal(request.url, "https://pocketcoder.test/v1/templates?limit=100");
-assert.equal(request.headers.get("authorization"), "Bearer workspace-scoped-key");
-
-const server = createServer();
 server.listen(0, "127.0.0.1");
 await once(server, "listening");
 const address = server.address();
@@ -123,6 +124,13 @@ assert(address && typeof address !== "string");
 
 let upgradeSocket;
 try {
+  const client = new PocketCoderClient({
+    baseUrl: \`http://127.0.0.1:\${address.port}\`,
+    apiKey: "workspace-scoped-key",
+  });
+  assert.deepEqual(await client.templates.list(), []);
+  assert.equal(request.url, "/v1/templates?limit=100");
+  assert.equal(request.headers.authorization, "Bearer workspace-scoped-key");
   const upgrade = once(server, "upgrade", { signal: AbortSignal.timeout(1_000) });
   const terminalClient = new PocketCoderClient({
     baseUrl: \`http://127.0.0.1:\${address.port}\`,
@@ -140,21 +148,16 @@ try {
 `,
     );
 
-    await installPackedDependencies(tempDir, {
-      "@pstdio/pocketcoder-sdk": sdkTarball,
-      ...(remoteTarball ? { "@pstdio/pocketcoder-remote": remoteTarball } : {}),
-    });
-    if (remoteTarball) {
-      const declaration = await readFile(
-        join(tempDir, "node_modules", "@pstdio", "pocketcoder-remote", "dist", "extension.d.ts"),
-        "utf8",
-      );
-      if (/pocketcoder-contracts|(?:^|\/)packages\/|(?:^|\/)src\//.test(declaration)) {
-        throw new Error("remote extension declaration refers to monorepo-only sources");
-      }
+    await installPackedDependencies(tempDir, tarballs);
+    const declaration = await readFile(
+      join(tempDir, "node_modules", "@pstdio", "pocketcoder-remote", "dist", "extension.d.ts"),
+      "utf8",
+    );
+    if (/pocketcoder-contracts|(?:^|\/)packages\/|(?:^|\/)src\//.test(declaration)) {
+      throw new Error("remote extension declaration refers to monorepo-only sources");
     }
     await run([join(import.meta.dir, "../node_modules/.bin/tsc"), "--project", "tsconfig.json"], tempDir);
-    await run(["node", "consumer.mjs"], tempDir);
+    await checkPackageCommands(tempDir);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
