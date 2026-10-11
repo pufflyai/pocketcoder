@@ -40,7 +40,8 @@ function remoteStream(
   attachmentQueue: string[],
   model: Model<Api>,
   context: Context,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  interruptOnAbort: () => boolean,
   onOutputStart?: () => void,
   onResolved?: (source: SessionTarget, workspace: Parameters<LiveSession["applyResolved"]>[2]) => Promise<void>,
 ): AssistantMessageEventStream {
@@ -72,6 +73,7 @@ function remoteStream(
             attachmentBatch,
             prompt: userTextOf(context),
             signal,
+            interruptOnAbort,
             onSnapshot,
           });
           if (result.workspace) await onResolved?.(source, result.workspace);
@@ -130,6 +132,10 @@ export function createRemoteExtension(options: RemoteExtensionOptions = {}) {
       ? new LiveSession(targets, (workspace, ui) => new StatusPoller(controlPlane, workspace, ui))
       : undefined;
     let activeContext: ExtensionContext | undefined;
+    // Pi announces a quit before it aborts the response. Quitting is a
+    // disconnect, so the remote turn keeps running; Escape and session
+    // switches abort without it and stop the remote turn.
+    let quitting = false;
 
     pi.registerProvider(PROVIDER, {
       name: "PocketCoder remote agent",
@@ -157,6 +163,7 @@ export function createRemoteExtension(options: RemoteExtensionOptions = {}) {
           model,
           context,
           streamOptions?.signal,
+          () => !quitting,
           () => activeContext?.ui.setWorkingVisible(false),
           async (source, workspace) => {
             await liveSession?.applyResolved(sessionIdentity, source, workspace);
@@ -203,7 +210,8 @@ export function createRemoteExtension(options: RemoteExtensionOptions = {}) {
       context.ui.setWorkingVisible(true);
       liveSession?.resume();
     });
-    pi.on("session_shutdown", async () => {
+    pi.on("session_shutdown", async (event) => {
+      if (event.reason === "quit") quitting = true;
       activeContext = undefined;
       await liveSession?.shutdown();
     });

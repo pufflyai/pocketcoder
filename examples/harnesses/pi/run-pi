@@ -23,6 +23,15 @@ PI_MAX_TOKENS="${PI_GATEWAY_MAX_TOKENS:-16384}"
 
 mkdir -p "$PI_AGENT_DIR"
 
+# PocketCoder interrupts a turn by sending Escape. Two Escapes within 500 ms on
+# an empty editor would open Pi's /tree menu and swallow the next message.
+bun -e '
+const path = process.argv[1];
+const file = Bun.file(path);
+const settings = (await file.exists()) ? await file.json() : {};
+await Bun.write(path, `${JSON.stringify({ ...settings, doubleEscapeAction: "none" }, null, 2)}\n`);
+' "$PI_AGENT_DIR/settings.json"
+
 bun -e '
 const [path, provider, baseUrl, model, api, apiKey, contextWindow, maxTokens] = process.argv.slice(1);
 const positiveInteger = (value, name) => {

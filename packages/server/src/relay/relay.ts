@@ -17,9 +17,10 @@ export interface RelayDeps {
 const SAFE_RESPONSE_HEADERS = ["content-type", "cache-control"];
 type RelayMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type BufferedRelayResponse = Awaited<ReturnType<Hub["relay"]>>;
+type RelayRequest = Parameters<Hub["relay"]>[1];
 type RelayResponseHeaders = { headers: Record<string, string> };
 
-function assertRelayReady(row: WorkspaceRow) {
+export function assertRelayReady(row: WorkspaceRow) {
   if (row.purgeRequestedAt) throw new ApiError("operation.conflict", "Workspace content is being purged.");
   if (isTerminal(row.state)) throw new ApiError("workspace.terminal", "This workspace has ended.");
   if (row.state !== "ready") throw new ApiError("workspace.not_ready", "Workspace is not ready.");
@@ -178,13 +179,21 @@ export function relayHandler(
     if (match.route.responseMode === "stream") {
       return await streamedRelayResponse(deps, id, request, match.route.maxResponseBytes, c.req.raw.signal);
     }
-    const response = await deps.hub.relay(id, request);
-    const bodyBytes = validateRelayResponse(response, match.route.maxResponseBytes);
-    // Relay activity keeps the workspace from idling out.
-    void deps.store.updateWorkspace(id, { lastActivityAt: new Date() }, new Date()).catch(() => {});
-    return new Response(bodyBytes, {
-      status: response.status ?? 200,
-      headers: safeResponseHeaders(response),
-    });
+    const response = await relayBuffered(deps, id, request, match.route.maxResponseBytes);
+    return new Response(response.body, { status: response.status, headers: response.headers });
   };
+}
+
+// Sends one buffered request to a workspace service over the live connection.
+export async function relayBuffered(
+  deps: RelayDeps,
+  workspaceId: string,
+  request: RelayRequest,
+  maxResponseBytes: number,
+) {
+  const response = await deps.hub.relay(workspaceId, request);
+  const body = validateRelayResponse(response, maxResponseBytes);
+  // Relay activity keeps the workspace from idling out.
+  void deps.store.updateWorkspace(workspaceId, { lastActivityAt: new Date() }, new Date()).catch(() => {});
+  return { status: response.status ?? 200, headers: safeResponseHeaders(response), body };
 }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OSS_FIXTURE_CONTENT, startFakeOssGateway } from "../harnesses/oss/fake-gateway";
-import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
+import { PI_FIXTURE_CONTENT, PI_INTERRUPT_PROMPT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
@@ -277,6 +277,7 @@ try {
       readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
       messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
       expectedLiveUpdates: usesFakeGateway ? 2 : undefined,
+      interruptPrompt: harness === "pi" && usesFakeGateway ? PI_INTERRUPT_PROMPT : undefined,
     });
     console.log("PocketCoder local harness E2E passed:");
     console.log(JSON.stringify(report, null, 2));

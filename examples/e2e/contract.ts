@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { proveTurnInterrupt } from "./contract-interrupt";
 import {
   errorBody,
   messageError,
@@ -23,6 +24,9 @@ export interface HarnessE2EConfig {
   messageTimeoutMs?: number;
   pollIntervalMs?: number;
   expectedLiveUpdates?: number;
+  // A prompt whose turn only ends when interrupted. When set, the run
+  // interrupts it before sending `prompt` in the same workspace.
+  interruptPrompt?: string;
 }
 
 export interface HarnessWorkspaceConfig {
@@ -51,6 +55,7 @@ export interface HarnessE2EReport {
   responseText: string;
   durableConversationMessages: number | null;
   liveUpdates: number | null;
+  interruptSettledInMs: number | null;
 }
 
 interface WorkspaceResource {
@@ -234,6 +239,10 @@ export async function runHarnessE2E(config: HarnessE2EConfig, fetchImpl: FetchLi
       "the agent to be ready for input",
     );
 
+    const interrupted = config.interruptPrompt
+      ? await proveTurnInterrupt(request, workspaceId, config.interruptPrompt, 30_000)
+      : null;
+
     const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
     const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
     const baselineId = before.reduce((maximum, message) => Math.max(maximum, messageId(message)), -1);
@@ -326,6 +335,7 @@ export async function runHarnessE2E(config: HarnessE2EConfig, fetchImpl: FetchLi
       responseText: observedText,
       durableConversationMessages,
       liveUpdates,
+      interruptSettledInMs: interrupted?.settledInMs ?? null,
     };
   } finally {
     if (workspace && !completed) {

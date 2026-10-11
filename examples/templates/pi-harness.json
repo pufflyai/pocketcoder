@@ -6,7 +6,7 @@
     "description": "Pi CLI integrated through AgentAPI"
   },
   "spec": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "image": "example.invalid/pocketcoder-pi@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     "setup": [
       {
@@ -20,6 +20,7 @@
       "type": "custom",
       "model": "replace-with-your-model",
       "command": ["/usr/local/bin/run-pi"],
+      "interruptKeys": "\u001b",
       "cwd": "/workspace",
       "env": {
         "PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
