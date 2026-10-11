@@ -130,6 +130,13 @@ jobs:
           result=$?
           printf 'Diagnostic rerun exit: %s. Original installation failure remains blocking.\n' "$result" \
             >> "$RUNNER_TEMP/validation/diagnostic/result.log"
+      - name: Profile bootstrap phases with a distinct diagnostic executable
+        if: always() && matrix.platform == 'linux' && github.event.inputs.native-diagnostics == 'true'
+        run: |
+          bun scripts/native-startup-profile.ts "$RUNNER_TEMP/validation/diagnostic/profile"
+          bun "$RUNNER_TEMP/validation/diagnostic/profile/runner.js" \
+            "$RUNNER_TEMP/validation/diagnostic/profile/pocketcoder" \
+            > "$RUNNER_TEMP/validation/diagnostic/profile/result.log" 2>&1
       - uses: actions/download-artifact@v4
         if: matrix.platform == 'linux'
         with:

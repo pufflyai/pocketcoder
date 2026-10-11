@@ -1,4 +1,10 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["./candidate-images.ts", "./publish-candidate-images.ts", "./image-*.ts", "../examples/e2e/image-*.ts"]
+  "include": [
+    "./candidate-images.ts",
+    "./publish-candidate-images.ts",
+    "./image-*.ts",
+    "./native-startup-*.ts",
+    "../examples/e2e/image-*.ts"
+  ]
 }
