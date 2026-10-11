@@ -2,6 +2,7 @@ import type { Account } from "../database/store";
 import { createBindingLabel, createNamespaceLabel } from "../purge/namespace-binding";
 import { accountController } from "./controller";
 import { accountNetworkPolicies } from "./network";
+import { publicHostManifests } from "./public-hosts";
 export function accountManifests(
   account: Account,
   apiAddresses: string[],
@@ -84,5 +85,6 @@ export function accountManifests(
     },
     ...accountNetworkPolicies(account, apiAddresses, storageDestinations),
     ...accountController(account),
+    ...publicHostManifests(account),
   ];
 }

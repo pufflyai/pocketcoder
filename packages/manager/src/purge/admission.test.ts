@@ -30,7 +30,7 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
         runtimeClassName: "pc-runc",
       };
       const requestId = "private original request";
-      const created = await store.createAccount(requestId, { name: "private account label" }, config, expiry);
+      const created = await store.createAccount(requestId, { name: "private account label" }, () => config, expiry);
       await store.finishAccount(created.account.id, created.operation.id);
       const app = createManagerApp(store, config);
       const headers = {

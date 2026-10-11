@@ -60,10 +60,10 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
       const created = await store.createAccount(
         requestId,
         { name: "private label" },
-        {
+        () => ({
           controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`,
           runtimeClassName: "pc-runc",
-        },
+        }),
         expiry,
       );
       await store.finishAccount(created.account.id, created.operation.id);

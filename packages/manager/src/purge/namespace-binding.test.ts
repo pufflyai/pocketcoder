@@ -13,10 +13,10 @@ test("the real account namespace carries an opaque, valid original CREATE reques
       const { account } = await accountRepository(context).createAccount(
         requestId,
         { name: "private label" },
-        {
+        () => ({
           controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`,
           runtimeClassName: "pc-runc",
-        },
+        }),
         new Date(Date.now() + 60_000),
       );
       const namespace = accountManifests(account, ["10.0.0.1"]).find((resource) => resource.kind === "Namespace");

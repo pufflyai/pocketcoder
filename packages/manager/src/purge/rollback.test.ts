@@ -32,7 +32,7 @@ test.skipIf(!enabled)(
       const expiry = new Date(Date.now() + 60_000);
       const token = await store.createOperator(expiry);
       const requestId = "customer supplied request text must not survive purge";
-      const created = await store.createAccount(requestId, { name: "private account name" }, config, expiry);
+      const created = await store.createAccount(requestId, { name: "private account name" }, () => config, expiry);
       expect((await store.pendingOperations()).map((operation) => operation.id)).toEqual([created.operation.id]);
       await store.close();
       store = undefined;

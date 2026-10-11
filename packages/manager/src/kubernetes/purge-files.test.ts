@@ -10,11 +10,11 @@ test("managed controllers without backups mount private purge authority outside 
     const { account } = await accountRepository(context).createAccount(
       randomUUID(),
       { name: "purge only" },
-      {
+      () => ({
         controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`,
         runtimeClassName: "pc-runc",
         purgeAuthority: true,
-      },
+      }),
       new Date(Date.now() + 60_000),
     );
     const resources = accountManifests(account, ["10.0.0.1"], [{ cidr: "192.0.2.1/32", port: 443 }]);

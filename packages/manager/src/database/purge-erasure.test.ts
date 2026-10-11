@@ -26,8 +26,8 @@ test("purge erases account content and request aliases atomically, including a s
     };
     const accounts = accountRepository(context);
     const bootstrap = bootstrapRepository(context);
-    const created = await accounts.createAccount(requestId, { name: "private account content" }, plan, expiry);
-    const other = await accounts.createAccount(randomUUID(), { name: "another account" }, plan, expiry);
+    const created = await accounts.createAccount(requestId, { name: "private account content" }, () => plan, expiry);
+    const other = await accounts.createAccount(randomUUID(), { name: "another account" }, () => plan, expiry);
     const operatorToken = await bootstrap.createOperator(expiry);
     await accounts.finishAccount(created.account.id, created.operation.id);
     const owner = await bootstrap.beginBootstrap(
@@ -113,7 +113,12 @@ test("purge erases account content and request aliases atomically, including a s
     await purgeErasure(context)(intent);
     expect(await accountRepository(context).getAccount(created.account.id)).toBeNull();
     // A different UUID from an earlier empty snapshot still belongs to the same original request.
-    const alias = await accountRepository(context).createAccount(requestId, { name: "stale alias" }, plan, expiry);
+    const alias = await accountRepository(context).createAccount(
+      requestId,
+      { name: "stale alias" },
+      () => plan,
+      expiry,
+    );
     expect(alias.account.id).not.toBe(intent.accountId);
     await purgeErasure(context)(intent);
     expect(await accountRepository(context).getAccount(alias.account.id)).toBeNull();

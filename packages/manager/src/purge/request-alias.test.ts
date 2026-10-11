@@ -47,7 +47,7 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
       await cp(source, stale, { recursive: true });
       const requestId = "original private create request";
       store = await ManagerStore.create(source);
-      const original = await store.createAccount(requestId, { name: "private label" }, config, expiry);
+      const original = await store.createAccount(requestId, { name: "private label" }, () => config, expiry);
       await store.close();
       store = undefined;
       const owned = fixture;

@@ -97,10 +97,10 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
         controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`,
         runtimeClassName: "pc-runc",
       };
-      const other = await store.createAccount(randomUUID(), { name: "other" }, config, expiresAt);
+      const other = await store.createAccount(randomUUID(), { name: "other" }, () => config, expiresAt);
       const requestId = randomUUID();
       armed = true;
-      creating = store.createAccount(requestId, { name: "target" }, config, expiresAt);
+      creating = store.createAccount(requestId, { name: "target" }, () => config, expiresAt);
       const createOutcome = creating.then(
         () => null,
         (error: unknown) => error,

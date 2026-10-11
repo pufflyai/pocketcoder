@@ -17,7 +17,7 @@ test("one backup operation survives manager restart and blocks a concurrent susp
       runtimeClassName: "pc-runc",
       offNodeBackups: true,
     };
-    const created = await store.createAccount("one", { name: "one" }, config, expiry);
+    const created = await store.createAccount("one", { name: "one" }, () => config, expiry);
     await store.finishAccount(created.account.id, created.operation.id);
     const headers = { authorization: `Bearer ${token}`, "idempotency-key": "backup-one" };
     const path = `/v1/accounts/${created.account.id}/backups`;

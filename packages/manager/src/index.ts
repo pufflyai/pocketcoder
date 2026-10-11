@@ -32,6 +32,9 @@ if (process.argv[2] === "operator") {
     ...(process.env.POCKETCODER_MANAGER_STORAGE_CLASS
       ? { storageClassName: process.env.POCKETCODER_MANAGER_STORAGE_CLASS }
       : {}),
+    ...(process.env.POCKETCODER_MANAGER_PUBLIC_HOSTS
+      ? { publicHosts: JSON.parse(process.env.POCKETCODER_MANAGER_PUBLIC_HOSTS) }
+      : {}),
   });
   if (!purge) throw new Error("Private purge authority is required.");
   const physical = await loadPurgePhysicalStorage(purge, dataDir);

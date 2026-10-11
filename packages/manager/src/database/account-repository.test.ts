@@ -19,15 +19,15 @@ test("only a new durable account insertion admits never-started provisioning his
       offNodeBackups: false,
     };
     const expiry = new Date(Date.now() + 60_000);
-    const created = await accountRepository(context).createAccount(requestId, input, plan, expiry);
+    const created = await accountRepository(context).createAccount(requestId, input, () => plan, expiry);
     expect(created).toMatchObject({ created: true });
-    const prior = await accountRepository(context).createAccount(requestId, input, plan, expiry);
+    const prior = await accountRepository(context).createAccount(requestId, input, () => plan, expiry);
     expect(prior).toMatchObject({ created: false });
     expect(prior.account.id).toBe(created.account.id);
     expect(prior.operation.id).toBe(created.operation.id);
     await context.close();
     context = await managerContext(directory);
-    const reopened = await accountRepository(context).createAccount(requestId, input, plan, expiry);
+    const reopened = await accountRepository(context).createAccount(requestId, input, () => plan, expiry);
     expect(reopened).toMatchObject({ created: false });
     expect(reopened.account.id).toBe(created.account.id);
     expect(reopened.operation.id).toBe(created.operation.id);
