@@ -10,9 +10,12 @@ From the 1.0 integration checkout:
 
 ```sh
 bun install
+bun install --cwd .pstdio/extensions/pocketcoder
 bun run build:native
 pst extensions dev .pstdio/extensions/pocketcoder
 ```
+
+The extension keeps its own dependencies and `bun.lock`, so the root `bun install` does not install them. Install them before you run the root typecheck or tests.
 
 Use the absolute path to `out/native/pocketcoder` in the launch form, or install a tested 1.0 candidate as `pocketcoder` on PATH. The extension does not download or update executables.
 
