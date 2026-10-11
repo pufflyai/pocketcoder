@@ -112,6 +112,7 @@ export class PersistenceMaintenanceService {
       "Changed delete request.",
     );
     if (replay) {
+      await this.context.deps.store.acknowledgeJournal?.();
       if (replay.state === "succeeded") {
         const checkpoint = await this.context.deps.store.getCheckpoint(checkpointId);
         if (checkpoint) await cleanupPreservedStorage(this.context, checkpoint.storageId);
@@ -130,20 +131,22 @@ export class PersistenceMaintenanceService {
       id: randomUUID(),
       principalId: principal.id,
       kind: "delete",
-      state: "running",
+      state: "pending",
       idempotencyKey,
       requestDigest,
       workspaceId: checkpoint.workspaceId,
       checkpointId,
       resultWorkspaceId: null,
       reasonCode: null,
-      attemptCount: 1,
+      attemptCount: 0,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
     });
     if (inserted.conflict) throw new ApiError("idempotency.conflict", "Changed delete request.");
     if (!inserted.created) return inserted.operation;
+    await this.context.deps.store.acknowledgeJournal?.();
+    await this.context.deps.store.updateOperation(inserted.operation.id, { state: "running", attemptCount: 1 }, now);
     await this.context.deps.store.updateCheckpoint(checkpoint.id, { state: "deleting" }, now);
     const deleting = await this.context.deps.store.getCheckpoint(checkpoint.id);
     if (deleting) await this.context.emitCheckpointEvent("checkpoint.deleting", deleting);

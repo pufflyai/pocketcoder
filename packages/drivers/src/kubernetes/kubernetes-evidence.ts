@@ -1,11 +1,12 @@
 import { ADMISSION_ANNOTATION, hasNoPodAdmission } from "./kubernetes-empty-evidence";
 import type { ContainerStatus, Resource } from "./kubernetes-evidence-types";
+import { deleteResource, type KubernetesCommand } from "./kubernetes-identity";
 
 export const EVIDENCE_FINALIZER = "pocketcoder.dev/termination-evidence";
 export const EVIDENCE_ANNOTATION = "pocketcoder.dev/termination-evidence";
 const NODE_ANNOTATION = "pocketcoder.dev/termination-node";
 
-type Command = (args: string[]) => Promise<string>;
+type Command = KubernetesCommand;
 
 async function patch(run: Command, kind: string, name: string, value: unknown) {
   await run(["patch", kind, name, "--type=merge", "-p", JSON.stringify(value)]);
@@ -22,7 +23,7 @@ function owned(pod: Resource, uid: string) {
   return pod.metadata.ownerReferences?.some((owner) => owner.uid === uid && owner.kind === "Job" && owner.controller);
 }
 
-function stopped(pod: Resource) {
+export function podHasStopped(pod: Resource) {
   const groups = [
     [pod.spec.containers, pod.status?.containerStatuses],
     [pod.spec.initContainers, pod.status?.initContainerStatuses],
@@ -47,7 +48,7 @@ function stopped(pod: Resource) {
   );
 }
 
-function podEvidence(pod: Resource) {
+export function podTerminationProof(pod: Resource) {
   // Never persist launch environment, volumes or delegated input in evidence.
   return {
     metadata: {
@@ -213,18 +214,25 @@ async function stoppedJob(run: Command, name: string, uid: string, deadline: num
   }
 }
 
-export async function captureTermination(run: Command, name: string, graceSeconds: number) {
+export async function captureTermination(
+  run: Command,
+  name: string,
+  graceSeconds: number,
+  jobUid: string,
+  namespace: string,
+) {
   const output = await run(["get", "job", name, "--ignore-not-found", "-o", "json"]);
   if (!output) throw new Error("Termination evidence unavailable");
   const job = JSON.parse(output) as Resource;
   if (!job.metadata.uid) throw new Error("Termination evidence unavailable");
+  if (!jobUid || job.metadata.uid !== jobUid) throw new Error("Termination provider changed");
   if (job.metadata.annotations?.[EVIDENCE_ANNOTATION]) {
     if (!matchingProof(job, job.metadata.uid)) throw new Error("Termination provider changed");
     await releasePods(run, name, job.metadata.uid);
     return;
   }
   try {
-    await captureJobTermination(run, name, graceSeconds, job, job.metadata.uid);
+    await captureJobTermination(run, name, graceSeconds, job, jobUid, namespace);
   } catch (error) {
     const disappeared =
       error instanceof Error &&
@@ -234,7 +242,14 @@ export async function captureTermination(run: Command, name: string, graceSecond
   }
 }
 
-async function captureJobTermination(run: Command, name: string, graceSeconds: number, job: Resource, jobUid: string) {
+async function captureJobTermination(
+  run: Command,
+  name: string,
+  graceSeconds: number,
+  job: Resource,
+  jobUid: string,
+  namespace: string,
+) {
   const initial = await podsFor(run, name);
   if (!initial.length) {
     if (await retainedProof(run, name, jobUid)) {
@@ -256,15 +271,7 @@ async function captureJobTermination(run: Command, name: string, graceSeconds: n
     retained.some((pod) => !initial.some((old) => old.metadata.uid === pod.metadata.uid))
   )
     throw new Error("Termination provider changed");
-  await run([
-    "delete",
-    "pod",
-    "-l",
-    `job-name=${name}`,
-    `--grace-period=${graceSeconds}`,
-    "--wait=false",
-    "--ignore-not-found",
-  ]);
+  await deleteRetainedPods(run, namespace, retained, graceSeconds);
   const deadline = Date.now() + (graceSeconds + 5) * 1000;
   while (true) {
     const pods = await podsFor(run, name);
@@ -275,7 +282,7 @@ async function captureJobTermination(run: Command, name: string, graceSeconds: n
       throw new Error("Termination provider disappeared without evidence");
     // Binding may have won the race with deletion after the initial snapshot.
     await retainNodes(run, pods, nodes);
-    if (pods.every(stopped)) {
+    if (pods.every(podHasStopped)) {
       const proof = {
         job: {
           metadata: { uid: job.metadata.uid, labels: job.metadata.labels },
@@ -293,7 +300,7 @@ async function captureJobTermination(run: Command, name: string, graceSeconds: n
             uncountedTerminatedPods: confirmed.status?.uncountedTerminatedPods,
           },
         },
-        pods: pods.map(podEvidence),
+        pods: pods.map(podTerminationProof),
         nodes,
       };
       await patch(run, "job", name, {
@@ -307,10 +314,24 @@ async function captureJobTermination(run: Command, name: string, graceSeconds: n
   }
 }
 
-export async function readTerminationEvidence(run: Command, name: string): Promise<Record<string, unknown> | null> {
+async function deleteRetainedPods(run: Command, namespace: string, pods: Resource[], graceSeconds: number) {
+  for (const pod of pods) {
+    if (!pod.metadata.name || !pod.metadata.uid) throw new Error("Termination evidence unavailable");
+    await deleteResource(run, namespace, "pods", pod.metadata.name, pod.metadata.uid, graceSeconds);
+  }
+}
+
+export async function readTerminationEvidence(
+  run: Command,
+  name: string,
+  jobUid: string,
+): Promise<Record<string, unknown> | null> {
   const output = await run(["get", "job", name, "--ignore-not-found", "-o", "json"]);
   if (!output) return null;
   const job = JSON.parse(output) as Resource;
+  if (!jobUid || job.metadata.uid !== jobUid) throw new Error("Termination provider changed");
   const value = job.metadata.annotations?.[EVIDENCE_ANNOTATION];
-  return value ? (JSON.parse(value) as Record<string, unknown>) : null;
+  if (!value) return null;
+  if (!matchingProof(job, jobUid)) throw new Error("Termination provider changed");
+  return JSON.parse(value) as Record<string, unknown>;
 }

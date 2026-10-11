@@ -1,5 +1,6 @@
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { resourceName } from "./kubernetes-command";
+import { jobUidOf } from "./kubernetes-identity";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 
 export const LAUNCH_PHASE = "pocketcoder.dev/launch-phase";
@@ -35,7 +36,7 @@ export async function uncommittedKubernetesProvider(
       metadata.annotations?.[KUBERNETES_DIGEST_ANNOTATION] !== workspace.templateDigest
     )
       throw new Error("Uncommitted provider template mismatch");
-    return ref;
+    return { ...ref, jobUid: jobUidOf({ metadata }) };
   }
   const input = await run(["get", "secret", ref.inputSecret, "--ignore-not-found", "-o", "json"]);
   if (!input) throw new Error("Uncommitted Kubernetes provider absence is unproved");

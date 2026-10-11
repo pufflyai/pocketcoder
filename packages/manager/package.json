@@ -13,7 +13,8 @@
   "exports": {
     ".": "./src/app.ts",
     "./store": "./src/database/store.ts",
-    "./kubernetes": "./src/kubernetes/accounts.ts"
+    "./kubernetes": "./src/kubernetes/accounts.ts",
+    "./backup": "./src/backup/config.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --target bun --outdir dist",
@@ -26,6 +27,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-db": "workspace:*",
+    "@pstdio/pocketcoder-drivers": "workspace:*",
     "@pstdio/pocketcoder-server": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
     "hono": "^4.8.0",

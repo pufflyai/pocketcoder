@@ -57,6 +57,7 @@ export function createPersistenceTransferRecovery(context: PersistenceContext, r
         await recoverVerification(context, operation, checkpoint);
         return true;
       case "delete":
+        await store.acknowledgeJournal?.();
         await checkpointTransfers.delete(checkpoint);
         await store.updateCheckpoint(checkpoint.id, { state: "deleted", deletedAt: context.now() }, context.now());
         await store.updateOperation(operation.id, { state: "succeeded", completedAt: context.now() }, context.now());

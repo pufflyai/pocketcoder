@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
 import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { loadOffNodeConfig, type OffNode } from "@pstdio/pocketcoder-db/off-node";
 import {
   DockerDriver,
   FileSecretResolver,
@@ -23,8 +24,11 @@ import type { CheckpointTransferService } from "../persistence/checkpoint-transf
 import { createIssuerClient } from "../secrets/issuer-client";
 import type { ServerLog } from "./lifecycle";
 
-async function initializeStore(config: ServerConfig, log: ServerLog) {
-  const store = await PGliteStore.create(config.dataDir, config.journalDir ? { journalDir: config.journalDir } : {});
+async function initializeStore(config: ServerConfig, log: ServerLog, offNode?: OffNode) {
+  const store = await PGliteStore.create(config.dataDir, {
+    ...(config.journalDir ? { journalDir: config.journalDir } : {}),
+    ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
+  });
   await store.init();
   log(`store: pglite (${config.dataDir})`);
   return store;
@@ -136,15 +140,35 @@ export function startExclusiveTimer(
 }
 
 export async function initializeController(config: ServerConfig, log: ServerLog) {
+  const offNode = config.offNodeConfigFile
+    ? await loadOffNodeConfig(config.offNodeConfigFile, config.dataDir)
+    : undefined;
   if (config.pepper)
-    return { config, store: await initializeStore(config, log), directory: await realpath(config.dataDir) };
-  const controller = await openControllerStore(config.dataDir, config.journalDir ?? undefined);
+    return {
+      config,
+      store: await initializeStore(config, log, offNode),
+      directory: await realpath(config.dataDir),
+      offNode,
+    };
+  const controller = await openControllerStore(
+    config.dataDir,
+    config.journalDir ?? undefined,
+    offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {},
+  );
+  if (
+    offNode &&
+    Object.values(controller.keys).some((key) => Buffer.from(key, "base64url").equals(offNode.encryptionKey))
+  ) {
+    await controller.store.close();
+    throw new Error("Off-node encryption key must differ from the controller key bundle.");
+  }
   return {
     config: { ...config, ...controller.keys },
     store: controller.store,
     directory: controller.dataDirectory,
     // Only bundle keys are exact 32-byte files that a backup can carry unchanged.
     keyBundle: controller.keys,
+    offNode,
   };
 }
 

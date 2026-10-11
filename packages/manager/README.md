@@ -76,6 +76,9 @@ can reach their own AgentAPI, DNS and public HTTPS. They cannot reach operator
 APIs or another account. Controller RBAC cannot read another account's Secrets or
 launch jobs there. Workspaces receive no Kubernetes token or controller volume.
 
+Encrypted account backups and fresh-volume recovery use the private
+[off-node account recovery flow](../../docs/off-node-account-recovery.md).
+
 ## Public account hosts
 
 Set `POCKETCODER_MANAGER_PUBLIC_HOSTS` to give each account its own HTTPS API
@@ -108,8 +111,8 @@ ready. The cluster needs the ingress class and cluster issuer before it starts.
 installs them. `bun run example:e2e:managed-public-views` runs the whole path in
 kind with real browsers.
 
-Production layout, gVisor, encrypted account/manager backups and customer
-enablement belong to the following hosted-service tickets.
+Production layout, gVisor, manager database recovery and customer enablement
+belong to the following hosted-service tickets.
 
 ## Estimated usage
 

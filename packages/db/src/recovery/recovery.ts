@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../database/context";
+import { createJournalAcknowledgement } from "../journal/acknowledgement";
 import { createRecordReplay } from "./replay-records";
 import { sourceWriterIdentity } from "./source-writer";
 import { RecoveryStateSchema } from "./state";
@@ -9,6 +10,7 @@ export function createRecovery(context: DatabaseContext) {
   const { db, journal, dataWriter, tables } = context;
   const { controllerState } = tables;
   const controller = eq(controllerState.id, "controller");
+  const remoteJournal = createJournalAcknowledgement(context);
 
   async function state() {
     const [row] = await db.select({ recovery: controllerState.recovery }).from(controllerState).where(controller);
@@ -38,6 +40,7 @@ export function createRecovery(context: DatabaseContext) {
       const claimed = journal.lastWriter();
       if (!claimed || sourceWriterIdentity(claimed) !== sourceWriterIdentity(dataWriter))
         journal.append({ kind: "writer_claimed", writer: dataWriter, at: new Date().toISOString() });
+      await remoteJournal.acknowledge();
       await db
         .update(controllerState)
         .set({ recovery: null })

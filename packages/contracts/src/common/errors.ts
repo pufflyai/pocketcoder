@@ -64,6 +64,7 @@ export const ERROR_CODES = {
   "maintenance.active": 503,
   "maintenance.timeout": 503,
   "backup.failed": 409,
+  "journal.pending": 503,
   "recovery.required": 503,
   "recovery.failed": 409,
   "internal.error": 500,

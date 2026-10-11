@@ -1,11 +1,16 @@
 import { join } from "node:path";
 import { accountService, createManagerApp } from "@pstdio/pocketcoder-manager";
+import type { ManagerBackupConfig } from "@pstdio/pocketcoder-manager/backup";
+import { KubernetesAccounts } from "@pstdio/pocketcoder-manager/kubernetes";
 import { ManagerStore } from "@pstdio/pocketcoder-manager/store";
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { freePort, waitFor } from "./local-process";
 import { managerKubeconfig } from "./managed-account-kubeconfig";
+import { requireKindStorage } from "./managed-diagnostics";
 
-export async function managedLifecycleFixture() {
+export async function managedLifecycleFixture(
+  configureBackups?: (cluster: Awaited<ReturnType<typeof createKubernetesCluster>>) => Promise<ManagerBackupConfig>,
+) {
   const cluster = await createKubernetesCluster({ networkPolicy: true });
   const priorConfig = process.env.KUBECONFIG;
   let store: Awaited<ReturnType<typeof ManagerStore.create>> | undefined;
@@ -50,12 +55,18 @@ export async function managedLifecycleFixture() {
         await cluster.run(["docker", "exec", node, "ctr", "--namespace", "k8s.io", "images", "tag", reference, image]);
       workspace = { image, tag: candidate };
     } else workspace = await cluster.buildImage("workspace");
-    const controller = await cluster.buildImage("server");
+    const controller = await cluster.buildImage("server", { hostBundled: configureBackups !== undefined });
+    const backups = await configureBackups?.(cluster);
+    if (backups) await requireKindStorage(cluster);
     const directory = join(cluster.directory, "manager_data");
-    const config = { controllerImage: controller.image, runtimeClassName: "pc-runc" };
+    const config = {
+      controllerImage: controller.image,
+      runtimeClassName: "pc-runc",
+      ...(backups ? { offNodeBackups: true } : {}),
+    };
     store = await ManagerStore.create(directory);
     const token = await store.createOperator(new Date(Date.now() + 30 * 60_000));
-    service = accountService(store);
+    service = accountService(store, new KubernetesAccounts(undefined, backups));
     manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
     const request = (path: string, input: RequestInit = {}) =>
       fetch(new URL(path, manager?.url), {
@@ -67,7 +78,7 @@ export async function managedLifecycleFixture() {
       await service?.close();
       await store?.close();
       store = await ManagerStore.create(directory);
-      service = accountService(store);
+      service = accountService(store, new KubernetesAccounts(undefined, backups));
       manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
     }
     async function connect(namespace: string) {
@@ -92,7 +103,16 @@ export async function managedLifecycleFixture() {
       );
       return url;
     }
-    return { cluster, workspace, request, restartManager, connect, reconcile: () => service?.reconcile(), close };
+    return {
+      cluster,
+      workspace,
+      request,
+      restartManager,
+      connect,
+      reconcile: () => service?.reconcile(),
+      currentStore: () => store,
+      close,
+    };
   } catch (error) {
     await close();
     throw error;
