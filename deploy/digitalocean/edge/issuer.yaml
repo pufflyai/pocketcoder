@@ -1,0 +1,21 @@
+# Issues each account's API host and wildcard view certificate with DNS validation.
+# The DNS token Secret lives in the cert-manager namespace, never in an account.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: pocketcoder-dns
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: pocketcoder-acme-account
+    solvers:
+      - selector:
+          dnsZones:
+            - pocketcoder.datazine.app
+            - embed.kaset.dev
+        dns01:
+          digitalocean:
+            tokenSecretRef:
+              name: digitalocean-dns
+              key: token

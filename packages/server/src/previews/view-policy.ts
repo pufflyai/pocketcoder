@@ -1,20 +1,24 @@
 import { ApiError, PREVIEW_COOKIE, type ViewSessionOptions } from "@pstdio/pocketcoder-contracts";
 import type { Context } from "hono";
-import type { PublicViewConfig } from "../config/public-views";
+import { type PublicViewConfig, trustedIngress } from "../config/public-views";
 import type { PreviewSession } from "./sessions";
 
 const PUBLIC_COOKIE = "__Host-pc-view";
 export class ViewPolicy {
-  constructor(private readonly config?: PublicViewConfig) {}
+  private readonly trusted: (peer: string) => boolean;
+  constructor(private readonly config?: PublicViewConfig) {
+    this.trusted = trustedIngress(config?.trustedIngress ?? []);
+  }
 
   requestUrl(c: Context) {
     const url = new URL(c.req.url);
     const peer = c.env?.requestIP?.(c.req.raw)?.address;
-    if (peer && this.config?.trustedIngress.includes(peer)) {
+    if (peer && this.trusted(peer)) {
       const host = c.req.header("x-forwarded-host");
       const proto = c.req.header("x-forwarded-proto");
       if (host || proto) {
-        if (proto !== "https" || !host || !/^[a-z0-9.-]+(?::[0-9]+)?$/.test(host))
+        // Ingresses such as Traefik report TLS WebSocket upgrades as wss.
+        if (!["https", "wss"].includes(proto ?? "") || !host || !/^[a-z0-9.-]+(?::[0-9]+)?$/.test(host))
           throw new ApiError("validation.invalid", "Invalid ingress origin.");
         const publicUrl = new URL(`https://${host}`);
         url.protocol = publicUrl.protocol;
