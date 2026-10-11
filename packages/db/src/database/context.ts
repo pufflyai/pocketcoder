@@ -25,7 +25,7 @@ async function installDatabase(directory: string, assets: Awaited<ReturnType<typ
     const stage = join(directory, ".db-staging");
     await rm(stage, { recursive: true, force: true });
     // Install the seed before opening the engine to avoid two WASM memory peaks.
-    await new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage);
+    await new Bun.Archive(assets.seedArchive()).extract(stage);
     if ((await readFile(join(stage, "PG_VERSION"), "utf8")).trim() !== "18")
       throw new Error("incompatible core seed engine format");
     await syncSeed(stage);

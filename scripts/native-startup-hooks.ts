@@ -33,8 +33,8 @@ const hooks: Record<string, Hook[]> = {
   "packages/db/src/database/context.ts": [
     ["await loadCoreAssets()", 'await startupPhase("assets-total", () => loadCoreAssets())'],
     [
-      "await new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage)",
-      'await startupPhase("seed-extract", async () => new Bun.Archive(await assets.loadDataDir.arrayBuffer()).extract(stage))',
+      "await new Bun.Archive(assets.seedArchive()).extract(stage)",
+      'await startupPhase("seed-extract", async () => new Bun.Archive(assets.seedArchive()).extract(stage))',
     ],
     ["await syncSeed(stage)", 'await startupPhase("seed-sync", () => syncSeed(stage))'],
     [
@@ -58,8 +58,8 @@ const hooks: Record<string, Hook[]> = {
   ],
   "packages/db/src/database/assets.ts": [
     [
-      'const seed = Bun.gzipSync(await unpack(seedPath, manifest.checksum, "core seed"));',
-      'const unpacked = await startupPhase("seed-brotli", () => unpack(seedPath, manifest.checksum, "core seed"));\nconst seed = startupPhaseSync("seed-gzip", () => Bun.gzipSync(unpacked));',
+      "const seedArchive = () => brotliDecompressSync(seed);",
+      'const seedArchive = () => startupPhaseSync("seed-brotli", () => brotliDecompressSync(seed));',
     ],
     ["await loadDatabaseEngine()", 'await startupPhase("engine-assets", () => loadDatabaseEngine())'],
   ],

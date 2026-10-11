@@ -2,4 +2,4 @@
 "@pstdio/pocketcoder-cli": patch
 ---
 
-Prepare private database seed metadata before syncing and check private Kubernetes egress health inside sidecars.
+Load verified database seeds only when needed, prepare private metadata before syncing, and check private Kubernetes egress health inside sidecars.
