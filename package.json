@@ -84,6 +84,7 @@
     "manager:seed": "bun run --cwd packages/manager db:seed",
     "manager:start": "bun --no-env-file packages/manager/src/index.ts",
     "example:e2e:managed-accounts": "bun --no-env-file examples/e2e/managed-accounts.ts",
+    "example:e2e:managed-account-lifecycle": "bun --no-env-file examples/e2e/managed-account-lifecycle.ts",
     "example:e2e:managed-public-views": "bun --no-env-file examples/e2e/managed-public-views.ts"
   },
   "devDependencies": {

@@ -5,6 +5,8 @@ import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { type ControllerBackup, registerBackupRoute } from "../backup/controller-backup";
+import type { AccountLifecycle } from "../maintenance/account-lifecycle";
+import type { Maintenance } from "../maintenance/maintenance";
 import { startAdminSocket } from "./admin-socket";
 import { registerUsageRuntimeRoute } from "./usage-runtime";
 
@@ -20,10 +22,16 @@ export async function startLocalAdmin(deps: {
   store: Store;
   pepper: string;
   backup: ControllerBackup;
+  accountLifecycle?: AccountLifecycle;
+  maintenance?: Maintenance;
 }) {
   const app = new Hono();
   const store = deps.store;
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (context) => context.json({ error: "body too large" }, 413) }));
+  if (deps.maintenance) {
+    const maintenance = deps.maintenance;
+    app.use("/v1/owner", async (_context, next) => maintenance.admit(next, "request"));
+  }
   app.onError((error, context) => {
     if (error instanceof ApiError) {
       return context.json(
@@ -54,6 +62,17 @@ export async function startLocalAdmin(deps: {
   });
   registerBackupRoute(app, deps.backup);
   registerUsageRuntimeRoute(app, store);
+  if (deps.accountLifecycle) {
+    const lifecycle = deps.accountLifecycle;
+    app.get("/v1/account", (context) => context.json(lifecycle.status()));
+    for (const kind of ["suspend", "resume"] as const) {
+      app.post(`/v1/account/${kind}`, async (context) => {
+        const input = z.strictObject({ request_id: z.uuid() }).safeParse(await context.req.json().catch(() => null));
+        if (!input.success) throw new ApiError("validation.invalid", "Invalid account lifecycle request.");
+        return context.json(await lifecycle.perform(input.data.request_id, kind));
+      });
+    }
+  }
   // The controller retains its writer lock until these handlers have settled.
   return startAdminSocket(deps.directory, app.fetch);
 }

@@ -49,6 +49,7 @@ export class SchedulerAdmission {
   ): Promise<boolean> {
     let progressed = false;
     for (const principalId of rotation) {
+      if (this.context.deps.admissionFenced?.()) break;
       if (counts.global >= this.context.deps.limits.globalActiveWorkspaces) break;
       const list = byPrincipal.get(principalId);
       const row = list?.[0];
@@ -109,6 +110,7 @@ export class SchedulerAdmission {
   async launch(row: WorkspaceRow): Promise<boolean> {
     const { store, driver, secrets } = this.context.deps;
     if (!(await this.authorized(row))) return false;
+    if (this.context.deps.admissionFenced?.()) return false;
     const now = this.context.now();
     const secret = secrets.generate();
     const registrationDigest = secrets.digest(secret);

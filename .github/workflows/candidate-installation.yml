@@ -72,6 +72,9 @@ jobs:
       - name: Verify downloaded binary startup, owner, restart and backup recovery
         run: |
           mkdir -p "$RUNNER_TEMP/validation"
+          # Setup leaves over 1 GB of unsaved writes. Flush them so the unchanged
+          # startup limits time the controller, not this job's pending writes.
+          sync
           bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/native.json"
           cat "$RUNNER_TEMP/validation/native.json"
       - uses: actions/download-artifact@v4
@@ -82,6 +85,7 @@ jobs:
       - name: Run downloaded Docker workspace, preserve and resume
         if: matrix.platform == 'linux'
         run: |
+          sync
           bun run example:e2e:native -- --binary "$RUNNER_TEMP/native/pocketcoder" --fixture "$RUNNER_TEMP/fixture" > "$RUNNER_TEMP/validation/workspace.json"
           cat "$RUNNER_TEMP/validation/workspace.json"
       # Native startup does not need the large package tarballs or their disk writes.
