@@ -10,6 +10,7 @@
     "image": "example.invalid/pocketcoder-oss@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     "agent": {
       "type": "opencode",
+      "model": "pocketcoder-test",
       "transport": "acp",
       "command": ["/usr/local/bin/run-opencode"],
       "cwd": "/workspace",

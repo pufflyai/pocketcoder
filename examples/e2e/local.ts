@@ -107,7 +107,7 @@ try {
   const template = JSON.parse(await readFile(templatePath, "utf8")) as {
     spec: {
       image: string;
-      agent?: { command: string[]; env?: Record<string, string> };
+      agent?: { command: string[]; model?: string; env?: Record<string, string> };
       harness?: { env?: Record<string, string> };
     };
   };
@@ -129,13 +129,14 @@ try {
       usesFakeGateway = true;
     }
     if (!template.spec.agent) throw new Error("Pi template must use spec.agent");
+    template.spec.agent.model = process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test");
     if (usesFakeGateway) {
       template.spec.agent.command = piStartupCommand(template.spec.agent.command);
     }
     template.spec.agent.env = {
       ...template.spec.agent.env,
       PI_GATEWAY_URL: process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
-      PI_GATEWAY_MODEL: process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test"),
+      PI_GATEWAY_MODEL: template.spec.agent.model,
       PI_GATEWAY_PROVIDER:
         process.env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
       PI_GATEWAY_API: process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),

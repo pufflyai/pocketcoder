@@ -12,6 +12,7 @@ function workspace(overrides: Partial<WorkspaceResource> = {}): WorkspaceResourc
     id: SOURCE,
     external_id: "turn-source",
     template: { name: "pi", version: "1", digest: "sha256:pi" },
+    agent: { type: "custom", model: null },
     state,
     reason_code: null,
     agent_state: "stable",

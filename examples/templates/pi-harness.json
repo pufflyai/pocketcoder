@@ -18,6 +18,7 @@
     ],
     "agent": {
       "type": "custom",
+      "model": "replace-with-your-model",
       "command": ["/usr/local/bin/run-pi"],
       "cwd": "/workspace",
       "env": {
