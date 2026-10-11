@@ -8,11 +8,11 @@ const calls: { operation: string; path: string; start: number; end: number }[] =
 for (const name of await readdir(directory)) {
   if (!name.startsWith("waits.")) continue;
   for (const line of (await Bun.file(join(directory, name)).text()).split("\n")) {
-    const match = line.match(/^(\d+):(\d+):(\d+\.\d+) (fchmod|fsync)\(\d+<([^>]+)>.*= 0 <(\d+\.\d+)>$/);
+    const match = line.match(/^((?:\d+:\d+:)?\d+\.\d+) (fchmod|fsync)\(\d+<([^>]+)>.*= 0 <(\d+\.\d+)>$/);
     if (!match) continue;
-    const [, hours, minutes, seconds, operation, path, duration] = match;
+    const [, timestamp, operation, path, duration] = match;
     if (!operation || !path || !/\/pc_data\/\.db-staging(?:\/|$)/.test(path)) continue;
-    const start = Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+    const start = (timestamp ?? "").split(":").reduce((total, part) => total * 60 + Number(part), 0);
     calls.push({ operation, path, start, end: start + Number(duration) });
   }
 }

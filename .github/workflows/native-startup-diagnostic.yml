@@ -6,6 +6,9 @@ on:
       macos-intel-only:
         type: boolean
         default: false
+      affected-only:
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -18,8 +21,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: &targets
-        include: ${{ fromJSON(inputs.macos-intel-only && '[{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15","platform":"darwin","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]') }}
+        include: ${{ fromJSON(inputs.affected-only && '[{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || inputs.macos-intel-only && '[{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15","platform":"darwin","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]') }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -43,6 +47,7 @@ jobs:
       fail-fast: false
       matrix: *targets
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -51,25 +56,17 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/setup-node@v4
-        if: inputs.macos-intel-only
+        if: inputs.macos-intel-only || inputs.affected-only
         with:
           node-version: 22.19.0
-      - name: Match ordinary Mac installation prerequisites
-        if: inputs.macos-intel-only
+      - name: Match ordinary installation prerequisites
+        if: inputs.macos-intel-only || inputs.affected-only
         run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: startup-profile-${{ env.SOURCE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/profile
-      - name: Start the original Docker prerequisite on macOS
-        if: matrix.platform == 'darwin'
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: 1
-        run: |
-          brew install colima docker qemu lima-additional-guestagents
-          colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
-          docker info
-      - name: Verify exact diagnostic artifacts and record runner metadata
+      - name: Verify exact diagnostic artifacts before Docker setup
         run: |
           mkdir -p "$RUNNER_TEMP/evidence"
           chmod 0755 "$RUNNER_TEMP/profile/pocketcoder"
@@ -84,39 +81,53 @@ jobs:
               const bytes = await Bun.file(path).bytes();
               if (bytes.length !== entry.bytes || createHash("sha256").update(bytes).digest("hex") !== entry.sha256) throw new Error("Diagnostic artifact mismatch");
             }
-            console.log(JSON.stringify({ qualification: "Diagnostic only. First controller on this runner; tracing/setup overhead excludes acceptance.", metadata, cpus: require("node:os").cpus(), bun: Bun.version }));
+            console.log(JSON.stringify({ qualification: "Diagnostic only. First controller on this runner; tracing/setup overhead excludes acceptance.", metadata, bun: Bun.version }));
           ' > "$RUNNER_TEMP/evidence/runner.json"
+      - name: Prepare Linux tracing before Docker setup
+        if: matrix.platform == 'linux'
+        run: |
+          if ! command -v strace; then
+            sudo apt-get update
+            sudo apt-get install --yes strace
+          fi
+      - name: Start the original Docker prerequisite on macOS
+        if: matrix.platform == 'darwin'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install colima docker qemu lima-additional-guestagents
+          colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
+          docker info
+      - name: Run the first controller with unchanged startup and memory assertions
+        env:
+          FIRST_ONLY: ${{ inputs.affected-only }}
+        run: |
+          probe_args=()
+          if [ "$FIRST_ONLY" = true ]; then probe_args+=(--first-only); fi
+          if [ "$RUNNER_OS" = Linux ]; then
+            strace -ff -ttt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+              -o "$RUNNER_TEMP/evidence/waits" \
+              bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" "${probe_args[@]}" \
+              > "$RUNNER_TEMP/evidence/result.log" 2>&1
+            exit 0
+          fi
+          bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" "${probe_args[@]}" \
+            > "$RUNNER_TEMP/evidence/result.log" 2>&1
+      - name: Retain filesystem, VM and process state after the first attempt
+        if: always()
+        run: |
           uname -a > "$RUNNER_TEMP/evidence/filesystem.txt"
           df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/evidence/filesystem.txt"
+          bun -e 'console.log(JSON.stringify({ epochMs: Date.now(), cpus: require("node:os").cpus() }))' > "$RUNNER_TEMP/evidence/cpus-after.json"
+          ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-after.txt"
           if [ "$RUNNER_OS" = Linux ]; then
             findmnt --target "$RUNNER_TEMP" >> "$RUNNER_TEMP/evidence/filesystem.txt"
-            if ! command -v strace; then
-              sudo apt-get update
-              sudo apt-get install --yes strace
-            fi
           fi
           if [ "$RUNNER_OS" = macOS ]; then
             sw_vers >> "$RUNNER_TEMP/evidence/filesystem.txt"
             diskutil info /System/Volumes/Data >> "$RUNNER_TEMP/evidence/filesystem.txt"
-            vm_stat > "$RUNNER_TEMP/evidence/vm-before.txt"
-            ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-before.txt"
+            vm_stat > "$RUNNER_TEMP/evidence/vm-after.txt"
           fi
-      - name: Run the first controller with unchanged startup and memory assertions
-        run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            strace -ff -tt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
-              -o "$RUNNER_TEMP/evidence/waits" \
-              bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
-              > "$RUNNER_TEMP/evidence/result.log" 2>&1
-            exit 0
-          fi
-          bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
-            > "$RUNNER_TEMP/evidence/result.log" 2>&1
-      - name: Retain Mac filesystem and process state after the first-start probe
-        if: always() && matrix.platform == 'darwin'
-        run: |
-          vm_stat > "$RUNNER_TEMP/evidence/vm-after.txt"
-          ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-after.txt"
       - name: Prove seed metadata preparation precedes every durability barrier
         if: always() && matrix.platform == 'linux'
         run: bun scripts/native-startup-sync-order.ts "$RUNNER_TEMP/evidence" > "$RUNNER_TEMP/evidence/sync-order.log" 2>&1

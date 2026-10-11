@@ -4,13 +4,17 @@ import type { BunPlugin } from "bun";
 const helpers = `
 async function startupPhase(phase, action) {
   const startMs = performance.now();
+  const epochStartMs = Date.now();
+  const cpu = process.cpuUsage();
   try { return await action(); }
-  finally { console.error("[startup-phase] " + JSON.stringify({ phase, startMs, durationMs: performance.now() - startMs, pid: process.pid })); }
+  finally { console.error("[startup-phase] " + JSON.stringify({ phase, startMs, durationMs: performance.now() - startMs, epochStartMs, epochEndMs: Date.now(), cpuMicroseconds: process.cpuUsage(cpu), pid: process.pid })); }
 }
 function startupPhaseSync(phase, action) {
   const startMs = performance.now();
+  const epochStartMs = Date.now();
+  const cpu = process.cpuUsage();
   try { return action(); }
-  finally { console.error("[startup-phase] " + JSON.stringify({ phase, startMs, durationMs: performance.now() - startMs, pid: process.pid })); }
+  finally { console.error("[startup-phase] " + JSON.stringify({ phase, startMs, durationMs: performance.now() - startMs, epochStartMs, epochEndMs: Date.now(), cpuMicroseconds: process.cpuUsage(cpu), pid: process.pid })); }
 }
 `;
 
@@ -118,12 +122,26 @@ export function nativeStartupHooks(): BunPlugin {
         if (path.endsWith("/examples/native/controller.ts")) {
           const contents = await readFile(path, "utf8");
           const marker = 'pending = complete.pop() ?? "";';
-          if (contents.split(marker).length !== 2) throw new Error("Diagnostic controller hook drift");
+          if (
+            contents.split(marker).length !== 2 ||
+            contents.split("const code = await processHandle.exited;").length !== 2 ||
+            contents.split('const processHandle = Bun.spawn([executable, "serve"], {').length !== 2
+          )
+            throw new Error("Diagnostic controller hook drift");
           return {
-            contents: contents.replace(
-              marker,
-              `${marker}\nfor (const line of complete) if (line.startsWith("[startup-phase] ")) console.error(line);`,
-            ),
+            contents: contents
+              .replace(
+                marker,
+                `${marker}\nfor (const line of complete) console.error("[startup-controller] " + JSON.stringify({ epochMs: Date.now(), line }));`,
+              )
+              .replace(
+                "const code = await processHandle.exited;",
+                'const code = await processHandle.exited;\nconsole.error("[startup-exit] " + JSON.stringify({ epochMs: Date.now(), pid: processHandle.pid, code, resourceUsage: processHandle.resourceUsage() }));',
+              )
+              .replace(
+                'const processHandle = Bun.spawn([executable, "serve"], {',
+                'console.error("[startup-spawn] " + JSON.stringify({ epochMs: Date.now(), startMs: performance.now(), pid: process.pid }));\nconst processHandle = Bun.spawn([executable, "serve"], {',
+              ),
             loader: "ts",
           };
         }

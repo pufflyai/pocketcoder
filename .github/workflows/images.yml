@@ -16,6 +16,10 @@ on:
         description: Profile initial Mac Intel startup without candidate acceptance or publication
         type: boolean
         default: false
+      affected-startup-diagnostics:
+        description: Diagnose only first Linux ARM and Mac Intel startup without acceptance or publication
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -25,18 +29,19 @@ env:
 
 jobs:
   test:
-    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics && !inputs.affected-startup-diagnostics
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
 
   diagnostics:
-    if: (inputs.native-diagnostics || inputs.macos-startup-diagnostics) && !inputs.macos-setup-diagnostics
+    if: (inputs.native-diagnostics || inputs.macos-startup-diagnostics || inputs.affected-startup-diagnostics) && !inputs.macos-setup-diagnostics
     permissions:
       contents: read
     uses: ./.github/workflows/native-startup-diagnostic.yml
     with:
       macos-intel-only: ${{ inputs.macos-startup-diagnostics || false }}
+      affected-only: ${{ inputs.affected-startup-diagnostics || false }}
 
   macos-setup-diagnostics:
     if: github.event_name == 'workflow_dispatch' && inputs.macos-setup-diagnostics
@@ -46,7 +51,7 @@ jobs:
 
   validate:
     needs: test
-    if: always() && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
+    if: always() && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics && !inputs.affected-startup-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +127,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.macos-setup-diagnostics && !inputs.macos-startup-diagnostics && !inputs.affected-startup-diagnostics
     needs: [test, validate]
     runs-on: ubuntu-24.04
     permissions:
