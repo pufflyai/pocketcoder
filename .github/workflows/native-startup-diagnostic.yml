@@ -99,6 +99,9 @@ jobs:
           fi
           bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
             > "$RUNNER_TEMP/evidence/result.log" 2>&1
+      - name: Prove seed metadata preparation precedes every durability barrier
+        if: always() && matrix.platform == 'linux'
+        run: bun scripts/native-startup-sync-order.ts "$RUNNER_TEMP/evidence" > "$RUNNER_TEMP/evidence/sync-order.log" 2>&1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
