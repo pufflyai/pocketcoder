@@ -25,6 +25,7 @@ function workspace(id: string, overrides: Partial<WorkspaceResource> = {}): Work
     id,
     external_id: `turn-${id.slice(0, 4)}`,
     template: { name: "pi", version: "1", digest: "sha256:pi" },
+    agent: { type: "custom", model: null },
     state,
     reason_code: null,
     agent_state: "stable",

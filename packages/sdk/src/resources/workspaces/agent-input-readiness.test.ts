@@ -10,6 +10,7 @@ function workspace(overrides: Partial<WorkspaceResource> = {}): WorkspaceResourc
     id: WORKSPACE,
     external_id: "readiness",
     template: { name: "pi", version: "1", digest: "sha256:pi" },
+    agent: { type: "custom", model: null },
     state,
     reason_code: null,
     agent_state: "running",

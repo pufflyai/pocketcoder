@@ -133,11 +133,12 @@ export async function preparePiRuntime(options: PreparePiRuntimeOptions): Promis
     spec: {
       version: string;
       image: string;
-      agent: { env?: Record<string, string> };
+      agent: { model?: string; env?: Record<string, string> };
     };
   };
   const sourceVersion = source.spec.version;
   source.spec.image = builtImage.image;
+  source.spec.agent.model = options.gatewayModel;
   source.spec.agent.env = {
     ...source.spec.agent.env,
     PI_GATEWAY_URL: options.gatewayUrl,
