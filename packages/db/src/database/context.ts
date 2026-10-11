@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
+import { boundedFilesystem, type DatabaseBudget } from "../backup/bounded-filesystem";
+import type { JournalAcknowledgement } from "../journal/acknowledgement";
 import { bindJournal } from "../journal/binding";
 import { migrateDatabase } from "../migrations/migrator";
 import { createSchema } from "../schema";
@@ -13,9 +15,11 @@ import { lockDataFolder, syncDirectory, syncSeed } from "./data-folder";
 import { DurableFilesystem } from "./durable-filesystem";
 
 export interface DatabaseOpenOptions {
+  databaseBudget?: DatabaseBudget;
   beforeOpen?(directory: string): Promise<void>;
   // Defaults to the folder recorded in the database, then to "<data folder>-journal".
   journalDir?: string;
+  acknowledgeJournal?: JournalAcknowledgement;
 }
 
 // Returns the database folder, installing the seed on first start.
@@ -55,8 +59,12 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
       postgresqlconf: ["shared_buffers = 16MB"],
       startParams: PGlite.defaultStartParams.filter((param) => param !== "-F"),
     };
-    client = folder
-      ? await PGlite.create({ ...options, fs: new DurableFilesystem(await installDatabase(folder.dir, assets)) })
+    const databaseDir = folder ? await installDatabase(folder.dir, assets) : undefined;
+    client = databaseDir
+      ? await PGlite.create({
+          ...options,
+          fs: boundedFilesystem(new DurableFilesystem(databaseDir), databaseDir, hooks.databaseBudget),
+        })
       : await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
     await migrateDatabase(client);
     const tables = createSchema("pocketcoder");
@@ -73,6 +81,7 @@ export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpe
       tables,
       dataWriter,
       journal,
+      acknowledgeJournal: hooks.acknowledgeJournal,
       dataDir: folder?.dir,
       validateStorage: folder?.validate,
       changes: new Map<string, Set<() => void>>(),

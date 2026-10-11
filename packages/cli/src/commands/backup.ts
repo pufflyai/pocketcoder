@@ -4,9 +4,11 @@ import type { Argv } from "yargs";
 import { need } from "../command/cli-context";
 import { requestLocalAdministration } from "../command/local-admin";
 import { addAction, addResource } from "./command";
+import { addOffNodeBackupCommands } from "./off-node-backup";
 
 export function addBackupCommands(parser: Argv) {
   return addResource(parser, "backup", "Create, check and restore controller backups", (commands) => {
+    addOffNodeBackupCommands(commands);
     addAction(
       commands,
       "create",

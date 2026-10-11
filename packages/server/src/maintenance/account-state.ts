@@ -9,6 +9,13 @@ const State = z.strictObject({
   state: z.enum(["ready", "suspending", "suspended", "resuming"]),
   current: z.strictObject({ id: z.uuid(), kind: Action }).nullable(),
   completed: z.array(z.strictObject({ id: z.uuid(), kind: Action })),
+  compute: z
+    .strictObject({
+      workspaces: z.array(z.uuid()),
+      warm: z.array(z.uuid()),
+      evidence: z.array(z.record(z.string(), z.unknown())),
+    })
+    .optional(),
 });
 export type AccountState = z.infer<typeof State>;
 

@@ -22,6 +22,7 @@ export function isBackupMemberPath(path: string) {
 export const BackupManifestSchema = z.strictObject({
   format: z.literal(BACKUP_FORMAT),
   snapshotId: z.uuid(),
+  stagingReservationId: z.uuid().optional(),
   createdAt: z.iso.datetime(),
   engine: z.strictObject({ pglite: z.string().min(1), postgres: z.string().min(1) }),
   database: z.strictObject({

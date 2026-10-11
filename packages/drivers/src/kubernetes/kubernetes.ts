@@ -18,6 +18,13 @@ import {
   readTerminationEvidence,
   retainNodeIdentities,
 } from "./kubernetes-evidence";
+import {
+  deleteResource,
+  jobUidOf,
+  neverAdmittedInputUid,
+  referencedJob,
+  removeReferencedJob,
+} from "./kubernetes-identity";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { workspaceJobManifest } from "./kubernetes-manifests";
 import { applyRegistrySecret } from "./kubernetes-registry";
@@ -177,10 +184,13 @@ export class KubernetesDriver implements WorkspaceDriver {
         receipt.metadata,
         "submitting",
       );
-      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
+      const job = JSON.parse(
+        await kubectl(this.kubectlBin, this.namespace, ["create", "-f", "-", "-o", "json"], JSON.stringify(manifest)),
+      );
       return {
         kind: this.kind,
         id: name,
+        jobUid: jobUidOf(job),
         name,
         inputSecret,
         ...(spec.imagePullSecret ? { registrySecret } : {}),
@@ -224,19 +234,8 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
-    const output = await kubectl(this.kubectlBin, this.namespace, [
-      "get",
-      "job",
-      ref.id,
-      "--ignore-not-found",
-      "-o",
-      "json",
-    ]);
-    if (!output) return { exists: false, running: false, exitCode: null };
-    const job = JSON.parse(output) as {
-      metadata?: { uid?: string };
-      status?: { active?: number; succeeded?: number; failed?: number };
-    };
+    const job = await referencedJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref);
+    if (!job) return { exists: false, running: false, exitCode: null };
     if (this.captureEvidence) {
       if (!job.metadata?.uid) throw new Error("Termination evidence unavailable");
       await retainNodeIdentities((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, job.metadata.uid);
@@ -251,33 +250,38 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async stop(ref: ProviderRef, graceSeconds: number): Promise<void> {
-    if (this.captureEvidence) {
-      await captureTermination((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, graceSeconds);
+    const run = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
+    if (!ref.jobUid && neverAdmittedInputUid(ref)) {
+      await referencedJob(run, ref);
       return;
     }
-    await stopKubernetesJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, graceSeconds);
+    if (typeof ref.jobUid !== "string" || !ref.jobUid) throw new Error("Kubernetes Job identity unavailable");
+    if (this.captureEvidence) {
+      await captureTermination(run, ref.id, graceSeconds, ref.jobUid, this.namespace);
+      return;
+    }
+    await stopKubernetesJob(run, this.namespace, ref, graceSeconds);
   }
 
   async remove(ref: ProviderRef): Promise<void> {
-    await kubectl(this.kubectlBin, this.namespace, [
-      "delete",
-      "job",
-      ref.id,
-      "--ignore-not-found",
-      "--cascade=foreground",
-      "--wait=true",
-    ]);
+    const run = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
+    await removeReferencedJob(run, this.namespace, ref);
     await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", `${ref.id}-registry`, "--ignore-not-found"]);
     const inputSecret = typeof ref.inputSecret === "string" ? ref.inputSecret : `${ref.id}-input`;
-    await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]);
+    const inputUid = neverAdmittedInputUid(ref);
+    if (inputUid) await deleteResource(run, this.namespace, "secrets", inputSecret, inputUid);
+    else await run(["delete", "secret", inputSecret, "--ignore-not-found"]);
     if (typeof ref.egressSecret === "string") {
       await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", ref.egressSecret, "--ignore-not-found"]);
     }
   }
 
   async terminationEvidence(ref: ProviderRef): Promise<Record<string, unknown> | null> {
+    const run = (args: string[]) => kubectl(this.kubectlBin, this.namespace, args);
+    await referencedJob(run, ref);
+    if (!ref.jobUid && neverAdmittedInputUid(ref)) return ref.terminationEvidence as Record<string, unknown>;
     if (!this.captureEvidence) return null;
-    return readTerminationEvidence((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id);
+    return readTerminationEvidence(run, ref.id, ref.jobUid as string);
   }
 
   async purgeInput(workspaceId: string): Promise<void> {

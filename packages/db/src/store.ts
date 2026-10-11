@@ -7,6 +7,8 @@ import {
   type DatabaseOpenOptions,
 } from "./database/context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
+import type { JournalSnapshot } from "./journal/acknowledgement";
+import { createJournalAcknowledgement } from "./journal/acknowledgement";
 import { createAuth } from "./modules/auth/repository";
 import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
@@ -43,6 +45,12 @@ export class PGliteStore implements Store {
   }
 
   constructor(context: DatabaseContext) {
+    const journal = createJournalAcknowledgement(context);
+    this.acknowledgeJournal = journal.acknowledge;
+    this.journalSnapshot = () => {
+      if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
+      return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
+    };
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.binaryOutputs = createBinaryOutputs(context);
     this.storageReservations = createStorageReservations(context);
@@ -60,7 +68,7 @@ export class PGliteStore implements Store {
     this.listTemplates = templates.listTemplates;
     this.getTemplate = templates.getTemplate;
     this.publishTemplate = templates.publishTemplate;
-    this.retireTemplate = templates.retireTemplate;
+    this.retireTemplate = journal.after(templates.retireTemplate);
     const leases = createWorkspaceLeases(context);
     this.requestWorkspaceLease = leases.requestWorkspaceLease;
     this.getWorkspaceLease = leases.getWorkspaceLease;
@@ -74,16 +82,16 @@ export class PGliteStore implements Store {
     this.recordWorkspaceLeaseRevoked = leases.recordWorkspaceLeaseRevoked;
     this.recordWorkspaceLeaseExpired = leases.recordWorkspaceLeaseExpired;
     const secrets = createSecrets(context);
-    this.writeSecret = secrets.writeSecret;
+    this.writeSecret = journal.after(secrets.writeSecret);
     this.listSecrets = secrets.listSecrets;
-    this.retireSecret = secrets.retireSecret;
+    this.retireSecret = journal.after(secrets.retireSecret);
     this.readSecret = secrets.readSecret;
     this.readSecretVersion = secrets.readSecretVersion;
     const auth = createAuth(context);
-    this.bootstrapOwnerKey = auth.bootstrapOwnerKey;
+    this.bootstrapOwnerKey = journal.after(auth.bootstrapOwnerKey);
     this.createPrincipal = auth.createPrincipal;
     this.createManagedPrincipal = auth.createManagedPrincipal;
-    this.updateManagedPrincipal = auth.updateManagedPrincipal;
+    this.updateManagedPrincipal = journal.after(auth.updateManagedPrincipal);
     this.getPrincipalByName = auth.getPrincipalByName;
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
@@ -91,10 +99,10 @@ export class PGliteStore implements Store {
     this.getPrincipal = auth.getPrincipal;
     this.issueMachineKey = auth.issueMachineKey;
     this.listMachineKeys = auth.listMachineKeys;
-    this.revokePrincipalKeys = auth.revokePrincipalKeys;
+    this.revokePrincipalKeys = journal.after(auth.revokePrincipalKeys);
     this.insertMachineKey = auth.insertMachineKey;
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
-    this.revokeMachineKey = auth.revokeMachineKey;
+    this.revokeMachineKey = journal.after(auth.revokeMachineKey);
     this.touchMachineKey = auth.touchMachineKey;
     const workspaces = createWorkspaces(context);
     this.insertWorkspace = workspaces.insertWorkspace;
@@ -122,7 +130,7 @@ export class PGliteStore implements Store {
     this.listCheckpoints = checkpoints.listCheckpoints;
     this.updateCheckpoint = checkpoints.updateCheckpoint;
     const operations = createOperations(context);
-    this.insertOperation = operations.insertOperation;
+    this.insertOperation = journal.after(operations.insertOperation);
     this.getOperation = operations.getOperation;
     this.getOperationByIdempotency = operations.getOperationByIdempotency;
     this.listIncompleteOperations = operations.listIncompleteOperations;
@@ -150,8 +158,8 @@ export class PGliteStore implements Store {
     this.readConversation = conversations.readConversation;
     this.getConversationState = conversations.getConversationState;
     this.setConversationExpiry = conversations.setConversationExpiry;
-    this.deleteConversation = conversations.deleteConversation;
-    this.pruneExpiredConversations = conversations.pruneExpiredConversations;
+    this.deleteConversation = journal.after(conversations.deleteConversation);
+    this.pruneExpiredConversations = journal.after(conversations.pruneExpiredConversations);
     const terminals = createTerminals(context);
     this.openTerminalSession = terminals.openTerminalSession;
     this.getTerminalSession = terminals.getTerminalSession;
@@ -183,6 +191,8 @@ export class PGliteStore implements Store {
   readonly recordWorkspaceLeaseRevoked: Store["recordWorkspaceLeaseRevoked"];
   readonly recordWorkspaceLeaseExpired: Store["recordWorkspaceLeaseExpired"];
   readonly init: Store["init"];
+  readonly acknowledgeJournal: () => Promise<void>;
+  readonly journalSnapshot: () => JournalSnapshot;
   readonly close: Store["close"];
   readonly acquireCoordinatorLease: Store["acquireCoordinatorLease"];
   readonly upsertTemplate: Store["upsertTemplate"];

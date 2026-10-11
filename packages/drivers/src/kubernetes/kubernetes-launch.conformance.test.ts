@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { KubernetesDriver } from "./kubernetes";
 import { kubectl } from "./kubernetes-command";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import {
@@ -41,6 +42,13 @@ describe.skipIf(process.env.POCKETCODER_KUBERNETES_CONFORMANCE !== "1")("atomic 
           const ref = await uncommittedKubernetesProvider(run, namespace, workspace);
           if (!("terminationEvidence" in ref)) throw new Error("Non-admission receipt missing");
           expect(ref.terminationEvidence.neverAdmitted.inputUid).toBe(receipt.metadata.uid as string);
+          expect("jobUid" in ref).toBe(false);
+          const driver = new KubernetesDriver({ namespace, captureTerminationEvidence: true });
+          expect(await driver.inspect(ref)).toEqual({ exists: false, running: false, exitCode: null });
+          await driver.stop(ref, 1);
+          expect(await driver.terminationEvidence(ref)).toEqual(ref.terminationEvidence);
+          await driver.remove(ref);
+          expect(await run(["get", "secret", name, "--ignore-not-found", "-o", "json"])).toBe("");
         } else {
           await expect(uncommittedKubernetesProvider(run, namespace, workspace)).rejects.toThrow("uncertain");
         }

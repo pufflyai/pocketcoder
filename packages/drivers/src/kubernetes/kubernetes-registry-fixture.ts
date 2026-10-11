@@ -6,6 +6,59 @@ import { runDocker } from "../docker/docker-command";
 import { localDockerSocket, registryImageRequest } from "../docker/docker-registry-client";
 
 const REGISTRY_IMAGE = "registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373";
+const REGISTRY_READY = "pc-registry-fixture-ready";
+export const REGISTRY_TERM = "pc-registry-fixture-term";
+export const registryWorkspaceCommand = [
+  "sh",
+  "-eu",
+  "-c",
+  `trap 'printf "${REGISTRY_TERM}\\n"; exit 0' TERM; printf "${REGISTRY_READY}\\n"; sleep 300 & wait`,
+];
+
+export function registryShutdownLogs(namespace: string, pod: string) {
+  const child = Bun.spawn(["kubectl", "--namespace", namespace, "logs", "--follow", pod], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let observedReady = false;
+  let timedOut = false;
+  const readiness = Promise.withResolvers<void>();
+  const stdout = (async () => {
+    let logs = "";
+    const decoder = new TextDecoder();
+    for await (const chunk of child.stdout) {
+      logs += decoder.decode(chunk, { stream: true });
+      if (!observedReady && logs.includes(`${REGISTRY_READY}\n`)) {
+        observedReady = true;
+        readiness.resolve();
+      }
+    }
+    logs += decoder.decode();
+    if (!observedReady) readiness.reject(new Error("Registry log stream closed before readiness marker"));
+    return logs;
+  })();
+  // Drain logs after the existing thirty-second removal deadline, including its failure path.
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+    readiness.reject(new Error("Registry log stream timed out"));
+  }, 35_000);
+  const completion = Promise.all([child.exited, stdout, new Response(child.stderr).text()]).finally(() =>
+    clearTimeout(timeout),
+  );
+  async function exited() {
+    const [exitCode, logs, stderr] = await completion;
+    if (timedOut) throw new Error("Registry log stream timed out");
+    if (exitCode !== 0) throw new Error(`Registry log stream failed (${exitCode}): ${stderr}`);
+    return { exitCode, logs };
+  }
+  async function close() {
+    if (child.exitCode === null) child.kill("SIGTERM");
+    await completion;
+  }
+  return { ready: readiness.promise, exited, close };
+}
 
 export async function run(command: string[], input?: string) {
   const child = Bun.spawn(command, { stdin: input === undefined ? "ignore" : "pipe", stdout: "pipe", stderr: "pipe" });
