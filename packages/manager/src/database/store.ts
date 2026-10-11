@@ -2,6 +2,7 @@ import { usageRepository } from "../usage/repository";
 import { accountRepository } from "./account-repository";
 import { bootstrapRepository } from "./bootstrap-repository";
 import { managerContext } from "./context";
+import { lifecycleRepository } from "./lifecycle-repository";
 export const ManagerStore = {
   async create(dataDir?: string) {
     const context = await managerContext(dataDir);
@@ -9,6 +10,7 @@ export const ManagerStore = {
       ...accountRepository(context),
       ...bootstrapRepository(context),
       ...usageRepository(context),
+      ...lifecycleRepository(context),
       close: () => context.close(),
     };
   },

@@ -4,6 +4,8 @@ import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
 import { createControllerBackup } from "../backup/controller-backup";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
+import { composeAccountLifecycle } from "../maintenance/account-composition";
+import { accountState } from "../maintenance/account-state";
 import { createMaintenance } from "../maintenance/maintenance";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
@@ -69,6 +71,8 @@ export async function startPocketCoderServer(
   let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
     await store.acquireCoordinatorLease();
+    const durableAccountState = await accountState(directory);
+    if (durableAccountState.state.state !== "ready") maintenance.fence();
     log("coordinator lease acquired");
     await loadConfiguredTemplates(store, config.templateDir, log);
     await requireEgressImageForRestrictedTemplates(store, config);
@@ -144,6 +148,17 @@ export async function startPocketCoderServer(
         ? "ok"
         : "failed",
     );
+    const accountLifecycle = composeAccountLifecycle({
+      state: durableAccountState,
+      maintenance,
+      store,
+      driver,
+      storageDriver,
+      log,
+      metrics,
+      readiness,
+      runtime: { scheduler, persistence, workspaceLeases, checkpointTransfers },
+    });
 
     const outbox = new OutboxDispatcher({
       store,
@@ -175,6 +190,8 @@ export async function startPocketCoderServer(
         directory: directory,
         store,
         pepper: config.pepper,
+        accountLifecycle,
+        maintenance,
         backup: createControllerBackup({
           store,
           maintenance,
@@ -205,9 +222,9 @@ export async function startPocketCoderServer(
     const agentUrl = listenerOrigin(config.agentHost, agentServer.port);
     log(`listening on ${url}`);
     log(`workspaces reach this server at ${config.workspaceServerUrl}`);
-    const initialWarmPool = warmPool
-      ?.reconcile()
-      .catch((error) => log(`warm pool initial reconcile failed: ${String(error)}`));
+    const initialWarmPool = (warmPool ? maintenance.pausable(() => warmPool.reconcile())() : undefined)?.catch(
+      (error) => log(`warm pool initial reconcile failed: ${String(error)}`),
+    );
 
     let stopPromise: Promise<void> | null = null;
     return {
@@ -219,6 +236,7 @@ export async function startPocketCoderServer(
         stopPromise = (async () => {
           log("shutting down");
           await timers.stop();
+          await accountLifecycle.drain();
           await screenshots?.close();
           await checkpointTransfers?.close();
           await persistence.drain();
