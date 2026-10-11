@@ -8,7 +8,14 @@ import { KubernetesDriver } from "./kubernetes";
 import { resourceName } from "./kubernetes-command";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { applyRegistrySecret } from "./kubernetes-registry";
-import { registryFixture, run, waitFor } from "./kubernetes-registry-fixture";
+import {
+  REGISTRY_TERM,
+  registryFixture,
+  registryShutdownLogs,
+  registryWorkspaceCommand,
+  run,
+  waitFor,
+} from "./kubernetes-registry-fixture";
 import { KubernetesSecretResolver } from "./kubernetes-secrets";
 import { LAUNCH_PHASE } from "./kubernetes-uncommitted";
 
@@ -22,7 +29,7 @@ function launch(image: string): WorkspaceLaunch {
         version: "1.0.0",
         image,
         imagePullSecret: "secretRef:pull-image",
-        command: ["sh", "-eu", "-c", "sleep 300"],
+        command: registryWorkspaceCommand,
         agent: { command: ["true"] },
         resources: { cpu: "1", memory: "128Mi" },
       },
@@ -130,7 +137,16 @@ test("live kubelet rejects wrong registry authority, pulls privately and removes
     await driver.cleanupInput(accepted.workspace.id);
     expect(await secretNames()).toEqual([]);
     expect((await pod(accepted.workspace.id)).status.phase).toBe("Running");
-    await driver.remove(ref);
+    const shutdown = registryShutdownLogs(f.namespace, running.metadata.name);
+    try {
+      await shutdown.ready;
+      await driver.remove(ref);
+      const stream = await shutdown.exited();
+      expect(stream.exitCode).toBe(0);
+      expect(stream.logs).toContain(`${REGISTRY_TERM}\n`);
+    } finally {
+      await shutdown.close();
+    }
     expect(await pod(accepted.workspace.id)).toBeNull();
     expect(await secretNames()).toEqual([]);
 
