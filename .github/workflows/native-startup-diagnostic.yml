@@ -2,6 +2,10 @@ name: isolated native startup diagnostics
 
 on:
   workflow_call:
+    inputs:
+      macos-intel-only:
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -14,11 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: &targets
-        include:
-          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
-          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
-          - { runner: macos-15, platform: darwin, arch: arm64 }
-          - { runner: macos-15-intel, platform: darwin, arch: x64 }
+        include: ${{ fromJSON(inputs.macos-intel-only && '[{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15","platform":"darwin","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -50,6 +50,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        if: inputs.macos-intel-only
+        with:
+          node-version: 22.19.0
+      - name: Match ordinary Mac installation prerequisites
+        if: inputs.macos-intel-only
+        run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
           name: startup-profile-${{ env.SOURCE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
@@ -88,6 +95,12 @@ jobs:
               sudo apt-get install --yes strace
             fi
           fi
+          if [ "$RUNNER_OS" = macOS ]; then
+            sw_vers >> "$RUNNER_TEMP/evidence/filesystem.txt"
+            diskutil info /System/Volumes/Data >> "$RUNNER_TEMP/evidence/filesystem.txt"
+            vm_stat > "$RUNNER_TEMP/evidence/vm-before.txt"
+            ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-before.txt"
+          fi
       - name: Run the first controller with unchanged startup and memory assertions
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -99,6 +112,11 @@ jobs:
           fi
           bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
             > "$RUNNER_TEMP/evidence/result.log" 2>&1
+      - name: Retain Mac filesystem and process state after the first-start probe
+        if: always() && matrix.platform == 'darwin'
+        run: |
+          vm_stat > "$RUNNER_TEMP/evidence/vm-after.txt"
+          ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-after.txt"
       - name: Prove seed metadata preparation precedes every durability barrier
         if: always() && matrix.platform == 'linux'
         run: bun scripts/native-startup-sync-order.ts "$RUNNER_TEMP/evidence" > "$RUNNER_TEMP/evidence/sync-order.log" 2>&1

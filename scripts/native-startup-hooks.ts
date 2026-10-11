@@ -16,6 +16,20 @@ function startupPhaseSync(phase, action) {
 
 type Hook = [string, string];
 const hooks: Record<string, Hook[]> = {
+  "packages/db/src/database/data-folder.ts": [
+    [
+      "const entries = seedEntries(directory);",
+      'const entries = startupPhaseSync("seed-inventory", () => seedEntries(directory));',
+    ],
+    [
+      "await seedPass(entries, prepareSeedEntry);",
+      'await startupPhase("seed-private-modes", () => seedPass(entries, prepareSeedEntry));',
+    ],
+    [
+      "await seedPass(entries, syncSeedEntry);",
+      'await startupPhase("seed-durability-barriers", () => seedPass(entries, syncSeedEntry));',
+    ],
+  ],
   "packages/db/src/database/context.ts": [
     ["await loadCoreAssets()", 'await startupPhase("assets-total", () => loadCoreAssets())'],
     [
