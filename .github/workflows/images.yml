@@ -3,6 +3,11 @@ name: candidate images
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      native-diagnostics:
+        description: Run CI failure diagnostics without image builds or publication
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -19,7 +24,7 @@ jobs:
 
   validate:
     needs: test
-    if: always() && (github.event_name == 'pull_request' || needs.test.result == 'success')
+    if: always() && !inputs.native-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -95,7 +100,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics
     needs: [test, validate]
     runs-on: ubuntu-24.04
     permissions:
