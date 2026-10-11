@@ -69,10 +69,38 @@ jobs:
           # It does not require nested virtualization. Only Linux runs workspace images.
           colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
           docker info
+      - name: Prepare initial Linux tracing for diagnostic-only runs
+        if: matrix.platform == 'linux' && github.event.inputs.native-diagnostics == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/validation/diagnostic/initial"
+          {
+            echo 'Initial traced startup only. Trace overhead makes this nonacceptance evidence.'
+            uname -a
+            lscpu
+            df -hT "$RUNNER_TEMP"
+            findmnt --target "$RUNNER_TEMP"
+            stat "$RUNNER_TEMP/native/pocketcoder"
+            sha256sum "$RUNNER_TEMP/native/pocketcoder"
+          } > "$RUNNER_TEMP/validation/diagnostic/initial/runner.txt"
+          if ! command -v strace; then
+            sudo apt-get update
+            sudo apt-get install --yes strace
+          fi
+          strace --version >> "$RUNNER_TEMP/validation/diagnostic/initial/runner.txt"
       - name: Verify downloaded binary startup, owner, restart and backup recovery
         id: installed-native
+        env:
+          INITIAL_TRACE: ${{ matrix.platform == 'linux' && github.event.inputs.native-diagnostics == 'true' }}
         run: |
           mkdir -p "$RUNNER_TEMP/validation"
+          if [ "$INITIAL_TRACE" = true ]; then
+            # Keep the exact helper and limits; tracing is diagnostic evidence only.
+            strace -ff -tt -T -yy -e trace=fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+              -o "$RUNNER_TEMP/validation/diagnostic/initial/waits" \
+              bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" \
+              > "$RUNNER_TEMP/validation/diagnostic/initial/result.log" 2>&1
+            exit 0
+          fi
           bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/native.json"
           cat "$RUNNER_TEMP/validation/native.json"
       - name: Diagnose a failed Linux startup without changing its result
