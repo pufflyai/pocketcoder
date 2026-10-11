@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       native-diagnostics:
-        description: Run CI failure diagnostics without image builds or publication
+        description: Run isolated native startup diagnostics without image builds or publication
         type: boolean
         default: false
 
@@ -17,10 +17,16 @@ env:
 
 jobs:
   test:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
+
+  diagnostics:
+    if: inputs.native-diagnostics
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-startup-diagnostic.yml
 
   validate:
     needs: test

@@ -1,0 +1,110 @@
+name: isolated native startup diagnostics
+
+on:
+  workflow_call:
+
+permissions: {}
+
+env:
+  BUN_VERSION: 1.4.2
+  SOURCE_COMMIT: ${{ github.sha }}
+
+jobs:
+  compile:
+    strategy:
+      fail-fast: false
+      matrix: &targets
+        include:
+          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
+          - { runner: macos-15, platform: darwin, arch: arm64 }
+          - { runner: macos-15-intel, platform: darwin, arch: x64 }
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Compile a distinct instrumented executable without starting it
+        run: bun scripts/native-startup-profile.ts "$RUNNER_TEMP/profile"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: startup-profile-${{ env.SOURCE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/profile
+          compression-level: 0
+          if-no-files-found: error
+
+  first-start:
+    needs: compile
+    strategy:
+      fail-fast: false
+      matrix: *targets
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: startup-profile-${{ env.SOURCE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/profile
+      - name: Start the original Docker prerequisite on macOS
+        if: matrix.platform == 'darwin'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew install colima docker qemu lima-additional-guestagents
+          colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
+          docker info
+      - name: Verify exact diagnostic artifacts and record runner metadata
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          chmod 0755 "$RUNNER_TEMP/profile/pocketcoder"
+          bun -e '
+            const { createHash } = require("node:crypto");
+            const { basename, join } = require("node:path");
+            const metadata = await Bun.file(join(process.env.RUNNER_TEMP, "profile/profile.json")).json();
+            if (metadata.sourceCommit !== process.env.SOURCE_COMMIT || metadata.sourceStatus) throw new Error("Diagnostic source mismatch");
+            if (metadata.platform !== process.platform || metadata.arch !== process.arch) throw new Error("Diagnostic target mismatch");
+            for (const entry of metadata.evidence) {
+              const path = entry.path.startsWith("scripts/") ? entry.path : join(process.env.RUNNER_TEMP, "profile", basename(entry.path));
+              const bytes = await Bun.file(path).bytes();
+              if (bytes.length !== entry.bytes || createHash("sha256").update(bytes).digest("hex") !== entry.sha256) throw new Error("Diagnostic artifact mismatch");
+            }
+            console.log(JSON.stringify({ qualification: "Diagnostic only. First controller on this runner; tracing/setup overhead excludes acceptance.", metadata, cpus: require("node:os").cpus(), bun: Bun.version }));
+          ' > "$RUNNER_TEMP/evidence/runner.json"
+          uname -a > "$RUNNER_TEMP/evidence/filesystem.txt"
+          df -h "$RUNNER_TEMP" >> "$RUNNER_TEMP/evidence/filesystem.txt"
+          if [ "$RUNNER_OS" = Linux ]; then
+            findmnt --target "$RUNNER_TEMP" >> "$RUNNER_TEMP/evidence/filesystem.txt"
+            if ! command -v strace; then
+              sudo apt-get update
+              sudo apt-get install --yes strace
+            fi
+          fi
+      - name: Run the first controller with unchanged startup and memory assertions
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            strace -ff -tt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+              -o "$RUNNER_TEMP/evidence/waits" \
+              bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
+              > "$RUNNER_TEMP/evidence/result.log" 2>&1
+            exit 0
+          fi
+          bun "$RUNNER_TEMP/profile/runner.js" "$RUNNER_TEMP/profile/pocketcoder" \
+            > "$RUNNER_TEMP/evidence/result.log" 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: startup-first-evidence-${{ env.SOURCE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: error
+      - name: Remove the owned macOS Docker daemon
+        if: always() && matrix.platform == 'darwin'
+        run: colima delete --force
