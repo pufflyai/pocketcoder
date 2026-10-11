@@ -1,0 +1,99 @@
+name: Mac Intel Docker setup diagnostic
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  setup:
+    runs-on: macos-15-intel
+    # These bounds expose stalled prerequisites. They do not change candidate gates.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      SOURCE_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Record diagnostic runner metadata
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          SETUP_EVIDENCE="$RUNNER_TEMP/macos-setup-diagnostic"
+          mkdir -p "$SETUP_EVIDENCE"
+          printf 'SETUP_EVIDENCE=%s\n' "$SETUP_EVIDENCE" >> "$GITHUB_ENV"
+          {
+            echo 'Docker setup diagnostic only. No controller or image acceptance.'
+            printf 'Source commit: %s\n' "$SOURCE_COMMIT"
+            date -u '+Started: %Y-%m-%dT%H:%M:%SZ'
+            uname -a
+            sw_vers
+            brew --version
+          } | tee "$SETUP_EVIDENCE/runner.log"
+      - name: Diagnose Brew installation
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          {
+            date -u '+Brew started: %Y-%m-%dT%H:%M:%SZ'
+            brew install colima docker qemu lima-additional-guestagents
+            date -u '+Brew completed: %Y-%m-%dT%H:%M:%SZ'
+          } 2>&1 | tee "$SETUP_EVIDENCE/brew.log"
+      - name: Diagnose Colima startup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          {
+            date -u '+Colima started: %Y-%m-%dT%H:%M:%SZ'
+            colima start --vm-type=qemu --arch=x86_64 --cpu=2 --memory=2 --disk=10
+            date -u '+Colima completed: %Y-%m-%dT%H:%M:%SZ'
+          } 2>&1 | tee "$SETUP_EVIDENCE/colima.log"
+      - name: Diagnose Docker readiness
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          {
+            date -u '+Docker info started: %Y-%m-%dT%H:%M:%SZ'
+            docker info
+            date -u '+Docker info completed: %Y-%m-%dT%H:%M:%SZ'
+          } 2>&1 | tee "$SETUP_EVIDENCE/docker.log"
+      - name: Retain versions and Colima state
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          mkdir -p "$SETUP_EVIDENCE"
+          {
+            date -u '+Diagnostic state: %Y-%m-%dT%H:%M:%SZ'
+            colima version || true
+            docker --version || true
+            limactl --version || true
+            qemu-system-x86_64 --version || true
+            colima status || true
+            df -h "$RUNNER_TEMP"
+          } 2>&1 | tee "$SETUP_EVIDENCE/state.log"
+          # Keep only VM diagnostics, never the profile's SSH keys or credentials.
+          for log in ha.stderr.log ha.stdout.log serial.log; do
+            phase_log="$HOME/.colima/_lima/colima/$log"
+            if [ -f "$phase_log" ]; then
+              cp "$phase_log" "$SETUP_EVIDENCE/$log"
+            fi
+          done
+      - name: Remove diagnostic Docker daemon
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          {
+            date -u '+Cleanup started: %Y-%m-%dT%H:%M:%SZ'
+            colima delete --force
+            date -u '+Cleanup completed: %Y-%m-%dT%H:%M:%SZ'
+          } 2>&1 | tee "$SETUP_EVIDENCE/cleanup.log"
+      - name: Retain setup evidence even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-macos-setup-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/macos-setup-diagnostic
+          if-no-files-found: error
