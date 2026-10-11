@@ -1,10 +1,10 @@
 /// <reference path="./file-types.d.ts" />
 import { createHash } from "node:crypto";
-import { brotliDecompressSync } from "node:zlib";
 import manifest from "../../assets/core-seed.json" with { type: "json" };
-import seedPath from "../../assets/core-seed.tar.br" with { type: "file" };
+import seedPath from "../../assets/core-seed.tar.zst" with { type: "file" };
 import migrations from "../../assets/migrations.json" with { type: "json" };
 import { dependencies } from "../../package.json" with { type: "json" };
+import { decodeDatabaseAsset } from "./asset-codec";
 
 import { loadDatabaseEngine } from "./engine-assets";
 
@@ -30,7 +30,7 @@ async function createCoreAssets() {
   const seed = await readSeed();
   // Existing disk databases need only the verified compressed bytes. Fresh installs
   // release their raw archive after extraction; memory stores share their immutable Blob.
-  const seedArchive = () => brotliDecompressSync(seed);
+  const seedArchive = () => decodeDatabaseAsset(seed);
   let memorySeed: Blob | undefined;
   return {
     ...(await loadDatabaseEngine()),

@@ -62,15 +62,15 @@ const hooks: Record<string, Hook[]> = {
   ],
   "packages/db/src/database/assets.ts": [
     [
-      "const seedArchive = () => brotliDecompressSync(seed);",
-      'const seedArchive = () => startupPhaseSync("seed-brotli", () => brotliDecompressSync(seed));',
+      "const seedArchive = () => decodeDatabaseAsset(seed);",
+      'const seedArchive = () => startupPhaseSync("seed-zstd", () => decodeDatabaseAsset(seed));',
     ],
     ["await loadDatabaseEngine()", 'await startupPhase("engine-assets", () => loadDatabaseEngine())'],
   ],
   "packages/db/src/database/engine-assets.ts": [
     [
       "return {\n      pgliteWasmModule:",
-      'const unpacked = await startupPhase("engine-wasm-brotli", () => unpack(wasmPath, manifest.engine.wasm.checksum));\nreturn {\n      pgliteWasmModule:',
+      'const unpacked = await startupPhase("engine-wasm-zstd", () => unpack(wasmPath, manifest.engine.wasm.checksum));\nreturn {\n      pgliteWasmModule:',
     ],
     [
       "await WebAssembly.compile(await unpack(wasmPath, manifest.engine.wasm.checksum))",
@@ -78,7 +78,7 @@ const hooks: Record<string, Hook[]> = {
     ],
     [
       "await unpack(bundlePath, manifest.engine.data.checksum)",
-      'await startupPhase("engine-data-brotli", () => unpack(bundlePath, manifest.engine.data.checksum))',
+      'await startupPhase("engine-data-zstd", () => unpack(bundlePath, manifest.engine.data.checksum))',
     ],
   ],
   "packages/db/src/store.ts": [

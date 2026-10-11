@@ -1,4 +1,4 @@
-declare module "*.br" {
+declare module "*.zst" {
   const path: string;
   export default path;
 }

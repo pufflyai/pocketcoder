@@ -27,7 +27,8 @@
     "./testing": "./src/test-fixtures.ts",
     "./checkpoints": "./src/checkpoints.ts",
     "./backup": "./src/backup.ts",
-    "./engine": "./src/engine.ts"
+    "./engine": "./src/engine.ts",
+    "./asset-codec": "./src/asset-codec.ts"
   },
   "engines": {
     "bun": ">=1.4.2"

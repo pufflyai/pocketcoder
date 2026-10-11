@@ -45,7 +45,7 @@
     "images:candidate": "bun --no-env-file scripts/candidate-images.ts",
     "images:smoke": "bun --no-env-file scripts/image-smoke.ts",
     "images:publish": "bun --no-env-file scripts/publish-candidate-images.ts",
-    "images:check:test": "bun test scripts/image-policy.test.ts",
+    "images:check:test": "bun test scripts/image-policy.test.ts scripts/native-startup-runner.test.ts",
     "packages": "lerna list --all",
     "release": "bun run build && bun run pack:check && changeset publish",
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",
