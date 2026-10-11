@@ -8,7 +8,7 @@ repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
 the server container.
 
 The installed package uses Node 22.19.0 or newer and includes native executables
-for macOS and Linux on ARM64 and x64. It runs without Bun. See
+for Apple Silicon macOS and for Linux on ARM64 and x64. It runs without Bun. See
 [candidate installation](candidate-installation.md) for commit-pinned tarballs.
 
 Principal and key commands use HTTP against the running server. Set

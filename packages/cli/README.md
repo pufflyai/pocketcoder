@@ -8,8 +8,9 @@ deployment without writing control-plane API calls by hand.
 
 ## Install
 
-pcd requires Node 22.19.0 or newer on macOS or Linux, on ARM64 or x64.
-The package includes all four native executables. Bun is not needed to run it.
+pcd requires Node 22.19.0 or newer on Apple Silicon macOS, or on Linux on ARM64
+or x64. Intel Macs are not supported. The package includes all three native
+executables. Bun is not needed to run it.
 
 ```sh
 bun add --global @pstdio/pocketcoder-cli

@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -97,7 +97,6 @@ jobs:
           - { runner: ubuntu-24.04, platform: linux, arch: x64 }
           - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
           - { runner: macos-15, platform: darwin, arch: arm64 }
-          - { runner: macos-15-intel, platform: darwin, arch: x64 }
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
