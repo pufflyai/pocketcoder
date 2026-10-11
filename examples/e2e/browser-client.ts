@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { type BrowserAction, BrowserFrames } from "@pstdio/pocketcoder-contracts";
 import { waitFor } from "./local-process";
 
-export async function connectBrowser(baseUrl: string, origin: URL, cookie: string) {
+export async function connectBrowser(baseUrl: string, origin: URL, cookie: string, ca?: string) {
   const socket = new WebSocket(`${baseUrl.replace("http", "ws")}/socket`, {
     headers: { host: origin.host, origin: origin.origin, cookie },
+    ...(ca ? { tls: { ca } } : {}),
   } as unknown as string[]);
   socket.binaryType = "arraybuffer";
   const frames: { hash: string; at: number; bytes: number }[] = [];

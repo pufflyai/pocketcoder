@@ -10,6 +10,11 @@ export class KubernetesAccounts {
   constructor(private readonly command = kube) {}
   async ensure(account: Account) {
     await this.command(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);
+    const hosts = account.plan.publicHosts;
+    if (hosts) {
+      await this.command(["get", "ingressclass", hosts.ingressClassName, "-o", "name"]);
+      await this.command(["get", "clusterissuer", hosts.issuer, "-o", "name"]);
+    }
     const cni = JSON.parse(await this.command(["-n", "kube-system", "get", "daemonset", "calico-node", "-o", "json"]));
     if (!cni.status.desiredNumberScheduled || cni.status.numberReady !== cni.status.desiredNumberScheduled)
       throw new Error("Calico enforcement is not ready");
@@ -55,6 +60,20 @@ export class KubernetesAccounts {
       "-e",
       "if(!(await fetch('http://127.0.0.1:8090/readyz')).ok)process.exit(1)",
     ]);
+    if (hosts) await this.certificateReady(account);
+  }
+  private async certificateReady(account: Account) {
+    // DNS validation can take minutes. Check once so other accounts keep moving; the next pass retries.
+    const certificate = JSON.parse(
+      await this.command(["-n", account.namespace, "get", "certificate", "public-hosts", "-o", "json"]),
+    );
+    const ready = certificate.status?.conditions?.some(
+      (condition: { type: string; status: string; observedGeneration?: number }) =>
+        condition.type === "Ready" &&
+        condition.status === "True" &&
+        condition.observedGeneration === certificate.metadata.generation,
+    );
+    if (!ready) throw new Error("Account certificate is not ready");
   }
   async owner(account: Account, request: Awaited<ReturnType<ManagerStore["beginBootstrap"]>>) {
     const args = [

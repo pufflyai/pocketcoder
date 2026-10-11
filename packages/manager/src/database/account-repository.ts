@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { ManagerError } from "../accounts/errors";
-import type { ManagerConfig } from "../config";
+import type { AccountInput, AccountPlan } from "../config";
 import type { ManagerContext } from "./context";
 export const hash = (input: string) => createHash("sha256").update(input).digest("hex");
 
@@ -19,7 +19,8 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
   return {
     getAccount,
     getOperation,
-    async createAccount(requestId: string, input: { name: string }, plan: ManagerConfig, authorityExpiresAt: Date) {
+    // The plan is built only for a new account, so a replay never depends on the current settings.
+    async createAccount(requestId: string, input: AccountInput, plan: () => AccountPlan, authorityExpiresAt: Date) {
       validate();
       return db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${requestId}, 83))`);
@@ -42,7 +43,7 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
             namespace: `pc-account-${id.replaceAll("-", "")}`,
             requestId,
             requestDigest: digest,
-            plan,
+            plan: plan(),
             state: "provisioning",
             createdAt: at,
           })
