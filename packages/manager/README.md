@@ -76,6 +76,38 @@ can reach their own AgentAPI, DNS and public HTTPS. They cannot reach operator
 APIs or another account. Controller RBAC cannot read another account's Secrets or
 launch jobs there. Workspaces receive no Kubernetes token or controller volume.
 
+## Public account hosts
+
+Set `POCKETCODER_MANAGER_PUBLIC_HOSTS` to give each account its own HTTPS API
+host and wildcard view zone:
+
+```json
+{
+  "apiOrigin": "https://pocketcoder.datazine.app",
+  "viewOrigin": "https://embed.kaset.dev",
+  "issuer": "pocketcoder-dns",
+  "ingressClassName": "pocketcoder",
+  "ingressNamespace": "pocketcoder-edge",
+  "trustedIngress": ["10.244.0.0/16"]
+}
+```
+
+Account `0f6c3b5e-…` then gets `https://0f6c3b5e….pocketcoder.datazine.app` and
+`*.0f6c3b5e….embed.kaset.dev`. Account responses include them as `api_origin`
+and `view_origin`. The API and view origins must use different registrable
+domains. Create accounts with `"parents": ["https://app.example.org"]` to allow
+embedding; parents must not share the view domain. Without public hosts,
+`parents` is rejected and `api_origin` and `view_origin` are null.
+
+The manager adds a cert-manager `Certificate` and an `Ingress` to the account
+namespace and configures the controller's public views. Among pods, only the
+ingress namespace can reach the controller listener; the controller trusts
+forwarding headers from `trustedIngress`. Provisioning waits until the certificate is
+ready. The cluster needs the ingress class and cluster issuer before it starts.
+[The DigitalOcean guide](../../deploy/digitalocean/README.md#managed-account-hosts-and-public-views)
+installs them. `bun run example:e2e:managed-public-views` runs the whole path in
+kind with real browsers.
+
 Production layout, gVisor, encrypted account/manager backups and customer
 enablement belong to the following hosted-service tickets.
 

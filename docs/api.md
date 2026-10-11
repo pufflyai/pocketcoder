@@ -67,8 +67,10 @@ The API, parent applications and public views must use different registrable
 domains from the views. A registrable domain is the name a tenant can own, such
 as `example.co.uk`; private public suffixes such as `github.io` also count.
 Point wildcard view DNS and TLS at the controller ingress. Only listed ingress
-peer IPs may supply `X-Forwarded-Host` and `X-Forwarded-Proto: https`. Other
-forwarding headers cannot select the public origin. Cookies have no Domain
+peer addresses or ranges, such as `10.244.0.0/16`, may supply `X-Forwarded-Host`
+and `X-Forwarded-Proto: https` (or `wss` for WebSocket upgrades). List a range only when network policy lets
+nothing but the ingress reach the controller. Other forwarding headers cannot
+select the public origin. Cookies have no Domain
 attribute. Platform cookies and authorization headers never reach workspace
 services. Unsafe requests and browser sockets require the exact view Origin.
 The reserved display host serves trusted viewer assets only.
@@ -91,6 +93,39 @@ Run `bun run example:e2e:embed --keep` for Chromium and Firefox with third-party
 cookies blocked. The fixture uses separate HTTPS domains, real Docker Chromium
 frames, and a fresh top-level fallback. It uses a temporary self-signed
 certificate in its test contexts and removes its workspace afterward.
+
+### Hosted account sessions
+
+A managed account has its own API and view hosts. The manager returns them as
+`api_origin` and `view_origin`, for example:
+
+```text
+api_origin   https://0f6c3b5e9d0a4c618f3e6b2a1c9d7e40.pocketcoder.datazine.app
+view_origin  https://0f6c3b5e9d0a4c618f3e6b2a1c9d7e40.embed.kaset.dev
+```
+
+The operator sets the allowed embedding parents when creating the account. Your
+backend calls the account API with its finite key; the returned view URL is on
+the account's view zone:
+
+```ts
+const client = new PocketCoderClient({ baseUrl: account.api_origin, apiKey: finiteKey });
+const { url } = await client.displays.open(workspaceId, false, {
+  session: { mode: "embedded", parentOrigin: "https://app.example.org" },
+});
+// url: https://<workspace>-display.0f6c3b5e9d0a4c618f3e6b2a1c9d7e40.embed.kaset.dev/.pc/open?token=…
+```
+
+Put `url` in the iframe and keep the **Open in a new tab** fallback described
+above. The PocketCoder session cookie works only on its own view host. Another
+account's view zone, the API host and hosts outside the account zones do not
+accept it. Removing the account's namespace removes its hosts, certificate and
+DNS records, so old sessions stop working.
+
+All accounts' view hosts share the `kaset.dev` site. A workspace page can set a
+cookie for `kaset.dev` that browsers also send to other accounts' apps. Do not
+rely on app cookies being private to one account until `embed.kaset.dev` is on
+the Public Suffix List.
 
 ## Principals and keys
 

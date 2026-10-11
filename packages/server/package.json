@@ -12,7 +12,8 @@
   "exports": {
     ".": "./src/app.ts",
     "./config": "./src/config/config.ts",
-    "./lifecycle": "./src/lifecycle/lifecycle.ts"
+    "./lifecycle": "./src/lifecycle/lifecycle.ts",
+    "./public-views": "./src/config/public-views.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",

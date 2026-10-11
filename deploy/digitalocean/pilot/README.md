@@ -21,7 +21,7 @@ for this short synthetic trial. The system pool has one `s-4vcpu-8gb` node.
 The workspace pool uses the same size, scales from zero to one, and carries a
 workspace-only taint. RuntimeClass scheduling must select and tolerate that pool.
 No load balancer, DNS record, public manager listener or customer traffic is
-part of this plan. Public HTTPS belongs to PC-85.
+part of this Terraform plan. PC-85 adds the public edge in Kubernetes; see below.
 
 After the runtime and network checks, Kubernetes creates one private 1 GiB
 manager volume and two private 10 GiB account volumes. Manager and account
@@ -55,9 +55,17 @@ they exist, including after detachment. A 24-hour trial with both nodes and all
 three volumes is about `$3.50` before tax and any bandwidth overage. This is a
 cost estimate, not a bill or a production budget.
 
+PC-85 adds one regional load balancer for the [account host edge](../README.md#managed-account-hosts-and-public-views):
+`$12/month` per size unit, so the steady maximum becomes `$110.10/month`. DNS
+records and Let's Encrypt certificates have no DigitalOcean charge. The edge
+writes only records under `pocketcoder.datazine.app` and `embed.kaset.dev`,
+with `pocketcoder-ams3-1` TXT ownership. It never changes other records in those
+zones, such as the `kaset.dev` apex or `kito-staging.datazine.app`.
+
 Sources: [node billing](https://docs.digitalocean.com/products/kubernetes/details/pricing/),
 [volume billing](https://docs.digitalocean.com/products/volumes/details/pricing/),
-[scale to zero](https://docs.digitalocean.com/products/kubernetes/how-to/autoscale/).
+[scale to zero](https://docs.digitalocean.com/products/kubernetes/how-to/autoscale/),
+[load balancer billing](https://docs.digitalocean.com/products/networking/load-balancers/details/pricing/).
 
 ## Runtime decision and prerequisites
 
