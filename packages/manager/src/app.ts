@@ -48,6 +48,18 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
   });
   app.get("/v1/accounts", async (c) => c.json({ items: (await store.listAccounts()).map(accountResource) }));
+  app.post("/v1/accounts/:id/purge", async (c) =>
+    c.json(
+      {
+        operation: await service.purge(
+          z.uuid().parse(c.req.param("id")),
+          z.string().min(1).max(128).parse(c.req.header("idempotency-key")),
+          c.get("operator").expiresAt,
+        ),
+      },
+      202,
+    ),
+  );
   app.post("/v1/accounts/:id/backups", async (c) => {
     const result = await store.beginBackupOperation(
       z.uuid().parse(c.req.param("id")),
@@ -88,7 +100,10 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     return c.json(accountResource(account));
   });
   app.get("/v1/operations/:id", async (c) => {
-    const operation = await store.getOperation(z.uuid().parse(c.req.param("id")));
+    const id = z.uuid().parse(c.req.param("id"));
+    const purge = await store.purgeRuntime?.status(id);
+    if (purge) return c.json(purge);
+    const operation = await store.getOperation(id);
     if (!operation) throw new ManagerError(404, "operation_not_found");
     return c.json(operation);
   });

@@ -28,6 +28,12 @@ export function bootstrapRepository({
   validate,
 }: ManagerContext) {
   return {
+    async bootstrapAccountId(id: string) {
+      validate();
+      const [request] = await db.select({ accountId: requests.accountId }).from(requests).where(eq(requests.id, id));
+      if (!request) throw new ManagerError(404, "bootstrap_request_not_found");
+      return request.accountId;
+    },
     async createOperator(expiresAt: Date) {
       const at = new Date();
       if (
@@ -61,7 +67,7 @@ export function bootstrapRepository({
         const [account] = await tx.select().from(accounts).where(eq(accounts.id, accountId)).for("update");
         const at = new Date();
         validateExpiry(expiresAt, authorityExpiresAt, at);
-        if (!account || account.state !== "ready") throw new ManagerError(409, "account_not_ready");
+        if (account?.state !== "ready") throw new ManagerError(409, "account_not_ready");
         const [prior] = await tx
           .select()
           .from(requests)

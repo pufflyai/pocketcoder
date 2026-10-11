@@ -148,7 +148,11 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       },
     };
   } catch (error) {
-    await close();
+    try {
+      await close();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Owned Kubernetes setup and cleanup failed");
+    }
     throw error;
   }
 }

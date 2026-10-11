@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { createBunWebSocket } from "hono/bun";
 import type { Screenshots } from "../displays/screenshots";
 import { type AppEnv, errorHandler, requestId, requestLogging } from "../http/middleware";
+import { accountPurgeGate } from "../maintenance/account-purge";
 import type { StructuredLogger } from "../observability/observability";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import { type PoolConnectionHub, poolConnectValidator, poolWsEvents } from "./pool-ws";
@@ -13,6 +14,7 @@ import { agentConnectValidator, agentWsEvents } from "./ws";
 import type { WsDeps } from "./ws-types";
 
 interface AgentAppDeps {
+  assertAccountAllowed?: () => Promise<void>;
   screenshots?: Screenshots;
   connection: WsDeps;
   poolHub: PoolConnectionHub;
@@ -24,6 +26,7 @@ interface AgentAppDeps {
 }
 
 export function createAgentApp({
+  assertAccountAllowed,
   connection,
   screenshots,
   poolHub,
@@ -36,6 +39,7 @@ export function createAgentApp({
   const { store, pepper, log } = connection;
   const app = new Hono<AppEnv>();
   app.onError(errorHandler(logger));
+  if (assertAccountAllowed) app.use("*", accountPurgeGate(assertAccountAllowed));
   app.use("*", requestId);
   app.use("*", requestLogging(logger));
   app.get("/v1/agent/connect", agentConnectValidator(connection), upgradeWebSocket(agentWsEvents(connection)));
@@ -45,6 +49,8 @@ export function createAgentApp({
       poolConnectValidator({ store, pepper }),
       upgradeWebSocket(
         poolWsEvents({
+          assertAccountAllowed,
+          activity: connection.activity,
           store,
           hub: poolHub,
           manager: warmPool,

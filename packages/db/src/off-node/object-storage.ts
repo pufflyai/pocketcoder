@@ -42,7 +42,13 @@ export class ObjectStorage {
     this.config = ObjectStorageConfigSchema.parse(config);
   }
 
-  async request(method: string, key = "", query: Record<string, string> = {}, body?: Uint8Array | string) {
+  async request(
+    method: string,
+    key = "",
+    query: Record<string, string> = {},
+    body?: Uint8Array | string,
+    conditions: Record<string, string> = {},
+  ) {
     const { endpoint, bucket, region, accessKeyId, secretAccessKey, sessionToken, forcePathStyle } = this.config;
     const url = new URL(endpoint);
     if (!forcePathStyle) url.hostname = `${bucket}.${url.hostname}`;
@@ -58,7 +64,12 @@ export class ObjectStorage {
     const at = new Date().toISOString().replace(/[:-]|\.\d{3}/g, "");
     const date = at.slice(0, 8);
     const payload = hash(body ?? "");
-    const headers: Record<string, string> = { host: url.host, "x-amz-content-sha256": payload, "x-amz-date": at };
+    const headers: Record<string, string> = {
+      host: url.host,
+      "x-amz-content-sha256": payload,
+      "x-amz-date": at,
+      ...conditions,
+    };
     if (sessionToken) headers["x-amz-security-token"] = sessionToken;
     const names = Object.keys(headers).sort();
     const signed = names.join(";");
@@ -94,6 +105,11 @@ export class ObjectStorage {
 
   async put(key: string, bytes: Uint8Array) {
     const response = await this.request("PUT", key, {}, bytes);
+    return this.receipt(response, key, bytes.length, `sha256:${hash(bytes)}`);
+  }
+
+  async putIfAbsent(key: string, bytes: Uint8Array) {
+    const response = await this.request("PUT", key, {}, bytes, { "if-none-match": "*" });
     return this.receipt(response, key, bytes.length, `sha256:${hash(bytes)}`);
   }
 

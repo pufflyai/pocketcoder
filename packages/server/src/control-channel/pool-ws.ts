@@ -13,11 +13,17 @@ import type { Store, WarmPoolConnections, WarmPoolManager } from "@pstdio/pocket
 import type { MiddlewareHandler } from "hono";
 import type { WSContext, WSEvents } from "hono/ws";
 import type { AppEnv } from "../http/middleware";
+import type { ControlActivity } from "./activity";
 
 export class PoolConnectionHub implements WarmPoolConnections {
   private readonly connections = new Map<string, WSContext>();
+  private fenced = false;
 
   attach(runtimeId: string, ws: WSContext): void {
+    if (this.fenced) {
+      ws.close(1008, "account control traffic fenced");
+      return;
+    }
     this.connections.get(runtimeId)?.close(1008, "superseded pool connection");
     this.connections.set(runtimeId, ws);
   }
@@ -27,6 +33,7 @@ export class PoolConnectionHub implements WarmPoolConnections {
   }
 
   assign(runtimeId: string, input: ProviderInput): boolean {
+    if (this.fenced) return false;
     const ws = this.connections.get(runtimeId);
     if (!ws) return false;
     const frame = LeaseAssignmentFrameSchema.parse({
@@ -49,6 +56,10 @@ export class PoolConnectionHub implements WarmPoolConnections {
     const ws = this.connections.get(runtimeId);
     this.connections.delete(runtimeId);
     ws?.close(1000, "pool runtime drained");
+  }
+  fence() {
+    this.fenced = true;
+    for (const id of this.connections.keys()) this.close(id);
   }
 }
 
@@ -80,6 +91,8 @@ export function poolConnectValidator(deps: { store: Store; pepper: string }): Mi
 }
 
 export function poolWsEvents(deps: {
+  assertAccountAllowed?: () => Promise<void>;
+  activity?: ControlActivity;
   store: Store;
   hub: PoolConnectionHub;
   manager: WarmPoolManager;
@@ -90,7 +103,8 @@ export function poolWsEvents(deps: {
     let registered = false;
     return {
       onMessage: (event, ws) => {
-        void (async () => {
+        const message = async () => {
+          await deps.assertAccountAllowed?.();
           if (registered) {
             ws.close(1008, "pool runtime already registered");
             return;
@@ -110,17 +124,21 @@ export function poolWsEvents(deps: {
             ws.close(1008, "invalid pool registration");
             return;
           }
+          await deps.assertAccountAllowed?.();
           deps.hub.attach(row.id, ws);
           registered = await deps.manager.markReady(row.id);
+          await deps.assertAccountAllowed?.();
           if (!registered) ws.close(1008, "pool registration no longer valid");
-        })().catch((error) => {
+        };
+        void (deps.activity ? deps.activity.run(message) : message()).catch((error) => {
           deps.log?.(`pool ws ${auth.runtimeId}: ${String(error)}`);
           ws.close(1011, "pool registration failed");
         });
       },
       onClose: (_event, ws) => {
         deps.hub.detach(auth.runtimeId, ws);
-        void deps.manager.disconnected(auth.runtimeId);
+        const disconnect = () => deps.manager.disconnected(auth.runtimeId);
+        void (deps.activity ? deps.activity.track(disconnect) : disconnect()).catch(() => {});
       },
     };
   };

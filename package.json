@@ -87,7 +87,9 @@
     "example:e2e:managed-off-node": "bun --no-env-file examples/e2e/managed-off-node.ts",
     "example:e2e:managed-active-suspend": "bun --no-env-file examples/e2e/managed-active-suspend.ts",
     "example:e2e:off-node-runtime-handoff": "bun --no-env-file examples/e2e/off-node-runtime-handoff.ts",
-    "example:e2e:managed-interruption": "bun --no-env-file examples/e2e/managed-interruption.ts"
+    "example:e2e:managed-interruption": "bun --no-env-file examples/e2e/managed-interruption.ts",
+    "example:e2e:managed-account-purge": "bun --no-env-file examples/e2e/managed-purge-physical.ts",
+    "example:e2e:managed-account-purge:bootstrap": "bun --no-env-file examples/e2e/managed-purge.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

@@ -46,7 +46,7 @@ export function managerSchema(schema?: string) {
       id: uuid().primaryKey(),
       accountId: uuid("account_id")
         .notNull()
-        .references(() => accounts.id),
+        .references(() => accounts.id, { onDelete: "cascade" }),
       kind: text().$type<"provision" | "suspend" | "resume" | "backup" | "restore">().notNull().default("provision"),
       backupId: uuid("backup_id"),
       computeProof: jsonb("compute_proof").$type<Record<string, unknown>>(),
@@ -73,10 +73,10 @@ export function managerSchema(schema?: string) {
   const backups = table("backups", {
     id: uuid()
       .primaryKey()
-      .references(() => operations.id),
+      .references(() => operations.id, { onDelete: "cascade" }),
     accountId: uuid("account_id")
       .notNull()
-      .references(() => accounts.id),
+      .references(() => accounts.id, { onDelete: "cascade" }),
     receipt: jsonb().$type<OffNodeBackupReceipt>().notNull(),
     volumeName: text("volume_name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -102,7 +102,7 @@ export function managerSchema(schema?: string) {
       id: uuid().primaryKey(),
       accountId: uuid("account_id")
         .notNull()
-        .references(() => accounts.id),
+        .references(() => accounts.id, { onDelete: "cascade" }),
       requestId: uuid("request_id").notNull(),
       requestDigest: text("request_digest").notNull(),
       expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -125,7 +125,7 @@ export function managerSchema(schema?: string) {
     {
       accountId: uuid("account_id")
         .notNull()
-        .references(() => accounts.id),
+        .references(() => accounts.id, { onDelete: "cascade" }),
       bucketAt: timestamp("bucket_at", { withTimezone: true }).notNull(),
       sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
       workspaces: integer(),

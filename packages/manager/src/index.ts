@@ -3,9 +3,18 @@ import { loadManagerBackupConfig } from "./backup/config";
 import { ManagerConfigSchema } from "./config";
 import { ManagerStore } from "./database/store";
 import { KubernetesAccounts } from "./kubernetes/accounts";
+import { purgeControllerFiles } from "./kubernetes/purge-files";
+import { loadManagerPurgeConfig, loadPurgePhysicalStorage } from "./purge/config";
 
 const dataDir = process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data";
-const store = await ManagerStore.create(dataDir);
+const purgePath = process.env.POCKETCODER_MANAGER_PURGE_CONFIG;
+if (process.argv[2] !== "operator" && !purgePath)
+  throw new Error("Provide POCKETCODER_MANAGER_PURGE_CONFIG outside the manager data folder.");
+const backups = process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG
+  ? await loadManagerBackupConfig(process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG, dataDir)
+  : undefined;
+const purge = purgePath ? await loadManagerPurgeConfig(purgePath, dataDir, backups) : undefined;
+const store = await ManagerStore.create(dataDir, purge);
 if (process.argv[2] === "operator") {
   try {
     const expiry = process.argv[3];
@@ -15,18 +24,22 @@ if (process.argv[2] === "operator") {
     await store.close();
   }
 } else {
-  const backups = process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG
-    ? await loadManagerBackupConfig(process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG, dataDir)
-    : undefined;
   const config = ManagerConfigSchema.parse({
     controllerImage: process.env.POCKETCODER_MANAGER_CONTROLLER_IMAGE,
     runtimeClassName: process.env.POCKETCODER_MANAGER_RUNTIME_CLASS,
+    purgeAuthority: true,
     ...(backups ? { offNodeBackups: true } : {}),
     ...(process.env.POCKETCODER_MANAGER_STORAGE_CLASS
       ? { storageClassName: process.env.POCKETCODER_MANAGER_STORAGE_CLASS }
       : {}),
   });
-  const service = accountService(store, new KubernetesAccounts(undefined, backups));
+  if (!purge) throw new Error("Private purge authority is required.");
+  const physical = await loadPurgePhysicalStorage(purge, dataDir);
+  const service = accountService(
+    store,
+    new KubernetesAccounts(undefined, backups, purgeControllerFiles(purge)),
+    physical,
+  );
   const usage = usageSampler(store);
   const app = createManagerApp(store, config, service);
   const endpoint = new URL(`http://${process.env.POCKETCODER_MANAGER_HTTP ?? "127.0.0.1:8092"}`);

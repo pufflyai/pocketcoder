@@ -8,6 +8,7 @@ export const ManagerConfigSchema = z
       .regex(/^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$/),
     storageClassName: z.string().min(1).optional(),
     offNodeBackups: z.boolean().optional(),
+    purgeAuthority: z.boolean().optional(),
   })
   .strict();
 export type ManagerConfig = z.infer<typeof ManagerConfigSchema>;

@@ -5,17 +5,16 @@ import { z } from "zod";
 import { syncPrivateDirectory } from "../bootstrap/private-files";
 
 const Action = z.enum(["suspend", "resume"]);
+export const AccountComputeSchema = z.strictObject({
+  workspaces: z.array(z.uuid()),
+  warm: z.array(z.uuid()),
+  evidence: z.array(z.record(z.string(), z.unknown())),
+});
 const State = z.strictObject({
   state: z.enum(["ready", "suspending", "suspended", "resuming"]),
   current: z.strictObject({ id: z.uuid(), kind: Action }).nullable(),
   completed: z.array(z.strictObject({ id: z.uuid(), kind: Action })),
-  compute: z
-    .strictObject({
-      workspaces: z.array(z.uuid()),
-      warm: z.array(z.uuid()),
-      evidence: z.array(z.record(z.string(), z.unknown())),
-    })
-    .optional(),
+  compute: AccountComputeSchema.optional(),
 });
 export type AccountState = z.infer<typeof State>;
 

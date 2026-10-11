@@ -22,6 +22,7 @@ export async function renewCredential(
   try {
     const issued = await deps.workspaceLeases.renew(row.id, previous.id, payload.request_id);
     if (!(await activeConnectionWorkspace(deps, connection))) return;
+    await deps.assertAccountAllowed?.();
     deps.hub.send(connection, "credential_renewed", {
       previous_lease_id: previous.id,
       request_id: payload.request_id,
@@ -40,6 +41,7 @@ export async function confirmCredential(
   if (!deps.workspaceLeases || !(await activeConnectionWorkspace(deps, connection))) return;
   try {
     await deps.workspaceLeases.completeRenewal(connection.workspaceId, payload.previous_lease_id, payload.lease_id);
+    await deps.assertAccountAllowed?.();
     if (await activeConnectionWorkspace(deps, connection))
       deps.hub.send(connection, "credential_installed_ack", payload);
   } catch {

@@ -10,6 +10,8 @@ import {
 } from "@pstdio/pocketcoder-db/off-node";
 import { z } from "zod";
 
+import { createRequestDigest } from "../purge/intent";
+
 const Config = z.strictObject({
   storage: ObjectStorageConfigSchema,
   encryptionKeyFile: z.string().refine(isAbsolute),
@@ -33,11 +35,12 @@ export async function loadManagerBackupConfig(path: string, dataDir: string) {
       const port = Number(endpoint.port || (endpoint.protocol === "https:" ? 443 : 80));
       return addresses.map(({ address, family }) => ({ cidr: `${address}/${family === 6 ? 128 : 32}`, port }));
     },
-    accountFiles(accountId: string) {
+    accountFiles(accountId: string, requestId: string) {
       return {
         "config.json": Buffer.from(
           JSON.stringify({
             accountId,
+            createRequestDigest: createRequestDigest(requestId),
             storage: config.storage,
             encryptionKeyFile: "/private/off-node/outer-key",
             staging: config.staging,
