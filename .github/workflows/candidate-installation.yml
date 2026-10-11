@@ -95,7 +95,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/validation"
           if [ "$INITIAL_TRACE" = true ]; then
             # Keep the exact helper and limits; tracing is diagnostic evidence only.
-            strace -ff -tt -T -yy -e trace=fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+            strace -ff -tt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
               -o "$RUNNER_TEMP/validation/diagnostic/initial/waits" \
               bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" \
               > "$RUNNER_TEMP/validation/diagnostic/initial/result.log" 2>&1
@@ -123,7 +123,7 @@ jobs:
           strace --version >> "$RUNNER_TEMP/validation/diagnostic/runner.txt"
           # Record waits and file-sync metadata, never reads, writes or secret buffers.
           set +e
-          strace -ff -tt -T -yy -e trace=fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+          strace -ff -tt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
             -o "$RUNNER_TEMP/validation/diagnostic/waits" \
             bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" \
             > "$RUNNER_TEMP/validation/diagnostic/result.log" 2>&1
