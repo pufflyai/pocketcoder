@@ -55,6 +55,7 @@ export const ERROR_CODES = {
   "relay.streaming_unsupported": 409,
   "relay.deadline_exceeded": 504,
   "relay.upstream_error": 502,
+  "agent.interrupt_unsupported": 409,
   "attachment.invalid": 400,
   "attachment.too_large": 413,
   "attachment.not_found": 404,

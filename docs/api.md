@@ -396,6 +396,40 @@ clients should treat `relay.route_not_allowed` and
 
 Relay activity counts as workspace activity for the idle timeout.
 
+## Interrupt the current turn
+
+```text
+POST /v1/workspaces/{id}/agent/interrupt   scope services:relay   no body
+```
+
+This stops the agent's current turn. The workspace, the agent process and the
+conversation stay. Three actions are separate:
+
+- **Interrupt** stops the current turn. Send a follow-up when the agent is
+  `stable` again.
+- **Disconnect** (closing a request or event stream) only stops watching. The
+  turn keeps running.
+- **Cancel** (`POST /v1/workspaces/{id}/cancel`) ends the whole workspace.
+
+The server reads the agent status first. While a turn runs, it sends the
+template's `agent.interruptKeys` to the agent's terminal through AgentAPI's raw
+message type.
+
+| Status | Body or code | Meaning |
+|--------|--------------|---------|
+| 200 | `{"status":"requested"}` | The keys were sent. This does not prove the turn stopped: wait for `agent_state: "stable"`. |
+| 200 | `{"status":"idle"}` | The agent was already waiting for input. Nothing was sent. |
+| 409 | `agent.interrupt_unsupported` | The template declares no interrupt keys. The workspace keeps running. |
+
+The relay errors above also apply. AgentAPI has no turn ID, so an interrupt that
+races with another client's new turn can stop that turn. A client that waits
+for each interrupt before it sends again is safe. AgentAPI also reports
+`running` until the agent's screen has been still for about 2 s, so repeating
+the request in that window sends the keys again. Wait for
+`agent_state: "stable"` instead of repeating it. Interruption cannot undo file
+edits or tool effects that already happened, and AgentAPI saves the partial
+reply as a normal agent message.
+
 ## Interactive terminal
 
 ```text

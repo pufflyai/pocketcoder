@@ -1,5 +1,6 @@
 import { AdministrationApi } from "./resources/admin/admin";
-import { AgentApi, AttachmentsApi } from "./resources/attachments/attachments";
+import { AgentApi } from "./resources/agent/agent";
+import { AttachmentsApi } from "./resources/attachments/attachments";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";

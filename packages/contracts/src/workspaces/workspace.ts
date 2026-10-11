@@ -92,6 +92,14 @@ export type ReasonCode = (typeof REASON_CODES)[number];
 export const AGENT_STATES = ["unknown", "running", "stable"] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 
+// `requested` means the interrupt keys were sent, not that the turn stopped:
+// callers wait for `agent_state: "stable"` to see it settle.
+export const AgentInterruptResponseSchema = z.object({
+  status: z.enum(["requested", "idle"]),
+});
+
+export type AgentInterruptResponse = z.infer<typeof AgentInterruptResponseSchema>;
+
 // REST request/response schemas.
 
 export const WorkspaceCreateRequestSchema = z.object({

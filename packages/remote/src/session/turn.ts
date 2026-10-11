@@ -2,11 +2,15 @@ import type { WorkspaceResource, WorkspaceTurnResolver } from "@pstdio/pocketcod
 import { WorkspaceTurnResolutionError } from "@pstdio/pocketcoder-sdk";
 import { DIRECT_MODE_ATTACHMENT_ERROR, type TurnAttachmentBatch } from "../attachments/attachments";
 import { RemoteAgentClient } from "../client/client";
-import type { ControlPlaneClient } from "../client/control-plane";
+import { type ControlPlaneClient, ControlPlaneError } from "../client/control-plane";
 import { RemoteRequestError } from "../client/remote-request-error";
 import { relayTarget, type SessionTarget } from "./session-target";
 
 export type RemoteTurnResolver = Pick<WorkspaceTurnResolver, "resolve">;
+
+// Pi waits for an aborted response to end, so a dead server must not hold
+// Escape for long.
+const INTERRUPT_TIMEOUT_MS = 10_000;
 
 export interface ExecuteRemoteTurnOptions {
   target: SessionTarget;
@@ -16,6 +20,9 @@ export interface ExecuteRemoteTurnOptions {
   prompt: string;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: string) => void;
+  // Asked when `signal` aborts after the prompt was sent: true stops the
+  // remote turn, false leaves it running.
+  interruptOnAbort?: () => boolean;
   fetch?: typeof fetch;
 }
 
@@ -27,6 +34,27 @@ export interface RemoteTurnResult {
 
 function isRetryableTerminal(error: unknown): error is RemoteRequestError {
   return error instanceof RemoteRequestError && error.code === "workspace.terminal" && !error.promptAccepted;
+}
+
+async function interruptRemoteTurn(controlPlane: ControlPlaneClient, workspaceId: string) {
+  try {
+    await controlPlane.agent.interrupt(workspaceId, { signal: AbortSignal.timeout(INTERRUPT_TIMEOUT_MS) });
+  } catch (error) {
+    // Agents without interrupt keys keep running, as they did before.
+    if (error instanceof ControlPlaneError && error.code === "agent.interrupt_unsupported") return;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`stopped locally; the remote turn may still be running: ${reason}`, { cause: error });
+  }
+}
+
+function abortHandler(options: ExecuteRemoteTurnOptions, workspaceId: string) {
+  const { controlPlane, interruptOnAbort } = options;
+  if (!controlPlane || !interruptOnAbort) return {};
+  return {
+    onAbortAfterSend: async () => {
+      if (interruptOnAbort()) await interruptRemoteTurn(controlPlane, workspaceId);
+    },
+  };
 }
 
 async function directTurn(options: ExecuteRemoteTurnOptions): Promise<RemoteTurnResult> {
@@ -67,7 +95,10 @@ export async function executeRemoteTurn(options: ExecuteRemoteTurnOptions): Prom
       const attachmentIds = options.controlPlane
         ? await options.attachmentBatch.upload(options.controlPlane, workspaceId)
         : [];
-      const client = new RemoteAgentClient({ serviceUrl: target.serviceUrl, key: target.key }, options.fetch);
+      const client = new RemoteAgentClient(
+        { serviceUrl: target.serviceUrl, key: target.key, ...abortHandler(options, workspaceId) },
+        options.fetch,
+      );
       const text = await client.send(options.prompt, options.signal, attachmentIds, options.onSnapshot, () =>
         options.attachmentBatch.commit(),
       );
