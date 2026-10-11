@@ -41,6 +41,7 @@ async function fixture() {
       providerRef: {
         kind: "kubernetes",
         id: "job",
+        jobUid: "job-uid",
         namespace: "original",
         inputSecret: "job-input",
       },

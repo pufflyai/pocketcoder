@@ -29,7 +29,7 @@ export interface PersistenceServiceDeps {
     OutputStore &
     ConversationStore &
     OutboxStore &
-    Pick<Store, "checkpointTransfers">;
+    Pick<Store, "checkpointTransfers" | "acknowledgeJournal">;
   scheduler: Scheduler;
   revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
   driver: WorkspaceDriver;

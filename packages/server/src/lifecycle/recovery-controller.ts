@@ -3,6 +3,7 @@ import { recoveryAdmin } from "../administration/recovery-admin";
 import { buildServer } from "../app";
 import type { ServerConfig } from "../config/config";
 import { completeRecovery } from "../recovery/complete-recovery";
+import { createOffNodeRecovery } from "../recovery/off-node-recovery";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
@@ -50,11 +51,16 @@ export async function startRecoveryController(config: ServerConfig, options: { l
       persistenceLimits: config.persistenceLimits,
       checkpointTransferOptions: checkpointTransferOptions(config),
     });
-    const app = recoveryAdmin(recovery, async () => {
-      const result = await completeRecovery({ store, driver, ...(storageDriver ? { storageDriver } : {}) }, runtime);
-      log("recovery complete; restart pocketcoder serve to open service");
-      return result;
-    });
+    const app = recoveryAdmin(
+      recovery,
+      async () => {
+        const result = await completeRecovery({ store, driver, ...(storageDriver ? { storageDriver } : {}) }, runtime);
+        log("recovery complete; restart pocketcoder serve to open service");
+        return result;
+      },
+      initialized.offNode ? store.journalSnapshot : undefined,
+      initialized.offNode ? createOffNodeRecovery(store, initialized.offNode, directory) : undefined,
+    );
     const admin = await startAdminSocket(directory, app.fetch);
     log(`recovery ${recovery.recoveryId}: only the local admin socket is open`);
     return {

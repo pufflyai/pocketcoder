@@ -3,13 +3,38 @@ import type { WorkspaceRow, WorkspaceStore } from "../types";
 
 type TerminationWorkspace = Pick<WorkspaceRow, "id" | "providerKind" | "providerRef">;
 
+function sameAdmission(current: TerminationWorkspace | null, expected: TerminationWorkspace) {
+  if (expected.providerKind !== "kubernetes") return true;
+  const uid = expected.providerRef?.jobUid;
+  if (typeof uid === "string" && uid) return current?.providerRef?.jobUid === uid;
+  if (uid !== undefined || current?.providerRef?.jobUid !== undefined) return false;
+  const receipt = (ref: TerminationWorkspace["providerRef"]) =>
+    (
+      ref?.terminationEvidence as
+        | { neverAdmitted?: { inputUid?: string; workspaceId?: string; templateDigest?: string } }
+        | undefined
+    )?.neverAdmitted;
+  const actual = receipt(current?.providerRef ?? null);
+  const target = receipt(expected.providerRef);
+  return Boolean(
+    target?.inputUid &&
+      target.workspaceId &&
+      target.templateDigest &&
+      actual?.inputUid === target.inputUid &&
+      actual.workspaceId === target.workspaceId &&
+      actual.templateDigest === target.templateDigest,
+  );
+}
+
 export function sameProvider(current: TerminationWorkspace | null, expected: TerminationWorkspace) {
   return (
     current?.providerKind === expected.providerKind &&
     current?.providerRef?.id === expected.providerRef?.id &&
     current?.providerRef?.kind === expected.providerRef?.kind &&
     current?.providerRef?.namespace === expected.providerRef?.namespace &&
-    current?.providerRef?.poolRuntimeId === expected.providerRef?.poolRuntimeId
+    current?.providerRef?.jobUid === expected.providerRef?.jobUid &&
+    current?.providerRef?.poolRuntimeId === expected.providerRef?.poolRuntimeId &&
+    sameAdmission(current, expected)
   );
 }
 

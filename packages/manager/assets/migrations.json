@@ -39,5 +39,22 @@
     "folderMillis": 1791672990000,
     "hash": "bbcdf0b1253b465678aa355bf19ea97a6c46ec4e4dfb7582c613ee9d66f2c49f",
     "name": "20261010225630_dark_joseph"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"backups\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"account_id\" uuid NOT NULL,\n\t\"receipt\" jsonb NOT NULL,\n\t\"volume_name\" text NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nALTER TABLE \"accounts\" ADD COLUMN \"volume_name\" text DEFAULT 'controller-data' NOT NULL;",
+      "\nALTER TABLE \"operations\" ADD COLUMN \"backup_id\" uuid;",
+      "\nALTER TABLE \"operations\" ADD COLUMN \"compute_proof\" jsonb;",
+      "\nALTER TABLE \"backups\" ADD CONSTRAINT \"backups_id_operations_id_fkey\" FOREIGN KEY (\"id\") REFERENCES \"operations\"(\"id\");",
+      "\nALTER TABLE \"backups\" ADD CONSTRAINT \"backups_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\");",
+      "\nALTER TABLE \"accounts\" DROP CONSTRAINT \"account_state\", ADD CONSTRAINT \"account_state\" CHECK (\"state\" in ('provisioning','ready','suspending','suspended','resuming','restoring'));",
+      "\nALTER TABLE \"operations\" DROP CONSTRAINT \"operation_kind\", ADD CONSTRAINT \"operation_kind\" CHECK (\"kind\" in ('provision','suspend','resume','backup','restore'));",
+      "\nALTER TABLE \"operations\" DROP CONSTRAINT \"operation_phase\", ADD CONSTRAINT \"operation_phase\" CHECK (\"phase\" in ('controller','scale','complete','capture','fence','restore','recover','open'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791678256000,
+    "hash": "4786f12e801a26de935f4808a5755499b79acf158b5343158062548c651895a8",
+    "name": "20261011002416_slim_living_lightning"
   }
 ]

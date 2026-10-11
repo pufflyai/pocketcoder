@@ -82,7 +82,10 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
         .set({ errorCode: `${operation?.kind}_retry` })
         .where(eq(operations.id, id));
     },
-    async setOperationPhase(id: string, phase: "controller" | "scale") {
+    async setOperationPhase(
+      id: string,
+      phase: "controller" | "scale" | "capture" | "fence" | "restore" | "recover" | "open",
+    ) {
       validate();
       await db.update(operations).set({ phase }).where(eq(operations.id, id));
     },

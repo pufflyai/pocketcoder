@@ -1,5 +1,9 @@
 import type { Account } from "../database/store";
-export function accountNetworkPolicies(account: Account, apiAddresses: string[]) {
+export function accountNetworkPolicies(
+  account: Account,
+  apiAddresses: string[],
+  storageDestinations: { cidr: string; port: number }[] = [],
+) {
   const policy = (name: string, spec: object) => ({
     apiVersion: "networking.k8s.io/v1",
     kind: "NetworkPolicy",
@@ -57,6 +61,10 @@ export function accountNetworkPolicies(account: Account, apiAddresses: string[])
       ],
       egress: [
         dns,
+        ...storageDestinations.map(({ cidr, port }) => ({
+          to: [{ ipBlock: { cidr } }],
+          ports: [{ protocol: "TCP", port }],
+        })),
         {
           to: apiAddresses.map((address) => ({ ipBlock: { cidr: `${address}/32` } })),
           ports: [

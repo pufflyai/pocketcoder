@@ -16,18 +16,21 @@ import { basename, dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { PGlite } from "@electric-sql/pglite";
 import type { SourceWriter } from "@pstdio/pocketcoder-contracts";
+import { z } from "zod";
 import { publicationIdentity } from "../checkpoints/archive-publication";
 import { syncDirectory, syncSeed } from "../database/data-folder";
 import type { RecoveryState } from "../recovery/state";
 import { scanArchive } from "./archive-reader";
 import type { BackupManifest } from "./manifest";
 import { openRawDatabase } from "./raw-database";
-import { verifyBackup } from "./verify-backup";
+import { type VerificationOptions, verifyBackup } from "./verify-backup";
 
 export interface RestoreOptions {
   archive: string;
   dataDir: string;
   checkpointDir?: string;
+  stagingId?: string;
+  verification?: VerificationOptions;
 }
 
 function emptyFolder(path: string) {
@@ -63,10 +66,15 @@ async function rebaseDatabase(client: PGlite, writer: SourceWriter, recovery: Re
 async function extract(archive: string, stage: string, manifest: BackupManifest, checkpointDir?: string) {
   const file = openSync(archive, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
-    const { members } = await scanArchive(file, fstatSync(file).size, (path) => {
-      if (path.startsWith("checkpoints/")) return join(checkpointDir as string, basename(path));
-      return path === "checkpoints" ? undefined : join(stage, path);
-    });
+    const { members } = await scanArchive(
+      file,
+      fstatSync(file).size,
+      (path) => {
+        if (path.startsWith("checkpoints/")) return join(checkpointDir as string, basename(path));
+        return path === "checkpoints" ? undefined : join(stage, path);
+      },
+      manifest.members,
+    );
     // The file was verified before extraction; it must not have changed since.
     if (!isDeepStrictEqual(members, manifest.members)) throw new Error("Backup archive changed during restore.");
   } finally {
@@ -76,7 +84,7 @@ async function extract(archive: string, stage: string, manifest: BackupManifest,
 
 // Restores a verified backup into a new data folder that starts in recovery mode.
 export async function restoreBackup(options: RestoreOptions) {
-  const { manifest } = await verifyBackup(options.archive);
+  const { manifest } = await verifyBackup(options.archive, options.verification);
   const requested = resolve(options.dataDir);
   const parent = realpathSync(dirname(requested));
   const target = join(parent, basename(requested));
@@ -87,7 +95,8 @@ export async function restoreBackup(options: RestoreOptions) {
     throw new Error("Restore checkpoint folder must be outside the new data folder.");
   const checkpointDir = options.checkpointDir ? emptyFolder(options.checkpointDir) : undefined;
   let published = false;
-  const stage = join(parent, `.${basename(target)}.restore-${randomUUID()}`);
+  const stagingId = options.stagingId ? z.uuid().parse(options.stagingId) : randomUUID();
+  const stage = join(parent, `.${basename(target)}.restore-${stagingId}`);
   mkdirSync(stage, { mode: 0o700 });
   try {
     closeSync(openSync(join(stage, "LOCK"), constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600));
@@ -108,7 +117,7 @@ export async function restoreBackup(options: RestoreOptions) {
       journal: manifest.journal,
       createdAt: new Date().toISOString(),
     };
-    const client = await openRawDatabase(join(stage, "db"));
+    const client = await openRawDatabase(join(stage, "db"), options.verification?.databaseBudget);
     try {
       await rebaseDatabase(client, writer, recovery, checkpointDir);
     } finally {

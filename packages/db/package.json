@@ -23,6 +23,7 @@
     "!src/**/*.test.ts"
   ],
   "exports": {
+    "./off-node": "./src/off-node.ts",
     ".": "./src/index.ts",
     "./testing": "./src/test-fixtures.ts",
     "./checkpoints": "./src/checkpoints.ts",
@@ -44,6 +45,7 @@
     "@pstdio/pocketcoder-runtime-contracts": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",
     "drizzle-orm": "1.0.0-rc.4",
+    "fast-xml-parser": "5.11.2",
     "zod": "^4.0.0"
   },
   "devDependencies": {

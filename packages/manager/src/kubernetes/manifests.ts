@@ -1,7 +1,11 @@
 import type { Account } from "../database/store";
 import { accountController } from "./controller";
 import { accountNetworkPolicies } from "./network";
-export function accountManifests(account: Account, apiAddresses: string[]) {
+export function accountManifests(
+  account: Account,
+  apiAddresses: string[],
+  storageDestinations: { cidr: string; port: number }[] = [],
+) {
   const labels = { "pocketcoder.dev/account": account.id };
   const metadata = (name: string) => ({ name, namespace: account.namespace, labels });
   return [
@@ -16,11 +20,11 @@ export function accountManifests(account: Account, apiAddresses: string[]) {
           "limits.cpu": "4",
           "requests.memory": "4Gi",
           "limits.memory": "4Gi",
-          "requests.storage": "10Gi",
+          "requests.storage": account.plan.offNodeBackups ? "20Gi" : "10Gi",
           "requests.ephemeral-storage": "4Gi",
           "limits.ephemeral-storage": "4Gi",
           pods: "20",
-          persistentvolumeclaims: "1",
+          persistentvolumeclaims: account.plan.offNodeBackups ? "2" : "1",
           secrets: "100",
         },
       },
@@ -70,7 +74,7 @@ export function accountManifests(account: Account, apiAddresses: string[]) {
         resources: { requests: { storage: "10Gi" } },
       },
     },
-    ...accountNetworkPolicies(account, apiAddresses),
+    ...accountNetworkPolicies(account, apiAddresses, storageDestinations),
     ...accountController(account),
   ];
 }

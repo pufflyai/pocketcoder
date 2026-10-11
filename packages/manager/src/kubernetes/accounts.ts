@@ -1,16 +1,27 @@
 import { z } from "zod";
+import type { ManagerBackupConfig } from "../backup/config";
 import type { Account, ManagerStore } from "../database/store";
+import { kubernetesBackup } from "./backup";
 import { kube } from "./command";
+import { controllerStop } from "./controller-stop";
 import { kubernetesLifecycle } from "./lifecycle";
 import { accountManifests } from "./manifests";
+import { offNodeSecret } from "./off-node-files";
 
 const OwnerResult = z
   .object({ token: z.string().nullable(), key: z.object({ id: z.uuid() }).passthrough() })
   .passthrough();
 export class KubernetesAccounts {
   readonly lifecycle;
-  constructor(private readonly command = kube) {
+  readonly stopController;
+  readonly backup;
+  constructor(
+    private readonly command = kube,
+    private readonly backups?: ManagerBackupConfig,
+  ) {
     this.lifecycle = kubernetesLifecycle(command);
+    this.stopController = controllerStop(command);
+    this.backup = kubernetesBackup(command, backups);
   }
   async ensure(account: Account) {
     await this.command(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);
@@ -33,7 +44,24 @@ export class KubernetesAccounts {
       slice.endpoints.flatMap((e) => e.addresses),
     );
     if (!addresses.length) throw new Error("Kubernetes API destinations missing");
-    const resources = accountManifests(account, addresses);
+    if (account.plan.offNodeBackups && !this.backups) throw new Error("Off-node backups are not configured.");
+    const destinations = account.plan.offNodeBackups ? await this.backups?.destinations() : [];
+    const privateResources =
+      account.plan.offNodeBackups && this.backups
+        ? [
+            {
+              apiVersion: "v1",
+              kind: "Secret",
+              metadata: {
+                name: offNodeSecret,
+                namespace: account.namespace,
+                labels: { "pocketcoder.dev/account": account.id },
+              },
+              data: this.backups.accountFiles(account.id),
+            },
+          ]
+        : [];
+    const resources = [...accountManifests(account, addresses, destinations), ...privateResources];
     for (const resource of resources) {
       const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
       if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);

@@ -28,6 +28,7 @@ import { registerConversationRoutes } from "./conversations/conversations-routes
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
+import { journalGate } from "./http/journal-gate";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
 import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
@@ -275,6 +276,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   });
 
   app.use("/v1/*", machineAuth(store, pepper));
+  app.use("/v1/*", journalGate(store));
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));

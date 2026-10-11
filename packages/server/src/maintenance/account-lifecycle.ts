@@ -6,6 +6,7 @@ import {
   type WorkspaceStorageDriver,
 } from "@pstdio/pocketcoder-runtime-core";
 import type { BuiltServer } from "../app";
+import { completedDrainInventory, retainDrainInventory } from "./account-compute-proof";
 import type { accountState } from "./account-state";
 import type { Maintenance } from "./maintenance";
 
@@ -26,7 +27,11 @@ export function createAccountLifecycle(deps: {
   const { state, maintenance, store, driver, runtime } = deps;
   if (state.state.state !== "ready") maintenance.fence();
   let running: { id: string; kind: Action; promise: Promise<ReturnType<typeof result>> } | undefined;
-  const result = () => ({ state: state.state.state, operation_state: state.state.current ? "pending" : "succeeded" });
+  const result = () => ({
+    state: state.state.state,
+    operation_state: state.state.current ? "pending" : "succeeded",
+    ...(state.state.compute ? { compute_proof: state.state.compute } : {}),
+  });
   const conflict = () => new ApiError("operation.conflict", "Another account lifecycle operation is pending.");
 
   async function revokeLeases() {
@@ -62,6 +67,7 @@ export function createAccountLifecycle(deps: {
 
   async function suspend(id: string) {
     await maintenance.drain();
+    await retainDrainInventory(state, store);
     const principals = new Map((await store.listPrincipals()).map((row) => [row.id, row]));
     for (const row of await store.listNonterminal()) {
       if (row.state === "preserving") continue;
@@ -139,10 +145,13 @@ export function createAccountLifecycle(deps: {
     if (!(await begin(id, kind))) return { ...result(), operation_state: "succeeded" };
     if (kind === "suspend") await suspend(id);
     else await resume();
+    await store.acknowledgeJournal?.();
+    const compute = kind === "suspend" ? await completedDrainInventory(state.state.compute, store) : undefined;
     await state.save({
       state: states[kind].done,
       current: null,
       completed: [...state.state.completed, { id, kind }],
+      ...(compute ? { compute } : {}),
     });
     if (kind === "resume") maintenance.release();
     return result();

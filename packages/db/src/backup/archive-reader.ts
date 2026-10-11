@@ -34,6 +34,17 @@ function assertPlacement(member: TarMember, members: BackupMember[], directories
 
 // Chooses where a member is extracted; members without a place are only hashed.
 export type Placement = (path: string) => string | undefined;
+function assertAdmitted(member: TarMember, expected: BackupMember[] | undefined, index: number) {
+  if (!expected || member.path === MANIFEST_PATH) return;
+  const admitted = expected[index];
+  if (
+    !admitted ||
+    admitted.path !== member.path ||
+    admitted.type !== member.type ||
+    (admitted.type === "file" && admitted.bytes !== member.size)
+  )
+    throw new Error("Backup member differs from its admitted capacity.");
+}
 
 async function readFileMember(file: number, member: TarMember, offset: number, place: Placement) {
   const target = place(member.path);
@@ -56,7 +67,7 @@ async function readFileMember(file: number, member: TarMember, offset: number, p
   return { path: member.path, type: "file" as const, bytes: member.size, digest: `sha256:${hash.digest("hex")}` };
 }
 
-export async function scanArchive(file: number, size: number, place: Placement) {
+export async function scanArchive(file: number, size: number, place: Placement, expected?: BackupMember[]) {
   const members: BackupMember[] = [];
   const directories = new Set<string>();
   let manifest: BackupManifest | undefined;
@@ -69,6 +80,7 @@ export async function scanArchive(file: number, size: number, place: Placement) 
     offset += BLOCK;
     if (manifest) throw new Error("Backup archive has members after its manifest.");
     if (offset + member.size > size) throw new Error("Backup archive is truncated.");
+    assertAdmitted(member, expected, members.length);
     if (member.path === MANIFEST_PATH) manifest = readManifest(file, member, offset);
     else {
       assertPlacement(member, members, directories);

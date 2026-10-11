@@ -1,5 +1,6 @@
 import { usageRepository } from "../usage/repository";
 import { accountRepository } from "./account-repository";
+import { backupRepository } from "./backup-repository";
 import { bootstrapRepository } from "./bootstrap-repository";
 import { managerContext } from "./context";
 import { lifecycleRepository } from "./lifecycle-repository";
@@ -11,6 +12,7 @@ export const ManagerStore = {
       ...bootstrapRepository(context),
       ...usageRepository(context),
       ...lifecycleRepository(context),
+      ...backupRepository(context),
       close: () => context.close(),
     };
   },

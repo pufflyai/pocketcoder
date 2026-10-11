@@ -30,7 +30,12 @@ async function writeAll(file: number, bytes: Uint8Array) {
 
 // Writes one archive into a private ".partial" file next to the output and links it
 // into place only when complete, so the output name never holds a partial archive.
-export function createArchiveOutput(output: string, excluded: string[], check: () => void) {
+export function createArchiveOutput(
+  output: string,
+  excluded: string[],
+  check: () => void,
+  limit?: { bytes: number; members: number },
+) {
   const parent = realpathSync(dirname(resolve(output)));
   const target = join(parent, basename(output));
   for (const root of excluded)
@@ -50,6 +55,7 @@ export function createArchiveOutput(output: string, excluded: string[], check: (
 
   async function append(bytes: Uint8Array) {
     check();
+    if (limit && size + bytes.length > limit.bytes) throw new Error("Backup archive exceeds its admitted capacity.");
     await writeAll(file, bytes);
     archive.update(bytes);
     size += bytes.length;
@@ -64,10 +70,12 @@ export function createArchiveOutput(output: string, excluded: string[], check: (
     path: target,
     members,
     async directory(path: string) {
+      if (limit && members.length >= limit.members) throw new Error("Backup members exceed their admitted capacity.");
       await append(tarHeader({ path, type: "directory", size: 0 }));
       members.push({ path, type: "directory" });
     },
     async file(path: string, bytes: number, content: AsyncIterable<Uint8Array>) {
+      if (limit && members.length >= limit.members) throw new Error("Backup members exceed their admitted capacity.");
       await append(tarHeader({ path, type: "file", size: bytes }));
       const hash = createHash("sha256");
       let written = 0;

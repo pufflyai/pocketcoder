@@ -86,10 +86,10 @@ test.each([
     throw new Error(`Unexpected provider command ${args.join(" ")}`);
   };
   if (crash) {
-    await expect(captureTermination(run, "job", 1)).rejects.toThrow("crash after durable proof");
+    await expect(captureTermination(run, "job", 1, "job-uid", "default")).rejects.toThrow("crash after durable proof");
     expect(pod.metadata.finalizers).toContain(EVIDENCE_FINALIZER);
   }
-  await captureTermination(run, "job", 1);
+  await captureTermination(run, "job", 1, "job-uid", "default");
   const proof = JSON.parse(job.metadata.annotations[EVIDENCE_ANNOTATION] ?? "null");
   expect(proof.job.metadata.uid).toBe("job-uid");
   expect(proof.job.status.conditions).toContainEqual({ type: "Suspended", status: "True" });
@@ -101,7 +101,7 @@ test.each([
     expect(pod.metadata.finalizers).toContain("other-controller/hold");
   }
   const count = commands.length;
-  await captureTermination(run, "job", 1);
+  await captureTermination(run, "job", 1, "job-uid", "default");
   expect(commands.slice(count).some((args) => args[0] === "delete")).toBe(false);
 });
 
@@ -110,5 +110,5 @@ test("missing Pods never generate termination evidence", async () => {
     if (args[1] === "job") return JSON.stringify({ metadata: { uid: "job", annotations: {} } });
     return JSON.stringify({ items: [] });
   };
-  await expect(captureTermination(run, "job", 1)).rejects.toThrow("Termination evidence unavailable");
+  await expect(captureTermination(run, "job", 1, "job", "default")).rejects.toThrow("Termination evidence unavailable");
 });

@@ -57,6 +57,7 @@ async function replayDeletion(deps: RecoveryDeps, runtime: Runtime, event: Event
 export async function completeRecovery(deps: RecoveryDeps, runtime: Runtime) {
   const recovery = await deps.store.recovery.recoveryState();
   if (!recovery) throw new Error("This controller is not in recovery.");
+  await deps.store.acknowledgeJournal();
   const events = await deps.store.recovery.recoveryEvents();
   for (const event of events) await deps.store.recovery.applyRecord(event);
   const fenced = await fenceRuntimes(deps, runtime);

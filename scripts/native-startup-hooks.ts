@@ -45,7 +45,7 @@ const hooks: Record<string, Hook[]> = {
       "await installDatabase(folder.dir, assets)",
       'await startupPhase("seed-install", () => installDatabase(folder.dir, assets))',
     ],
-    ["client = folder\n", 'client = await startupPhase("engine-open-with-install", async () => folder\n'],
+    ["client = databaseDir\n", 'client = await startupPhase("engine-open", async () => databaseDir\n'],
     [
       ": await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });",
       ": await PGlite.create({ ...options, loadDataDir: assets.memorySeed() }));",
