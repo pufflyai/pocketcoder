@@ -123,6 +123,7 @@ async function handleConversation(deps: WsDeps, frame: Extract<AgentFrame, { typ
   // Provider cleanup can finish while a received frame waits for earlier writes.
   if (!workspace) return;
   try {
+    await deps.assertAccountAllowed?.();
     await deps.store.appendConversationMessage({
       workspaceId: frame.workspace_id,
       messageId: frame.payload.message_id,
@@ -146,6 +147,7 @@ export async function handleConnectedFrame(
   frame: AgentFrame,
   closeProtocol: CloseProtocol,
 ): Promise<void> {
+  await deps.assertAccountAllowed?.();
   if (frame.type !== "conversation_message" && deps.hub.get(connection.workspaceId) !== connection) return;
   switch (frame.type) {
     case "credential_renew":

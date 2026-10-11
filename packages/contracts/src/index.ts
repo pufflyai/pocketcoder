@@ -245,6 +245,12 @@ export {
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
+export {
+  type AccountPurgeCompletion,
+  AccountPurgeCompletionSchema,
+  type AccountPurgeIntent,
+  AccountPurgeIntentSchema,
+} from "./recovery/account-purge";
 export * from "./recovery/source-writer";
 export * from "./secrets/secret";
 export * from "./templates/runtime-credentials";

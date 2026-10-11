@@ -56,5 +56,18 @@
     "folderMillis": 1791678256000,
     "hash": "4786f12e801a26de935f4808a5755499b79acf158b5343158062548c651895a8",
     "name": "20261011002416_slim_living_lightning"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"backups\" DROP CONSTRAINT \"backups_id_operations_id_fkey\", ADD CONSTRAINT \"backups_id_operations_id_fkey\" FOREIGN KEY (\"id\") REFERENCES \"operations\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"backups\" DROP CONSTRAINT \"backups_account_id_accounts_id_fkey\", ADD CONSTRAINT \"backups_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"bootstrap_requests\" DROP CONSTRAINT \"bootstrap_requests_account_id_accounts_id_fkey\", ADD CONSTRAINT \"bootstrap_requests_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"operations\" DROP CONSTRAINT \"operations_account_id_accounts_id_fkey\", ADD CONSTRAINT \"operations_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"usage_samples\" DROP CONSTRAINT \"usage_samples_account_id_accounts_id_fkey\", ADD CONSTRAINT \"usage_samples_account_id_accounts_id_fkey\" FOREIGN KEY (\"account_id\") REFERENCES \"accounts\"(\"id\") ON DELETE CASCADE;"
+    ],
+    "bps": true,
+    "folderMillis": 1791693435000,
+    "hash": "fb96f8239061d234784ccb7d4a72b972b1994633df778b7f6819f549e34bdd08",
+    "name": "20261011043715_tearful_war_machine"
   }
 ]

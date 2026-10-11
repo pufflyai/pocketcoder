@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
-import { realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
+import { join } from "node:path";
 import { PGliteStore } from "@pstdio/pocketcoder-db";
-import { loadOffNodeConfig, type OffNode } from "@pstdio/pocketcoder-db/off-node";
+import {
+  type AccountPurgeReader,
+  createAccountPurgeReader,
+  loadAccountPurgeReader,
+  loadOffNodeConfig,
+  type OffNode,
+} from "@pstdio/pocketcoder-db/off-node";
 import {
   DockerDriver,
   FileSecretResolver,
@@ -20,6 +27,8 @@ import {
 } from "@pstdio/pocketcoder-runtime-core";
 import { openControllerStore } from "../bootstrap/controller-store";
 import type { ServerConfig } from "../config/config";
+import { AccountPurgeRequiredError } from "../maintenance/account-purge";
+import { loadPurgeState } from "../maintenance/purge-state";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import { createIssuerClient } from "../secrets/issuer-client";
 import type { ServerLog } from "./lifecycle";
@@ -139,16 +148,53 @@ export function startExclusiveTimer(
   }, intervalMs);
 }
 
-export async function initializeController(config: ServerConfig, log: ServerLog) {
+async function controllerResources(config: ServerConfig) {
+  if (config.offNodeConfigFile && config.purgeConfigFile)
+    throw new Error("Off-node accounts must use their existing purge identity, without a second purge config.");
   const offNode = config.offNodeConfigFile
     ? await loadOffNodeConfig(config.offNodeConfigFile, config.dataDir)
     : undefined;
+  let accountPurge: AccountPurgeReader | undefined;
+  if (offNode)
+    accountPurge = createAccountPurgeReader({
+      accountId: offNode.config.accountId,
+      createRequestDigest: offNode.config.createRequestDigest,
+      storage: offNode.config.storage,
+    });
+  else if (config.purgeConfigFile) accountPurge = await loadAccountPurgeReader(config.purgeConfigFile, config.dataDir);
+  return { offNode, accountPurge };
+}
+
+export async function initializeController(config: ServerConfig, log: ServerLog) {
+  const resources = await controllerResources(config);
+  // Neither normal admission nor a fresh database may return after permanent intent.
+  if ((await resources.accountPurge?.()) || (await loadPurgeState(config.dataDir)))
+    throw new AccountPurgeRequiredError();
+  return openConfiguredController(config, log, resources);
+}
+
+export async function initializePurgingController(config: ServerConfig, log: ServerLog) {
+  const resources = await controllerResources(config);
+  if (!resources.accountPurge || !(await resources.accountPurge()))
+    throw new Error("Private cleanup requires permanent purge authority.");
+  if (await resources.accountPurge.completed()) throw new Error("Account purge is complete.");
+  if (!(await lstat(join(config.dataDir, "db"))).isDirectory())
+    throw new Error("Private cleanup requires existing account data.");
+  return openConfiguredController(config, log, resources);
+}
+
+async function openConfiguredController(
+  config: ServerConfig,
+  log: ServerLog,
+  { offNode, accountPurge }: Awaited<ReturnType<typeof controllerResources>>,
+) {
   if (config.pepper)
     return {
       config,
       store: await initializeStore(config, log, offNode),
       directory: await realpath(config.dataDir),
       offNode,
+      accountPurge,
     };
   const controller = await openControllerStore(
     config.dataDir,
@@ -169,6 +215,7 @@ export async function initializeController(config: ServerConfig, log: ServerLog)
     // Only bundle keys are exact 32-byte files that a backup can carry unchanged.
     keyBundle: controller.keys,
     offNode,
+    accountPurge,
   };
 }
 

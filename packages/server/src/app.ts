@@ -1,5 +1,4 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
@@ -21,40 +20,44 @@ import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
+import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
+import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
 import { journalGate } from "./http/journal-gate";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
+import { accountPurgeGate } from "./maintenance/account-purge";
 import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
 import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
-import { type CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
+import type { CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
-import { disposableSourceRuntime } from "./persistence/source-runtime";
 import { ViewAdmission } from "./previews/admission";
 import { composePreviews } from "./previews/previews";
 import { ViewPolicy } from "./previews/view-policy";
 import { relayHandler } from "./relay/relay";
-import { createIssuerClient } from "./secrets/issuer-client";
-import { createWorkspaceLeaseService } from "./secrets/lease-service";
+import type { createIssuerClient } from "./secrets/issuer-client";
+import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
+import { composeWorkspaceRuntime, workspaceSecretFactory } from "./workspace-runtime";
 import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
+  assertAccountAllowed?: () => Promise<void>;
   screenshotOptions?: ScreenshotOptions;
   publicViews?: import("./config/public-views").PublicViewConfig;
   authorizeLaunch?: SchedulerDeps["authorizeLaunch"];
@@ -80,6 +83,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  controlActivity: ControlActivity;
   screenshots?: Screenshots;
   app: OpenAPIHono<AppEnv>;
   agentApp: ReturnType<typeof createAgentApp>;
@@ -92,41 +96,6 @@ export interface BuiltServer {
   checkpointTransfers?: ReturnType<typeof composeCheckpointRuntime>["checkpointTransfers"];
   warmPool?: WarmPoolManager;
   metrics: MetricSink;
-}
-
-function workspaceSecretFactory(pepper: string) {
-  return {
-    generate: generateOpaqueSecret,
-    digest: (secret: string) => digestOpaque(pepper, secret),
-  };
-}
-
-function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
-  const vault = deps.secretKey ? createSecretVault(deps.store, Buffer.from(deps.secretKey, "base64url")) : undefined;
-  const workspaceLeases = vault
-    ? createWorkspaceLeaseService({
-        store: deps.store,
-        vault,
-        issuer: deps.issuerClient ?? createIssuerClient(),
-        admissionFenced: () => deps.maintenance?.fenced ?? false,
-      })
-    : undefined;
-  const checkpointRuntime = composeCheckpointRuntime(
-    deps.store,
-    hub,
-    deps.driver,
-    deps.storageDriver,
-    deps.checkpointTransferOptions,
-  );
-  const { checkpointTransfers } = checkpointRuntime;
-  const transferRuntime = checkpointRuntime.transferRuntime ?? sourceRuntime(deps);
-  return { workspaceLeases, checkpointTransfers, transferRuntime };
-}
-
-function sourceRuntime(deps: BuildDeps) {
-  if (deps.storageDriver) return;
-  const kind = deps.driver.kind;
-  if (kind === "docker" || kind === "kubernetes") return disposableSourceRuntime(kind);
 }
 
 function registerHealthRoutes(app: OpenAPIHono<AppEnv>, deps: BuildDeps) {
@@ -231,6 +200,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const viewPolicy = new ViewPolicy(deps.publicViews);
   const previews = composePreviews({ store, service, hub, views, policy: viewPolicy });
   const displays = composeDisplays({ store, service, hub, views, policy: viewPolicy });
+  app.use("*", accountPurgeGate(deps.assertAccountAllowed));
   app.use("*", displays.browser);
   app.use("*", previews.browser);
   app.use("*", requestId);
@@ -240,9 +210,12 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
+  const activity = controlActivity(() => poolHub.fence());
   const wsDeps = {
+    activity,
+    assertAccountAllowed: deps.assertAccountAllowed,
     ...(workspaceLeases ? { workspaceLeases } : {}),
-    store,
+    store: controlStore(store, deps.assertAccountAllowed),
     hub,
     scheduler,
     pepper,
@@ -252,6 +225,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     ...(checkpointTransfers ? { checkpointTransfers } : {}),
   };
   const agentApp = createAgentApp({
+    assertAccountAllowed: deps.assertAccountAllowed,
     connection: wsDeps,
     screenshots,
     poolHub,
@@ -353,6 +327,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   );
 
   return {
+    controlActivity: activity,
     app,
     screenshots,
     agentApp,

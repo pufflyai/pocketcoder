@@ -85,9 +85,10 @@ The API and views use different registrable domains. The manager API stays
 private. For each account, the manager creates a cert-manager `Certificate` and
 an `Ingress` in the account namespace. external-dns publishes both hosts to
 DigitalOcean DNS with TXT ownership records, so retries reuse the same records.
-Deleting the namespace removes the route, certificate and Secret. external-dns
-then deletes the records it owns. The manager has no account removal operation
-yet; full purge belongs to PC-94.
+[Account purge](../../packages/manager/purge.md) deletes the namespace, which
+removes the route, certificate and Secret. external-dns then deletes the records
+it owns, and purge waits until DigitalOcean lists none for the account. Give the
+purge token `domain:read` in addition to its volume access.
 
 The edge has three parts in [`edge`](edge):
 
@@ -195,7 +196,8 @@ certificates per registered domain each week; plan customer growth with that lim
 
 Remove every account's hosts before the edge. Otherwise its DNS records keep
 pointing at a released load balancer address that someone else could receive.
-Until PC-94 adds account purge, remove each synthetic account by hand:
+Purge each account through the manager and wait until its operation succeeds.
+Without a purge configuration, remove each synthetic account by hand:
 
 1. Cancel its workspaces through the account API and wait until they are
    `canceled`. Workspace pods keep a finalizer that only the controller removes.
@@ -205,7 +207,8 @@ Until PC-94 adds account purge, remove each synthetic account by hand:
    `doctl compute domain records list datazine.app` show no record containing
    `ACCOUNT`, including the `a-` ownership TXT records.
 
-The manager database still lists removed accounts. Then remove the edge and the DNS token:
+After manual removal the manager database still lists the removed accounts.
+Then remove the edge and the DNS token:
 
 ```sh
 kubectl delete -k deploy/digitalocean/edge
