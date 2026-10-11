@@ -74,6 +74,7 @@ describe("pcd workspace workflows", () => {
       id,
       external_id: `external-${id}`,
       template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+      agent: { type: "custom", model: null },
       state,
       reason_code: state === "failed" ? "launch_failed" : null,
       agent_state: state === "ready" ? "stable" : "unknown",

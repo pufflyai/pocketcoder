@@ -153,12 +153,19 @@ template grants. See [private images](templates.md#private-images).
 ## Templates
 
 ```text
-GET /v1/templates             scope templates:read   → { items: [{name, version, digest, description?, status}] }
+GET /v1/templates             scope templates:read   → { items: [{name, version, digest, agent, description?, status}] }
 GET /v1/templates/{name}      scope templates:read   → { name, versions: [...] }
 GET /v1/warm-pools            scope admin            → { items: [...], metrics: {...} }
 ```
 
 Only templates on the principal's allowlist are visible; others 404.
+
+Each template item includes `agent: { type: string, model: string | null } | null`.
+This also applies to template version details, publish and retire responses.
+The object contains only the declared type and model, without commands or env.
+`model` is the optional display label from `spec.agent.model`, not a claim about
+the model currently running. It is `null` when omitted. Legacy `spec.harness`
+templates return `agent: null`.
 
 ## Workspaces
 
@@ -222,6 +229,11 @@ health failure, crash, provider loss, disconnect timeout, cancellation, and
 deadline/idle expiry.
 
 Workspace resources include `provisioning_mode`: `warm`, `cold`, or `null` before admission. This is informational; `POST /v1/workspaces` remains unchanged and callers cannot select pool behavior.
+
+Every workspace resource also includes the same `agent` object described under
+Templates. It comes from the workspace's immutable template snapshot. Publishing
+or retiring a template version does not change an existing workspace's agent
+metadata. Create, list, detail, cancel and change-wait responses use this shape.
 
 Workspace resources also include `network.state`: `disabled`, `starting`, `ready`, or `degraded`.
 Network events contain the decision, transport, host, port, visible HTTP method/path (without the

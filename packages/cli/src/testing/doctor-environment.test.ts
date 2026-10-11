@@ -16,6 +16,7 @@ function doctorWorkspace(
     id,
     external_id: `external-${id}`,
     template: { name: "fixture-echo", version: "1", digest: "sha256:template" },
+    agent: null,
     state,
     reason_code: null,
     agent_state: agentState,
