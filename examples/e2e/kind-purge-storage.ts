@@ -73,6 +73,13 @@ export function createKindPurgeStorage(owned: OwnedCluster): PhysicalStorage {
       if ((await binding(handle)).present) throw new Error("Owned Kind volume bytes remain");
       return { ...input, verifiedAt: new Date().toISOString() };
     },
+    // Fixture accounts have no public hosts, so purge never reaches DNS here.
+    async dnsRecords() {
+      throw new Error("Owned Kind storage has no public DNS");
+    },
+    async dnsAbsent() {
+      throw new Error("Owned Kind storage has no public DNS");
+    },
   };
 }
 

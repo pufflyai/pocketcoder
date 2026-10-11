@@ -40,7 +40,7 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
     let failure: unknown;
     try {
       const { createPurgeProgress } = await import("./progress");
-      const { PurgeInventorySchema } = await import("./inventory-schema");
+      const { PurgeInventory } = await import("./physical-state");
       const intent = {
         format: "pocketcoder-account-purge/v1" as const,
         accountId: randomUUID(),
@@ -50,17 +50,30 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
         admittedAt: new Date().toISOString(),
       };
       const volumeId = randomUUID();
-      const inventory = PurgeInventorySchema.parse({
+      const label = intent.accountId.replaceAll("-", "");
+      const inventory = PurgeInventory.parse({
+        accountId: intent.accountId,
         namespaceUid: randomUUID(),
         volumes: [
           {
             claimUid: randomUUID(),
             persistentVolumeUid: randomUUID(),
+            attachmentUids: [randomUUID()],
             storage: { driver: "dobs.csi.digitalocean.com", handle: volumeId },
-            provider: { provider: "digitalocean" as const, volumeId, snapshotIds: ["12801"] },
+            provider: { provider: "digitalocean", volumeId, snapshotIds: ["12801"] },
+            node: null,
           },
         ],
-        endpoints: { scope: "shared" as const, dnsIds: [], certificateIds: [] },
+        endpoints: {
+          ingressUid: randomUUID(),
+          certificateUid: randomUUID(),
+          secretUid: randomUUID(),
+          hosts: [`${label}.pocketcoder.datazine.app`, `*.${label}.embed.kaset.dev`],
+          records: [
+            { zone: "datazine.app", id: 41, type: "A", name: `${label}.pocketcoder` },
+            { zone: "datazine.app", id: 42, type: "TXT", name: `a-${label}.pocketcoder` },
+          ],
+        },
       });
       // This is real receipt persistence; these UUIDs do not prove physical deletion.
       const endpoint = new ObjectStorage({ ...fixture.config, endpoint: proxy.url.toString() });
@@ -72,7 +85,7 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
           progress: await createPurgeProgress(
             { directory: folder.dir, storage: endpoint, validate: folder.validate },
             "inventory",
-            PurgeInventorySchema,
+            PurgeInventory,
           ),
         };
       }

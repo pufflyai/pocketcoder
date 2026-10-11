@@ -8,12 +8,13 @@ import {
   ControllerInventory,
   PhysicalDeleted,
   PurgeDrain,
-  VolumeInventory,
+  PurgeInventory,
 } from "../purge/physical-state";
 import { createPurgeProgress } from "../purge/progress";
 import type { PhysicalStorage } from "../purge/provider-types";
 import type { kube } from "./command";
 import { purgeController } from "./purge-controller";
+import { inventoryAccountEndpoints, verifyEndpointsRemoved } from "./purge-endpoints";
 import { purgeRuntimeDrain, verifyPurgeNodes } from "./purge-evidence";
 import { privatePurgeRequest } from "./purge-private";
 import { removePurgeRbac } from "./purge-rbac";
@@ -60,7 +61,7 @@ export function physicalPurge(command: typeof kube, storage: PhysicalStorage, au
     const controllers = await progress("controllers", ControllerInventory);
     const drained = await progress("drained", PurgeDrain);
     const stopped = await progress("stopped", ControllerExits);
-    const inventory = await progress("inventory", VolumeInventory);
+    const inventory = await progress("inventory", PurgeInventory);
     const deleted = await progress("deleted", PhysicalDeleted);
     if (await deleted.acknowledge(intent)) return true;
     const controller = purgeController(command, account);
@@ -82,21 +83,24 @@ export function physicalPurge(command: typeof kube, storage: PhysicalStorage, au
       throw new Error("Retained private purge identity differs.");
     const runtimeNodes = drain.payload.runtimes.flatMap((runtime) => runtime.pods.map((pod) => pod.node));
     await verifyPurgeNodes(command, runtimeNodes);
-    let volumes = await inventory.acknowledge(intent);
+    let retained = await inventory.acknowledge(intent);
     const exits = await stopped.acknowledge(intent);
-    if (!volumes) {
+    if (!retained) {
       await controller.stop(saved.payload, exits?.payload ?? null, async (proof) => {
         await stopped.retain(intent, proof);
       });
-      volumes = await inventory.retain(intent, await inventoryAccountVolumes(command, account, storage));
+      retained = await inventory.retain(intent, {
+        ...(await inventoryAccountVolumes(command, account, storage)),
+        endpoints: await inventoryAccountEndpoints(command, account, storage),
+      });
     }
-    if (volumes.payload.namespaceUid !== target.namespaceUid || volumes.payload.accountId !== account.id)
+    if (retained.payload.namespaceUid !== target.namespaceUid || retained.payload.accountId !== account.id)
       throw new Error("Retained physical purge inventory differs.");
     const exitProof = await stopped.acknowledge(intent);
     const terminated = requireExits(exitProof?.payload, saved.payload);
     const allNodes = [...runtimeNodes, ...terminated.pods.map((pod) => pod.node)];
     await verifyPurgeNodes(command, allNodes);
-    const receipts = await removeAccountVolumes(command, volumes.payload, storage);
+    const receipts = await removeAccountVolumes(command, retained.payload, storage);
     await removePurgeRbac(command, account, saved.payload.rbac);
     await removeNamespace(command, account.namespace, target.namespaceUid);
     await verifyPurgeNodes(command, allNodes);
@@ -104,7 +108,7 @@ export function physicalPurge(command: typeof kube, storage: PhysicalStorage, au
       namespaceUid: target.namespaceUid,
       volumes: receipts,
       rbac: saved.payload.rbac,
-      endpoints: { scope: "shared", dnsIds: [], certificateIds: [] },
+      endpoints: await verifyEndpointsRemoved(account, storage, retained.payload.endpoints),
     });
     return true;
   };

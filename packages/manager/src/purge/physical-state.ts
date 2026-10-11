@@ -37,7 +37,23 @@ export const PurgeDrain = z.strictObject({
   runtimes: z.array(RuntimeExit),
 });
 export const ControllerExits = z.strictObject({ deploymentUid: z.uuid(), pods: z.array(PodExit).min(1) });
-export const VolumeInventory = z.strictObject({
+// The account's own Ingress, Certificate and TLS Secret, and the DNS records published for its hosts.
+export const PublicEndpoints = z.strictObject({
+  ingressUid: z.uuid(),
+  certificateUid: z.uuid(),
+  // cert-manager writes the Secret only after the first issuance.
+  secretUid: z.uuid().nullable(),
+  hosts: z.array(z.string().min(1)).min(1),
+  records: z.array(
+    z.strictObject({
+      zone: z.string().min(1),
+      id: z.number().int().positive(),
+      type: z.string().min(1),
+      name: z.string().min(1),
+    }),
+  ),
+});
+export const PurgeInventory = z.strictObject({
   accountId: z.uuid(),
   namespaceUid: z.uuid(),
   volumes: z
@@ -56,6 +72,8 @@ export const VolumeInventory = z.strictObject({
       }),
     )
     .min(1),
+  // Accounts without public hosts have no endpoints beyond their namespace.
+  endpoints: PublicEndpoints.nullable(),
 });
 export const PhysicalDeleted = z.strictObject({
   namespaceUid: z.uuid(),
@@ -68,5 +86,5 @@ export const PhysicalDeleted = z.strictObject({
     }),
   ),
   rbac: ControllerInventory.shape.rbac,
-  endpoints: z.strictObject({ scope: z.literal("shared"), dnsIds: z.tuple([]), certificateIds: z.tuple([]) }),
+  endpoints: PublicEndpoints.extend({ verifiedAt: z.iso.datetime() }).nullable(),
 });

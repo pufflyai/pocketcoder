@@ -2,9 +2,9 @@
 
 Purge permanently closes an account. It fences its original create request,
 revokes controller keys and workspace leases, drains active and warm compute,
-and verifies physical storage removal before reporting success. Keep the
-manager listener private. Use the existing finite operator token and finite
-host-side Kubernetes authority; never place either in a workspace.
+and verifies physical storage and public DNS removal before reporting success.
+Keep the manager listener private. Use the existing finite operator token and
+finite host-side Kubernetes authority; never place either in a workspace.
 
 Set `POCKETCODER_MANAGER_PURGE_CONFIG` to a mode 0600 JSON file outside
 `manager_data` and every workspace:
@@ -33,8 +33,10 @@ The provider credential file is also mode 0600 and outside manager data:
 ```
 
 The adapter checks expiry before and after every provider request. Grant only
-the volume and volume-snapshot access needed for inventory and deletion. The
-manager does not infer provider deletion from Namespace, PVC or PV absence.
+the volume and volume-snapshot access needed for inventory and deletion, plus
+`domain:read` when accounts have public hosts. Purge only reads DNS; it never
+changes records. The manager does not infer provider deletion from Namespace,
+PVC, PV or Ingress absence.
 Missing provider configuration, expired access, uncertain inventory or provider
 outage leaves a started account purge pending.
 
@@ -72,19 +74,36 @@ retain opaque IDs, request hashes, timestamps and physical proof; they do not
 retain account names, plans, tokens or customer content.
 
 The manager first settles admitted work, then retains exact controller/runtime
-and node identities. It acknowledges actual exits before releasing finalizers.
-It retains physical volume handles before Kubernetes removal, verifies provider
-volumes and associated snapshots are absent, then removes account-owned node
-RBAC and Namespace resources by UID. It removes all account object versions,
-delete markers and multipart uploads. Shared deployment DNS and certificates
-are retained; this manager does not create per-account public DNS or certificate
-resources. Account authority keeps shared routing closed after purge.
+and node identities. The account controller drains every workspace and warm
+runtime and removes their evidence finalizers. The manager stops the controller
+only when no other pod or job remains, and deletes the namespace after that, so
+a finalizer cannot hold the namespace. It acknowledges actual exits before
+releasing finalizers. It retains physical volume handles before Kubernetes
+removal, verifies provider volumes and associated snapshots are absent, then
+removes account-owned node RBAC and Namespace resources by UID. It removes all
+account object versions, delete markers and multipart uploads.
+
+An account with [public hosts](README.md#public-account-hosts) also owns its
+endpoints. Before deletion, the inventory keeps the UIDs of its `public-hosts`
+Ingress and Certificate and its `public-hosts-tls` Secret, its two hosts, and
+the ID of every DigitalOcean DNS record whose name contains the account label
+(the UUID without hyphens). These are the A records and external-dns's TXT
+ownership records, such as `a-LABEL.pocketcoder` and `a-wildcard.LABEL.embed`.
+Deleting the namespace removes the Ingress, Certificate and Secret; external-dns
+then deletes the records, usually within a minute. Purge succeeds only when
+DigitalOcean no longer returns any retained record by ID and lists no record
+with the account label in any domain above the hosts, including delegated
+sub-zones. Accounts without public hosts have no endpoints.
 
 If a node is offline or storage deletion cannot be verified, keep the same
 operation pending. Restore the same node or provider access and let the manager
-retry. Restarting the manager does not discard retained ownership or exit proof.
-Do not force-delete finalizers, substitute a replacement node or delete unknown
-resources. Older accounts lacking positive admission or exact historical
+retry. Purge also stays pending while any account DNS record remains, or when
+the token cannot see a DigitalOcean domain for a host. Keep external-dns running
+until purges finish. If cert-manager left an `_acme-challenge` record for the
+account, delete that exact record in DigitalOcean; the next retry then
+completes. Restarting the manager does not discard retained ownership or exit
+proof. Do not force-delete finalizers, substitute a replacement node or delete
+unknown resources. Older accounts lacking positive admission or exact historical
 placement evidence stay pending rather than assuming compute died.
 
 Local validation uses an isolated Kind cluster and private versioned object

@@ -64,6 +64,8 @@ export async function managedPurgeFixture(options: { physicalStorage?: boolean }
     const observedPhysical = physical
       ? {
           inventory: physical.inventory,
+          dnsRecords: physical.dnsRecords,
+          dnsAbsent: physical.dnsAbsent,
           async removeAndVerify(input: Parameters<typeof physical.removeAndVerify>[0]) {
             try {
               return await physical.removeAndVerify(input);

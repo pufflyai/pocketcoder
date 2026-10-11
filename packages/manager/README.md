@@ -114,7 +114,8 @@ forwarding headers from `trustedIngress`. Provisioning waits until the certifica
 ready. The cluster needs the ingress class and cluster issuer before it starts.
 [The DigitalOcean guide](../../deploy/digitalocean/README.md#managed-account-hosts-and-public-views)
 installs them. `bun run example:e2e:managed-public-views` runs the whole path in
-kind with real browsers.
+kind with real browsers. [Account purge](purge.md) removes these endpoints and
+waits until DigitalOcean lists no DNS record for the account.
 
 Production layout, gVisor, manager database recovery and customer enablement
 belong to the following hosted-service tickets.

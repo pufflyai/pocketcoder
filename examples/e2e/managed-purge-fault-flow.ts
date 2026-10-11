@@ -50,6 +50,13 @@ export async function exercisePurgeFaults(
       "actual retained inventory and busy physical deletion",
     );
     await pending("blocked physical deletion");
+    // Workspace pods keep an evidence finalizer that only the now stopped controller removes,
+    // so purge must drain them while their namespace still exists.
+    const namespace = `pc-account-${accountId.replaceAll("-", "")}`;
+    const pods = JSON.parse(await fixture.cluster.kube(["-n", namespace, "get", "pods", "-o", "json"])).items;
+    if (!(await fixture.cluster.kube(["get", "namespace", namespace, "-o", "name"])) || pods.length)
+      throw new Error("Purge reached namespace deletion before draining workspaces.");
+    console.log(JSON.stringify({ purgeDrainedBeforeNamespaceDeletion: { accountId, namespace } }));
     const retained = await fixture.storage.storage.storage.get(
       `manager/purge/accounts/${accountId}/inventory-${accountId}.json`,
     );
