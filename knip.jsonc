@@ -10,6 +10,8 @@
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
         "examples/e2e/managed-interruption-child.ts",
+        "examples/e2e/managed-purge-bootstrap-child.ts",
+        "examples/e2e/kind-purge-rbac.ts",
         "examples/**/*.test.ts"
       ],
       // Lerna invokes Nx internally for task hashing and caching.
@@ -25,6 +27,7 @@
       "entry": [
         "src/**/*.test.ts",
         "src/persistence/checkpoint-transfer-crash-fixture.ts",
+        "src/control-channel/ws-purge-race-child.ts",
         "src/backup/off-node-crash-fixture.ts",
         "src/displays/client/desktop-viewer.ts",
         "src/displays/client/browser-viewer.ts"

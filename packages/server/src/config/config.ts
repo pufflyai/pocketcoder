@@ -11,6 +11,7 @@ type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig {
   offNodeConfigFile?: string;
+  purgeConfigFile?: string;
   publicViews?: PublicViewConfig;
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
   listenHost: string;
@@ -293,6 +294,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
   }
   return {
     publicViews: publicViewConfig(env.POCKETCODER_PUBLIC_VIEWS),
+    ...(env.POCKETCODER_PURGE_CONFIG ? { purgeConfigFile: env.POCKETCODER_PURGE_CONFIG } : {}),
     ...(env.POCKETCODER_OFF_NODE_CONFIG ? { offNodeConfigFile: env.POCKETCODER_OFF_NODE_CONFIG } : {}),
     listenHost: operator.listenHost,
     agentHost: agent.listenHost,

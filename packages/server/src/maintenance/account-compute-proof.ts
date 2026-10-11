@@ -3,15 +3,17 @@ import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import type { AccountState, accountState } from "./account-state";
 
 export async function retainDrainInventory(state: Awaited<ReturnType<typeof accountState>>, store: Store) {
-  const current = state.state.compute;
+  await state.save({ ...state.state, compute: await drainInventory(state.state.compute, store) });
+}
+
+export async function drainInventory(current: AccountState["compute"], store: Store) {
   const workspaces = (await store.listNonterminal()).map((row) => row.id);
   const warm = (await store.listWarmPoolRuntimes()).filter((row) => row.state !== "failed").map((row) => row.id);
-  const compute = {
+  return {
     workspaces: [...new Set([...(current?.workspaces ?? []), ...workspaces])],
     warm: [...new Set([...(current?.warm ?? []), ...warm])],
     evidence: current?.evidence ?? [],
   };
-  await state.save({ ...state.state, compute });
 }
 
 function evidence(kind: string, id: string, provider: string | null, ref: Record<string, unknown> | null) {

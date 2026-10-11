@@ -110,6 +110,7 @@ async function registerConnection(
       new Date(),
     );
   }
+  await deps.assertAccountAllowed?.();
   const connection = deps.hub.attach(row.id, frame.connection_id, epoch, ws, auth.protocolVersion);
   connection.lastSeqIn = frame.seq;
   connection.registered = true;
@@ -123,6 +124,7 @@ async function registerConnection(
     const exec = execSpecOf(row, sourceCredential?.credential ?? null, restoreMode);
     if (exec.source) exec.source.credential_expires_at = sourceCredential?.lease.issuerExpiresAt?.toISOString() ?? null;
     if (!(await restoreExec(deps, connection, row, exec, ws, closeProtocol))) return null;
+    await deps.assertAccountAllowed?.();
     deps.hub.send(connection, "registered_ack", {
       epoch,
       credentials,
@@ -194,6 +196,7 @@ async function processMessage(
   ws: WSContext,
   closeProtocol: CloseProtocol,
 ): Promise<LiveConnection | null> {
+  await deps.assertAccountAllowed?.();
   const frame = parseFrame(data, auth, connection, ws, closeProtocol);
   if (!frame) return connection;
   if (!connection) {
@@ -237,26 +240,32 @@ export function agentWsEvents(deps: WsDeps) {
     return {
       onMessage: (event, ws) => {
         if (closed) return;
-        pipeline = pipeline.then(async () => {
-          try {
-            conn = await processMessage(
-              deps,
-              auth,
-              conn,
-              event.data as string | ArrayBuffer | Uint8Array,
-              ws,
-              closeProtocol,
-            );
-            if (closed) await detachConnection(deps, auth, conn);
-          } catch (error) {
-            deps.log?.(`ws ${auth.workspaceId}: ${String(error)}`);
-            closeProtocol(ws, "internal error");
-          }
-        });
+        const previous = pipeline;
+        const process = () =>
+          previous.then(async () => {
+            try {
+              conn = await processMessage(
+                deps,
+                auth,
+                conn,
+                event.data as string | ArrayBuffer | Uint8Array,
+                ws,
+                closeProtocol,
+              );
+              if (closed) await detachConnection(deps, auth, conn);
+            } catch (error) {
+              deps.log?.(`ws ${auth.workspaceId}: ${String(error)}`);
+              closeProtocol(ws, "internal error");
+            }
+          });
+        pipeline = (deps.activity ? deps.activity.run(process) : process()).catch(() =>
+          closeProtocol(ws, "account fenced"),
+        );
       },
       onClose: () => {
         closed = true;
-        void detachConnection(deps, auth, conn);
+        const detach = () => detachConnection(deps, auth, conn);
+        void (deps.activity ? deps.activity.track(detach) : detach()).catch(() => {});
       },
     };
   };

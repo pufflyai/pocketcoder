@@ -31,10 +31,15 @@ export KUBECONFIG=/private/operator/finite-manager-kubeconfig
 export POCKETCODER_MANAGER_DIR=/private/operator/manager_data
 export POCKETCODER_MANAGER_CONTROLLER_IMAGE=registry.example/controller@sha256:YOUR_DIGEST
 export POCKETCODER_MANAGER_RUNTIME_CLASS=YOUR_RUNTIME_CLASS
+export POCKETCODER_MANAGER_PURGE_CONFIG=/private/operator/purge.json
 # Optional: POCKETCODER_MANAGER_STORAGE_CLASS
 bun run manager:start operator YOUR_ISO_EXPIRY
 bun run manager:start
 ```
+
+Create the private purge configuration described in [account purge](purge.md)
+before starting the manager. The authority directory and credentials must stay
+outside the manager data folder and every workspace.
 
 The first command prints an operator token once. Expiry is mandatory, in the
 future, and at most 24 hours away. The database stores its digest. Set
@@ -109,7 +114,8 @@ forwarding headers from `trustedIngress`. Provisioning waits until the certifica
 ready. The cluster needs the ingress class and cluster issuer before it starts.
 [The DigitalOcean guide](../../deploy/digitalocean/README.md#managed-account-hosts-and-public-views)
 installs them. `bun run example:e2e:managed-public-views` runs the whole path in
-kind with real browsers.
+kind with real browsers. [Account purge](purge.md) removes these endpoints and
+waits until DigitalOcean lists no DNS record for the account.
 
 Production layout, gVisor, manager database recovery and customer enablement
 belong to the following hosted-service tickets.

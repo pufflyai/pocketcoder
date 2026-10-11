@@ -1,0 +1,5 @@
+ALTER TABLE "backups" DROP CONSTRAINT "backups_id_operations_id_fkey", ADD CONSTRAINT "backups_id_operations_id_fkey" FOREIGN KEY ("id") REFERENCES "operations"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "backups" DROP CONSTRAINT "backups_account_id_accounts_id_fkey", ADD CONSTRAINT "backups_account_id_accounts_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "bootstrap_requests" DROP CONSTRAINT "bootstrap_requests_account_id_accounts_id_fkey", ADD CONSTRAINT "bootstrap_requests_account_id_accounts_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "operations" DROP CONSTRAINT "operations_account_id_accounts_id_fkey", ADD CONSTRAINT "operations_account_id_accounts_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "usage_samples" DROP CONSTRAINT "usage_samples_account_id_accounts_id_fkey", ADD CONSTRAINT "usage_samples_account_id_accounts_id_fkey" FOREIGN KEY ("account_id") REFERENCES "accounts"("id") ON DELETE CASCADE;

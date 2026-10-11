@@ -140,6 +140,11 @@ open traffic. Keep the configuration and receipt on the private operator path.
 
 ## Local proof and hosted limits
 
+Before starting the manager, set `POCKETCODER_MANAGER_PURGE_CONFIG` to its private
+purge configuration file. Keep that file and its authority folder outside
+`manager_data` and all workspaces. Its storage settings must exactly match the
+off-node backup storage. See [account purge setup and retry](../packages/manager/purge.md).
+
 Run `bun run example:e2e:managed-off-node` with Docker, Kind and kubectl installed.
 It owns and removes its Kind cluster, RustFS fixture and candidate controller
 image. A supplied `POCKETCODER_E2E_WORKSPACE_IMAGE` is loaded into that cluster and

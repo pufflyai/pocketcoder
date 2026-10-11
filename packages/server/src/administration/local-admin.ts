@@ -1,4 +1,5 @@
 import { ApiError, KeyIssueRequestSchema } from "@pstdio/pocketcoder-contracts";
+import type { AccountPurgeReader } from "@pstdio/pocketcoder-db/off-node";
 import { bootstrapLocalOwnerKey, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -7,9 +8,13 @@ import { z } from "zod";
 import { type ControllerBackup, registerBackupRoute } from "../backup/controller-backup";
 import type { OffNodeBackup } from "../backup/off-node-backup";
 import type { AccountLifecycle } from "../maintenance/account-lifecycle";
+import { accountPurgeGate } from "../maintenance/account-purge";
 import type { Maintenance } from "../maintenance/maintenance";
+import type { PurgeCleanup } from "../maintenance/purge-cleanup";
 import type { OffNodeRecovery } from "../recovery/off-node-recovery";
 import { startAdminSocket } from "./admin-socket";
+import { registerPurgeAdmin } from "./purge-admin";
+import { registerPurgeKeyStatus } from "./purge-key-status";
 import { registerUsageRuntimeRoute } from "./usage-runtime";
 
 const OwnerRequestSchema = z.strictObject({
@@ -20,6 +25,9 @@ const OwnerRequestSchema = z.strictObject({
   replace: z.boolean().optional(),
 });
 export async function startLocalAdmin(deps: {
+  accountPurge?: AccountPurgeReader;
+  purgeCleanup?: PurgeCleanup;
+  assertAccountAllowed?: () => Promise<void>;
   directory: string;
   store: Store;
   pepper: string;
@@ -32,6 +40,10 @@ export async function startLocalAdmin(deps: {
   const app = new Hono();
   const store = deps.store;
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (context) => context.json({ error: "body too large" }, 413) }));
+  if (deps.assertAccountAllowed) {
+    const gate = accountPurgeGate(deps.assertAccountAllowed);
+    for (const path of ["/v1/owner", "/v1/backup/*", "/v1/backup", "/v1/account/resume"]) app.use(path, gate);
+  }
   if (deps.maintenance) {
     const maintenance = deps.maintenance;
     app.use("/v1/owner", async (_context, next) => maintenance.admit(next, "request"));
@@ -87,6 +99,8 @@ export async function startLocalAdmin(deps: {
     });
   }
   registerUsageRuntimeRoute(app, store);
+  if (deps.purgeCleanup) registerPurgeAdmin(app, deps.purgeCleanup);
+  if (deps.accountPurge) registerPurgeKeyStatus(app, store, deps.accountPurge);
   if (deps.accountLifecycle) {
     const lifecycle = deps.accountLifecycle;
     app.get("/v1/account", (context) => context.json(lifecycle.status()));

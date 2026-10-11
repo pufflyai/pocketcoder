@@ -1,4 +1,5 @@
 import type { Account } from "../database/store";
+import { createBindingLabel, createNamespaceLabel } from "../purge/namespace-binding";
 import { accountController } from "./controller";
 import { accountNetworkPolicies } from "./network";
 import { publicHostManifests } from "./public-hosts";
@@ -10,7 +11,14 @@ export function accountManifests(
   const labels = { "pocketcoder.dev/account": account.id };
   const metadata = (name: string) => ({ name, namespace: account.namespace, labels });
   return [
-    { apiVersion: "v1", kind: "Namespace", metadata: { name: account.namespace, labels } },
+    {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: {
+        name: account.namespace,
+        labels: { ...labels, [createBindingLabel]: createNamespaceLabel(account.requestId) },
+      },
+    },
     {
       apiVersion: "v1",
       kind: "ResourceQuota",
