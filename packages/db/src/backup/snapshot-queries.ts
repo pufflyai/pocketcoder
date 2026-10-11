@@ -1,5 +1,8 @@
 import { type PGlite, protocol } from "@electric-sql/pglite";
 import type { CheckpointStageIdentity } from "@pstdio/pocketcoder-runtime-contracts";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/pglite";
+import { createSchema } from "../schema";
 
 // The snapshot holds both PGlite locks, so normal queries would wait on themselves.
 // The wire protocol bypasses those locks; these statements are read-only apart from CHECKPOINT.
@@ -21,7 +24,26 @@ function text(row: Record<string, string | null>, name: string) {
   return value;
 }
 
-export async function readSnapshotState(client: PGlite, schema: string) {
+export async function requireSettledProviderLaunches(client: PGlite, schema: string) {
+  const db = drizzle({ client });
+  const { workspaces, warmPoolRuntimes: warm } = createSchema(schema);
+  // Fixed literals let these schema-backed queries use the lock-safe simple protocol.
+  const workspace = db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(and(eq(workspaces.state, sql`'provisioning'`), isNull(workspaces.providerRef)))
+    .toSQL();
+  const pool = db
+    .select({ id: warm.id })
+    .from(warm)
+    .where(and(eq(warm.state, sql`'provisioning'`), isNull(warm.providerRef)))
+    .toSQL();
+  if ((await rows(client, workspace.sql)).length || (await rows(client, pool.sql)).length)
+    throw new Error("Provider launches have not settled. Retry the off-node backup.");
+}
+
+export async function readSnapshotState(client: PGlite, schema: string, requireSettledProviders = false) {
+  if (requireSettledProviders) await requireSettledProviderLaunches(client, schema);
   // Flush every committed page so the copied files need no log replay to be current.
   await rows(client, "CHECKPOINT");
   const [position] = await rows(client, "SELECT pg_current_wal_lsn()::text AS position");

@@ -1,5 +1,12 @@
 # Security model
 
+Off-node account recovery keeps its storage configuration and separate archive
+encryption key outside the controller data folder and all workspaces. The manager
+retains source container exit proof before fresh-volume writer transfer. Recovery
+stays private until the current independent deletion and revocation journal is
+acknowledged and replayed. See [off-node account recovery](off-node-account-recovery.md)
+for configuration, operator steps and hosted acceptance limits.
+
 pocketcoder runs model-driven code in isolated workspaces. The security model
 starts from one assumption: **anything a workspace can read will eventually be
 read** — by the coding agent debugging itself, by code the agent writes, or by

@@ -24,6 +24,17 @@ export {
   KubernetesDriver,
   type KubernetesDriverOptions,
 } from "./kubernetes/kubernetes";
+export { hasNoPodAdmission } from "./kubernetes/kubernetes-empty-evidence";
+export {
+  captureTermination,
+  EVIDENCE_FINALIZER,
+  podHasStopped,
+  podTerminationProof,
+  readTerminationEvidence,
+} from "./kubernetes/kubernetes-evidence";
+export type { Resource as KubernetesEvidenceResource } from "./kubernetes/kubernetes-evidence-types";
+export { deleteResource, waitForDeletion } from "./kubernetes/kubernetes-identity";
+export { hasMatchingKubernetesTermination } from "./kubernetes/kubernetes-runtime-proof";
 export {
   type KubernetesSchedulingOptions,
   type KubernetesToleration,

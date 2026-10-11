@@ -64,8 +64,11 @@ export class PersistencePurgeService {
 
   private async attempt(operation: WorkspaceOperationRow, workspaceId: string) {
     const { store, scheduler, driver, hub } = this.context.deps;
-    let reason = "purge_termination_unresolved";
+    let reason = "purge_journal_pending";
     try {
+      // A restart can see a committed intent whose remote acknowledgement failed.
+      await store.acknowledgeJournal?.();
+      reason = "purge_termination_unresolved";
       await store.updateOperation(
         operation.id,
         { state: "running", reasonCode: null, attemptCount: operation.attemptCount + 1 },

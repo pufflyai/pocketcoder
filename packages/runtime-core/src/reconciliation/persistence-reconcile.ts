@@ -150,6 +150,7 @@ async function reconcileOperation(
   operation: WorkspaceOperationRow,
   now: Date,
 ): Promise<void> {
+  if (operation.kind === "delete") await deps.store.acknowledgeJournal?.();
   if (await deps.reconcileCheckpointOperation?.(operation)) return;
   if (operation.kind === "purge") return;
   if (operation.kind === "restore") {

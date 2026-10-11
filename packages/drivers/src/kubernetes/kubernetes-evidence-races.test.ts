@@ -19,13 +19,19 @@ test.each(["matching", "absent", "wrong-proof", "replacement"] as const)(
       }
       throw new Error(`Unexpected command ${args}`);
     };
-    if (identity === "matching") await expect(captureTermination(run, "job", 1)).resolves.toBeUndefined();
-    else await expect(captureTermination(run, "job", 1)).rejects.toThrow("Termination evidence unavailable");
+    if (identity === "matching")
+      await expect(captureTermination(run, "job", 1, "original", "default")).resolves.toBeUndefined();
+    else
+      await expect(captureTermination(run, "job", 1, "original", "default")).rejects.toThrow(
+        "Termination evidence unavailable",
+      );
   },
 );
 
 test("a missing Job cannot supply termination proof", async () => {
-  await expect(captureTermination(async () => "", "missing", 1)).rejects.toThrow("Termination evidence unavailable");
+  await expect(captureTermination(async () => "", "missing", 1, "missing", "default")).rejects.toThrow(
+    "Termination evidence unavailable",
+  );
 });
 
 test("a retained annotation for another Job UID is rejected", async () => {
@@ -36,7 +42,9 @@ test("a retained annotation for another Job UID is rejected", async () => {
         annotations: { [EVIDENCE_ANNOTATION]: JSON.stringify({ job: { metadata: { uid: "original" } } }) },
       },
     });
-  await expect(captureTermination(run, "job", 1)).rejects.toThrow("Termination provider changed");
+  await expect(captureTermination(run, "job", 1, "original", "default")).rejects.toThrow(
+    "Termination provider changed",
+  );
 });
 
 test.each(["matching", "absent", "wrong-job"] as const)(
@@ -72,8 +80,9 @@ test.each(["matching", "absent", "wrong-job"] as const)(
       }
       throw new Error(`Unexpected command ${args}`);
     };
-    if (proofState === "matching") await expect(captureTermination(run, "job", 1)).resolves.toBeUndefined();
-    else await expect(captureTermination(run, "job", 1)).rejects.toThrow("NotFound");
+    if (proofState === "matching")
+      await expect(captureTermination(run, "job", 1, "job-uid", "default")).resolves.toBeUndefined();
+    else await expect(captureTermination(run, "job", 1, "job-uid", "default")).rejects.toThrow("NotFound");
   },
 );
 
@@ -115,7 +124,8 @@ test.each(["matching", "absent", "replacement"] as const)(
       if (args[0] === "get" && args[1] === "pod") return "";
       throw new Error(`Unexpected command ${args}`);
     };
-    if (identity === "matching") await expect(captureTermination(run, "job", 1)).resolves.toBeUndefined();
-    else await expect(captureTermination(run, "job", 1)).rejects.toThrow();
+    if (identity === "matching")
+      await expect(captureTermination(run, "job", 1, "job-uid", "default")).resolves.toBeUndefined();
+    else await expect(captureTermination(run, "job", 1, "job-uid", "default")).rejects.toThrow();
   },
 );

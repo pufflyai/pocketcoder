@@ -21,7 +21,7 @@ test("provider removal follows durable evidence storage and preserves proof on r
   const row: Pick<WorkspaceRow, "id" | "providerKind" | "providerRef"> = {
     id: "workspace",
     providerKind: "kubernetes",
-    providerRef: { id: "job" },
+    providerRef: { id: "job", jobUid: "f9c9c081-2d7e-4b26-bba2-aa164d1ac2ae" },
   };
   const store = {
     getWorkspace: async () => ({ ...row, providerRef: state.saved ?? row.providerRef }),
@@ -49,7 +49,7 @@ test("failed evidence persistence cannot remove the provider proof", async () =>
   const row: Pick<WorkspaceRow, "id" | "providerKind" | "providerRef"> = {
     id: "workspace",
     providerKind: "kubernetes",
-    providerRef: { id: "job" },
+    providerRef: { id: "job", jobUid: "f9c9c081-2d7e-4b26-bba2-aa164d1ac2ae" },
   };
   const store = {
     getWorkspace: async () => row,

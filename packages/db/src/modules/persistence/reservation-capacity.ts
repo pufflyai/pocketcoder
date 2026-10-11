@@ -7,7 +7,7 @@ import type {
   WorkspaceOperationRow,
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "@pstdio/pocketcoder-runtime-contracts";
-import { eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type QueryContext, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { assertUploadPreservationDeadline } from "./upload-preservation-deadline";
@@ -147,6 +147,19 @@ export async function reserveStorage(
   await lockStorageCapacity(context, tx);
   const at = await admitStorageOwner(context, tx, input, check);
   const usage = await storageUsage(context, tx, input.workspaceId, input.principalId);
+  {
+    const row = context.tables.storageReservations;
+    const purpose = input.purpose === "backup" ? eq(row.purpose, "backup") : ne(row.purpose, "backup");
+    const [scoped] = await tx
+      .select({
+        bytes: sql`coalesce(sum(${row.reservedBytes}), 0)`.mapWith(Number),
+        files: sql`coalesce(sum(${row.reservedFiles}), 0)`.mapWith(Number),
+      })
+      .from(row)
+      .where(and(purpose, ne(row.state, "released")));
+    // Backup staging has its own optional budget; every purpose still contributes unwritten disk promises.
+    usage.instance = storageAmount(requiredRow(scoped));
+  }
   check();
   // Materialization stays locked while free space is sampled, so written bytes cannot be promised again.
   const capacity = await readCapacity();

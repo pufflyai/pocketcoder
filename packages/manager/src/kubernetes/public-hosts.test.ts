@@ -26,6 +26,7 @@ const account = (plan: Account["plan"]): Account => ({
   requestDigest: "digest",
   plan,
   state: "provisioning",
+  volumeName: "controller-data",
   bootstrapRequestId: null,
   createdAt: new Date(),
 });
