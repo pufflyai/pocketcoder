@@ -104,19 +104,37 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       await run(["kind", "get", "kubeconfig", "--name", name, "--internal"]),
       { mode: 0o600 },
     );
-    async function buildImage(role: "workspace" | "server", options: { hostBundled?: boolean } = {}) {
+    async function buildImage(role: "workspace" | "browser" | "server", options: { hostBundled?: boolean } = {}) {
       const tag = `pocketcoder-${role}:${name}`;
+      const base = `pocketcoder-workspace:${name}`;
       images.push(tag);
-      if (role === "workspace") {
+      if (role === "server" && options.hostBundled) {
+        await buildManagedController(ROOT, directory, tag);
+      } else if (role === "server") {
+        await command(["docker", "build", "-f", "deploy/image/server.Dockerfile", "-t", tag, "."], { quiet: true });
+      } else {
         await command(
           ["bun", "build", "packages/supervisor/src/index.ts", "--target", "bun", "--outdir", "deploy/image/dist"],
           { quiet: true },
         );
-        await command(["docker", "build", "-t", tag, "deploy/image"], { quiet: true });
-      } else if (options.hostBundled) {
-        await buildManagedController(ROOT, directory, tag);
-      } else {
-        await command(["docker", "build", "-f", "deploy/image/server.Dockerfile", "-t", tag, "."], { quiet: true });
+        await command(["docker", "build", "-t", base, "deploy/image"], { quiet: true });
+      }
+      if (role === "browser") {
+        images.push(base);
+        await command(
+          [
+            "docker",
+            "build",
+            "-f",
+            "deploy/image/browser.Dockerfile",
+            "--build-arg",
+            `BASE_IMAGE=${base}`,
+            "-t",
+            tag,
+            "deploy/image",
+          ],
+          { quiet: true },
+        );
       }
       await run(["kind", "load", "docker-image", "--name", name, tag]);
       const reference = `docker.io/library/${tag}`;

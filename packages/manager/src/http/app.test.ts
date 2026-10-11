@@ -113,3 +113,62 @@ test("an operator that expires while sending a body cannot create an account", a
   expect(await store.listAccounts()).toEqual([]);
   expect(await store.pendingOperations()).toEqual([]);
 });
+
+test("accounts report their public origins and reject parents on the view domain", async () => {
+  const store = await ManagerStore.create();
+  cleanup.push(() => store.close());
+  const token = await store.createOperator(new Date(Date.now() + 60_000));
+  const app = createManagerApp(store, {
+    controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`,
+    runtimeClassName: "pc-runc",
+    publicHosts: {
+      apiOrigin: "https://pocketcoder.datazine.app",
+      viewOrigin: "https://embed.kaset.dev",
+      issuer: "pocketcoder-dns",
+      ingressClassName: "pocketcoder",
+      ingressNamespace: "pocketcoder-edge",
+      trustedIngress: ["10.244.0.0/16"],
+    },
+  });
+  const create = (key: string, parents: string[]) =>
+    app.request("/v1/accounts", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "idempotency-key": key, "content-type": "application/json" },
+      body: JSON.stringify({ name: key, parents }),
+    });
+  const rejected = await create("same-domain", ["https://app.kaset.dev"]);
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toEqual({ code: "invalid_public_hosts" });
+  const created = z
+    .object({ account: z.object({ id: z.uuid(), api_origin: z.string(), view_origin: z.string() }) })
+    .parse(await (await create("embedded", ["https://app.example.org"])).json());
+  const label = created.account.id.replaceAll("-", "");
+  expect(created.account.api_origin).toBe(`https://${label}.pocketcoder.datazine.app`);
+  expect(created.account.view_origin).toBe(`https://${label}.embed.kaset.dev`);
+  expect(await store.listAccounts()).toHaveLength(1);
+});
+
+test("a replayed create returns its account after the public host settings change", async () => {
+  const store = await ManagerStore.create();
+  cleanup.push(() => store.close());
+  const token = await store.createOperator(new Date(Date.now() + 60_000));
+  const base = { controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`, runtimeClassName: "pc-runc" };
+  const publicHosts = {
+    apiOrigin: "https://pocketcoder.datazine.app",
+    viewOrigin: "https://embed.kaset.dev",
+    issuer: "pocketcoder-dns",
+    ingressClassName: "pocketcoder",
+    ingressNamespace: "pocketcoder-edge",
+    trustedIngress: ["10.244.0.0/16"],
+  };
+  const create = (config: Parameters<typeof createManagerApp>[1]) =>
+    createManagerApp(store, config).request("/v1/accounts", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "idempotency-key": "replayed", "content-type": "application/json" },
+      body: JSON.stringify({ name: "replayed", parents: ["https://app.example.org"] }),
+    });
+  const first = (await (await create({ ...base, publicHosts })).json()) as { account: { id: string } };
+  const replay = await create(base);
+  expect(replay.status).toBe(202);
+  expect(((await replay.json()) as typeof first).account.id).toBe(first.account.id);
+});

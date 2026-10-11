@@ -58,6 +58,21 @@ export function accountNetworkPolicies(
           })),
           ports: [{ protocol: "TCP", port: 8091 }],
         },
+        // The controller trusts forwarded HTTPS hosts from its pod range, so no other pod may reach this listener.
+        ...(account.plan.publicHosts
+          ? [
+              {
+                from: [
+                  {
+                    namespaceSelector: {
+                      matchLabels: { "kubernetes.io/metadata.name": account.plan.publicHosts.ingressNamespace },
+                    },
+                  },
+                ],
+                ports: [{ protocol: "TCP", port: 8090 }],
+              },
+            ]
+          : []),
       ],
       egress: [
         dns,

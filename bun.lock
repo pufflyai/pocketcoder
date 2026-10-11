@@ -128,8 +128,10 @@
       "version": "0.1.0",
       "dependencies": {
         "@electric-sql/pglite": "0.5.8",
+        "@pstdio/pocketcoder-contracts": "workspace:*",
         "@pstdio/pocketcoder-db": "workspace:*",
         "@pstdio/pocketcoder-drivers": "workspace:*",
+        "@pstdio/pocketcoder-server": "workspace:*",
         "drizzle-orm": "1.0.0-rc.4",
         "hono": "^4.8.0",
         "zod": "^4.0.0",

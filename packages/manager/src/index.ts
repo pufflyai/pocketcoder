@@ -25,6 +25,9 @@ if (process.argv[2] === "operator") {
     ...(process.env.POCKETCODER_MANAGER_STORAGE_CLASS
       ? { storageClassName: process.env.POCKETCODER_MANAGER_STORAGE_CLASS }
       : {}),
+    ...(process.env.POCKETCODER_MANAGER_PUBLIC_HOSTS
+      ? { publicHosts: JSON.parse(process.env.POCKETCODER_MANAGER_PUBLIC_HOSTS) }
+      : {}),
   });
   const service = accountService(store, new KubernetesAccounts(undefined, backups));
   const usage = usageSampler(store);

@@ -1,5 +1,6 @@
 import type { Account } from "../database/store";
 import { installOffNodeFiles, offNodeFileMount, offNodeSecretVolume } from "./off-node-files";
+import { checkPublicViews } from "./public-hosts";
 export function accountController(account: Account, nodeName?: string) {
   const labels = { "pocketcoder.dev/account": account.id, "pocketcoder.dev/role": "controller" };
   const image = account.plan.controllerImage;
@@ -81,6 +82,13 @@ export function accountController(account: Account, nodeName?: string) {
                   POCKETCODER_CHECKPOINT_DIR: "/private/checkpoints",
                   POCKETCODER_MAX_ACTIVE_WORKSPACES: "3",
                   POCKETCODER_WORKSPACE_SERVER_URL: `http://controller.${account.namespace}.svc:8091`,
+                  ...(account.plan.publicHosts
+                    ? {
+                        POCKETCODER_PUBLIC_VIEWS: JSON.stringify(
+                          checkPublicViews(account.id, account.plan.publicHosts),
+                        ),
+                      }
+                    : {}),
                 }).map(([name, value]) => ({ name, value })),
                 volumeMounts: [
                   { name: "private", mountPath: "/private" },
