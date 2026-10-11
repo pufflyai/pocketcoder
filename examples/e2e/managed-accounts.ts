@@ -8,7 +8,8 @@ import { managerKubeconfig } from "./managed-account-kubeconfig";
 import { assertManagedIsolation, runManagedEcho } from "./managed-account-probes";
 import { assertManagedUsage } from "./managed-account-usage";
 
-const cluster = await createKubernetesCluster({ networkPolicy: true });
+const networkPolicy = process.argv.includes("--cilium") ? "cilium" : "calico";
+const cluster = await createKubernetesCluster({ networkPolicy });
 const originalConfig = process.env.KUBECONFIG;
 let store: Awaited<ReturnType<typeof ManagerStore.create>> | undefined;
 let server: ReturnType<typeof Bun.serve> | undefined;
@@ -127,7 +128,7 @@ try {
         accounts: owners.map((o) => o.accountId),
         retry: "one account and operation after restart",
         ownerBootstrap: "finite, once; lost response replaced",
-        isolation: "separate controller/PGlite PVC, quota, RBAC and enforced Calico cross-account denial",
+        isolation: `separate controller/PGlite PVC, quota, RBAC and enforced ${networkPolicy} cross-account denial`,
         echo: "working agent",
         usage:
           "one active workspace; warm capacity separate; finished and deleting pods ignored; private volume measured; retry counted once",

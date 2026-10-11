@@ -1,7 +1,9 @@
 import type { Account } from "../database/store";
+import type { PolicyProvider } from "./policy-provider";
 export function accountNetworkPolicies(
   account: Account,
   apiAddresses: string[],
+  provider: PolicyProvider,
   storageDestinations: { cidr: string; port: number }[] = [],
 ) {
   const policy = (name: string, spec: object) => ({
@@ -89,5 +91,36 @@ export function accountNetworkPolicies(
         },
       ],
     }),
+    // When the API server runs on cluster nodes (kind, self-hosted), Cilium selects it as an
+    // entity, not by ipBlock. On managed DOKS the ipBlock rule already matches; this adds nothing there.
+    ...(provider === "cilium"
+      ? [
+          {
+            apiVersion: "cilium.io/v2",
+            kind: "CiliumNetworkPolicy",
+            metadata: {
+              name: "controller-api",
+              namespace: account.namespace,
+              labels: { "pocketcoder.dev/account": account.id },
+            },
+            spec: {
+              endpointSelector: { matchLabels: { "pocketcoder.dev/role": "controller" } },
+              egress: [
+                {
+                  toEntities: ["kube-apiserver"],
+                  toPorts: [
+                    {
+                      ports: [
+                        { port: "443", protocol: "TCP" },
+                        { port: "6443", protocol: "TCP" },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ]
+      : []),
   ];
 }

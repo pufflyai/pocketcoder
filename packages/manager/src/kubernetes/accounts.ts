@@ -10,6 +10,7 @@ import { controllerStop } from "./controller-stop";
 import { kubernetesLifecycle } from "./lifecycle";
 import { accountManifests } from "./manifests";
 import { offNodeSecret } from "./off-node-files";
+import { policyProvider } from "./policy-provider";
 import { type PurgeControllerFiles, purgeSecret } from "./purge-files";
 import { discoverPurgeNamespaces } from "./purge-namespaces";
 import { physicalPurge } from "./purge-physical";
@@ -37,9 +38,7 @@ export class KubernetesAccounts {
       await this.command(["get", "ingressclass", hosts.ingressClassName, "-o", "name"]);
       await this.command(["get", "clusterissuer", hosts.issuer, "-o", "name"]);
     }
-    const cni = JSON.parse(await this.command(["-n", "kube-system", "get", "daemonset", "calico-node", "-o", "json"]));
-    if (!cni.status.desiredNumberScheduled || cni.status.numberReady !== cni.status.desiredNumberScheduled)
-      throw new Error("Calico enforcement is not ready");
+    const provider = await this.policyEnforced();
     const endpoints = JSON.parse(
       await this.command([
         "-n",
@@ -57,7 +56,10 @@ export class KubernetesAccounts {
     );
     if (!addresses.length) throw new Error("Kubernetes API destinations missing");
     const privateConfig = await this.privateConfiguration(account);
-    const resources = [...accountManifests(account, addresses, privateConfig.destinations), ...privateConfig.resources];
+    const resources = [
+      ...accountManifests(account, addresses, provider, privateConfig.destinations),
+      ...privateConfig.resources,
+    ];
     for (const resource of resources) {
       const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
       if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);
@@ -127,6 +129,30 @@ export class KubernetesAccounts {
   }
   physicalPurge(storage: PhysicalStorage, authority: PurgeAuthority) {
     return physicalPurge(this.command, storage, authority);
+  }
+  // Kind fixtures enforce NetworkPolicy with Calico; DOKS uses Cilium.
+  private async policyEnforced() {
+    const daemonSet = async (name: string) => {
+      const raw = await this.command([
+        "-n",
+        "kube-system",
+        "get",
+        "daemonset",
+        name,
+        "--ignore-not-found",
+        "-o",
+        "json",
+      ]);
+      return raw ? JSON.parse(raw) : undefined;
+    };
+    const calico = await daemonSet("calico-node");
+    const cilium = await daemonSet("cilium");
+    if (!cilium) return policyProvider({ calico });
+    const config = JSON.parse(
+      await this.command(["-n", "kube-system", "get", "configmap", "cilium-config", "-o", "json"]),
+    );
+    const nodes = JSON.parse(await this.command(["get", "ciliumnodeconfigs.cilium.io", "-A", "-o", "json"]));
+    return policyProvider({ calico, cilium, ciliumConfig: config.data ?? {}, ciliumNodeConfigs: nodes.items });
   }
   async owner(account: Account, request: Awaited<ReturnType<ManagerStore["beginBootstrap"]>>) {
     const args = [
