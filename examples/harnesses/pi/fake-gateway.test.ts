@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { PI_FIXTURE_CONTENT, startFakePiGateway } from "./fake-gateway";
+import { PI_FIXTURE_CONTENT, PI_INTERRUPT_PROMPT, startFakePiGateway } from "./fake-gateway";
 
 let gateway: ReturnType<typeof Bun.serve> | undefined;
 
@@ -80,5 +80,37 @@ describe("Pi E2E fake model gateway", () => {
     expect(streamedText).toBe(PI_FIXTURE_CONTENT);
     expect(secondBody).toContain('"finish_reason":"stop"');
     expect(secondBody).toEndWith("data: [DONE]\n\n");
+  });
+
+  test("keeps the interrupt prompt's reply open until Pi cancels it", async () => {
+    gateway = startFakePiGateway("test-bearer");
+    const response = await fetch(`http://127.0.0.1:${gateway.port}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer test-bearer",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "pocketcoder-test",
+        stream: true,
+        messages: [{ role: "user", content: PI_INTERRUPT_PROMPT }],
+      }),
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("expected a streamed reply");
+    const decoder = new TextDecoder();
+    let received = "";
+    const deadline = Date.now() + 2_500;
+    while (Date.now() < deadline) {
+      const next = await Promise.race([reader.read(), Bun.sleep(deadline - Date.now()).then(() => null)]);
+      if (!next) break;
+      expect(next.done).toBe(false);
+      received += decoder.decode(next.value, { stream: true });
+    }
+
+    expect(received).toContain('"content":"Working"');
+    expect(received).not.toContain('finish_reason":"stop');
+    expect(received).not.toContain("[DONE]");
+    await reader.cancel();
   });
 });

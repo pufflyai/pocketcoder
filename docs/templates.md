@@ -133,7 +133,14 @@ and kind v0.33.0 must be installed. The command deletes its disposable cluster.
   environment. `transport` defaults to `"pty"`; `"acp"` adds AgentAPI's
   `--experimental-acp` adapter for agents whose command speaks ACP. PocketCoder
   passes optional `termWidth` (10–65535) to AgentAPI only for PTY agents; it is
-  rejected for ACP because ACP does not emulate a terminal. The derived agent
+  rejected for ACP because ACP does not emulate a terminal. Optional
+  `interruptKeys` (1–16 characters, PTY only) is the raw terminal input that
+  stops the agent's current turn, such as `"\u001b"` (Escape) for Pi. It enables
+  `POST /v1/workspaces/{id}/agent/interrupt` (see [API](api.md)). Declare it
+  only after a real-agent test proves that the key stops a turn and leaves the
+  agent ready for the next message. The image must also make a stray key on an
+  idle agent harmless: the Pi image turns off Pi's double-Escape menu. The
+  derived agent
   service and its health check use `http://127.0.0.1:3284`, so an explicit
   `AGENTAPI_ALLOWED_HOSTS` must include `127.0.0.1`. See the
   [transport decision](agent-transport-decision.md) for the cross-agent
@@ -204,6 +211,8 @@ HTTPS methods or paths, and it blocks SSH and other non-HTTP protocols.
 - duplicate routes;
 - terminal cwd traversal, invalid limits, or an empty command;
 - `agent.termWidth` outside 10–65535 or supplied with ACP transport;
+- `agent.interruptKeys` empty, longer than 16 characters, or supplied with ACP
+  transport;
 - env values that look like secret literals (names matching
   `SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY|CREDENTIAL` must use a
   `secretRef:` reference resolved by the deployment);

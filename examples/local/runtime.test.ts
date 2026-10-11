@@ -55,7 +55,7 @@ describe("local Pi runtime materialization", () => {
       const first = await preparePiRuntime(options);
       const second = await preparePiRuntime(options);
       expect(first.templateVersion).toBe(second.templateVersion);
-      expect(first.templateVersion).toMatch(/^1\.0\.0-local\.[0-9a-f]{12}$/);
+      expect(first.templateVersion).toMatch(/^1\.1\.0-local\.[0-9a-f]{12}$/);
       expect(first.image).toBe(`pocketcoder-pi:local@sha256:${"a".repeat(64)}`);
       // A bearer that survives re-prepare is a standing credential — the
       // antipattern docs/security.md exists to prevent. Every prepare mints

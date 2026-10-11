@@ -63,6 +63,9 @@ export const AgentSchema = HarnessSchema.extend({
   transport: z.enum(["pty", "acp"]).default("pty"),
   termWidth: z.number().int().min(10).max(65_535).optional(),
   stateFile: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
+  // Raw terminal input that stops the current turn, such as Escape for Pi.
+  // The template owns it because the key differs per agent.
+  interruptKeys: z.string().min(1).max(16).optional(),
 });
 
 export const TerminalSchema = z.object({
@@ -219,7 +222,7 @@ const TemplateSpecInputSchema = z
     }
     if (!spec.agent) return;
     if (spec.agent.transport === "acp") {
-      for (const field of ["termWidth", "stateFile"] as const) {
+      for (const field of ["termWidth", "stateFile", "interruptKeys"] as const) {
         if (spec.agent[field] === undefined) continue;
         ctx.addIssue({
           code: "custom",

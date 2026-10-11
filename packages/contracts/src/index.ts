@@ -314,6 +314,8 @@ export {
 } from "./terminals/terminal";
 export {
   AGENT_STATES,
+  type AgentInterruptResponse,
+  AgentInterruptResponseSchema,
   type AgentState,
   canTransition,
   isTerminal,

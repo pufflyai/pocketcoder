@@ -1,4 +1,5 @@
 export type {
+  AgentInterruptResponse,
   BrowserAction,
   CheckpointResource,
   CheckpointState,
@@ -29,9 +30,8 @@ export type {
 } from "@pstdio/pocketcoder-contracts";
 export { PocketCoderClient } from "./client";
 export { AdministrationApi } from "./resources/admin/admin";
+export { AgentApi, type AgentMessageInput } from "./resources/agent/agent";
 export {
-  AgentApi,
-  type AgentMessageInput,
   type AttachmentDescriptor,
   AttachmentsApi,
   type AttachmentUploadInput,
