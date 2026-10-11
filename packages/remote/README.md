@@ -163,3 +163,4 @@ gestures fail with an explanation while plain text keeps working.
 - Live text uses AgentAPI's `GET /events` stream when the workspace snapshot and protocol support it. Intermediate snapshots are never persisted.
 - Local Pi coding tools are disabled; the remote agent does all the work.
 - The status bar shows the workspace id, workspace state, and agent state, updated via the durable change cursor.
+- Escape, or a session switch while a reply is running, stops the remote turn through `POST /v1/workspaces/{id}/agent/interrupt` and keeps the workspace. Quitting Pi only disconnects: the remote turn keeps running and shows up when you attach again. Agents whose template declares no `interruptKeys` keep running after Escape, as before. Direct AgentAPI mode cannot interrupt.

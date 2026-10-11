@@ -44,6 +44,7 @@ import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { ViewAdmission } from "./previews/admission";
 import { composePreviews } from "./previews/previews";
 import { ViewPolicy } from "./previews/view-policy";
+import { registerAgentInterruptRoute } from "./relay/agent-interrupt";
 import { relayHandler } from "./relay/relay";
 import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
@@ -289,8 +290,10 @@ export function buildServer(deps: BuildDeps): BuiltServer {
 
   // --- Workspace service relay ---
 
-  // The AgentAPI message aliases are registered before the wildcard relay
-  // routes so attachment references resolve on both spellings.
+  // Registered before the wildcard relay routes so they take precedence: the
+  // interrupt action, and the message aliases that resolve attachment
+  // references on both spellings.
+  registerAgentInterruptRoute(app, relayDeps);
   const messageTransform = agentMessageBodyTransform(relayDeps);
   app.post(
     "/v1/workspaces/:id/agent/message",

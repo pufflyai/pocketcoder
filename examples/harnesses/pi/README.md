@@ -18,6 +18,11 @@ AgentAPI does not yet include a native Pi terminal profile, so
 AgentAPI's generic input-readiness detector. It does not implement HTTP routes,
 store messages, or invoke Pi.
 
+The template declares Escape as `agent.interruptKeys`, so
+`POST /v1/workspaces/{id}/agent/interrupt` stops Pi's current turn. `run-pi`
+sets Pi's `doubleEscapeAction` to `none`: a repeated interrupt on an idle Pi
+would otherwise open its `/tree` menu.
+
 The image also stores a test fixture at `/opt/pocketcoder-fixtures/test.txt`.
 The template's `setup` step copies it into the tmpfs-backed
 `/workspace/test.txt` before AgentAPI and Pi start.
@@ -42,7 +47,9 @@ bun run example:e2e:pi
 This starts a tiny OpenAI-compatible fake gateway on the host. The gateway
 requests Pi's real `read` tool, Pi reads `/workspace/test.txt`, and the test
 verifies the returned fixture text. AgentAPI still drives Pi through its
-terminal and serves the conversation API.
+terminal and serves the conversation API. Before that, the run starts a turn
+whose reply never finishes, closes an event stream to show the turn keeps
+running, interrupts it, and checks that Pi accepts the next message.
 
 To test a real OpenAI connection without opening the interactive UI:
 

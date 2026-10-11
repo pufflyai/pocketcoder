@@ -33,3 +33,29 @@ test("reads a projected secret path before writing Pi's model config", async () 
   const config = await Bun.file(join(agentDirectory, "models.json")).json();
   expect(config.providers["pocketcoder-gateway"].apiKey).toBe("ephemeral-session-token");
 });
+
+test("turns off Pi's double-Escape menu and keeps other settings", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pocketcoder-pi-"));
+  temporaryDirectories.push(directory);
+  const agentDirectory = join(directory, "agent");
+  await Bun.write(join(agentDirectory, "settings.json"), JSON.stringify({ theme: "light" }));
+
+  const process = Bun.spawn(["/bin/sh", "./run-pi"], {
+    cwd: import.meta.dir,
+    env: {
+      ...Bun.env,
+      PI_CODING_AGENT_DIR: agentDirectory,
+      PI_EXECUTABLE: "/usr/bin/true",
+      PI_GATEWAY_BEARER: "ephemeral-session-token",
+      PI_GATEWAY_MODEL: "gpt-test",
+      PI_GATEWAY_URL: "http://gateway.test/v1",
+    },
+    stderr: "pipe",
+  });
+
+  expect(await process.exited).toBe(0);
+  expect(await Bun.file(join(agentDirectory, "settings.json")).json()).toEqual({
+    theme: "light",
+    doubleEscapeAction: "none",
+  });
+});

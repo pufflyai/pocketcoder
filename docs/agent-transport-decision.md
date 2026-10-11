@@ -64,6 +64,23 @@ by `codex app-server generate-json-schema --experimental` from the pinned
 binary. Those schemas include thread resume/fork, turn interrupt, item IDs,
 message deltas, image inputs, and typed error notifications.
 
+## Turn interruption through AgentAPI
+
+The agents can cancel a turn, but AgentAPI `0.12.2` exposes only part of that:
+
+- **PTY:** `POST /message` with `type: "raw"` writes keystrokes to the agent's
+  terminal. PocketCoder's interrupt action sends the template's
+  `agent.interruptKeys` this way while the agent is running. Pi `0.83.0` binds
+  Escape to its interrupt action; the Pi Docker E2E proves that the turn stops
+  and the next message works.
+- **ACP:** AgentAPI sends no ACP `session/cancel`. A raw message becomes a new
+  prompt, so ACP templates cannot declare interrupt keys and report
+  `agent.interrupt_unsupported`. Supporting them needs an upstream AgentAPI
+  change.
+
+AgentAPI has no turn ID, so PocketCoder checks the status just before it sends
+the keys. This keeps the fixed boundary and adds no transport or stored state.
+
 ## Requirements before reconsidering
 
 A proposal for another transport must provide all of the following:

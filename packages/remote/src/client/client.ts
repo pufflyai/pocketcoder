@@ -13,6 +13,9 @@ export interface RemoteAgentClientConfig {
   timeoutMs?: number;
   // How long to wait for the agent to be ready for input before giving up.
   readyTimeoutMs?: number;
+  // Runs when the caller aborts after the prompt may have reached the agent,
+  // so the caller can stop the remote turn instead of leaving it running.
+  onAbortAfterSend?: () => Promise<void>;
 }
 
 interface AgentApiStatus {
@@ -41,6 +44,7 @@ export class RemoteAgentClient {
   readonly timeoutMs: number;
   readonly readyTimeoutMs: number;
   readonly fetchImpl: FetchLike;
+  private readonly onAbortAfterSend: (() => Promise<void>) | undefined;
   private changesUrl: string | undefined;
 
   constructor(config: RemoteAgentClientConfig, fetchImpl: FetchLike = fetch) {
@@ -51,6 +55,7 @@ export class RemoteAgentClient {
     // Waiting for input longer than the whole turn budget cannot help.
     this.readyTimeoutMs = Math.min(config.readyTimeoutMs ?? 120_000, this.timeoutMs);
     this.fetchImpl = fetchImpl;
+    this.onAbortAfterSend = config.onAbortAfterSend;
     this.changesUrl = changesUrlFor(this.serviceUrl);
   }
 
@@ -163,8 +168,16 @@ export class RemoteAgentClient {
     }
   }
 
-  private async submit(prompt: string, attachmentIds: string[], signal: AbortSignal): Promise<void> {
+  private async submit(
+    prompt: string,
+    attachmentIds: string[],
+    signal: AbortSignal,
+    turn: { sending: boolean; timeout: AbortSignal },
+  ): Promise<void> {
     await this.waitForInput(signal);
+    turn.sending = true;
+    // Finish sending even if the caller aborts: an interrupt that overtook
+    // the prompt would find the agent idle and leave the new turn running.
     const response = await this.request("/message", {
       method: "POST",
       body: JSON.stringify({
@@ -172,9 +185,10 @@ export class RemoteAgentClient {
         type: "user",
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       }),
-      signal,
+      signal: turn.timeout,
     });
     if (!response.ok) throw await remoteResponseError(response, "submit", false);
+    signal.throwIfAborted();
   }
 
   private async pollForReply(
@@ -281,6 +295,7 @@ export class RemoteAgentClient {
     const turnSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
     const stopEvents = new AbortController();
     const eventSignal = AbortSignal.any([turnSignal, stopEvents.signal]);
+    const turn = { sending: false, timeout: timeout.signal };
     try {
       const before = await this.messages("initial_messages", false, turnSignal);
       const baselineId = before.reduce((maximum, message) => Math.max(maximum, message.id), -1);
@@ -288,7 +303,7 @@ export class RemoteAgentClient {
       const deadline = Date.now() + this.timeoutMs;
       const initialEvents = await this.eventStream("initial_events", false, eventSignal);
       if (!initialEvents) {
-        await this.submit(prompt, attachmentIds, turnSignal);
+        await this.submit(prompt, attachmentIds, turnSignal, turn);
         onAccepted?.();
         return await this.pollForReply(baselineId, baselineChange?.cursor ?? 0, deadline, turnSignal);
       }
@@ -325,7 +340,7 @@ export class RemoteAgentClient {
         () => submitted,
         eventSignal,
       );
-      await this.submit(prompt, attachmentIds, turnSignal);
+      await this.submit(prompt, attachmentIds, turnSignal, turn);
       submitted = true;
       onAccepted?.();
       const outcome = await Promise.race([
@@ -339,6 +354,7 @@ export class RemoteAgentClient {
       throw turnSignal.reason ?? new Error("remote request aborted");
     } catch (error) {
       if (timeout.signal.aborted) throw timeout.signal.reason;
+      if (turn.sending && signal?.aborted) await this.onAbortAfterSend?.();
       throw error;
     } finally {
       clearTimeout(timer);

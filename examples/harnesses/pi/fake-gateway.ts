@@ -4,6 +4,16 @@
 
 export const PI_FIXTURE_CONTENT = "PocketCoder remote workspace fixture: ORBIT-7319";
 
+// The interrupt E2E sends this prompt. Its reply never finishes, so the turn
+// only ends when PocketCoder interrupts Pi and Pi cancels the request.
+export const PI_INTERRUPT_PROMPT = "Keep working until you are interrupted.";
+
+const EVENT_STREAM_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+  connection: "keep-alive",
+};
+
 interface ChatMessage {
   role?: string;
   content?: string | Array<{ type: string; text?: string }>;
@@ -19,10 +29,7 @@ function hasToolResult(body: ChatRequest): boolean {
   return body.messages?.some((message) => message.role === "tool") ?? false;
 }
 
-function completion(body: ChatRequest): {
-  delta: Record<string, unknown>;
-  finishReason: "stop" | "tool_calls";
-} {
+function lastUserPrompt(body: ChatRequest): string {
   const content = body.messages?.findLast((message) => message.role === "user")?.content;
   const prompt =
     typeof content === "string"
@@ -31,8 +38,15 @@ function completion(body: ChatRequest): {
           ?.filter((part) => part.type === "text")
           .map((part) => part.text)
           .join("");
+  return prompt?.trim() ?? "";
+}
+
+function completion(body: ChatRequest): {
+  delta: Record<string, unknown>;
+  finishReason: "stop" | "tool_calls";
+} {
   const token = /^Reply with exactly this diagnostic token: (pocketcoder-doctor-[\da-f-]+)$/.exec(
-    prompt?.trim() ?? "",
+    lastUserPrompt(body),
   )?.[1];
   if (token) {
     return { delta: { role: "assistant", content: token }, finishReason: "stop" };
@@ -69,6 +83,30 @@ function streamingDeltas(delta: Record<string, unknown>): Record<string, unknown
   return [{ ...metadata, content: content.slice(0, midpoint) }, { content: content.slice(midpoint) }];
 }
 
+// Streams one chunk, then keeps the reply open like a model that is still
+// working. Comments keep the idle connection from timing out.
+function heldReply(model: string, created: number): Response {
+  const chunk = {
+    id: "chatcmpl-pocketcoder",
+    object: "chat.completion.chunk",
+    created,
+    model,
+    choices: [{ index: 0, delta: { role: "assistant", content: "Working" }, finish_reason: null }],
+  };
+  const encoder = new TextEncoder();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
+      timer = setInterval(() => controller.enqueue(encoder.encode(": working\n\n")), 1000);
+    },
+    cancel() {
+      clearInterval(timer);
+    },
+  });
+  return new Response(stream, { headers: EVENT_STREAM_HEADERS });
+}
+
 export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof Bun.serve> {
   return Bun.serve({
     hostname: "0.0.0.0",
@@ -87,6 +125,7 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
       const body = (await request.json()) as ChatRequest;
       const model = body.model ?? "pocketcoder-test";
       const created = Math.floor(Date.now() / 1000);
+      if (body.stream && lastUserPrompt(body) === PI_INTERRUPT_PROMPT) return heldReply(model, created);
       const next = completion(body);
       if (!body.stream) {
         return Response.json({
@@ -145,13 +184,7 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
           canceled = true;
         },
       });
-      return new Response(stream, {
-        headers: {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-        },
-      });
+      return new Response(stream, { headers: EVENT_STREAM_HEADERS });
     },
   });
 }
