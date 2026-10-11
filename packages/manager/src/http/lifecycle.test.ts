@@ -19,7 +19,7 @@ test("suspend admission persists one operation across HTTP retry and manager res
   const expiry = new Date(Date.now() + 60_000);
   const token = await store.createOperator(expiry);
   const config = { controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`, runtimeClassName: "pc-runc" };
-  const created = await store.createAccount("one", { name: "one" }, config, expiry);
+  const created = await store.createAccount("one", { name: "one" }, () => config, expiry);
   await store.finishAccount(created.account.id, created.operation.id);
   let app = createManagerApp(store, config);
   const headers = { authorization: `Bearer ${token}`, "idempotency-key": "suspend-one" };

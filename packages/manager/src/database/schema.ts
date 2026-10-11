@@ -14,7 +14,7 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { ManagerConfig } from "../config";
+import type { AccountPlan } from "../config";
 
 export function managerSchema(schema?: string) {
   const table: PgTableFn<string | undefined> = schema ? pgSchema(schema).table : pgTable;
@@ -26,7 +26,7 @@ export function managerSchema(schema?: string) {
       namespace: text().notNull().unique(),
       requestId: text("request_id").notNull().unique(),
       requestDigest: text("request_digest").notNull(),
-      plan: jsonb().$type<ManagerConfig>().notNull(),
+      plan: jsonb().$type<AccountPlan>().notNull(),
       state: text().$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming">().notNull(),
       bootstrapRequestId: uuid("bootstrap_request_id"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),

@@ -3,12 +3,20 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { ManagerError } from "./accounts/errors";
 import { accountService } from "./accounts/service";
-import { AccountInputSchema, BootstrapInputSchema, type ManagerConfig, ManagerConfigSchema } from "./config";
+import {
+  AccountInputSchema,
+  accountPlan,
+  BootstrapInputSchema,
+  type ManagerConfig,
+  ManagerConfigSchema,
+} from "./config";
 import type { Account, ManagerStore } from "./database/store";
+import { accountOrigins } from "./kubernetes/public-hosts";
 
 export { accountService } from "./accounts/service";
 export { usageSampler } from "./usage/sampler";
 export function accountResource(account: Account) {
+  const origins = account.plan.publicHosts && accountOrigins(account.id, account.plan.publicHosts);
   return {
     id: account.id,
     name: account.name,
@@ -16,6 +24,8 @@ export function accountResource(account: Account) {
     namespace: account.namespace,
     created_at: account.createdAt.toISOString(),
     bootstrap: account.bootstrapRequestId ? "requested" : "unclaimed",
+    api_origin: origins?.api ?? null,
+    view_origin: origins?.views ?? null,
   };
 }
 export function createManagerApp(store: ManagerStore, input: ManagerConfig, service = accountService(store)) {
@@ -39,12 +49,9 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
   });
   app.post("/v1/accounts", async (c) => {
     const requestId = z.string().min(1).max(128).parse(c.req.header("idempotency-key"));
-    const result = await store.createAccount(
-      requestId,
-      AccountInputSchema.parse(await c.req.json()),
-      config,
-      c.get("operator").expiresAt,
-    );
+    const input = AccountInputSchema.parse(await c.req.json());
+    const plan = () => accountPlan(config, input);
+    const result = await store.createAccount(requestId, input, plan, c.get("operator").expiresAt);
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
   });
   app.get("/v1/accounts", async (c) => c.json({ items: (await store.listAccounts()).map(accountResource) }));

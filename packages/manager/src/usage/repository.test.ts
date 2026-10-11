@@ -21,7 +21,12 @@ test("unknown usage stays null, partial minutes are clipped, and storage bytes e
   const context = await managerContext();
   cleanups.push(() => context.close());
   const store = { ...accountRepository(context), ...usageRepository(context) };
-  const { account } = await store.createAccount("partial", { name: "partial" }, config, new Date(Date.now() + 60_000));
+  const { account } = await store.createAccount(
+    "partial",
+    { name: "partial" },
+    () => config,
+    new Date(Date.now() + 60_000),
+  );
   const start = new Date("2026-10-10T10:00:10Z");
   await context.db
     .update(context.tables.accounts)
@@ -57,7 +62,7 @@ test("retention keeps thirteen calendar months including the cutoff and clamps m
   const { account } = await store.createAccount(
     "retention",
     { name: "retention" },
-    config,
+    () => config,
     new Date(Date.now() + 60_000),
   );
   const now = new Date("2026-10-31T12:00:00Z");
@@ -87,7 +92,7 @@ test("a usage response reads its totals and latest observation from the same sna
   const { account } = await store.createAccount(
     "concurrent",
     { name: "concurrent" },
-    config,
+    () => config,
     new Date(Date.now() + 60_000),
   );
   const start = new Date("2026-10-10T09:00:00Z");
@@ -123,7 +128,7 @@ test("coverage excludes the next minute at an exact response boundary", async ()
   const { account } = await store.createAccount(
     "boundary",
     { name: "boundary" },
-    config,
+    () => config,
     new Date(Date.now() + 60_000),
   );
   const start = new Date("2026-10-10T10:00:00Z");
@@ -162,7 +167,12 @@ test("usage survives restart, counts each minute once, and exposes observation g
   };
   cleanups.push(() => store.close());
   const token = await store.createOperator(new Date(Date.now() + 60_000));
-  const { account } = await store.createAccount("usage", { name: "usage" }, config, new Date(Date.now() + 60_000));
+  const { account } = await store.createAccount(
+    "usage",
+    { name: "usage" },
+    () => config,
+    new Date(Date.now() + 60_000),
+  );
   const start = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 4 * 60_000);
   await context.db
     .update(context.tables.accounts)

@@ -21,6 +21,7 @@
     "pcd": "bun --no-env-file packages/cli/src/index.ts",
     "db:generate": "bun run --cwd packages/db db:generate && bun run db:seed",
     "dev": "lerna run dev --parallel",
+    "example:digitalocean:cert-manager": "bun deploy/digitalocean/edge/cert-manager.ts",
     "example:digitalocean:check": "bun deploy/digitalocean/preflight.ts",
     "example:e2e": "bun examples/e2e/run.ts",
     "example:e2e:codex": "bun examples/e2e/local.ts --harness codex",
@@ -83,7 +84,8 @@
     "manager:seed": "bun run --cwd packages/manager db:seed",
     "manager:start": "bun --no-env-file packages/manager/src/index.ts",
     "example:e2e:managed-accounts": "bun --no-env-file examples/e2e/managed-accounts.ts",
-    "example:e2e:managed-account-lifecycle": "bun --no-env-file examples/e2e/managed-account-lifecycle.ts"
+    "example:e2e:managed-account-lifecycle": "bun --no-env-file examples/e2e/managed-account-lifecycle.ts",
+    "example:e2e:managed-public-views": "bun --no-env-file examples/e2e/managed-public-views.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
