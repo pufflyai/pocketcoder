@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix: &targets
-        include: ${{ fromJSON(inputs.affected-only && '[{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || inputs.macos-intel-only && '[{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15","platform":"darwin","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]') }}
+        include: ${{ fromJSON(inputs.affected-only && '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"}]' || inputs.macos-intel-only && '[{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]' || '[{"runner":"ubuntu-24.04","platform":"linux","arch":"x64"},{"runner":"ubuntu-24.04-arm","platform":"linux","arch":"arm64"},{"runner":"macos-15","platform":"darwin","arch":"arm64"},{"runner":"macos-15-intel","platform":"darwin","arch":"x64"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:
