@@ -1,10 +1,12 @@
 import type { DiscoveredProvider, DiscoveredWarmProvider } from "@pstdio/pocketcoder-runtime-core";
+import { jobUidOf } from "./kubernetes-identity";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 
 interface JobList {
   items?: Array<{
     metadata?: {
       name?: string;
+      uid?: string;
       labels?: Record<string, string>;
       annotations?: Record<string, string>;
     };
@@ -25,6 +27,7 @@ export function discoveredWorkspaces(output: string, kind: string, namespace: st
         ref: {
           kind,
           id: name,
+          jobUid: jobUidOf(job),
           name,
           inputSecret: `${name}-input`,
           egressSecret: `${name}-egress`,
@@ -49,6 +52,7 @@ export function discoveredWarmRuntimes(output: string, kind: string, namespace: 
         ref: {
           kind,
           id: name,
+          jobUid: jobUidOf(job),
           name,
           inputSecret: `${name}-input`,
           namespace,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { installCalico } from "./kubernetes-calico";
 import { command } from "./local-process";
+import { buildManagedController } from "./managed-controller-image";
 
 const NODE_IMAGE = "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5";
 export const ROOT = resolve(import.meta.dir, "../..");
@@ -44,7 +45,13 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
   const kube = (args: string[], input?: string) => run(["kubectl", "--request-timeout=30s", ...args], input);
   async function close() {
     await run(["kind", "delete", "cluster", "--name", name, "--kubeconfig", kubeconfig]);
-    for (const image of images) await command(["docker", "image", "rm", image], { quiet: true });
+    for (const image of images) {
+      const owned = await command(
+        ["docker", "image", "ls", "--filter", `reference=${image}`, "--format", "{{.Repository}}:{{.Tag}}"],
+        { quiet: true },
+      );
+      if (owned.stdout.split("\n").includes(image)) await command(["docker", "image", "rm", image], { quiet: true });
+    }
     await rm(directory, { recursive: true, force: true });
   }
   try {
@@ -97,7 +104,7 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       await run(["kind", "get", "kubeconfig", "--name", name, "--internal"]),
       { mode: 0o600 },
     );
-    async function buildImage(role: "workspace" | "server") {
+    async function buildImage(role: "workspace" | "server", options: { hostBundled?: boolean } = {}) {
       const tag = `pocketcoder-${role}:${name}`;
       images.push(tag);
       if (role === "workspace") {
@@ -106,6 +113,8 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
           { quiet: true },
         );
         await command(["docker", "build", "-t", tag, "deploy/image"], { quiet: true });
+      } else if (options.hostBundled) {
+        await buildManagedController(ROOT, directory, tag);
       } else {
         await command(["docker", "build", "-f", "deploy/image/server.Dockerfile", "-t", tag, "."], { quiet: true });
       }

@@ -5,8 +5,10 @@ import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { type ControllerBackup, registerBackupRoute } from "../backup/controller-backup";
+import type { OffNodeBackup } from "../backup/off-node-backup";
 import type { AccountLifecycle } from "../maintenance/account-lifecycle";
 import type { Maintenance } from "../maintenance/maintenance";
+import type { OffNodeRecovery } from "../recovery/off-node-recovery";
 import { startAdminSocket } from "./admin-socket";
 import { registerUsageRuntimeRoute } from "./usage-runtime";
 
@@ -22,6 +24,8 @@ export async function startLocalAdmin(deps: {
   store: Store;
   pepper: string;
   backup: ControllerBackup;
+  offNodeBackup?: OffNodeBackup;
+  offNodeRecovery?: OffNodeRecovery;
   accountLifecycle?: AccountLifecycle;
   maintenance?: Maintenance;
 }) {
@@ -61,6 +65,27 @@ export async function startLocalAdmin(deps: {
     return context.json(result, result.token ? 201 : 200);
   });
   registerBackupRoute(app, deps.backup);
+  if (deps.offNodeRecovery) {
+    const recovery = deps.offNodeRecovery;
+    app.get("/v1/backup/restoration", async (context) => context.json(await recovery.status()));
+  }
+  if (deps.offNodeBackup) {
+    const backup = deps.offNodeBackup;
+    app.post("/v1/backup/off-node", async (context) => {
+      const input = z.strictObject({ operation_id: z.uuid() }).safeParse(await context.req.json().catch(() => null));
+      if (!input.success) throw new ApiError("validation.invalid", "Invalid off-node backup request.");
+      try {
+        return context.json(await backup(input.data.operation_id, context.req.raw.signal), 201);
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError("backup.failed", error instanceof Error ? error.message : String(error));
+      }
+    });
+    app.post("/v1/backup/runtime-proof", async (context) => {
+      const input = z.strictObject({ operation_id: z.uuid() }).parse(await context.req.json());
+      return context.json(await backup.runtimeProof(input.operation_id));
+    });
+  }
   registerUsageRuntimeRoute(app, store);
   if (deps.accountLifecycle) {
     const lifecycle = deps.accountLifecycle;

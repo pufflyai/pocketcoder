@@ -3,6 +3,7 @@ import { type EgressDriverOptions, egressConfig, poolInput } from "../egress/egr
 import type { KubernetesDriverOptions } from "./kubernetes";
 import { kubectl } from "./kubernetes-command";
 import { EVIDENCE_FINALIZER } from "./kubernetes-evidence";
+import { jobUidOf } from "./kubernetes-identity";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL } from "./kubernetes-labels";
 import { warmJobManifest } from "./kubernetes-manifests";
 
@@ -86,10 +87,13 @@ export async function createKubernetesWarm(launch: WarmRuntimeLaunch, options: W
     receipt.metadata,
     "submitting",
   );
-  await kubectl(options.kubectlBin, options.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
+  const job = JSON.parse(
+    await kubectl(options.kubectlBin, options.namespace, ["create", "-f", "-", "-o", "json"], JSON.stringify(manifest)),
+  );
   return {
     kind: "kubernetes",
     id: name,
+    jobUid: jobUidOf(job),
     name,
     inputSecret,
     namespace: options.namespace,

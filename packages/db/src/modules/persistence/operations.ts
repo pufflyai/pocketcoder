@@ -33,6 +33,24 @@ export function createOperations({
     const [row] = await tx.select({ n: count() }).from(operations).where(incomplete);
     return requiredRow(row).n;
   }
+  async function admitIntent(tx: QueryContext, input: WorkspaceOperationRow) {
+    if (input.workspaceId) {
+      const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, input.workspaceId)).for("update");
+      if (workspace?.purgeRequestedAt && input.kind !== "purge")
+        throw new ApiError("operation.conflict", "Workspace content is being purged.");
+      if (input.kind === "purge")
+        await tx
+          .update(workspaces)
+          .set({ purgeRequestedAt: workspace?.purgeRequestedAt ?? input.createdAt })
+          .where(eq(workspaces.id, input.workspaceId));
+    }
+    if (input.kind === "delete" && input.checkpointId) {
+      await tx
+        .update(checkpoints)
+        .set({ state: "deleting", updatedAt: input.createdAt })
+        .where(and(eq(checkpoints.id, input.checkpointId), eq(checkpoints.principalId, input.principalId)));
+    }
+  }
   return {
     async insertOperation(input: WorkspaceOperationRow, options: { maxIncompleteOperations?: number } = {}) {
       return db.transaction(async (tx) => {
@@ -49,22 +67,7 @@ export function createOperations({
           );
         if (existing)
           return { operation: existing, created: false, conflict: existing.requestDigest !== input.requestDigest };
-        if (input.workspaceId) {
-          const [workspace] = await tx
-            .select()
-            .from(workspaces)
-            .where(eq(workspaces.id, input.workspaceId))
-            .for("update");
-          if (workspace?.purgeRequestedAt && input.kind !== "purge") {
-            throw new ApiError("operation.conflict", "Workspace content is being purged.");
-          }
-          if (input.kind === "purge") {
-            await tx
-              .update(workspaces)
-              .set({ purgeRequestedAt: workspace?.purgeRequestedAt ?? input.createdAt })
-              .where(eq(workspaces.id, input.workspaceId));
-          }
-        }
+        await admitIntent(tx, input);
         if (
           options.maxIncompleteOperations !== undefined &&
           (await countIncomplete(tx)) >= options.maxIncompleteOperations

@@ -1,8 +1,11 @@
 import { accountService, createManagerApp, usageSampler } from "./app";
+import { loadManagerBackupConfig } from "./backup/config";
 import { ManagerConfigSchema } from "./config";
 import { ManagerStore } from "./database/store";
+import { KubernetesAccounts } from "./kubernetes/accounts";
 
-const store = await ManagerStore.create(process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data");
+const dataDir = process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data";
+const store = await ManagerStore.create(dataDir);
 if (process.argv[2] === "operator") {
   try {
     const expiry = process.argv[3];
@@ -12,14 +15,18 @@ if (process.argv[2] === "operator") {
     await store.close();
   }
 } else {
+  const backups = process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG
+    ? await loadManagerBackupConfig(process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG, dataDir)
+    : undefined;
   const config = ManagerConfigSchema.parse({
     controllerImage: process.env.POCKETCODER_MANAGER_CONTROLLER_IMAGE,
     runtimeClassName: process.env.POCKETCODER_MANAGER_RUNTIME_CLASS,
+    ...(backups ? { offNodeBackups: true } : {}),
     ...(process.env.POCKETCODER_MANAGER_STORAGE_CLASS
       ? { storageClassName: process.env.POCKETCODER_MANAGER_STORAGE_CLASS }
       : {}),
   });
-  const service = accountService(store);
+  const service = accountService(store, new KubernetesAccounts(undefined, backups));
   const usage = usageSampler(store);
   const app = createManagerApp(store, config, service);
   const endpoint = new URL(`http://${process.env.POCKETCODER_MANAGER_HTTP ?? "127.0.0.1:8092"}`);

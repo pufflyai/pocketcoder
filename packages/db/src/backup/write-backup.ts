@@ -10,6 +10,8 @@ export interface BackupOptions {
   checkpointDirectory?: string;
   keys: BackupKeys;
   signal: AbortSignal;
+  archiveLimit?: { bytes: number; members: number };
+  stagingReservationId?: string;
   // Runs the database capture inside the caller's maintenance window, which may end it early.
   freeze<T>(capture: (check: () => void) => Promise<T>): Promise<T>;
 }
@@ -22,15 +24,21 @@ export async function writeBackup(context: DatabaseContext, options: BackupOptio
   const check = () => options.signal.throwIfAborted();
   if (!context.dataDir) throw new Error("Backup requires a data folder on disk.");
   const excluded = [context.dataDir, ...(options.checkpointDirectory ? [options.checkpointDirectory] : [])];
-  const archive = createArchiveOutput(options.output, excluded, check);
+  const archive = createArchiveOutput(options.output, excluded, check, options.archiveLimit);
   const createdAt = new Date().toISOString();
   let snapshot: Awaited<ReturnType<typeof captureDatabase>> | undefined;
   try {
     snapshot = await options.freeze((windowCheck) =>
-      captureDatabase(context, archive, options.checkpointDirectory, () => {
-        check();
-        windowCheck();
-      }),
+      captureDatabase(
+        context,
+        archive,
+        options.checkpointDirectory,
+        () => {
+          check();
+          windowCheck();
+        },
+        options.stagingReservationId !== undefined,
+      ),
     );
     await archive.directory("keys");
     for (const name of KEY_NAMES) await archive.file(`keys/${name}`, 32, bytesOf(options.keys[name]));
@@ -53,6 +61,7 @@ export async function writeBackup(context: DatabaseContext, options: BackupOptio
     const manifest: BackupManifest = {
       format: BACKUP_FORMAT,
       snapshotId: randomUUID(),
+      ...(options.stagingReservationId ? { stagingReservationId: options.stagingReservationId } : {}),
       createdAt,
       engine: { pglite: seed.pgliteVersion, postgres: seed.postgresVersion },
       database: { position: snapshot.position, migrations: snapshot.migrations },

@@ -167,6 +167,10 @@ describe.each(["memory", "disk"] as const)("PGlite persistence routes (%s)", (mo
     });
     expect(deleted.status).toBe(202);
     expect(await deleted.json()).toMatchObject({ state: "succeeded" });
+    const removed = await request(`/v1/checkpoints/${preserved.checkpoint.id}`);
+    expect(removed.status).toBe(404);
+    expect(await removed.json()).toMatchObject({ error: { code: "checkpoint.not_found" } });
+    expect((await store.getCheckpoint(preserved.checkpoint.id))?.state).toBe("deleted");
     expect((await store.getStorage(sourceStorageId))?.state).toBe("deleted");
     const forkStorage = await store.getWorkspaceStorage(restored.workspace.id);
     if (!forkStorage) throw new Error("missing restored allocation");

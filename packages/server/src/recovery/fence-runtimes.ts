@@ -1,4 +1,4 @@
-import type { ProviderRef, WorkspaceDriver } from "@pstdio/pocketcoder-runtime-core";
+import { cleanupWarmProvider, type WorkspaceDriver } from "@pstdio/pocketcoder-runtime-core";
 import type { BuiltServer } from "../app";
 import type { RecoveryDeps } from "./complete-recovery";
 
@@ -45,11 +45,7 @@ export async function fenceRuntimes(
 
   for (const runtime of await store.listWarmPoolRuntimes()) {
     if (runtime.state === "failed") continue;
-    if (runtime.providerRef) {
-      const ref = runtime.providerRef as ProviderRef;
-      await driver.stop(ref, 0);
-      await driver.remove(ref);
-    }
+    await cleanupWarmProvider(store, driver, runtime, at);
     await driver.cleanupWarmInput?.(runtime.id);
     await store.updateWarmPoolRuntime(
       runtime.id,

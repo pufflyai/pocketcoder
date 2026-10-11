@@ -76,8 +76,10 @@ can reach their own AgentAPI, DNS and public HTTPS. They cannot reach operator
 APIs or another account. Controller RBAC cannot read another account's Secrets or
 launch jobs there. Workspaces receive no Kubernetes token or controller volume.
 
-Production layout, gVisor, encrypted account/manager backups and customer
-enablement belong to the following hosted-service tickets.
+Encrypted account backups and fresh-volume recovery use the private
+[off-node account recovery flow](../../docs/off-node-account-recovery.md).
+Production layout, gVisor, manager database recovery and customer enablement
+belong to the following hosted-service tickets.
 
 ## Estimated usage
 

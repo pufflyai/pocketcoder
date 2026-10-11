@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { createManagerApp } from "../app";
 import { accountRepository } from "../database/account-repository";
+import { backupRepository } from "../database/backup-repository";
 import { bootstrapRepository } from "../database/bootstrap-repository";
 import { managerContext } from "../database/context";
 import { lifecycleRepository } from "../database/lifecycle-repository";
@@ -157,6 +158,7 @@ test("usage survives restart, counts each minute once, and exposes observation g
     ...accountRepository(context),
     ...bootstrapRepository(context),
     ...lifecycleRepository(context),
+    ...backupRepository(context),
     ...usageRepository(context),
     close: () => context.close(),
   };

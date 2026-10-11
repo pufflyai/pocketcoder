@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import { sourceFootprint } from "@pstdio/pocketcoder-db/off-node";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { Maintenance } from "../maintenance/maintenance";
@@ -23,7 +25,10 @@ export function createControllerBackup(deps: {
   keys?: ControllerKeys;
   checkpointDirectory?: string;
 }) {
-  return async (input: BackupRequest, signal: AbortSignal) => {
+  const capture = async (
+    input: BackupRequest & { archiveLimit?: { bytes: number; members: number }; stagingReservationId?: string },
+    signal: AbortSignal,
+  ) => {
     if (!deps.keys)
       throw new ApiError("backup.failed", "Backup requires the controller key bundle in the data folder.");
     const { pepper, eventSigningKey, secretKey } = deps.keys;
@@ -38,6 +43,8 @@ export function createControllerBackup(deps: {
           "secret-key": Buffer.from(secretKey, "base64url"),
         },
         signal,
+        archiveLimit: input.archiveLimit,
+        stagingReservationId: input.stagingReservationId,
         freeze: (capture) => deps.maintenance.run(input.timeout_ms, signal, capture),
       });
       return {
@@ -53,6 +60,22 @@ export function createControllerBackup(deps: {
       throw new ApiError("backup.failed", error instanceof Error ? error.message : String(error));
     }
   };
+  return Object.assign(capture, {
+    async footprint() {
+      const database = await sourceFootprint(join(deps.store.journalSnapshot().writer.directory, "db"));
+      const checkpoints = deps.checkpointDirectory
+        ? await sourceFootprint(deps.checkpointDirectory)
+        : { bytes: 0, files: 0, directories: 0 };
+      return {
+        database,
+        contents: {
+          bytes: database.bytes + checkpoints.bytes + 96,
+          files: database.files + checkpoints.files + 3,
+          directories: database.directories + checkpoints.directories + 2,
+        },
+      };
+    },
+  });
 }
 export type ControllerBackup = ReturnType<typeof createControllerBackup>;
 

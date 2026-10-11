@@ -61,7 +61,7 @@ test.each([false, true])("pending cancellation captures binding race safely (bou
     }
     throw new Error("Unexpected command");
   };
-  await captureTermination(run, "job", 1);
+  await captureTermination(run, "job", 1, "job", "default");
   const proof = JSON.parse(job.metadata.annotations[EVIDENCE_ANNOTATION] as string);
   expect(proof.pods[0].metadata.deletionTimestamp).toBeDefined();
   expect(Object.keys(proof.nodes)).toEqual(bound ? ["node"] : []);

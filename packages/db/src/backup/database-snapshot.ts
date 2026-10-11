@@ -35,6 +35,7 @@ export async function captureDatabase(
   archive: ArchiveOutput,
   checkpointDirectory: string | undefined,
   check: () => void,
+  requireSettledProviders = false,
 ) {
   const dataDir = context.dataDir;
   if (!dataDir) throw new Error("Backup requires a data folder on disk.");
@@ -43,7 +44,7 @@ export async function captureDatabase(
     client.runExclusive(async () => {
       check();
       context.validateStorage?.();
-      const state = await readSnapshotState(client, context.schema);
+      const state = await readSnapshotState(client, context.schema, requireSettledProviders);
       // Journal records are written before their database change, so this head covers the snapshot.
       const journal = context.journal?.head();
       if (!journal) throw new Error("Backup requires the deletion journal.");

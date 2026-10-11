@@ -5,6 +5,7 @@ import type { kube } from "./command";
 const LifecycleResult = z.object({
   state: z.enum(["ready", "suspended", "suspending", "resuming"]),
   operation_state: z.enum(["pending", "succeeded"]),
+  compute_proof: z.record(z.string(), z.unknown()).optional(),
 });
 const Inventory = z.object({
   items: z.array(
@@ -63,6 +64,7 @@ export function kubernetesLifecycle(command: typeof kube) {
       const expected = kind === "suspend" ? "suspended" : "ready";
       if (result.state !== expected || result.operation_state !== "succeeded")
         throw new Error("Controller lifecycle is pending");
+      return result;
     },
     async scaleDown(account: Account) {
       const current = await deployment(account);

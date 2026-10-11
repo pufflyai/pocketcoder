@@ -48,6 +48,29 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
   });
   app.get("/v1/accounts", async (c) => c.json({ items: (await store.listAccounts()).map(accountResource) }));
+  app.post("/v1/accounts/:id/backups", async (c) => {
+    const result = await store.beginBackupOperation(
+      z.uuid().parse(c.req.param("id")),
+      "backup",
+      z.string().min(1).max(128).parse(c.req.header("idempotency-key")),
+      c.get("operator").expiresAt,
+    );
+    return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
+  });
+  app.get("/v1/accounts/:id/backups", async (c) =>
+    c.json({ items: await store.listBackups(z.uuid().parse(c.req.param("id"))) }),
+  );
+  app.post("/v1/accounts/:id/restore", async (c) => {
+    const input = z.strictObject({ backup_id: z.uuid() }).parse(await c.req.json());
+    const result = await store.beginBackupOperation(
+      z.uuid().parse(c.req.param("id")),
+      "restore",
+      z.string().min(1).max(128).parse(c.req.header("idempotency-key")),
+      c.get("operator").expiresAt,
+      input.backup_id,
+    );
+    return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
+  });
   for (const kind of ["suspend", "resume"] as const) {
     app.post(`/v1/accounts/:id/${kind}`, async (c) => {
       const result = await store.beginLifecycle(

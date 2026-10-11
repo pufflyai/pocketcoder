@@ -1,5 +1,7 @@
+import { reconcileBackup, reconcileRestore } from "../backup/reconcile";
 import type { ManagerStore } from "../database/store";
 import type { KubernetesAccounts } from "../kubernetes/accounts";
+import { reconcileSuspend } from "./reconcile-suspend";
 
 export async function reconcileOperation(
   store: ManagerStore,
@@ -14,14 +16,11 @@ export async function reconcileOperation(
     return;
   }
   if (operation.kind === "suspend") {
-    if (operation.phase === "controller") {
-      await provider.lifecycle.perform(account, "suspend", operation.id);
-      await store.setOperationPhase(operation.id, "scale");
-    }
-    await provider.lifecycle.scaleDown(account);
-    await store.finishAccount(account.id, operation.id, "suspended");
+    await reconcileSuspend(store, provider, operation);
     return;
   }
+  if (operation.kind === "backup") return reconcileBackup(store, provider, operation);
+  if (operation.kind === "restore") return reconcileRestore(store, provider, operation);
   if (operation.phase === "controller") {
     await provider.lifecycle.scaleUp(account);
     await store.setOperationPhase(operation.id, "scale");

@@ -10,6 +10,8 @@ import { createDatabaseContext, notifyChange } from "./database/context";
 import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
 import { PGliteStore } from "./store";
 
+export { objectStorageFixture } from "./off-node/object-storage-fixture";
+
 export function workspaceOf(result: WorkspaceInsertResult) {
   if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
   return result.workspace;

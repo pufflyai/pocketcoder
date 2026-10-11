@@ -1,5 +1,6 @@
 import type { Account } from "../database/store";
-export function accountController(account: Account) {
+import { installOffNodeFiles, offNodeFileMount, offNodeSecretVolume } from "./off-node-files";
+export function accountController(account: Account, nodeName?: string) {
   const labels = { "pocketcoder.dev/account": account.id, "pocketcoder.dev/role": "controller" };
   const image = account.plan.controllerImage;
   return [
@@ -26,10 +27,12 @@ export function accountController(account: Account) {
         template: {
           metadata: { labels },
           spec: {
+            ...(nodeName ? { nodeName } : {}),
             serviceAccountName: "controller",
             securityContext: { fsGroup: 10001, seccompProfile: { type: "RuntimeDefault" } },
             volumes: [
-              { name: "private", persistentVolumeClaim: { claimName: "controller-data" } },
+              { name: "private", persistentVolumeClaim: { claimName: account.volumeName } },
+              ...(account.plan.offNodeBackups ? [offNodeSecretVolume] : []),
               { name: "tmp", emptyDir: { medium: "Memory", sizeLimit: "32Mi" } },
             ],
             initContainers: [
@@ -39,9 +42,12 @@ export function accountController(account: Account) {
                 command: [
                   "bun",
                   "-e",
-                  "const f=await import('node:fs/promises');await f.chown('/private',10001,10001);await f.chmod('/private',0o700)",
+                  `const f=await import('node:fs/promises');await f.chown('/private',0,0);await f.chmod('/private',0o700);${account.plan.offNodeBackups ? `${installOffNodeFiles};` : ""}await f.chown('/private',10001,10001)`,
                 ],
-                volumeMounts: [{ name: "private", mountPath: "/private" }],
+                volumeMounts: [
+                  { name: "private", mountPath: "/private" },
+                  ...(account.plan.offNodeBackups ? [offNodeFileMount] : []),
+                ],
                 resources: {
                   requests: { cpu: "100m", memory: "64Mi", "ephemeral-storage": "64Mi" },
                   limits: { cpu: "100m", memory: "64Mi", "ephemeral-storage": "64Mi" },
@@ -61,6 +67,9 @@ export function accountController(account: Account) {
                 image,
                 imagePullPolicy: "IfNotPresent",
                 env: Object.entries({
+                  ...(account.plan.offNodeBackups
+                    ? { POCKETCODER_OFF_NODE_CONFIG: "/private/off-node/config.json" }
+                    : {}),
                   POCKETCODER_DIR: "/private/pc_data",
                   POCKETCODER_HTTP: "0.0.0.0:8090",
                   POCKETCODER_AGENT_HTTP: "0.0.0.0:8091",

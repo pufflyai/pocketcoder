@@ -1,3 +1,4 @@
+import type { OffNodeBackupReceipt } from "@pstdio/pocketcoder-db/off-node";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -27,11 +28,17 @@ export function managerSchema(schema?: string) {
       requestId: text("request_id").notNull().unique(),
       requestDigest: text("request_digest").notNull(),
       plan: jsonb().$type<ManagerConfig>().notNull(),
-      state: text().$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming">().notNull(),
+      state: text().$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming" | "restoring">().notNull(),
+      volumeName: text("volume_name").notNull().default("controller-data"),
       bootstrapRequestId: uuid("bootstrap_request_id"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     },
-    (t) => [check("account_state", sql`${t.state} in ('provisioning','ready','suspending','suspended','resuming')`)],
+    (t) => [
+      check(
+        "account_state",
+        sql`${t.state} in ('provisioning','ready','suspending','suspended','resuming','restoring')`,
+      ),
+    ],
   );
   const operations = table(
     "operations",
@@ -40,9 +47,14 @@ export function managerSchema(schema?: string) {
       accountId: uuid("account_id")
         .notNull()
         .references(() => accounts.id),
-      kind: text().$type<"provision" | "suspend" | "resume">().notNull().default("provision"),
+      kind: text().$type<"provision" | "suspend" | "resume" | "backup" | "restore">().notNull().default("provision"),
+      backupId: uuid("backup_id"),
+      computeProof: jsonb("compute_proof").$type<Record<string, unknown>>(),
       requestId: text("request_id").notNull().default("provision"),
-      phase: text().$type<"controller" | "scale" | "complete">().notNull().default("controller"),
+      phase: text()
+        .$type<"controller" | "scale" | "complete" | "capture" | "fence" | "restore" | "recover" | "open">()
+        .notNull()
+        .default("controller"),
       state: text().$type<"pending" | "running" | "succeeded">().notNull(),
       errorCode: text("error_code"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -50,11 +62,25 @@ export function managerSchema(schema?: string) {
     },
     (t) => [
       unique("operation_identity").on(t.accountId, t.requestId),
-      check("operation_kind", sql`${t.kind} in ('provision','suspend','resume')`),
-      check("operation_phase", sql`${t.phase} in ('controller','scale','complete')`),
+      check("operation_kind", sql`${t.kind} in ('provision','suspend','resume','backup','restore')`),
+      check(
+        "operation_phase",
+        sql`${t.phase} in ('controller','scale','complete','capture','fence','restore','recover','open')`,
+      ),
       check("operation_state", sql`${t.state} in ('pending','running','succeeded')`),
     ],
   );
+  const backups = table("backups", {
+    id: uuid()
+      .primaryKey()
+      .references(() => operations.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id),
+    receipt: jsonb().$type<OffNodeBackupReceipt>().notNull(),
+    volumeName: text("volume_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  });
   const operators = table(
     "operators",
     {
@@ -112,6 +138,6 @@ export function managerSchema(schema?: string) {
       check("usage_nonnegative", sql`${t.workspaces} >= 0 and ${t.warm} >= 0 and ${t.volumeBytes} >= 0`),
     ],
   );
-  return { accounts, operations, operators, bootstrapRequests, usageSamples };
+  return { accounts, operations, operators, bootstrapRequests, usageSamples, backups };
 }
-export const { accounts, operations, operators, bootstrapRequests, usageSamples } = managerSchema();
+export const { accounts, operations, operators, bootstrapRequests, usageSamples, backups } = managerSchema();

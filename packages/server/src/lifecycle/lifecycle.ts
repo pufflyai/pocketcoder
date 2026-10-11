@@ -2,7 +2,7 @@ import { signEvent } from "@pstdio/pocketcoder-auth";
 import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools } from "@pstdio/pocketcoder-runtime-core";
 import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
-import { createControllerBackup } from "../backup/controller-backup";
+import { composeBackups } from "../backup/backup-composition";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
 import { composeAccountLifecycle } from "../maintenance/account-composition";
 import { accountState } from "../maintenance/account-state";
@@ -70,6 +70,7 @@ export async function startPocketCoderServer(
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
   let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
+    await store.acknowledgeJournal();
     await store.acquireCoordinatorLease();
     const durableAccountState = await accountState(directory);
     if (durableAccountState.state.state !== "ready") maintenance.fence();
@@ -192,12 +193,7 @@ export async function startPocketCoderServer(
         pepper: config.pepper,
         accountLifecycle,
         maintenance,
-        backup: createControllerBackup({
-          store,
-          maintenance,
-          ...(initialized.keyBundle ? { keys: initialized.keyBundle } : {}),
-          ...(transferOptions ? { checkpointDirectory: transferOptions.directory } : {}),
-        }),
+        ...composeBackups(initialized, maintenance, transferOptions?.directory),
       });
       agentServer = Bun.serve({
         hostname: config.agentHost,
