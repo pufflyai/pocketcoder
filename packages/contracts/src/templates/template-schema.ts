@@ -56,6 +56,7 @@ export const HarnessSchema = z.object({
 });
 
 export const AgentSchema = HarnessSchema.extend({
+  model: z.string().min(1).max(255).optional().describe("Display metadata only; does not configure the agent model."),
   type: z
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)

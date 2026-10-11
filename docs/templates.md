@@ -147,6 +147,13 @@ and kind v0.33.0 must be installed. The command deletes its disposable cluster.
   `launch_input` is delivered to the process in memory as
   `POCKETCODER_LAUNCH_INPUT`; the server erases its copy once the workspace is
   ready.
+- **`agent.model`** — optional display label, 1–255 characters. It describes the
+  model for clients; it does not select, configure, or verify the running model.
+  Keep it in sync with the agent command or env when those choose a model.
+  For example, replace both `agent.model` and `agent.env.PI_GATEWAY_MODEL` in
+  the Pi template. Leave it out when the gateway chooses the model. API
+  responses report an omitted model as `null`. `agent.type` is the declared
+  AgentAPI type (for example, `custom` for the Pi template).
 - **legacy `harness` + `services`** — compatibility-only generic process and
   loopback relay declarations. They remain supported for one migration
   release and cannot appear beside `agent`. Each declared route may set

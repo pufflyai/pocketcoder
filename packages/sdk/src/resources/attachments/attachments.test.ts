@@ -22,6 +22,7 @@ function readyWorkspace() {
     id: WORKSPACE,
     external_id: "attachments",
     template: { name: "pi", version: "1", digest: "sha256:pi" },
+    agent: { type: "custom", model: null },
     state: "ready",
     reason_code: null,
     agent_state: "stable",

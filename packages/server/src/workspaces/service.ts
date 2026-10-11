@@ -43,9 +43,11 @@ function conversationResume(
 }
 
 export function toResource(row: WorkspaceRow): WorkspaceResource {
+  const agent = row.templateSnapshot.spec.agent;
   return {
     id: row.id,
     external_id: row.externalId,
+    agent: agent ? { type: agent.type, model: agent.model ?? null } : null,
     template: {
       name: row.templateName,
       version: row.templateVersion,

@@ -63,6 +63,7 @@ describe("local Pi runtime materialization", () => {
       expect(first.bearer).not.toBe(second.bearer);
 
       const template = await readFile(first.templatePath, "utf8");
+      expect(JSON.parse(template).spec.agent.model).toBe(options.gatewayModel);
       expect(template).toContain('"PI_GATEWAY_BEARER": "secretRef:pi-gateway/bearer"');
       expect(template).not.toContain("PI_GATEWAY_BEARER_REF");
       expect(template).not.toContain(first.bearer);

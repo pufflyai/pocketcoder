@@ -16,6 +16,7 @@ function workspaceResource(id: string, state = "ready", changeCursor = 0) {
     change_cursor: changeCursor,
     reason_code: state === "failed" ? "launch_failed" : null,
     template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+    agent: { type: "custom", model: null },
     provider_kind: "docker",
     provisioning_mode: "cold",
     network: { state: "ready" },
@@ -152,7 +153,7 @@ describe("workspace commands", () => {
         const url = new URL(request.url);
         if (url.pathname === "/v1/templates") {
           return Response.json({
-            items: [{ name: "pi-harness", version: "1", digest: "sha256:template", status: "active" }],
+            items: [{ name: "pi-harness", version: "1", digest: "sha256:template", agent: null, status: "active" }],
             next_cursor: null,
           });
         }
@@ -186,7 +187,7 @@ describe("workspace commands", () => {
         const url = new URL(request.url);
         if (url.pathname === "/v1/templates") {
           return Response.json({
-            items: [{ name: "pi-harness", version: "1", digest: "sha256:template", status: "active" }],
+            items: [{ name: "pi-harness", version: "1", digest: "sha256:template", agent: null, status: "active" }],
             next_cursor: null,
           });
         }
