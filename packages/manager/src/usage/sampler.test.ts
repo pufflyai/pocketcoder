@@ -29,13 +29,13 @@ test("failed real Kubernetes observations are durable gaps; retries and concurre
     const { account, operation } = await store.createAccount(
       "failed-sample",
       { name: "usage" },
-      config,
+      () => config,
       new Date(Date.now() + 60_000),
     );
     const provisioning = await store.createAccount(
       "not-ready",
       { name: "provisioning" },
-      config,
+      () => config,
       new Date(Date.now() + 60_000),
     );
     await store.finishAccount(account.id, operation.id);

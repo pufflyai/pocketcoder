@@ -12,7 +12,7 @@ async function readyAccount() {
   const result = await store.createAccount(
     randomUUID(),
     { name: "bootstrap" },
-    { controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`, runtimeClassName: "pc-runc" },
+    () => ({ controllerImage: `controller.test/server@sha256:${"a".repeat(64)}`, runtimeClassName: "pc-runc" }),
     new Date(Date.now() + 60_000),
   );
   await store.finishAccount(result.account.id, result.operation.id);

@@ -63,6 +63,24 @@ test("real configured ingress peers select only a valid HTTPS forwarded origin",
   for (const headers of rejected) expect((await inspectIngress(["127.0.0.1"], headers)).status).toBe(400);
 });
 
+test("real peers inside a configured ingress range may forward the public origin", async () => {
+  const forwarded = { "x-forwarded-host": `${"a".repeat(32)}-web.views.example.net`, "x-forwarded-proto": "https" };
+  const inside = await inspectIngress(["127.0.0.0/8"], forwarded);
+  expect(inside.body.origin).toBe(`https://${"a".repeat(32)}-web.views.example.net`);
+  const outside = await inspectIngress(["10.244.0.0/16"], forwarded);
+  expect(outside.body.origin).toBe(outside.localOrigin);
+});
+
+test("ingress WebSocket upgrades forwarded as wss keep the HTTPS origin", async () => {
+  const host = `${"a".repeat(32)}-display.views.example.net`;
+  const secure = await inspectIngress(["127.0.0.1"], { "x-forwarded-host": host, "x-forwarded-proto": "wss" });
+  expect(secure.body.origin).toBe(`https://${host}`);
+  expect(secure.body.host).toEqual({ name: "display" });
+  expect((await inspectIngress(["127.0.0.1"], { "x-forwarded-host": host, "x-forwarded-proto": "ws" })).status).toBe(
+    400,
+  );
+});
+
 test("public hosts reject nested labels, wrong ports, and insecure transport", () => {
   const policy = new ViewPolicy(config);
   const label = `${"b".repeat(32)}-display`;

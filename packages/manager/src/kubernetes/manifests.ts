@@ -1,6 +1,7 @@
 import type { Account } from "../database/store";
 import { accountController } from "./controller";
 import { accountNetworkPolicies } from "./network";
+import { publicHostManifests } from "./public-hosts";
 export function accountManifests(account: Account, apiAddresses: string[]) {
   const labels = { "pocketcoder.dev/account": account.id };
   const metadata = (name: string) => ({ name, namespace: account.namespace, labels });
@@ -72,5 +73,6 @@ export function accountManifests(account: Account, apiAddresses: string[]) {
     },
     ...accountNetworkPolicies(account, apiAddresses),
     ...accountController(account),
+    ...publicHostManifests(account),
   ];
 }
