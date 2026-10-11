@@ -2,10 +2,12 @@ import { publicViewConfig } from "@pstdio/pocketcoder-server/public-views";
 import type { PublicHosts } from "../config";
 import type { Account } from "../database/store";
 
+export const accountLabel = (accountId: string) => accountId.replaceAll("-", "");
+
 // Each account owns one API host and one wildcard view zone. Its route, certificate
 // and DNS records live with its namespace, so account removal removes them too.
 export function accountOrigins(accountId: string, hosts: Pick<PublicHosts, "apiOrigin" | "viewOrigin">) {
-  const label = accountId.replaceAll("-", "");
+  const label = accountLabel(accountId);
   const prefix = (origin: string) => {
     const url = new URL(origin);
     url.hostname = `${label}.${url.hostname}`;

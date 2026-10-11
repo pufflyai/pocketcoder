@@ -7,6 +7,10 @@ import { StagingPolicySchema } from "./staging-capacity";
 
 export const OffNodeConfigSchema = z.strictObject({
   accountId: z.uuid(),
+  createRequestDigest: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   storage: ObjectStorageConfigSchema,
   encryptionKeyFile: z.string().refine(isAbsolute),
   staging: StagingPolicySchema.default({}),

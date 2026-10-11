@@ -1,12 +1,18 @@
 import { z } from "zod";
 import type { ManagerBackupConfig } from "../backup/config";
 import type { Account, ManagerStore } from "../database/store";
+import type { PurgeAuthority } from "../purge/authority";
+import type { PurgeIntent } from "../purge/intent";
+import type { PhysicalStorage } from "../purge/provider-types";
 import { kubernetesBackup } from "./backup";
 import { kube } from "./command";
 import { controllerStop } from "./controller-stop";
 import { kubernetesLifecycle } from "./lifecycle";
 import { accountManifests } from "./manifests";
 import { offNodeSecret } from "./off-node-files";
+import { type PurgeControllerFiles, purgeSecret } from "./purge-files";
+import { discoverPurgeNamespaces } from "./purge-namespaces";
+import { physicalPurge } from "./purge-physical";
 
 const OwnerResult = z
   .object({ token: z.string().nullable(), key: z.object({ id: z.uuid() }).passthrough() })
@@ -18,6 +24,7 @@ export class KubernetesAccounts {
   constructor(
     private readonly command = kube,
     private readonly backups?: ManagerBackupConfig,
+    private readonly purgeFiles?: PurgeControllerFiles,
   ) {
     this.lifecycle = kubernetesLifecycle(command);
     this.stopController = controllerStop(command);
@@ -49,24 +56,8 @@ export class KubernetesAccounts {
       slice.endpoints.flatMap((e) => e.addresses),
     );
     if (!addresses.length) throw new Error("Kubernetes API destinations missing");
-    if (account.plan.offNodeBackups && !this.backups) throw new Error("Off-node backups are not configured.");
-    const destinations = account.plan.offNodeBackups ? await this.backups?.destinations() : [];
-    const privateResources =
-      account.plan.offNodeBackups && this.backups
-        ? [
-            {
-              apiVersion: "v1",
-              kind: "Secret",
-              metadata: {
-                name: offNodeSecret,
-                namespace: account.namespace,
-                labels: { "pocketcoder.dev/account": account.id },
-              },
-              data: this.backups.accountFiles(account.id),
-            },
-          ]
-        : [];
-    const resources = [...accountManifests(account, addresses, destinations), ...privateResources];
+    const privateConfig = await this.privateConfiguration(account);
+    const resources = [...accountManifests(account, addresses, privateConfig.destinations), ...privateConfig.resources];
     for (const resource of resources) {
       const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
       if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);
@@ -106,6 +97,36 @@ export class KubernetesAccounts {
         condition.observedGeneration === certificate.metadata.generation,
     );
     if (!ready) throw new Error("Account certificate is not ready");
+  }
+  private async privateConfiguration(account: Account) {
+    let name: string | undefined;
+    let files: ManagerBackupConfig | PurgeControllerFiles | undefined;
+    if (account.plan.offNodeBackups) {
+      name = offNodeSecret;
+      files = this.backups;
+    } else if (account.plan.purgeAuthority) {
+      name = purgeSecret;
+      files = this.purgeFiles;
+    }
+    if (!name) return { destinations: [], resources: [] };
+    if (!files) throw new Error("Private account authority is not configured.");
+    return {
+      destinations: await files.destinations(),
+      resources: [
+        {
+          apiVersion: "v1",
+          kind: "Secret",
+          metadata: { name, namespace: account.namespace, labels: { "pocketcoder.dev/account": account.id } },
+          data: files.accountFiles(account.id, account.requestId),
+        },
+      ],
+    };
+  }
+  purgeNamespaces(intent: PurgeIntent) {
+    return discoverPurgeNamespaces(this.command, intent);
+  }
+  physicalPurge(storage: PhysicalStorage, authority: PurgeAuthority) {
+    return physicalPurge(this.command, storage, authority);
   }
   async owner(account: Account, request: Awaited<ReturnType<ManagerStore["beginBootstrap"]>>) {
     const args = [

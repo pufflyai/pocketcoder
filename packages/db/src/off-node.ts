@@ -1,5 +1,12 @@
 export type { JournalAcknowledgement, JournalSnapshot } from "./journal/acknowledgement";
 export {
+  AccountPurgeConfigSchema,
+  type AccountPurgeReader,
+  createAccountPurgeReader,
+  loadAccountPurgeReader,
+  readAccountPurgeIntent,
+} from "./off-node/account-purge";
+export {
   digestFile,
   digestResponse,
   type OffNodeBackupReceipt,
@@ -13,6 +20,7 @@ export {
   ObjectStorage,
   type ObjectStorageConfig,
   ObjectStorageConfigSchema,
+  ObjectStorageError,
 } from "./off-node/object-storage";
 export {
   PrivateFileLimitError,

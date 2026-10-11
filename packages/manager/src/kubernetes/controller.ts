@@ -1,9 +1,11 @@
 import type { Account } from "../database/store";
 import { installOffNodeFiles, offNodeFileMount, offNodeSecretVolume } from "./off-node-files";
 import { checkPublicViews } from "./public-hosts";
+import { installPurgeFiles, purgeFileMount, purgeSecretVolume } from "./purge-files";
 export function accountController(account: Account, nodeName?: string) {
   const labels = { "pocketcoder.dev/account": account.id, "pocketcoder.dev/role": "controller" };
   const image = account.plan.controllerImage;
+  const purgeOnly = account.plan.purgeAuthority && !account.plan.offNodeBackups;
   return [
     {
       apiVersion: "v1",
@@ -34,6 +36,7 @@ export function accountController(account: Account, nodeName?: string) {
             volumes: [
               { name: "private", persistentVolumeClaim: { claimName: account.volumeName } },
               ...(account.plan.offNodeBackups ? [offNodeSecretVolume] : []),
+              ...(purgeOnly ? [purgeSecretVolume] : []),
               { name: "tmp", emptyDir: { medium: "Memory", sizeLimit: "32Mi" } },
             ],
             initContainers: [
@@ -43,11 +46,12 @@ export function accountController(account: Account, nodeName?: string) {
                 command: [
                   "bun",
                   "-e",
-                  `const f=await import('node:fs/promises');await f.chown('/private',0,0);await f.chmod('/private',0o700);${account.plan.offNodeBackups ? `${installOffNodeFiles};` : ""}await f.chown('/private',10001,10001)`,
+                  `const f=await import('node:fs/promises');await f.chown('/private',0,0);await f.chmod('/private',0o700);${account.plan.offNodeBackups ? `${installOffNodeFiles};` : ""}${purgeOnly ? `${installPurgeFiles};` : ""}await f.chown('/private',10001,10001)`,
                 ],
                 volumeMounts: [
                   { name: "private", mountPath: "/private" },
                   ...(account.plan.offNodeBackups ? [offNodeFileMount] : []),
+                  ...(purgeOnly ? [purgeFileMount] : []),
                 ],
                 resources: {
                   requests: { cpu: "100m", memory: "64Mi", "ephemeral-storage": "64Mi" },
@@ -71,6 +75,7 @@ export function accountController(account: Account, nodeName?: string) {
                   ...(account.plan.offNodeBackups
                     ? { POCKETCODER_OFF_NODE_CONFIG: "/private/off-node/config.json" }
                     : {}),
+                  ...(purgeOnly ? { POCKETCODER_PURGE_CONFIG: "/private/purge/config.json" } : {}),
                   POCKETCODER_DIR: "/private/pc_data",
                   POCKETCODER_HTTP: "0.0.0.0:8090",
                   POCKETCODER_AGENT_HTTP: "0.0.0.0:8091",

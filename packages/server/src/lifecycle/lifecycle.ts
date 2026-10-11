@@ -1,12 +1,14 @@
 import { signEvent } from "@pstdio/pocketcoder-auth";
-import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools } from "@pstdio/pocketcoder-runtime-core";
+import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
 import { composeBackups } from "../backup/backup-composition";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
 import { composeAccountLifecycle } from "../maintenance/account-composition";
+import { AccountPurgeRequiredError, accountPurgeFence, requireNormalController } from "../maintenance/account-purge";
 import { accountState } from "../maintenance/account-state";
 import { createMaintenance } from "../maintenance/maintenance";
+import { configuredPurgeCleanup } from "../maintenance/purge-cleanup";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
@@ -27,6 +29,7 @@ import {
   requireEgressImageForRestrictedTemplates,
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
+import { startPurgingController } from "./purging-controller";
 import { RecoveryRequiredError, startRecoveryController } from "./recovery-controller";
 import { screenshotOptions } from "./screenshot-config";
 
@@ -49,6 +52,24 @@ function cleanupState(pending: number) {
   return pending > 0 ? "pending" : "ok";
 }
 
+function serverOutbox(config: ServerConfig, store: Store, log: ServerLog, metrics: RuntimeMetrics) {
+  return new OutboxDispatcher({
+    store,
+    sinkUrl: config.eventSinkUrl,
+    sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
+    onError: (context, error) => log(`${context}: ${String(error)}`),
+    metrics,
+  });
+}
+
+async function requireNormalMode(initialized: Awaited<ReturnType<typeof initializeController>>) {
+  await requireNormalController(initialized);
+  if (await initialized.store.recovery.recoveryState()) {
+    await initialized.store.close();
+    throw new RecoveryRequiredError();
+  }
+}
+
 export async function startPocketCoderServer(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
@@ -61,10 +82,8 @@ export async function startPocketCoderServer(
   const initialized = await initializeController(config, log);
   config = initialized.config;
   const { store, directory } = initialized;
-  if (await store.recovery.recoveryState()) {
-    await store.close();
-    throw new RecoveryRequiredError();
-  }
+  await requireNormalMode(initialized);
+  const assertAccountAllowed = initialized.accountPurge ? accountPurgeFence(initialized.accountPurge) : undefined;
   const maintenance = createMaintenance();
   const transferOptions = checkpointTransferOptions(config);
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
@@ -94,17 +113,8 @@ export async function startPocketCoderServer(
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const {
-      app,
-      agentApp,
-      websocket,
-      scheduler,
-      persistence,
-      warmPool,
-      checkpointTransfers,
-      workspaceLeases,
-      screenshots,
-    } = buildServer({
+    const built = buildServer({
+      assertAccountAllowed,
       publicViews: config.publicViews,
       screenshotOptions: screenshotOptions(config),
       issuerClient: configuredIssuer(config),
@@ -128,6 +138,17 @@ export async function startPocketCoderServer(
       readiness,
       maintenance,
     });
+    const {
+      app,
+      agentApp,
+      websocket,
+      scheduler,
+      persistence,
+      warmPool,
+      checkpointTransfers,
+      workspaceLeases,
+      screenshots,
+    } = built;
     // A backup waits for admitted background work as well as admitted requests.
     // Scheduler finalizers can start preserves, so the scheduler settles first.
     maintenance.settleWith(() => scheduler.drain());
@@ -161,13 +182,9 @@ export async function startPocketCoderServer(
       runtime: { scheduler, persistence, workspaceLeases, checkpointTransfers },
     });
 
-    const outbox = new OutboxDispatcher({
-      store,
-      sinkUrl: config.eventSinkUrl,
-      sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
-      onError: (context, error) => log(`${context}: ${String(error)}`),
-      metrics,
-    });
+    const purgeCleanup = await configuredPurgeCleanup(initialized, driver, maintenance, built);
+
+    const outbox = serverOutbox(config, store, log, metrics);
 
     const timers = startBackgroundTimers({
       config,
@@ -188,6 +205,9 @@ export async function startPocketCoderServer(
     let server: ReturnType<typeof Bun.serve>;
     try {
       admin = await startLocalAdmin({
+        purgeCleanup,
+        accountPurge: initialized.accountPurge,
+        assertAccountAllowed,
         directory: directory,
         store,
         pepper: config.pepper,
@@ -232,6 +252,7 @@ export async function startPocketCoderServer(
         stopPromise = (async () => {
           log("shutting down");
           await timers.stop();
+          await purgeCleanup?.drain();
           await accountLifecycle.drain();
           await screenshots?.close();
           await checkpointTransfers?.close();
@@ -260,6 +281,7 @@ export async function runPocketCoderServerUntilSignal(
   options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<void> {
   const running = await startPocketCoderServer(config, options).catch((error) => {
+    if (error instanceof AccountPurgeRequiredError) return startPurgingController(config, options);
     if (!(error instanceof RecoveryRequiredError)) throw error;
     return startRecoveryController(config, options);
   });

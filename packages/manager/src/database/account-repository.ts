@@ -34,7 +34,7 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
             .from(operations)
             .where(and(eq(operations.accountId, prior.id), eq(operations.kind, "provision")));
           if (!operation) throw new Error("Account operation missing");
-          return { account: prior, operation };
+          return { account: prior, operation, created: false };
         }
         const id = randomUUID();
         const at = new Date();
@@ -56,7 +56,7 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
           .values({ id: randomUUID(), accountId: id, requestId, state: "pending", createdAt: at })
           .returning();
         if (!account || !operation) throw new Error("Account insert failed");
-        return { account, operation };
+        return { account, operation, created: true };
       });
     },
     async listAccounts() {

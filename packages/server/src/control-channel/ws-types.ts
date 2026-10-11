@@ -3,9 +3,12 @@ import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime
 import type { WSContext } from "hono/ws";
 import type { PersistenceService } from "../persistence/persistence";
 import type { createWorkspaceLeaseService } from "../secrets/lease-service";
+import type { ControlActivity } from "./activity";
 import type { Hub, LiveConnection } from "./hub";
 
 export interface WsDeps {
+  assertAccountAllowed?: () => Promise<void>;
+  activity?: ControlActivity;
   store: Store;
   hub: Hub;
   scheduler: Scheduler;

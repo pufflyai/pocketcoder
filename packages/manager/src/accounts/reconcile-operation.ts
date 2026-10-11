@@ -1,6 +1,7 @@
 import { reconcileBackup, reconcileRestore } from "../backup/reconcile";
 import type { ManagerStore } from "../database/store";
 import type { KubernetesAccounts } from "../kubernetes/accounts";
+import { createRequestDigest } from "../purge/intent";
 import { reconcileSuspend } from "./reconcile-suspend";
 
 export async function reconcileOperation(
@@ -11,6 +12,15 @@ export async function reconcileOperation(
   const account = await store.getAccount(operation.accountId);
   if (!account) throw new Error("Account missing");
   if (operation.kind === "provision") {
+    if (store.purge) {
+      await store.purge.history.start({
+        accountId: account.id,
+        createRequestDigest: createRequestDigest(account.requestId),
+        originalCreateOperationId: operation.id,
+      });
+      // The permanent intent may arrive while the independent start receipt is being acknowledged.
+      await store.getAccount(account.id);
+    }
     await provider.ensure(account);
     await store.finishAccount(account.id, operation.id);
     return;
