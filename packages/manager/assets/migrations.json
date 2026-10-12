@@ -78,5 +78,17 @@
     "folderMillis": 1791764281000,
     "hash": "5f30bd4ad4f861a8fae73eb409595bb6f42e3ad3674d82a1e084bea8ab7aacd7",
     "name": "20261012001801_military_thunderbolt_ross"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"operations\" ADD COLUMN \"upgrade\" jsonb;",
+      "\nALTER TABLE \"accounts\" DROP CONSTRAINT \"account_state\", ADD CONSTRAINT \"account_state\" CHECK (\"state\" in ('provisioning','ready','suspending','suspended','resuming','restoring','upgrading'));",
+      "\nALTER TABLE \"operations\" DROP CONSTRAINT \"operation_kind\", ADD CONSTRAINT \"operation_kind\" CHECK (\"kind\" in ('provision','suspend','resume','backup','restore','upgrade'));",
+      "\nALTER TABLE \"operations\" DROP CONSTRAINT \"operation_phase\", ADD CONSTRAINT \"operation_phase\" CHECK (\"phase\" in ('controller','scale','complete','capture','fence','restore','recover','open','install','verify'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791790637000,
+    "hash": "cc43186365c15c5a3f0f4f7a3fd0dd30612aefba852f52b565b0be64142e9373",
+    "name": "20261012073717_melodic_celestials"
   }
 ]

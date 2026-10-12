@@ -128,6 +128,9 @@ and customer enablement remain separate hosted-service work.
 
 ## Estimated usage
 
+Account upgrades use the [managed upgrade flow](../../docs/managed-account-upgrades.md).
+It requires a tested release manifest and a verified off-node backup.
+
 The manager samples each ready account at startup and once per minute. Read
 `GET /v1/accounts/{id}/usage` with the same finite operator token:
 

@@ -9,6 +9,8 @@
     "packages/*"
   ],
   "scripts": {
+    "candidate:controller-manifest": "bun scripts/controller-release-manifest.ts",
+    "example:e2e:managed-upgrade": "bun --no-env-file examples/e2e/managed-upgrade.ts",
     "build": "lerna run build",
     "build:native": "bun run --cwd packages/cli compile",
     "check": "biome check . && knip && bun run manifest:check && bun scripts/check-boundaries.ts && bun scripts/build-pglite-seed.ts --check && bun scripts/build-desktop-viewer.ts --check && bun packages/server/scripts/build-domain-assets.ts --check && bun packages/manager/scripts/build-seed.ts --check",

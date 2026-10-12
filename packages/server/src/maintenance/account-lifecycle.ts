@@ -26,7 +26,7 @@ export function createAccountLifecycle(deps: {
 }) {
   const { state, maintenance, store, driver, runtime } = deps;
   if (state.state.state !== "ready") maintenance.fence();
-  let running: { id: string; kind: Action; promise: Promise<ReturnType<typeof result>> } | undefined;
+  let running: { id: string; kind: Action | "verify"; promise: Promise<ReturnType<typeof result>> } | undefined;
   const result = () => ({
     state: state.state.state,
     operation_state: state.state.current ? "pending" : "succeeded",
@@ -134,7 +134,7 @@ export function createAccountLifecycle(deps: {
       validateCurrent(id, kind);
       return true;
     }
-    if (maintenance.active && !maintenance.fenced) throw conflict();
+    if (maintenance.exclusive) throw conflict();
     if (state.state.state !== states[kind].from) throw conflict();
     maintenance.fence();
     await state.save({ ...state.state, state: states[kind].pending, current: { id, kind } });
@@ -158,6 +158,24 @@ export function createAccountLifecycle(deps: {
   }
   return {
     status: () => ({ ...result(), admitted_requests: maintenance.admittedRequests }),
+    verify() {
+      if (running || state.state.state !== "suspended" || state.state.current) return Promise.reject(conflict());
+      const promise = maintenance
+        .run(
+          30_000,
+          new AbortController().signal,
+          async () => {
+            await resume();
+            return result();
+          },
+          true,
+        )
+        .finally(() => {
+          running = undefined;
+        });
+      running = { id: "verify", kind: "verify", promise };
+      return promise;
+    },
     perform(id: string, kind: Action) {
       if (running) {
         if (running.id !== id || running.kind !== kind) return Promise.reject(conflict());

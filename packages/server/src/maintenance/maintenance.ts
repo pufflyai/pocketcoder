@@ -45,6 +45,9 @@ export function createMaintenance() {
     get fenced() {
       return fenced;
     },
+    get exclusive() {
+      return active;
+    },
     get admittedRequests() {
       return requests.size;
     },
@@ -69,8 +72,8 @@ export function createMaintenance() {
       };
     },
     // The deadline covers settling and the exclusive step. Writes resume on every exit.
-    async run<T>(timeoutMs: number, signal: AbortSignal, step: (check: () => void) => Promise<T>) {
-      if (active || fenced) refuse();
+    async run<T>(timeoutMs: number, signal: AbortSignal, step: (check: () => void) => Promise<T>, suspended = false) {
+      if (active || (fenced && !suspended)) refuse();
       active = true;
       const deadline = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
       const check = () => {

@@ -2,6 +2,7 @@ import type { accountRepository } from "../database/account-repository";
 import type { backupRepository } from "../database/backup-repository";
 import type { bootstrapRepository } from "../database/bootstrap-repository";
 import type { lifecycleRepository } from "../database/lifecycle-repository";
+import type { upgradeRepository } from "../upgrade/repository";
 import type { usageRepository } from "../usage/repository";
 import { admittedWork } from "./admitted-work";
 import type { PurgeAuthority } from "./authority";
@@ -11,6 +12,7 @@ type Repositories = ReturnType<typeof accountRepository> &
   ReturnType<typeof backupRepository> &
   ReturnType<typeof bootstrapRepository> &
   ReturnType<typeof lifecycleRepository> &
+  ReturnType<typeof upgradeRepository> &
   ReturnType<typeof usageRepository>;
 
 export function guardedStore(store: Repositories, authority: PurgeAuthority) {
@@ -70,6 +72,8 @@ export function guardedStore(store: Repositories, authority: PurgeAuthority) {
     },
     getAccount: (id: string) => account(id, () => store.getAccount(id)),
     getOperation: (id: string) => operation(id, () => store.getOperation(id)),
+    accountOperation: (...args: Parameters<Repositories["accountOperation"]>) =>
+      account(args[0], () => store.accountOperation(...args)),
     async listAccounts() {
       await authority.refresh();
       const rows = await store.listAccounts();
@@ -101,6 +105,11 @@ export function guardedStore(store: Repositories, authority: PurgeAuthority) {
       account(args[0], () => store.beginLifecycle(...args)),
     beginBackupOperation: (...args: Parameters<Repositories["beginBackupOperation"]>) =>
       account(args[0], () => store.beginBackupOperation(...args)),
+    beginUpgrade: (...args: Parameters<Repositories["beginUpgrade"]>) =>
+      account(args[0], () => store.beginUpgrade(...args)),
+    recoverUpgrade: (...args: Parameters<Repositories["recoverUpgrade"]>) =>
+      account(args[0], () => store.recoverUpgrade(...args)),
+    installUpgradePlan: (id: string) => operation(id, () => store.installUpgradePlan(id)),
     listBackups: (id: string) => account(id, () => store.listBackups(id)),
     getUsage: (...args: Parameters<Repositories["getUsage"]>) => account(args[0], () => store.getUsage(...args)),
     recordUsageSample: (...args: Parameters<Repositories["recordUsageSample"]>) =>

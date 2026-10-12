@@ -24,6 +24,7 @@ export function createControllerBackup(deps: {
   maintenance: Maintenance;
   keys?: ControllerKeys;
   checkpointDirectory?: string;
+  suspended?: () => boolean;
 }) {
   const capture = async (
     input: BackupRequest & { archiveLimit?: { bytes: number; members: number }; stagingReservationId?: string },
@@ -45,7 +46,7 @@ export function createControllerBackup(deps: {
         signal,
         archiveLimit: input.archiveLimit,
         stagingReservationId: input.stagingReservationId,
-        freeze: (capture) => deps.maintenance.run(input.timeout_ms, signal, capture),
+        freeze: (capture) => deps.maintenance.run(input.timeout_ms, signal, capture, deps.suspended?.() ?? false),
       });
       return {
         output: receipt.path,

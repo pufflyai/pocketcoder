@@ -4,6 +4,7 @@ import type { Account, ManagerStore } from "../database/store";
 import type { PurgeAuthority } from "../purge/authority";
 import type { PurgeIntent } from "../purge/intent";
 import type { PhysicalStorage } from "../purge/provider-types";
+import { kubernetesUpgrade } from "../upgrade/kubernetes";
 import { kubernetesBackup } from "./backup";
 import { kube } from "./command";
 import { controllerStop } from "./controller-stop";
@@ -22,6 +23,7 @@ export class KubernetesAccounts {
   readonly lifecycle;
   readonly stopController;
   readonly backup;
+  readonly upgrade;
   constructor(
     private readonly command = kube,
     private readonly backups?: ManagerBackupConfig,
@@ -30,6 +32,7 @@ export class KubernetesAccounts {
     this.lifecycle = kubernetesLifecycle(command);
     this.stopController = controllerStop(command);
     this.backup = kubernetesBackup(command, backups);
+    this.upgrade = kubernetesUpgrade(command);
   }
   async ensure(account: Account) {
     await this.command(["get", "runtimeclass", account.plan.runtimeClassName, "-o", "name"]);

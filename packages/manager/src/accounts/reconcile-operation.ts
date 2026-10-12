@@ -2,6 +2,7 @@ import { reconcileBackup, reconcileRestore } from "../backup/reconcile";
 import type { ManagerStore } from "../database/store";
 import type { KubernetesAccounts } from "../kubernetes/accounts";
 import { createRequestDigest } from "../purge/intent";
+import { reconcileUpgrade } from "../upgrade/reconcile";
 import { reconcileSuspend } from "./reconcile-suspend";
 
 export async function reconcileOperation(
@@ -31,6 +32,7 @@ export async function reconcileOperation(
   }
   if (operation.kind === "backup") return reconcileBackup(store, provider, operation);
   if (operation.kind === "restore") return reconcileRestore(store, provider, operation);
+  if (operation.kind === "upgrade") return reconcileUpgrade(store, provider, operation);
   if (operation.phase === "controller") {
     await provider.lifecycle.scaleUp(account);
     await store.setOperationPhase(operation.id, "scale");
