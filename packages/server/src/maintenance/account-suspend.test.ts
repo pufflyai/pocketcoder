@@ -71,15 +71,12 @@ test("an admitted launch settles behind a durable fence; unreachable runtime sta
       "content-type": "application/json",
       "idempotency-key": "accepted-launch",
     };
-    expect(
-      (
-        await fetch(`${running.url}/v1/templates`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ manifest: fixtureTemplateEcho().manifest }),
-        })
-      ).status,
-    ).toBe(201);
+    const published = await fetch(`${running.url}/v1/templates`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ manifest: fixtureTemplateEcho().manifest }),
+    });
+    expect(published.status, await published.text()).toBe(201);
     const launch = fetch(`${running.url}/v1/workspaces`, {
       method: "POST",
       headers,

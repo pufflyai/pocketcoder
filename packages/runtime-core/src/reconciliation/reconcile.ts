@@ -1,4 +1,4 @@
-import type { WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
+import type { DiscoveredProvider, WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
 import type { MetricSink } from "../observability/metrics";
 import type { Store, WorkspaceRow } from "../types";
 import { measureReconciliation } from "./reconciliation-metrics";
@@ -14,6 +14,7 @@ export interface ReconcileDeps {
   now?: () => Date;
   log?: (msg: string) => void;
   metrics?: MetricSink;
+  discover?: () => Promise<DiscoveredProvider[] | undefined>;
 }
 
 export async function reconcileProviderRow(
@@ -51,7 +52,7 @@ export async function reconcileProviderRow(
 async function reconcileProviderState(deps: ReconcileDeps): Promise<void> {
   const now = deps.now ? deps.now() : new Date();
   const rows = await deps.store.listNonterminal();
-  const discovered = await deps.driver.list();
+  const discovered = (await deps.discover?.()) ?? (await deps.driver.list());
   const byWorkspace = new Map(discovered.map((d) => [d.workspaceId, d]));
   const known = new Set(rows.map((r) => r.id));
 

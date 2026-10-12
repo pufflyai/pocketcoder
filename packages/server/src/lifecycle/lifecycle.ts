@@ -22,7 +22,6 @@ import {
   createSecretResolver,
   createStorageDriver,
   createWorkspaceDriver,
-  initializeController,
   loadConfiguredTemplates,
   reconcileCheckpointPreserves,
   reconcileStartup,
@@ -32,6 +31,7 @@ import { loadPolicyReconciliation } from "./policy-reconciliation";
 import { startPurgingController } from "./purging-controller";
 import { RecoveryRequiredError, startRecoveryController } from "./recovery-controller";
 import { screenshotOptions } from "./screenshot-config";
+import { initializeStartupController } from "./startup-discovery";
 
 export { RecoveryRequiredError, startRecoveryController };
 
@@ -62,12 +62,19 @@ function serverOutbox(config: ServerConfig, store: Store, log: ServerLog, metric
   });
 }
 
-async function requireNormalMode(initialized: Awaited<ReturnType<typeof initializeController>>) {
-  await requireNormalController(initialized);
-  if (await initialized.store.recovery.recoveryState()) {
-    await initialized.store.close();
-    throw new RecoveryRequiredError();
+function logStartupCleanup(log: ServerLog) {
+  try {
+    log("startup cleanup started");
+  } catch {
+    // A broken sink must not replace the original error or interrupt owned cleanup.
   }
+}
+
+async function startupWarmPools(store: Store, config: ServerConfig, driver: ReturnType<typeof createWorkspaceDriver>) {
+  const warmPools = await resolveWarmPools(store, config.warmPools, driver.kind, config.limits.globalActiveWorkspaces);
+  const warmPoolContinuously =
+    warmPools.length > 0 || (await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
+  return { warmPools, warmPoolContinuously };
 }
 
 export async function startPocketCoderServer(
@@ -79,16 +86,17 @@ export async function startPocketCoderServer(
   const logger = createStructuredLogger((record) => log(JSON.stringify(record)));
   const metrics = new RuntimeMetrics();
   log(`config: ${JSON.stringify(configSummary(config))}`);
-  const initialized = await initializeController(config, log);
+  const { initialized, discovery } = await initializeStartupController(config, log);
   config = initialized.config;
   const { store, directory } = initialized;
-  await requireNormalMode(initialized);
-  const assertAccountAllowed = initialized.accountPurge ? accountPurgeFence(initialized.accountPurge) : undefined;
-  const maintenance = createMaintenance();
-  const transferOptions = checkpointTransferOptions(config);
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
   let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
+    await requireNormalController(initialized);
+    if (await store.recovery.recoveryState()) throw new RecoveryRequiredError();
+    const assertAccountAllowed = initialized.accountPurge ? accountPurgeFence(initialized.accountPurge) : undefined;
+    const maintenance = createMaintenance();
+    const transferOptions = checkpointTransferOptions(config);
     await store.acknowledgeJournal();
     await store.acquireCoordinatorLease();
     const durableAccountState = await accountState(directory);
@@ -100,14 +108,7 @@ export async function startPocketCoderServer(
       ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
       : undefined;
     const driver = createWorkspaceDriver(config, resolveRegistry);
-    const warmPools = await resolveWarmPools(
-      store,
-      config.warmPools,
-      driver.kind,
-      config.limits.globalActiveWorkspaces,
-    );
-    const warmPoolContinuously =
-      warmPools.length > 0 || (await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
+    const { warmPools, warmPoolContinuously } = await startupWarmPools(store, config, driver);
     const storageDriver = createStorageDriver(config);
     const secretResolver = createSecretResolver(config);
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
@@ -166,7 +167,15 @@ export async function startPocketCoderServer(
     readiness.set("cleanup", cleanupState(pendingSetup + pendingTransfers));
     readiness.set(
       "reconciliation",
-      (await reconcileStartup(store, driver, storageDriver, log, metrics, persistence.reconcileCheckpointOperation))
+      (await reconcileStartup(
+        store,
+        driver,
+        storageDriver,
+        log,
+        metrics,
+        persistence.reconcileCheckpointOperation,
+        discovery.providers,
+      ))
         ? "ok"
         : "failed",
     );
@@ -269,6 +278,8 @@ export async function startPocketCoderServer(
       },
     };
   } catch (error) {
+    logStartupCleanup(log);
+    await discovery.settle();
     await agentServer?.stop(true);
     await admin?.stop();
     await store.close().catch(() => {});

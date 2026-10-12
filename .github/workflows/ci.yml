@@ -24,6 +24,8 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      - name: Verify Linux syscall trace prerequisite
+        run: strace --version
       - name: Lint, format-check, and detect unused code
         run: bun run check
       - run: bun run typecheck
@@ -86,8 +88,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      - name: Verify Linux syscall trace prerequisite
+        if: runner.os == 'Linux'
+        run: strace --version
       - name: Disk locking, durable recovery and compiled assets
-        run: bun test packages/db/src/database/crash.test.ts packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts packages/db/src/migrations/crash.test.ts
+        run: bun test packages/db/src/database/data-folder.test.ts packages/db/src/database/crash.test.ts packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts packages/db/src/migrations/crash.test.ts
 
   native:
     strategy:
