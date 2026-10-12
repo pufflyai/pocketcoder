@@ -12,6 +12,7 @@ import {
 } from "./config";
 import type { Account, ManagerStore } from "./database/store";
 import { accountOrigins } from "./kubernetes/public-hosts";
+import { managerMonitoring } from "./monitoring/metrics";
 import { registerUpgradeRoutes } from "./upgrade/routes";
 
 export { accountService } from "./accounts/service";
@@ -30,7 +31,12 @@ export function accountResource(account: Account) {
     view_origin: origins?.views ?? null,
   };
 }
-export function createManagerApp(store: ManagerStore, input: ManagerConfig, service = accountService(store)) {
+export function createManagerApp(
+  store: ManagerStore,
+  input: ManagerConfig,
+  service = accountService(store),
+  monitoring = managerMonitoring(store),
+) {
   const config = ManagerConfigSchema.parse(input);
   const app = new Hono<{ Variables: { operator: NonNullable<Awaited<ReturnType<ManagerStore["operator"]>>> } }>();
   app.use("*", async (c, next) => {
@@ -39,6 +45,8 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(c.req.header("authorization") ?? "");
     const operator = match?.[1] ? await store.operator(match[1]) : null;
     if (!operator) return c.json({ code: "unauthorized" }, 401);
+    if (operator.purpose === "metrics" && (c.req.path !== "/metrics" || c.req.method !== "GET"))
+      return c.json({ code: "forbidden" }, 403);
     c.set("operator", operator);
     await next();
     if (operator.expiresAt <= new Date()) c.res = c.json({ code: "unauthorized" }, 401);
@@ -55,6 +63,13 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     const plan = () => accountPlan(config, input);
     const result = await store.createAccount(requestId, input, plan, c.get("operator").expiresAt);
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
+  });
+  app.get("/metrics", async (c) => {
+    c.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    const expiry = c.get("operator").expiresAt.getTime() / 1000;
+    return c.body(
+      `${await monitoring.metrics()}# TYPE pocketcoder_metrics_credential_expires_at_seconds gauge\npocketcoder_metrics_credential_expires_at_seconds ${expiry}\n`,
+    );
   });
   registerUpgradeRoutes(app, config.releases ?? [], service);
   app.get("/v1/releases", (c) => c.json({ items: config.releases ?? [] }));

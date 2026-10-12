@@ -1,0 +1,2 @@
+ALTER TABLE "operators" ADD COLUMN "purpose" text DEFAULT 'operator' NOT NULL;--> statement-breakpoint
+ALTER TABLE "operators" ADD CONSTRAINT "operator_purpose" CHECK ("purpose" in ('operator','metrics'));

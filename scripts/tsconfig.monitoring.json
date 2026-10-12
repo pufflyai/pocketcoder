@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["../examples/e2e/managed-monitoring.ts", "../deploy/monitoring/write-config.ts"]
+}

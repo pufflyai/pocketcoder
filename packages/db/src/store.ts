@@ -47,6 +47,7 @@ export class PGliteStore implements Store {
   constructor(context: DatabaseContext) {
     const journal = createJournalAcknowledgement(context);
     this.acknowledgeJournal = journal.acknowledge;
+    this.journalStatus = journal.status;
     this.journalSnapshot = () => {
       if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
       return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
@@ -192,6 +193,7 @@ export class PGliteStore implements Store {
   readonly recordWorkspaceLeaseExpired: Store["recordWorkspaceLeaseExpired"];
   readonly init: Store["init"];
   readonly acknowledgeJournal: () => Promise<void>;
+  readonly journalStatus: Store["journalStatus"];
   readonly journalSnapshot: () => JournalSnapshot;
   readonly close: Store["close"];
   readonly acquireCoordinatorLease: Store["acquireCoordinatorLease"];

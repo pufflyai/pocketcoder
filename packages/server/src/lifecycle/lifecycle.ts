@@ -9,6 +9,7 @@ import { AccountPurgeRequiredError, accountPurgeFence, requireNormalController }
 import { accountState } from "../maintenance/account-state";
 import { createMaintenance } from "../maintenance/maintenance";
 import { configuredPurgeCleanup } from "../maintenance/purge-cleanup";
+import { controllerHealth } from "../observability/controller-health";
 import { Readiness } from "../observability/health";
 import { createStructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
@@ -139,17 +140,7 @@ export async function startPocketCoderServer(
       readiness,
       maintenance,
     });
-    const {
-      app,
-      agentApp,
-      websocket,
-      scheduler,
-      persistence,
-      warmPool,
-      checkpointTransfers,
-      workspaceLeases,
-      screenshots,
-    } = built;
+    const { app, agentApp, websocket, scheduler, persistence, warmPool, workspaceLeases, screenshots } = built;
     // A backup waits for admitted background work as well as admitted requests.
     // Scheduler finalizers can start preserves, so the scheduler settles first.
     maintenance.settleWith(() => scheduler.drain());
@@ -161,7 +152,7 @@ export async function startPocketCoderServer(
     const pendingTransfers = await reconcileCheckpointPreserves(
       store,
       persistence.reconcileCheckpointOperation,
-      checkpointTransfers,
+      built.checkpointTransfers,
       true,
     );
     readiness.set("cleanup", cleanupState(pendingSetup + pendingTransfers));
@@ -188,7 +179,7 @@ export async function startPocketCoderServer(
       log,
       metrics,
       readiness,
-      runtime: { scheduler, persistence, workspaceLeases, checkpointTransfers },
+      runtime: { scheduler, persistence, workspaceLeases, checkpointTransfers: built.checkpointTransfers },
     });
 
     const purgeCleanup = await configuredPurgeCleanup(initialized, driver, maintenance, built);
@@ -206,7 +197,7 @@ export async function startPocketCoderServer(
       scheduler,
       persistence,
       workspaceLeases,
-      checkpointTransfers,
+      checkpointTransfers: built.checkpointTransfers,
       readiness,
       metrics,
     });
@@ -214,6 +205,7 @@ export async function startPocketCoderServer(
     let server: ReturnType<typeof Bun.serve>;
     try {
       admin = await startLocalAdmin({
+        monitoring: () => controllerHealth({ store, hub: built.hub, directory, readiness }),
         purgeCleanup,
         accountPurge: initialized.accountPurge,
         assertAccountAllowed,
@@ -264,7 +256,7 @@ export async function startPocketCoderServer(
           await purgeCleanup?.drain();
           await accountLifecycle.drain();
           await screenshots?.close();
-          await checkpointTransfers?.close();
+          await built.checkpointTransfers?.close();
           await persistence.drain();
           await scheduler.drain();
           await server.stop(true);

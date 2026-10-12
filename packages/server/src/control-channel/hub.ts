@@ -77,6 +77,7 @@ export class Hub implements ConnectionHub {
       epoch,
       ws,
       lastSeqIn: -1,
+      lastHeartbeatAt: new Date(),
       seqOut: 0,
       inflight: new Map(),
       streams: new Map(),
