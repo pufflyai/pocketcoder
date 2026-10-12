@@ -24,11 +24,15 @@ export async function connectDesktop(baseUrl: string, origin: URL, cookie: strin
     socket.onopen = () => resolve();
     socket.onerror = () => reject(new Error("Desktop socket rejected."));
   });
-  async function read(length: number) {
+  async function read(length: number, phase: string) {
     while (bytes.length < length) {
       if (ended) throw new Error("Desktop ended before completing its response.");
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Desktop response deadline exceeded.")), 10_000);
+        const timer = setTimeout(
+          () =>
+            reject(new Error(`Desktop response deadline exceeded during ${phase}: ${bytes.length}/${length} bytes.`)),
+          10_000,
+        );
         wake = () => {
           clearTimeout(timer);
           resolve();
@@ -39,18 +43,19 @@ export async function connectDesktop(baseUrl: string, origin: URL, cookie: strin
     bytes = bytes.subarray(length);
     return result;
   }
-  if ((await read(12)).toString() !== "RFB 003.008\n") throw new Error("Unexpected desktop protocol.");
+  if ((await read(12, "protocol greeting")).toString() !== "RFB 003.008\n")
+    throw new Error("Unexpected desktop protocol.");
   socket.send(Buffer.from("RFB 003.008\n"));
-  const count = (await read(1))[0] ?? 0;
-  if (!(await read(count)).includes(1)) throw new Error("Desktop offered unexpected authentication.");
+  const count = (await read(1, "security count"))[0] ?? 0;
+  if (!(await read(count, "security types")).includes(1)) throw new Error("Desktop offered unexpected authentication.");
   socket.send(new Uint8Array([1]));
-  if ((await read(4)).readUInt32BE() !== 0) throw new Error("Desktop handshake failed.");
+  if ((await read(4, "security result")).readUInt32BE() !== 0) throw new Error("Desktop handshake failed.");
   socket.send(new Uint8Array([1]));
-  const init = await read(24);
+  const init = await read(24, "server initialization");
   const width = init.readUInt16BE(0),
     height = init.readUInt16BE(2);
   const bytesPerPixel = (init[4] ?? 0) / 8;
-  await read(init.readUInt32BE(20));
+  await read(init.readUInt32BE(20), "desktop name");
   socket.send(new Uint8Array([2, 0, 0, 1, 0, 0, 0, 0]));
   async function capture() {
     const request = Buffer.alloc(10);
@@ -58,14 +63,14 @@ export async function connectDesktop(baseUrl: string, origin: URL, cookie: strin
     request.writeUInt16BE(width, 6);
     request.writeUInt16BE(height, 8);
     socket.send(request);
-    const header = await read(4);
+    const header = await read(4, "frame header");
     if (header[0] !== 0) throw new Error("Unexpected desktop response.");
     const hash = createHash("sha256");
     const values = new Set<number>();
     for (let index = 0; index < header.readUInt16BE(2); index++) {
-      const rect = await read(12);
+      const rect = await read(12, "rectangle header");
       if (rect.readInt32BE(8) !== 0) throw new Error("Desktop did not use requested raw pixels.");
-      const pixels = await read(rect.readUInt16BE(4) * rect.readUInt16BE(6) * bytesPerPixel);
+      const pixels = await read(rect.readUInt16BE(4) * rect.readUInt16BE(6) * bytesPerPixel, "rectangle pixels");
       hash.update(pixels);
       for (let offset = 0; offset < pixels.length; offset += bytesPerPixel) values.add(pixels.readUInt32LE(offset));
     }

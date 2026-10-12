@@ -1,0 +1,73 @@
+name: original Linux artifact startup diagnostics
+
+on:
+  workflow_call:
+
+permissions: {}
+
+env:
+  BUN_VERSION: 1.4.2
+  ORIGINAL_COMMIT: c9343fa1de5b507f4cbfd9f8f90dc734c73c2f77
+
+jobs:
+  first-start:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 38111067349
+          name: pocketcoder-${{ env.ORIGINAL_COMMIT }}-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native
+      - name: Bind the exact original artifact and diagnostic-only runner
+        run: bun scripts/native-startup-normal.ts "$RUNNER_TEMP/native" "$RUNNER_TEMP/evidence"
+      - name: Prepare metadata-only tracing
+        run: |
+          if ! command -v strace; then
+            sudo apt-get update
+            sudo apt-get install --yes strace
+          fi
+      - name: Run original version prelude and one first start with unchanged assertions
+        run: |
+          bun scripts/native-startup-capture.ts "$RUNNER_TEMP/evidence" \
+            "$RUNNER_TEMP/native/pocketcoder" "$RUNNER_TEMP/evidence/runner.js"
+      - name: Retain hardware and filesystem metadata after the first attempt
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          {
+            uname -a
+            lscpu
+            df -hT "$RUNNER_TEMP"
+            findmnt --target "$RUNNER_TEMP"
+            strace --version
+            printf 'Clock ticks per second: '; getconf CLK_TCK
+            printf 'Page size: '; getconf PAGESIZE
+          } > "$RUNNER_TEMP/evidence/runner-after.txt"
+          bun -e 'console.log(JSON.stringify({ epochMs: Date.now(), cpus: require("node:os").cpus() }))' \
+            > "$RUNNER_TEMP/evidence/cpus-after.json"
+          ps -ax -o pid=,ppid=,%cpu=,%mem=,state=,comm= > "$RUNNER_TEMP/evidence/processes-after.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: normal-startup-evidence-${{ github.sha }}-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: error

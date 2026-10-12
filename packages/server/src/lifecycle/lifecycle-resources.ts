@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { type DatabaseOpenOptions, PGliteStore } from "@pstdio/pocketcoder-db";
 import {
   type AccountPurgeReader,
   createAccountPurgeReader,
@@ -18,6 +18,7 @@ import {
   type RegistryResolver,
 } from "@pstdio/pocketcoder-drivers";
 import {
+  type DiscoveredProvider,
   loadTemplateDir,
   type RuntimeMetrics,
   reconcilePersistence,
@@ -33,10 +34,16 @@ import type { CheckpointTransferService } from "../persistence/checkpoint-transf
 import { createIssuerClient } from "../secrets/issuer-client";
 import type { ServerLog } from "./lifecycle";
 
-async function initializeStore(config: ServerConfig, log: ServerLog, offNode?: OffNode) {
+async function initializeStore(
+  config: ServerConfig,
+  log: ServerLog,
+  offNode?: OffNode,
+  beforeOpen?: DatabaseOpenOptions["beforeOpen"],
+) {
   const store = await PGliteStore.create(config.dataDir, {
     ...(config.journalDir ? { journalDir: config.journalDir } : {}),
     ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
+    ...(beforeOpen ? { beforeOpen } : {}),
   });
   await store.init();
   log(`store: pglite (${config.dataDir})`);
@@ -113,6 +120,7 @@ export async function reconcileStartup(
   log: ServerLog,
   metrics: RuntimeMetrics,
   reconcileCheckpointOperation?: (operation: WorkspaceOperationRow) => Promise<boolean>,
+  discover?: () => Promise<DiscoveredProvider[] | undefined>,
 ): Promise<boolean> {
   try {
     await reconcileProviders({
@@ -121,6 +129,7 @@ export async function reconcileStartup(
       ...(storageDriver ? { storageDriver } : {}),
       log,
       metrics,
+      ...(discover ? { discover } : {}),
     });
     await reconcilePersistence({ store, driver, storageDriver, log, metrics, reconcileCheckpointOperation });
     return true;
@@ -165,12 +174,16 @@ async function controllerResources(config: ServerConfig) {
   return { offNode, accountPurge };
 }
 
-export async function initializeController(config: ServerConfig, log: ServerLog) {
+export async function initializeController(
+  config: ServerConfig,
+  log: ServerLog,
+  beforeOpen?: DatabaseOpenOptions["beforeOpen"],
+) {
   const resources = await controllerResources(config);
   // Neither normal admission nor a fresh database may return after permanent intent.
   if ((await resources.accountPurge?.()) || (await loadPurgeState(config.dataDir)))
     throw new AccountPurgeRequiredError();
-  return openConfiguredController(config, log, resources);
+  return openConfiguredController(config, log, resources, beforeOpen);
 }
 
 export async function initializePurgingController(config: ServerConfig, log: ServerLog) {
@@ -187,20 +200,20 @@ async function openConfiguredController(
   config: ServerConfig,
   log: ServerLog,
   { offNode, accountPurge }: Awaited<ReturnType<typeof controllerResources>>,
+  beforeOpen?: DatabaseOpenOptions["beforeOpen"],
 ) {
   if (config.pepper)
     return {
       config,
-      store: await initializeStore(config, log, offNode),
+      store: await initializeStore(config, log, offNode, beforeOpen),
       directory: await realpath(config.dataDir),
       offNode,
       accountPurge,
     };
-  const controller = await openControllerStore(
-    config.dataDir,
-    config.journalDir ?? undefined,
-    offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {},
-  );
+  const controller = await openControllerStore(config.dataDir, config.journalDir ?? undefined, {
+    ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
+    ...(beforeOpen ? { beforeOpen } : {}),
+  });
   if (
     offNode &&
     Object.values(controller.keys).some((key) => Buffer.from(key, "base64url").equals(offNode.encryptionKey))

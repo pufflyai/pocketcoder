@@ -62,6 +62,26 @@ function podSpec(manifest: ReturnType<typeof workspaceJobManifest> | ReturnType<
 }
 
 describe("Kubernetes Job manifests", () => {
+  test("checks private egress health inside cold and warm sidecars", () => {
+    const cold = workspaceLaunch();
+    const warm = warmLaunch();
+    cold.workspace.templateSnapshot.spec.network = { mode: "restricted", allow: [] };
+    warm.template.spec.network = { mode: "restricted", allow: [] };
+    const manifests = [
+      workspaceJobManifest(cold, "workspace", "input", "egress", options),
+      warmJobManifest(warm, "warm", "input", "egress", options),
+    ];
+    for (const manifest of manifests) {
+      const sidecar = podSpec(manifest).initContainers?.find((container) => container.name === "pocketcoder-egress");
+      if (!sidecar || !("startupProbe" in sidecar)) throw new Error("Restricted sidecar lacks a startup probe");
+      expect(sidecar.startupProbe).toEqual({
+        exec: { command: ["/usr/local/bin/pocketcoder-egress", "health"] },
+        periodSeconds: 1,
+        failureThreshold: 30,
+      });
+    }
+  });
+
   test("adds scheduling fields to workspace and warm Jobs", () => {
     const manifests = [
       workspaceJobManifest(workspaceLaunch(), "workspace", "input", "egress", options),
