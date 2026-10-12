@@ -5,8 +5,10 @@ account. It stores account intent and operation status in its own private data
 folder. Its schema and seed are separate from the controller database. Both
 reject the other application's data folder. One writer holds the manager lock.
 
-Use a cluster with enforced Calico policies, a default ReadWriteOnce storage
-class, and the chosen RuntimeClass installed. The manager checks these
+Use a cluster that enforces NetworkPolicy with exactly one of Calico or Cilium,
+a default ReadWriteOnce storage class, and the chosen RuntimeClass installed.
+Cilium must not run in audit mode, ignore Kubernetes NetworkPolicy, or override
+enforcement per node or by agent arguments. The manager checks these
 prerequisites. It does not fall back to another runtime or an unenforced network.
 
 Run the real two-account example from the repository root:
@@ -16,9 +18,12 @@ bun run example:e2e:managed-accounts
 ```
 
 It creates an owned two-node kind cluster, installs pinned Calico, and builds the
-controller and echo images. It tests interrupted creation, owner claim and
+controller and echo images. Add `-- --cilium` to use pinned Cilium instead, as DOKS
+does; that also needs `helm`. It tests interrupted creation, owner claim and
 replacement, template publication, echo, private volumes, quotas, network denial
-and RBAC denial. It removes its cluster and images afterward. Docker, kind and
+and RBAC denial. A network denial counts only when the connection times out, as a
+policy drop does. Workspaces cannot reach the Kubernetes API, and controllers cannot
+reach another account or their node's kubelet. It removes its cluster and images afterward. Docker, kind and
 kubectl must be available. The fixture uses `pc-runc` for synthetic tests; it does
 not prove a production gVisor cell.
 
