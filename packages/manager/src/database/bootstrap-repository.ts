@@ -34,7 +34,7 @@ export function bootstrapRepository({
       if (!request) throw new ManagerError(404, "bootstrap_request_not_found");
       return request.accountId;
     },
-    async createOperator(expiresAt: Date) {
+    async createOperator(expiresAt: Date, purpose: "operator" | "metrics" = "operator") {
       const at = new Date();
       if (
         !Number.isFinite(expiresAt.getTime()) ||
@@ -44,7 +44,7 @@ export function bootstrapRepository({
         throw new Error("Operator expiry must be finite and within 24 hours");
       validate();
       const token = randomBytes(32).toString("base64url");
-      await db.insert(operators).values({ id: randomUUID(), digest: hash(token), createdAt: at, expiresAt });
+      await db.insert(operators).values({ id: randomUUID(), digest: hash(token), purpose, createdAt: at, expiresAt });
       return token;
     },
     async operator(token: string) {

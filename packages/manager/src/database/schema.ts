@@ -104,10 +104,12 @@ export function managerSchema(schema?: string) {
     {
       id: uuid().primaryKey(),
       digest: text().notNull().unique(),
+      purpose: text().$type<"operator" | "metrics">().notNull().default("operator"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
       expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     },
     (t) => [
+      check("operator_purpose", sql`${t.purpose} in ('operator','metrics')`),
       check(
         "operator_expiry",
         sql`isfinite(${t.expiresAt}) and ${t.expiresAt} > ${t.createdAt} and ${t.expiresAt} <= ${t.createdAt} + interval '24 hours'`,

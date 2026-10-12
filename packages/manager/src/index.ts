@@ -4,13 +4,16 @@ import { ManagerConfigSchema } from "./config";
 import { ManagerStore } from "./database/store";
 import { KubernetesAccounts } from "./kubernetes/accounts";
 import { purgeControllerFiles } from "./kubernetes/purge-files";
+import { monitoringProbes } from "./monitoring/kubernetes";
+import { managerMonitoring } from "./monitoring/metrics";
 import { loadManagerPurgeConfig, loadPurgePhysicalStorage } from "./purge/config";
 import { managerRecoveryCommand } from "./recovery/command";
 import { ReleaseManifestSchema } from "./upgrade/releases";
 
 const dataDir = process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data";
 const purgePath = process.env.POCKETCODER_MANAGER_PURGE_CONFIG;
-if (process.argv[2] !== "operator" && !purgePath)
+const operatorCommand = ["operator", "metrics-operator"].includes(process.argv[2] ?? "");
+if (!operatorCommand && !purgePath)
   throw new Error("Provide POCKETCODER_MANAGER_PURGE_CONFIG outside the manager data folder.");
 const backups = process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG
   ? await loadManagerBackupConfig(process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG, dataDir)
@@ -19,11 +22,12 @@ const purge = purgePath ? await loadManagerPurgeConfig(purgePath, dataDir, backu
 const recoveryCommand = await managerRecoveryCommand(process.argv.slice(2), dataDir, purge, backups);
 if (recoveryCommand) process.exit(0);
 const store = await ManagerStore.create(dataDir, purge);
-if (process.argv[2] === "operator") {
+if (operatorCommand) {
   try {
     const expiry = process.argv[3];
     if (!expiry) throw new Error("Provide an explicit ISO operator expiry, at most 24 hours");
-    console.log(JSON.stringify({ token: await store.createOperator(new Date(expiry)), expires_at: expiry }));
+    const purpose = process.argv[2] === "metrics-operator" ? "metrics" : "operator";
+    console.log(JSON.stringify({ token: await store.createOperator(new Date(expiry), purpose), expires_at: expiry }));
   } finally {
     await store.close();
   }
@@ -54,7 +58,8 @@ if (process.argv[2] === "operator") {
     physical,
   );
   const usage = usageSampler(store);
-  const app = createManagerApp(store, config, service);
+  const monitoring = managerMonitoring(store, monitoringProbes(dataDir));
+  const app = createManagerApp(store, config, service, monitoring);
   const endpoint = new URL(`http://${process.env.POCKETCODER_MANAGER_HTTP ?? "127.0.0.1:8092"}`);
   const server = Bun.serve({
     hostname: endpoint.hostname,
@@ -70,14 +75,19 @@ if (process.argv[2] === "operator") {
     void usage.sample().catch(() => console.error("Manager usage sampling failed"));
   }, 60_000);
   void usage.sample().catch(() => console.error("Manager usage sampling failed"));
+  const monitoringTimer = setInterval(() => {
+    void monitoring.sample().catch(() => console.error("Manager monitoring sampling failed"));
+  }, 15_000);
+  void monitoring.sample().catch(() => console.error("Manager monitoring sampling failed"));
   let closing = false;
   const close = async () => {
     if (closing) return;
     closing = true;
     clearInterval(timer);
     clearInterval(usageTimer);
+    clearInterval(monitoringTimer);
     await server.stop(true);
-    await Promise.all([service.close(), usage.close()]);
+    await Promise.all([service.close(), usage.close(), monitoring.close()]);
     await store.close();
     process.exit(0);
   };

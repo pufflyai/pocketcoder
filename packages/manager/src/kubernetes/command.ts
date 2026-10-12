@@ -1,5 +1,5 @@
-export async function kube(args: string[], input?: string) {
-  const child = Bun.spawn(["kubectl", "--request-timeout=30s", ...args], {
+export async function kube(args: string[], input?: string, timeoutMs = 130_000) {
+  const child = Bun.spawn(["kubectl", `--request-timeout=${Math.min(30_000, timeoutMs)}ms`, ...args], {
     env: { ...process.env },
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
@@ -9,7 +9,7 @@ export async function kube(args: string[], input?: string) {
     child.stdin.write(input);
     child.stdin.end();
   }
-  const timer = setTimeout(() => child.kill(), 130_000);
+  const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
   try {
     const [out, code] = await Promise.all([
       new Response(child.stdout).text(),
