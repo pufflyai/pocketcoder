@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createHarnessWorkspace } from "./contract";
+import { messageList, responseText } from "./contract-messages";
+import { waitFor } from "./local-process";
 import type { managedLifecycleFixture } from "./managed-lifecycle-fixture";
 
 export async function upgradeObserver(
@@ -12,12 +14,16 @@ export async function upgradeObserver(
   });
   const owner = (await response.json()) as { token: string };
   if (!response.ok || !owner.token) throw new Error("Observer owner issuance failed.");
-  const url = await fixture.connect(account.namespace);
+  let url = await fixture.connect(account.namespace);
+  const request = (path: string, input: RequestInit = {}) =>
+    fetch(`${url}${path}`, {
+      ...input,
+      headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json", ...input.headers },
+    });
   const template = await fixture.cluster.echoTemplate(fixture.workspace.image);
   template.spec.resources.ephemeralStorage = "128Mi";
-  const imported = await fetch(`${url}/v1/templates`, {
+  const imported = await request("/v1/templates", {
     method: "POST",
-    headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json" },
     body: JSON.stringify({ manifest: template }),
   });
   if (!imported.ok) throw new Error("Observer template import failed.");
@@ -44,16 +50,28 @@ export async function upgradeObserver(
   return async () => {
     if (JSON.stringify(await pods()) !== JSON.stringify(original))
       throw new Error("Another account's controller or workspace was replaced during upgrade.");
-    await kube([
-      "-n",
-      account.namespace,
-      "exec",
-      original.name,
-      "--",
-      "bun",
-      "-e",
-      "await Bun.write('/tmp/other-account-progress',String(Date.now()))",
-    ]);
+    url = await fixture.connect(account.namespace);
+    // Real agent traffic keeps the observer active under the template's idle limit.
+    await waitFor(
+      async () =>
+        (await (await request(`/v1/workspaces/${workspace.workspaceId}/agent/status`)).json()).status === "stable",
+      30_000,
+      "observer agent readiness",
+    );
+    const prompt = `other-account-progress-${randomUUID()}`;
+    const sent = await request(`/v1/workspaces/${workspace.workspaceId}/agent/message`, {
+      method: "POST",
+      body: JSON.stringify({ content: prompt, type: "user" }),
+    });
+    if (!sent.ok) throw new Error(`Observer agent turn failed: ${sent.status}`);
+    await waitFor(
+      async () => {
+        const messages = await request(`/v1/workspaces/${workspace.workspaceId}/agent/messages`);
+        return messages.ok && responseText(messageList(await messages.json()), 0).includes(`echo: ${prompt}`);
+      },
+      30_000,
+      "observer agent response",
+    );
     console.log(
       JSON.stringify({
         otherAccountRunning: {
@@ -61,6 +79,7 @@ export async function upgradeObserver(
           workspace: workspace.workspaceId,
           podUid: original.agent,
           controllerUid: original.controller,
+          agentResponse: true,
         },
       }),
     );
