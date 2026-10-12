@@ -255,3 +255,29 @@ jobs:
         env:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:manager-recovery
         run: bun run example:e2e:manager-recovery
+
+  managed-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Prepare the workspace fixture
+        run: |
+          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
+          docker build -t pocketcoder-workspace:managed-upgrade deploy/image
+      - name: Upgrade accounts and recover faults without losing saved data
+        env:
+          POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:managed-upgrade
+        run: bun run example:e2e:managed-upgrade

@@ -3,6 +3,7 @@ import { HttpsOriginSchema } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 import { ManagerError } from "./accounts/errors";
 import { checkPublicViews } from "./kubernetes/public-hosts";
+import { ReleaseCatalogSchema } from "./upgrade/releases";
 
 const KubernetesName = z
   .string()
@@ -26,6 +27,7 @@ export const ManagerConfigSchema = z
     storageClassName: z.string().min(1).optional(),
     offNodeBackups: z.boolean().optional(),
     purgeAuthority: z.boolean().optional(),
+    releases: ReleaseCatalogSchema.optional(),
     publicHosts: PublicHostsSchema.refine((hosts) => {
       try {
         checkPublicViews(randomUUID(), { ...hosts, parents: [] });
@@ -38,14 +40,14 @@ export const ManagerConfigSchema = z
   .strict();
 export type ManagerConfig = z.infer<typeof ManagerConfigSchema>;
 export type PublicHosts = z.infer<typeof PublicHostsSchema> & { parents: string[] };
-export type AccountPlan = Omit<ManagerConfig, "publicHosts"> & { publicHosts?: PublicHosts };
+export type AccountPlan = Omit<ManagerConfig, "publicHosts" | "releases"> & { publicHosts?: PublicHosts };
 export const AccountInputSchema = z
   .object({ name: z.string().min(1).max(80), parents: z.array(HttpsOriginSchema).min(1).max(32).optional() })
   .strict();
 export type AccountInput = z.infer<typeof AccountInputSchema>;
 
 export function accountPlan(config: ManagerConfig, input: AccountInput): AccountPlan {
-  const { publicHosts, ...plan } = config;
+  const { publicHosts, releases: _releases, ...plan } = config;
   if (!publicHosts) {
     if (input.parents) throw new ManagerError(400, "invalid_public_hosts");
     return plan;

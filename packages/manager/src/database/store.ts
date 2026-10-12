@@ -5,6 +5,7 @@ import { guardedStore } from "../purge/guarded-store";
 import type { PurgeIntent } from "../purge/intent";
 import { purgeReconciliation } from "../purge/reconciliation";
 import { assertManagerInstallation } from "../recovery/writer";
+import { upgradeRepository } from "../upgrade/repository";
 import { usageRepository } from "../usage/repository";
 import { accountRepository } from "./account-repository";
 import { backupRepository } from "./backup-repository";
@@ -18,6 +19,7 @@ export function managerRepositories(context: ManagerContext) {
     ...usageRepository(context),
     ...lifecycleRepository(context),
     ...backupRepository(context),
+    ...upgradeRepository(context),
     runAccountWork: <T>(_id: string, run: () => Promise<T>) => run(),
     async settlePurge(_intent: PurgeIntent) {
       throw new Error("Purge authority is not configured.");

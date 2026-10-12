@@ -1,0 +1,4 @@
+ALTER TABLE "operations" ADD COLUMN "upgrade" jsonb;--> statement-breakpoint
+ALTER TABLE "accounts" DROP CONSTRAINT "account_state", ADD CONSTRAINT "account_state" CHECK ("state" in ('provisioning','ready','suspending','suspended','resuming','restoring','upgrading'));--> statement-breakpoint
+ALTER TABLE "operations" DROP CONSTRAINT "operation_kind", ADD CONSTRAINT "operation_kind" CHECK ("kind" in ('provision','suspend','resume','backup','restore','upgrade'));--> statement-breakpoint
+ALTER TABLE "operations" DROP CONSTRAINT "operation_phase", ADD CONSTRAINT "operation_phase" CHECK ("phase" in ('controller','scale','complete','capture','fence','restore','recover','open','install','verify'));

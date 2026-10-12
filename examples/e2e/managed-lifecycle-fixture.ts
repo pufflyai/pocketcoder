@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { accountService, createManagerApp } from "@pstdio/pocketcoder-manager";
+import { accountService, createManagerApp, type ManagerConfig } from "@pstdio/pocketcoder-manager";
 import type { ManagerBackupConfig } from "@pstdio/pocketcoder-manager/backup";
 import { KubernetesAccounts } from "@pstdio/pocketcoder-manager/kubernetes";
 import { ManagerStore } from "@pstdio/pocketcoder-manager/store";
@@ -10,6 +10,13 @@ import { requireKindStorage } from "./managed-diagnostics";
 
 export async function managedLifecycleFixture(
   configureBackups?: (cluster: Awaited<ReturnType<typeof createKubernetesCluster>>) => Promise<ManagerBackupConfig>,
+  options: {
+    configureReleases?: (
+      cluster: Awaited<ReturnType<typeof createKubernetesCluster>>,
+      controller: { image: string; tag: string },
+    ) => Promise<ManagerConfig["releases"]>;
+    command?: (args: string[], input?: string) => Promise<string>;
+  } = {},
 ) {
   const cluster = await createKubernetesCluster({ networkPolicy: "calico" });
   const priorConfig = process.env.KUBECONFIG;
@@ -63,10 +70,11 @@ export async function managedLifecycleFixture(
       controllerImage: controller.image,
       runtimeClassName: "pc-runc",
       ...(backups ? { offNodeBackups: true } : {}),
+      ...(options.configureReleases ? { releases: await options.configureReleases(cluster, controller) } : {}),
     };
     store = await ManagerStore.create(directory);
     const token = await store.createOperator(new Date(Date.now() + 30 * 60_000));
-    service = accountService(store, new KubernetesAccounts(undefined, backups));
+    service = accountService(store, new KubernetesAccounts(options.command, backups));
     manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
     const request = (path: string, input: RequestInit = {}) =>
       fetch(new URL(path, manager?.url), {
@@ -78,7 +86,7 @@ export async function managedLifecycleFixture(
       await service?.close();
       await store?.close();
       store = await ManagerStore.create(directory);
-      service = accountService(store, new KubernetesAccounts(undefined, backups));
+      service = accountService(store, new KubernetesAccounts(options.command, backups));
       manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
     }
     async function connect(namespace: string) {
@@ -111,6 +119,7 @@ export async function managedLifecycleFixture(
       connect,
       reconcile: () => service?.reconcile(),
       currentStore: () => store,
+      currentService: () => service,
       close,
     };
   } catch (error) {
