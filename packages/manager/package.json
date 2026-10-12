@@ -17,7 +17,8 @@
     "./backup": "./src/backup/config.ts",
     "./purge": "./src/purge.ts",
     "./recovery": "./src/recovery/manager-backup.ts",
-    "./upgrades": "./src/upgrade/releases.ts"
+    "./upgrades": "./src/upgrade/releases.ts",
+    "./monitoring": "./src/monitoring/index.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --target bun --outdir dist",

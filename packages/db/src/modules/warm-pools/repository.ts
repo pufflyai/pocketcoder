@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WarmPoolClaim, WarmPoolRuntimePatch, WarmPoolRuntimeRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { buildEventEnvelope } from "@pstdio/pocketcoder-runtime-core";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { workspaceFromRow } from "../workspaces/mapping";
@@ -27,9 +27,14 @@ export function createWarmPools(context: DatabaseContext) {
       return db.select().from(runtimes).orderBy(asc(runtimes.createdAt));
     },
     async updateWarmPoolRuntime(id: string, patch: WarmPoolRuntimePatch, at: Date) {
+      // Cleanup retries may save exit evidence; retain the first drain time until cleanup ends.
+      const updatedAt =
+        !patch.state || patch.state === "draining"
+          ? sql<Date>`case when ${runtimes.state} = 'draining' then ${runtimes.updatedAt} else ${at.toISOString()}::timestamptz end`
+          : at;
       await db
         .update(runtimes)
-        .set({ ...patch, updatedAt: at })
+        .set({ ...patch, updatedAt })
         .where(eq(runtimes.id, id));
     },
     async claimWarmPoolRuntime(claim: WarmPoolClaim) {

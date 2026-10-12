@@ -194,7 +194,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
     async requestWorkspaceLeaseRevocation(id: string, at: Date) {
       return db.transaction(async (tx) => {
         const { row } = await writable(tx, id);
-        if (isClosed(row.state)) return row;
+        if (isClosed(row.state) || row.state === "revoking") return row;
         return update(tx, id, { state: "revoking", updatedAt: at });
       });
     },
