@@ -72,7 +72,8 @@ function egressContainer(options: ManifestOptions) {
       capabilities: { drop: ["ALL"], add: ["NET_ADMIN", "SETUID", "SETGID"] },
     },
     startupProbe: {
-      httpGet: { host: "127.0.0.1", port: 18_082, path: "/readyz" },
+      // The health listener is private; kubelet HTTP probes run outside this network namespace.
+      exec: { command: ["/usr/local/bin/pocketcoder-egress", "health"] },
       periodSeconds: 1,
       failureThreshold: 30,
     },

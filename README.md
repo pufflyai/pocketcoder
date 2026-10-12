@@ -125,9 +125,10 @@ curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 
-The OpenAPI document is served at `/v1/openapi.json`. CI publishes the
-`server`, `workspace`, and `egress` images under `ghcr.io/<owner>/<repo>/` on
-pushes to `main` and version tags (see `.github/workflows/images.yml`).
+The OpenAPI document is served at `/v1/openapi.json`. The candidate workflow
+publishes six image roles under `ghcr.io/<owner>/<repo>/` after native scans and
+role smoke pass. Tags identify the full source commit. See
+[candidate images](docs/candidate-images.md); it does not publish stable or version tags.
 
 ## Commands
 
@@ -160,8 +161,10 @@ Lerna coordinates tasks across `packages/*` and the private
 `examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
 
-The PGlite memory and disk suites run without an external database. Docker
-suites require a running daemon, and
+The PGlite memory and disk suites run without an external database. Linux
+database tests also require `strace` for the real seed durability ordering
+regression. That Linux-only regression is skipped on Darwin. Docker suites
+require a running daemon, and
 `POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
 
 Harness and client integrations live under [`examples/`](examples/). The

@@ -9,6 +9,7 @@
         "deploy/image/browser-harness.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
+        "scripts/native-startup-runner.ts",
         "examples/e2e/managed-interruption-child.ts",
         "examples/e2e/managed-purge-bootstrap-child.ts",
         "examples/e2e/kind-purge-rbac.ts",
@@ -21,11 +22,18 @@
       "entry": ["src/view.ts", "**/*.test.ts"]
     },
     "packages/db": {
-      "entry": ["src/database/crash-fixture.ts", "src/migrations/crash-fixture.ts", "src/backup/memory-fixture.ts"]
+      "entry": [
+        "src/database/crash-fixture.ts",
+        "src/database/seed-sync-fixture.ts",
+        "src/migrations/crash-fixture.ts",
+        "src/backup/memory-fixture.ts"
+      ]
     },
     "packages/server": {
       "entry": [
         "src/**/*.test.ts",
+        "src/lifecycle/startup-discovery-fixture.ts",
+        "src/lifecycle/startup-docker-fixture.ts",
         "src/persistence/checkpoint-transfer-crash-fixture.ts",
         "src/control-channel/ws-purge-race-child.ts",
         "src/backup/off-node-crash-fixture.ts",

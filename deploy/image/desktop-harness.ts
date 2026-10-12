@@ -43,6 +43,12 @@ try {
     await Bun.sleep(25);
   }
   spawn([
+    "/bin/sh",
+    "-c",
+    // LibVNCServer scans every possible descriptor before accept. Kind's billion-file
+    // limit makes that scan stall the viewer; only the VNC child's soft limit changes.
+    'ulimit -S -n 1024 && exec "$@"',
+    "pocketcoder-vnc",
     "x11vnc",
     "-display",
     ":99",

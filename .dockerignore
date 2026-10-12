@@ -5,6 +5,9 @@ deploy/image/dist
 O-37
 .git
 .pstdio
+out
+**/.env
+**/.env.*
 **/.terraform
 **/*.tfstate*
 **/*.tfplan

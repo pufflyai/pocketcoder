@@ -2,14 +2,14 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "7ed5ce47bc4cb68fd3dde25f192545a5dfd9265c763b1f961db3b89b868d2f9e",
+  "checksum": "c07de831ce3362acccef677148a7abcd865ffb4cd6724c935fe7b22f6e68d19e",
   "engine": {
     "wasm": {
-      "checksum": "87029e5e91cab46a364b23727db34e7fcd73dc519de7df2cfa4ce12ef4395076",
+      "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
       "sourceChecksum": "356b89f6fcb2ab3a397bec4128327b67b7137ec2a900b13251dade81bcbc0ef0"
     },
     "data": {
-      "checksum": "99a0564dfcb7cbb0755aedde5d2b4f177f3f50369c978183cfb13badb38d0629",
+      "checksum": "69f61a068cd3d40cbd537c81d6a53689225ecddf15e9073120c1c92a463e90c9",
       "sourceChecksum": "c574cc331d96e33311470ec57bf58c579d972c111dbd9c0ab54bb42d79ec4c0d"
     }
   },
@@ -74,5 +74,6 @@
       "name": "20261010094755_colorful_kabuki",
       "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1"
     }
-  ]
+  ],
+  "sourceChecksum": "271c9cb498a929bfac016b2cb777b187547baa39aaae9f9c21f1087925fcde75"
 }
