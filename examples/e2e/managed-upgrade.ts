@@ -146,7 +146,14 @@ try {
           );
         recoveryInFlight?.catch(() => {});
       };
-    await f.reconcile();
+    await waitFor(
+      async () => {
+        await f.reconcile();
+        return fault === undefined;
+      },
+      180_000,
+      "upgrade injected fault boundary",
+    );
     await recoveryInFlight;
     const failed = await operation(id);
     if (!recoveryInFlight && (failed.phase !== "install" || failed.errorCode !== "upgrade_retry"))

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { RestoreResponseSchema, WorkspaceResourceSchema } from "@pstdio/pocketcoder-contracts";
-import { createHarnessWorkspace, runHarnessE2E } from "./contract";
+import { createHarnessWorkspace } from "./contract";
 import { waitFor } from "./local-process";
 import type { managedLifecycleFixture } from "./managed-lifecycle-fixture";
+import { upgradeAgentTurn } from "./managed-upgrade-agent";
 
 type Fixture = Awaited<ReturnType<typeof managedLifecycleFixture>>;
 export async function upgradeData(fixture: Fixture, account: { id: string; namespace: string }) {
@@ -108,18 +109,17 @@ export async function upgradeData(fixture: Fixture, account: { id: string; names
         30_000,
         "exact bytes after account upgrade",
       );
+      // The restored runtime proves both saved bytes and a new turn, so no second launch is needed.
+      const report = await upgradeAgentTurn(request, restored.workspace.id, `upgrade canary-${randomUUID()}`);
       if (!(await request(`/v1/workspaces/${restored.workspace.id}/cancel`, { method: "POST" })).ok)
         throw new Error("Upgrade restored workspace cleanup failed.");
-      const report = await runHarnessE2E({
-        baseUrl: url,
-        key: token,
-        template: template.metadata.name,
-        prompt: "upgrade canary",
-        expectedResponse: "echo: upgrade canary",
-        readyTimeoutMs: 30_000,
-        messageTimeoutMs: 30_000,
-        pollIntervalMs: 100,
-      });
+      await waitFor(
+        async () =>
+          WorkspaceResourceSchema.parse(await (await request(`/v1/workspaces/${restored.workspace.id}`)).json())
+            .state === "canceled",
+        30_000,
+        "upgrade canary cancellation",
+      );
       console.log(
         JSON.stringify({
           upgradeCanary: {

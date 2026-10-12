@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createHarnessWorkspace } from "./contract";
-import { messageList, responseText } from "./contract-messages";
-import { waitFor } from "./local-process";
 import type { managedLifecycleFixture } from "./managed-lifecycle-fixture";
+import { upgradeAgentTurn } from "./managed-upgrade-agent";
 
 export async function upgradeObserver(
   fixture: Awaited<ReturnType<typeof managedLifecycleFixture>>,
@@ -52,26 +51,7 @@ export async function upgradeObserver(
       throw new Error("Another account's controller or workspace was replaced during upgrade.");
     url = await fixture.connect(account.namespace);
     // Real agent traffic keeps the observer active under the template's idle limit.
-    await waitFor(
-      async () =>
-        (await (await request(`/v1/workspaces/${workspace.workspaceId}/agent/status`)).json()).status === "stable",
-      30_000,
-      "observer agent readiness",
-    );
-    const prompt = `other-account-progress-${randomUUID()}`;
-    const sent = await request(`/v1/workspaces/${workspace.workspaceId}/agent/message`, {
-      method: "POST",
-      body: JSON.stringify({ content: prompt, type: "user" }),
-    });
-    if (!sent.ok) throw new Error(`Observer agent turn failed: ${sent.status}`);
-    await waitFor(
-      async () => {
-        const messages = await request(`/v1/workspaces/${workspace.workspaceId}/agent/messages`);
-        return messages.ok && responseText(messageList(await messages.json()), 0).includes(`echo: ${prompt}`);
-      },
-      30_000,
-      "observer agent response",
-    );
+    await upgradeAgentTurn(request, workspace.workspaceId, `other-account-progress-${randomUUID()}`);
     console.log(
       JSON.stringify({
         otherAccountRunning: {
