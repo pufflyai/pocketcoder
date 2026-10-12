@@ -1,17 +1,25 @@
 import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ObjectStorage } from "@pstdio/pocketcoder-db/off-node";
 import { objectStorageFixture } from "@pstdio/pocketcoder-db/testing";
 import { loadManagerBackupConfig } from "@pstdio/pocketcoder-manager/backup";
 import type { createKubernetesCluster } from "./kubernetes-cluster";
 
 export async function offNodeFixture() {
-  const storage = await objectStorageFixture();
+  let storage = await objectStorageFixture();
   return {
-    storage,
-    close: storage.close,
+    get storage() {
+      return storage;
+    },
+    close: () => storage.close(),
     async configure(cluster: Awaited<ReturnType<typeof createKubernetesCluster>>) {
       await cluster.run(["docker", "network", "connect", "kind", storage.config.bucket]);
+      // Linux Docker can allocate a new random host port when this attachment replaces the gateway.
+      const published = await cluster.run(["docker", "port", storage.config.bucket, "9000/tcp"]);
+      const hostConfig = { ...storage.config, endpoint: `http://${published}` };
+      storage = { ...storage, config: hostConfig, storage: new ObjectStorage(hostConfig) };
+      await storage.storage.request("HEAD");
       const address = await cluster.run([
         "docker",
         "inspect",
