@@ -19,7 +19,6 @@ import { registerAdministrationRoutes } from "./administration/administration-ro
 import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
-import { agentMessageBodyTransform, attachmentUploadHandler } from "./attachments/attachments";
 import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
@@ -44,8 +43,7 @@ import { registerRecoveryRoutes } from "./persistence/recovery-routes";
 import { ViewAdmission } from "./previews/admission";
 import { composePreviews } from "./previews/previews";
 import { ViewPolicy } from "./previews/view-policy";
-import { registerAgentInterruptRoute } from "./relay/agent-interrupt";
-import { relayHandler } from "./relay/relay";
+import { registerRelayRoutes } from "./relay/relay-routes";
 import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
@@ -277,57 +275,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     upgradeWebSocket(terminalWsEvents(terminalDeps)),
   );
 
-  // --- Templates ---
-
-  // --- Workspace attachments ---
-
-  const relayDeps = { store, hub, service };
-  app.put(
-    "/v1/workspaces/:id/attachments/:attachmentId",
-    requireScope("attachments:write"),
-    attachmentUploadHandler(relayDeps),
-  );
-
-  // --- Workspace service relay ---
-
-  // Registered before the wildcard relay routes so they take precedence: the
-  // interrupt action, and the message aliases that resolve attachment
-  // references on both spellings.
-  registerAgentInterruptRoute(app, relayDeps);
-  const messageTransform = agentMessageBodyTransform(relayDeps);
-  app.post(
-    "/v1/workspaces/:id/agent/message",
-    requireScope("services:relay"),
-    relayHandler(relayDeps, {
-      service: "agent",
-      pathPrefix: (id) => `/v1/workspaces/${id}/agent`,
-      transformBodyB64: messageTransform,
-    }),
-  );
-  app.post(
-    "/v1/workspaces/:id/services/agent/message",
-    requireScope("services:relay"),
-    relayHandler(relayDeps, {
-      service: "agent",
-      pathPrefix: (id) => `/v1/workspaces/${id}/services/agent`,
-      transformBodyB64: messageTransform,
-    }),
-  );
-  app.on(
-    ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    "/v1/workspaces/:id/services/:service/*",
-    requireScope("services:relay"),
-    relayHandler(relayDeps),
-  );
-  app.on(
-    ["GET", "POST"],
-    "/v1/workspaces/:id/agent/*",
-    requireScope("services:relay"),
-    relayHandler(relayDeps, {
-      service: "agent",
-      pathPrefix: (id) => `/v1/workspaces/${id}/agent`,
-    }),
-  );
+  registerRelayRoutes(app, { store, hub, service });
 
   return {
     controlActivity: activity,

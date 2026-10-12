@@ -5,6 +5,7 @@ import { ManagerStore } from "./database/store";
 import { KubernetesAccounts } from "./kubernetes/accounts";
 import { purgeControllerFiles } from "./kubernetes/purge-files";
 import { loadManagerPurgeConfig, loadPurgePhysicalStorage } from "./purge/config";
+import { managerRecoveryCommand } from "./recovery/command";
 
 const dataDir = process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data";
 const purgePath = process.env.POCKETCODER_MANAGER_PURGE_CONFIG;
@@ -14,6 +15,8 @@ const backups = process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG
   ? await loadManagerBackupConfig(process.env.POCKETCODER_MANAGER_OFF_NODE_CONFIG, dataDir)
   : undefined;
 const purge = purgePath ? await loadManagerPurgeConfig(purgePath, dataDir, backups) : undefined;
+const recoveryCommand = await managerRecoveryCommand(process.argv.slice(2), dataDir, purge, backups);
+if (recoveryCommand) process.exit(0);
 const store = await ManagerStore.create(dataDir, purge);
 if (process.argv[2] === "operator") {
   try {

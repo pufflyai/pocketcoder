@@ -9,7 +9,6 @@ change a stable release, a `latest` tag, or the package registry.
 | System | CPU | Artifact suffix |
 | --- | --- | --- |
 | macOS | Apple Silicon | `darwin-arm64` |
-| macOS | Intel | `darwin-x64` |
 | Linux | ARM64 | `linux-arm64` |
 | Linux | x64 | `linux-x64` |
 
@@ -113,7 +112,7 @@ bun run candidate:packages check /path/to/downloaded-packages "$PC_COMMIT"
 ```
 
 CI runs native startup, owner setup, restart, backup/restore, TypeScript consumers,
-SDK HTTP/WebSocket entry points, CLI commands, and the real Pi launcher on all four
+SDK HTTP/WebSocket entry points, CLI commands, and the real Pi launcher on all three
 native runners. It runs the Docker workspace preserve/resume flow on both Linux
 runners. macOS uses Colima for its empty Docker daemon; Apple Silicon hosted
 runners use cross-architecture QEMU without nested virtualization. Workspace
