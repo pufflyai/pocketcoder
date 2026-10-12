@@ -132,31 +132,37 @@ function seedEntries(directory: string): SeedEntry[] {
   ];
 }
 
-async function syncSeedEntry(entry: SeedEntry) {
-  const handle = await open(
-    entry.path,
-    constants.O_RDONLY | (entry.directory ? constants.O_DIRECTORY : constants.O_NOFOLLOW),
-  );
+function openSeedEntry(entry: SeedEntry) {
+  return open(entry.path, constants.O_RDONLY | (entry.directory ? constants.O_DIRECTORY : constants.O_NOFOLLOW));
+}
+
+async function prepareSeedEntry(entry: SeedEntry) {
+  const handle = await openSeedEntry(entry);
   try {
     await handle.chmod(entry.directory ? 0o700 : 0o600);
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncSeedEntry(entry: SeedEntry) {
+  const handle = await openSeedEntry(entry);
+  try {
     await handle.sync();
   } finally {
     await handle.close();
   }
 }
 
-// Every seed file is new, so each fsync waits for a journal commit. When another
-// process shares the disk, one-at-a-time fsyncs wait for its commits too; overlapping
-// them lets one commit cover many seed files.
+// Overlapping per-entry syncs lets files share a journal commit.
 const SEED_SYNC_WIDTH = 32;
 
-export async function syncSeed(directory: string) {
-  const entries = seedEntries(directory);
+async function seedPass(entries: SeedEntry[], action: (entry: SeedEntry) => Promise<void>) {
   let next = 0;
   async function syncNext() {
     for (let entry = entries[next++]; entry; entry = entries[next++]) {
       try {
-        await syncSeedEntry(entry);
+        await action(entry);
       } catch (error) {
         next = entries.length;
         throw error;
@@ -166,4 +172,12 @@ export async function syncSeed(directory: string) {
   // The caller releases the folder lock when this fails, so every worker stops first.
   const results = await Promise.allSettled(Array.from({ length: SEED_SYNC_WIDTH }, syncNext));
   for (const result of results) if (result.status === "rejected") throw result.reason;
+}
+
+export async function syncSeed(directory: string) {
+  const entries = seedEntries(directory);
+  // Finish private modes before syncing. Later chmods otherwise dirty more inode
+  // metadata while earlier workers are waiting for journal commits.
+  await seedPass(entries, prepareSeedEntry);
+  await seedPass(entries, syncSeedEntry);
 }

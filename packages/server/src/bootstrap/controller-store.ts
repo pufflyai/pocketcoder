@@ -81,6 +81,7 @@ export async function openControllerStore(dataDir: string, journalDir?: string, 
     ...(journalDir ? { journalDir } : {}),
     async beforeOpen(directory) {
       keys = await initializeKeys(directory);
+      await hooks.beforeOpen?.(directory);
     },
   };
   const store = await PGliteStore.create(dataDir, options);

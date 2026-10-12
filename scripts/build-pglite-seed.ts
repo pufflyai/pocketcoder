@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
+import { constants, zstdCompressSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
+import { decodeDatabaseAsset } from "@pstdio/pocketcoder-db/asset-codec";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { dependencies } from "../packages/db/package.json" with { type: "json" };
 
@@ -17,13 +18,15 @@ function checksum(bytes: Uint8Array) {
 }
 
 async function embed(name: string, bytes: Uint8Array) {
-  const compressed = brotliCompressSync(bytes, {
+  const compressed = zstdCompressSync(bytes, {
     params: {
-      [constants.BROTLI_PARAM_QUALITY]: 11,
-      // Database pages repeat across more than the default 4 MB window.
-      [constants.BROTLI_PARAM_LGWIN]: name === "core-seed.tar.br" ? 24 : 22,
+      [constants.ZSTD_c_compressionLevel]: 19,
+      // Bound decoding memory without changing the database pages.
+      [constants.ZSTD_c_windowLog]: 24,
     },
   });
+  if (checksum(decodeDatabaseAsset(compressed)) !== checksum(bytes))
+    throw new Error(`database asset compression changed bytes: ${name}`);
   const path = resolve(assets, name);
   await writeFile(`${path}.tmp`, compressed);
   await rename(`${path}.tmp`, path);
@@ -97,11 +100,12 @@ async function tarDirectory(root: string) {
 if (process.argv.includes("--recompress-seed")) {
   const path = resolve(assets, "core-seed.json");
   const manifest = await Bun.file(path).json();
-  const compressed = await Bun.file(resolve(assets, "core-seed.tar.br")).bytes();
+  const compressed = await Bun.file(resolve(assets, "core-seed.tar.zst")).bytes();
   if (checksum(compressed) !== manifest.checksum) throw new Error("core seed checksum drift");
-  const seed = brotliDecompressSync(compressed);
-  const result = await embed("core-seed.tar.br", seed);
-  const restored = brotliDecompressSync(await Bun.file(resolve(assets, "core-seed.tar.br")).bytes());
+  const seed = decodeDatabaseAsset(compressed);
+  if (checksum(seed) !== manifest.sourceChecksum) throw new Error("core seed raw checksum drift");
+  const result = await embed("core-seed.tar.zst", seed);
+  const restored = decodeDatabaseAsset(await Bun.file(resolve(assets, "core-seed.tar.zst")).bytes());
   if (checksum(seed) !== checksum(restored)) throw new Error("core seed recompression changed database bytes");
   await writeFile(path, `${JSON.stringify({ ...manifest, checksum: result.checksum }, null, 2)}\n`);
   console.log(JSON.stringify({ sourceChecksum: checksum(seed), restoredChecksum: checksum(restored) }));
@@ -116,14 +120,16 @@ if (process.argv.includes("--recompress-seed")) {
     JSON.stringify(manifest.migrations) !== JSON.stringify(registry)
   )
     throw new Error("core seed manifest is stale; run bun run db:seed");
-  const bytes = new Uint8Array(await Bun.file(resolve(assets, "core-seed.tar.br")).arrayBuffer());
-  if (checksum(bytes) !== manifest.checksum) throw new Error("core seed checksum drift");
+  const bytes = new Uint8Array(await Bun.file(resolve(assets, "core-seed.tar.zst")).arrayBuffer());
+  if (checksum(bytes) !== manifest.checksum || checksum(decodeDatabaseAsset(bytes)) !== manifest.sourceChecksum)
+    throw new Error("core seed checksum drift");
   for (const extension of ["wasm", "data"] as const) {
-    const compressed = new Uint8Array(await Bun.file(resolve(assets, `pglite.${extension}.br`)).arrayBuffer());
+    const compressed = new Uint8Array(await Bun.file(resolve(assets, `pglite.${extension}.zst`)).arrayBuffer());
     const source = new Uint8Array(await engineFile(extension).arrayBuffer());
     if (
       checksum(compressed) !== manifest.engine[extension].checksum ||
-      checksum(source) !== manifest.engine[extension].sourceChecksum
+      checksum(source) !== manifest.engine[extension].sourceChecksum ||
+      checksum(decodeDatabaseAsset(compressed)) !== checksum(source)
     )
       throw new Error(`embedded core ${extension} drift; run bun run db:seed`);
   }
@@ -135,16 +141,17 @@ if (process.argv.includes("--recompress-seed")) {
   try {
     const { postgresVersion } = await buildStoppedCluster(directory);
     const seed = await tarDirectory(directory);
-    const embeddedSeed = await embed("core-seed.tar.br", seed);
+    const embeddedSeed = await embed("core-seed.tar.zst", seed);
     const engine = {
-      wasm: await embed("pglite.wasm.br", new Uint8Array(await engineFile("wasm").arrayBuffer())),
-      data: await embed("pglite.data.br", new Uint8Array(await engineFile("data").arrayBuffer())),
+      wasm: await embed("pglite.wasm.zst", new Uint8Array(await engineFile("wasm").arrayBuffer())),
+      data: await embed("pglite.data.zst", new Uint8Array(await engineFile("data").arrayBuffer())),
     };
     const manifest = {
       app: "pocketcoder",
       pgliteVersion: dependencies["@electric-sql/pglite"],
       postgresVersion,
       checksum: embeddedSeed.checksum,
+      sourceChecksum: embeddedSeed.sourceChecksum,
       engine,
       migrations: registry,
     };

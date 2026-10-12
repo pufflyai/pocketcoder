@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceCredentials } from "./workspace-credentials";
@@ -32,6 +32,7 @@ test("replacing the lease directory with a persistent symlink cannot redirect re
     await manager.install([refreshed]);
     expect(await readdir(persistent)).toEqual([]);
     expect(await readFile(join(moved, "runtime"), "utf8")).toBe(refreshed.credential);
+    expect((await stat(join(moved, "runtime"))).mode & 0o777).toBe(0o600);
     await manager.stop();
     expect(await readdir(moved)).toEqual([]);
     expect(await readdir(persistent)).toEqual([]);
