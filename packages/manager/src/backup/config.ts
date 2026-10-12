@@ -28,6 +28,8 @@ export async function loadManagerBackupConfig(path: string, dataDir: string) {
   }
   return {
     storage: config.storage,
+    encryptionKeyFile: config.encryptionKeyFile,
+    staging: config.staging,
     async destinations() {
       const endpoint = new URL(config.storage.endpoint);
       const addresses = await lookup(endpoint.hostname, { all: true });

@@ -117,8 +117,9 @@ installs them. `bun run example:e2e:managed-public-views` runs the whole path in
 kind with real browsers. [Account purge](purge.md) removes these endpoints and
 waits until DigitalOcean lists no DNS record for the account.
 
-Production layout, gVisor, manager database recovery and customer enablement
-belong to the following hosted-service tickets.
+Encrypted manager backups and deletion replay use the
+[manager recovery flow](../../docs/manager-recovery.md). Production layout, gVisor
+and customer enablement remain separate hosted-service work.
 
 ## Estimated usage
 

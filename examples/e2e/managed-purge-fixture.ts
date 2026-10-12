@@ -99,8 +99,8 @@ export async function managedPurgeFixture(options: { physicalStorage?: boolean }
         },
       }),
     );
-    async function openManager() {
-      store = await ManagerStore.create(directory, authority);
+    async function openManager(dataDirectory = directory) {
+      store = await ManagerStore.create(dataDirectory, authority);
       service = accountService(store, new KubernetesAccounts(undefined, backups), observedPhysical);
       server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
     }

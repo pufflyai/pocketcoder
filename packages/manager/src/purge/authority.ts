@@ -11,6 +11,7 @@ import {
   writePrivateJson,
 } from "@pstdio/pocketcoder-db/off-node";
 import { ManagerError } from "../accounts/errors";
+import { managerJournal } from "../recovery/journal";
 import { createPurgeCompletion } from "./completion";
 import { createRequestDigest, intentKeys, type PurgeIntent, PurgeIntentSchema } from "./intent";
 import { createProvisionHistory } from "./provision-history";
@@ -44,6 +45,7 @@ export async function createPurgeAuthority(dataDir: string, config: PurgeAuthori
       throw new Error("Purge intents require a private, direct directory.");
     const storage = new ObjectStorage(config.storage);
     const dependencies = { directory: folder.dir, storage, validate: folder.validate };
+    const journal = await managerJournal(dependencies);
     const completion = await createPurgeCompletion(dependencies);
     const history = await createProvisionHistory(dependencies);
     const accounts = new Map<string, PurgeIntent>();
@@ -83,6 +85,7 @@ export async function createPurgeAuthority(dataDir: string, config: PurgeAuthori
         }
         if (!equal(await read(key), intent)) throw new Error("Purge tombstone was not acknowledged.");
       }
+      await journal.append(intent);
     }
     async function importRemoteIntents() {
       for (const item of await storage.versions("manager/purge/accounts/")) {
@@ -98,6 +101,8 @@ export async function createPurgeAuthority(dataDir: string, config: PurgeAuthori
     function refresh() {
       refreshing ??= (async () => {
         folder.validate();
+        await journal.refresh();
+        for (const intent of journal.intents()) await persist(intent);
         await importRemoteIntents();
         // Local intent survives a failed remote write and a database rollback.
         for (const intent of accounts.values()) await acknowledge(intent);
@@ -110,6 +115,7 @@ export async function createPurgeAuthority(dataDir: string, config: PurgeAuthori
     return {
       refresh,
       acknowledge,
+      journal,
       completion,
       history,
       storage,

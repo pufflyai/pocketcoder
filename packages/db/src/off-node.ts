@@ -13,6 +13,7 @@ export {
   OffNodeBackupReceiptSchema,
 } from "./off-node/backup-receipt";
 export { loadOffNodeConfig, type OffNode, OffNodeConfigSchema, requireOutsideDataFolder } from "./off-node/config";
+export { downloadFile } from "./off-node/download";
 export { decryptFile, encryptFile } from "./off-node/encryption";
 export { createJournalReplica, journalBytes, parseJournalBytes } from "./off-node/journal-replica";
 export {

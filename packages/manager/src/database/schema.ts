@@ -138,6 +138,15 @@ export function managerSchema(schema?: string) {
       check("usage_nonnegative", sql`${t.workspaces} >= 0 and ${t.warm} >= 0 and ${t.volumeBytes} >= 0`),
     ],
   );
-  return { accounts, operations, operators, bootstrapRequests, usageSamples, backups };
+  const installation = table(
+    "manager_installation",
+    {
+      id: integer().primaryKey().default(1),
+      journalId: uuid("journal_id").notNull(),
+    },
+    (t) => [check("manager_single_installation", sql`${t.id} = 1`)],
+  );
+  return { accounts, operations, operators, bootstrapRequests, usageSamples, backups, installation };
 }
-export const { accounts, operations, operators, bootstrapRequests, usageSamples, backups } = managerSchema();
+export const { accounts, operations, operators, bootstrapRequests, usageSamples, backups, installation } =
+  managerSchema();

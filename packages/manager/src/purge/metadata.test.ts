@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ObjectStorageError } from "@pstdio/pocketcoder-db/off-node";
 import { objectStorageFixture } from "@pstdio/pocketcoder-db/testing";
 import { createPurgeAuthority } from "./authority";
 import { createRequestDigest, intentKeys, type PurgeIntent, purgeRequestDigest } from "./intent";
@@ -41,7 +42,18 @@ test.skipIf(process.env.PC94_S3_TEST !== "1")(
         async fetch(request) {
           const url = new URL(request.url);
           const requested = decodeURIComponent(url.pathname.slice(`/${bucket}/`.length));
-          const response = await storage.request(request.method, requested, Object.fromEntries(url.searchParams));
+          let response: Response;
+          try {
+            response = await storage.request(
+              request.method,
+              requested,
+              Object.fromEntries(url.searchParams),
+              request.body ? new Uint8Array(await request.arrayBuffer()) : undefined,
+            );
+          } catch (error) {
+            if (error instanceof ObjectStorageError) return new Response(null, { status: error.status });
+            throw error;
+          }
           if (requested !== key) return response;
           const bytes = await response.bytes();
           return new Response(
