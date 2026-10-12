@@ -1,7 +1,10 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { createPurgeAuthority, type PurgeAuthority, type PurgeAuthorityConfig } from "../purge/authority";
 import { guardedStore } from "../purge/guarded-store";
 import type { PurgeIntent } from "../purge/intent";
 import { purgeReconciliation } from "../purge/reconciliation";
+import { assertManagerInstallation } from "../recovery/writer";
 import { usageRepository } from "../usage/repository";
 import { accountRepository } from "./account-repository";
 import { backupRepository } from "./backup-repository";
@@ -23,10 +26,14 @@ export function managerRepositories(context: ManagerContext) {
 }
 export const ManagerStore = {
   async create(dataDir?: string, purgeConfig?: PurgeAuthorityConfig) {
+    if (dataDir && existsSync(join(dataDir, "RECOVERY.json")))
+      throw new Error("Manager recovery must complete before admission.");
     const context = await managerContext(dataDir);
+    let purge: PurgeAuthority | undefined;
     try {
       if (purgeConfig && !dataDir) throw new Error("Purge authority requires a durable manager folder.");
-      const purge = purgeConfig && dataDir ? await createPurgeAuthority(dataDir, purgeConfig) : undefined;
+      purge = purgeConfig && dataDir ? await createPurgeAuthority(dataDir, purgeConfig) : undefined;
+      await assertManagerInstallation(context, purge);
       const authority: { purge?: PurgeAuthority } = purge ? { purge } : {};
       const repositories = managerRepositories(context);
       const guarded = purge ? guardedStore(repositories, purge) : repositories;
@@ -46,6 +53,7 @@ export const ManagerStore = {
         },
       };
     } catch (error) {
+      purge?.close();
       await context.close();
       throw error;
     }

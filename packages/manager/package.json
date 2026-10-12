@@ -15,7 +15,8 @@
     "./store": "./src/database/store.ts",
     "./kubernetes": "./src/kubernetes/accounts.ts",
     "./backup": "./src/backup/config.ts",
-    "./purge": "./src/purge.ts"
+    "./purge": "./src/purge.ts",
+    "./recovery": "./src/recovery/manager-backup.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --target bun --outdir dist",
