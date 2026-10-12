@@ -1,8 +1,10 @@
 # Hosted backup schedule and node recovery
 
 Response owner: **au-re**. This is PC-103's prepared operating procedure.
-The production layout and named disposable trial need their saved cost approval
-before apply. Hosted failure acceptance remains open. See
+The full monthly operating boundary is $200, including tax, variable charges,
+recovery tests and cleanup. There is no extra trial allowance. Apply still needs
+finite access for the named resources and a forecast within that boundary.
+Hosted failure acceptance remains open. See
 [the concrete layout and budget](../deploy/digitalocean/production/README.md).
 
 ## Backup schedules

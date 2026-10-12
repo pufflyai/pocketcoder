@@ -37,7 +37,7 @@ resource "digitalocean_kubernetes_cluster" "recovery" {
   region                           = "ams3"
   version                          = "1.34.12-do.0"
   vpc_uuid                         = digitalocean_vpc.recovery.id
-  ha                               = true
+  ha                               = false
   auto_upgrade                     = false
   surge_upgrade                    = false
   registry_integration             = false

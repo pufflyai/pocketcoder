@@ -1,12 +1,14 @@
 # PC-103 production layout and disposable recovery proof
 
-This is a candidate layout for operator review. It has not been applied.
+The full monthly operating budget is **$200 maximum**. It includes tax,
+variable charges, recovery tests and owned cleanup. No extra trial budget or
+automatic cost increase is authorized. This layout has not been applied.
 Customer admission stays closed. The PC-84/85 pilot still needs its finite
 operator access and hosted runtime proof.
 
 `main.tf` prepares ten new resources in the existing Pockercoder project,
 `126c5d77-926b-475b-8111-e30f3992a338`, in Pufflig AB. The project is not
-disposable. The resources are a dedicated VPC, HA DOKS cluster, workspace pool,
+disposable. The resources are a dedicated VPC, standard DOKS cluster, workspace pool,
 operator host and firewall, two operator volumes and their attachments, and
 the project assignment. No existing resource is imported or changed.
 
@@ -14,7 +16,7 @@ the project assignment. No existing resource is imported or changed.
 
 | Role | Candidate resource | Placement and storage |
 | --- | --- | --- |
-| Control plane | HA DOKS, `pocketcoder-pc103-recovery` | ams3; Kubernetes `1.34.12-do.0` |
+| Control plane | Standard DOKS, `pocketcoder-pc103-recovery` | ams3; Kubernetes `1.34.12-do.0`; paid HA disabled |
 | Account controllers and edge | Two `s-2vcpu-4gb` system workers | One controller replica/account; two edge replicas spread across workers |
 | Coding workspaces | One fixed `s-4vcpu-8gb` worker | Workspace taint; gVisor only; Cilium enforced |
 | Manager and backup timers | `pocketcoder-pc103-operator`, `s-2vcpu-4gb` | Loopback manager listener; SSH tunnel for operators |
@@ -41,8 +43,14 @@ The workspace pool has no autoscaling. New work must queue or be refused when
 the single worker is full. A failed workspace worker pauses coding until its
 replacement is ready; the two system workers retain account controller and edge
 placement. The recovery trial must include that delay in RTO. Keep gVisor,
-enforced egress, HA control plane, separate operator data and independent
-journals. Adding a second permanent workspace worker needs a new cost decision.
+enforced egress, separate operator data and independent journals. No second
+permanent workspace worker fits this budget.
+
+The standard managed control plane saves $40/month. It does not provide the
+paid HA control plane's availability guarantee. Recovery needs a working
+Kubernetes API; if that API is unavailable, keep admission closed until it
+returns. Include that wait in recovery time. Two system workers retain the
+worker-failure placement proof; gVisor and network policy stay enforced.
 
 ## Verified prices and budget
 
@@ -56,34 +64,41 @@ use the same version as the separately tested pilot.
 | Two system workers | 48.00 |
 | One workspace worker | 48.00 |
 | Operator host | 24.00 |
-| HA control plane | 40.00 |
+| Standard managed control plane | 0.00 |
 | One regional load balancer, one size unit | 12.00 |
 | Spaces base subscription | 5.00 |
 | 32 GiB of manager/journal/account/monitoring volumes | 3.20 |
-| **Baseline** | **180.20** |
+| **Baseline** | **140.20** |
 | Two extra 10 GiB restore volumes, if retained | +2.00 |
-| **Planned steady ceiling** | **182.20** |
+| **Listed resources with restore volumes** | **142.20** |
+| Conservative 25% tax reserve on listed resources | 35.55 |
+| Remaining room for variable charges and recovery | 22.25 |
+| **Total monthly boundary** | **200.00** |
 
-This replaces the rejected $228.20 baseline / $278.20 ceiling. The operator
-asked on 12 October to stay closer to $200/month. Smaller system workers save
-$48/month; fixing the workspace pool at one node removes another $48/month
-from the former ceiling. The listed steady resources leave $17.80/month below
-$200 for variable costs. This is not a provider-enforced total bill cap.
+This replaces the earlier proposals. On 12 October the operator made $200/month
+the full boundary, not a base price with extras. Tax reserve is a budgeting
+assumption, not a statement about the actual invoice tax rate. Use actual
+invoiced tax and service usage in the month's forecast. DigitalOcean does not
+enforce this total automatically.
 
-These are current list-price estimates, not a measured bill. Tax, excess
-network traffic, Spaces storage above the shared 250 GiB allowance, snapshots,
-and temporary replacement hosts are extra. A replacement operator host adds
-up to $24/month while it exists, or $0.86 for 24 hours. Budget $15 for a
-24-hour disposable proof with one temporary replacement host. The listed
-resources, retained restore volumes and that host cost about $7.36 for the day
-using the verified hourly worker prices and prorating the other listed charges
-over 28 days. Reserve the full $5 Spaces monthly price conservatively; replacing
-its daily share with that reserve brings the estimate to about $12.19.
-Spaces documents hourly proration when all buckets are deleted; cleanup must
-verify that condition before relying on the lower charge.
-Stay within the $15 trial budget and
-stop if the remaining budget cannot cover owned cleanup. Detached volumes still
-accrue charges.
+These are list-price estimates, not a measured bill. Tax, network overage,
+Spaces overage, snapshots, replacement hosts and detached volumes all count
+toward $200. The lean PC-84 pilot and this layout must not run in parallel as
+two permanent cells. Account for any pilot overlap in the same month.
+
+Before creating or replacing a resource, record month-to-date charges, the
+projected cost of all retained resources, tax and a cleanup allowance. Do not
+start work whose forecast exceeds $200. Disable paid snapshots and workspace
+autoscaling; stop new work before storage or transfer would exceed the remaining
+allowance. Alert-only billing notices do not establish budget enforcement.
+
+The recovery trial uses the remaining monthly allowance; it has no extra
+budget. Run it only when the forecast covers temporary resources and cleanup.
+A replacement operator host is $0.03571/hour; a replacement workspace worker
+is $0.07143/hour. Prefer replacement after source fencing rather than prolonged
+overlap. If remaining funds are insufficient, postpone the trial or release
+idle owned resources. Never request a budget increase or weaken fencing to fit.
+Verify removal; detached volumes still accrue charges.
 
 Sources: [DOKS billing](https://docs.digitalocean.com/products/kubernetes/details/pricing/),
 [volume billing](https://docs.digitalocean.com/products/volumes/details/pricing/),
@@ -110,9 +125,10 @@ Finite access must cover only the named trial resources and their cleanup:
 cluster/VPC/pool creation and deletion, operator Droplet/firewall/volume
 creation and attachment, provider power-off evidence, and project assignment.
 PC-111's pilot scopes do not cover every extra PC-103 resource.
-Request those additions after the cost/layout decision.
+The $200 boundary is already the saved cost decision. Finite access is still
+missing; it must cover only these named resources.
 
-After approval, use the private-folder plan flow from
+After obtaining the required finite resource access, use the private-folder plan flow from
 [PC-84](../pilot/README.md). Never apply from repository state.
 Validate the proposal without cloud changes:
 
@@ -131,12 +147,10 @@ secure storage. Neither belongs in a workspace or database archive.
 
 ## Decision and remaining proof
 
-The operator must approve the revised layout, $182.20/month steady ceiling
-plus listed variable costs, and $15/24-hour named synthetic failure trial before
-apply. The previous cost decision was denied; SSH access was confirmed.
-Customer enablement
-remains PC-69's separate decision. The saved lean pilot approval does not cover
-this larger layout.
+Work within the saved $200/month boundary. Do not ask to raise it or add a
+separate trial allowance. SSH source/key were confirmed. Apply still needs
+finite authority for the named resources and a forecast inside the boundary.
+Customer enablement remains PC-69's separate decision.
 
 PC-103 remains incomplete until the [failure runbook](../../../docs/hosted-node-recovery.md)
 has actual provider evidence: powered-off source node, relocated volume,

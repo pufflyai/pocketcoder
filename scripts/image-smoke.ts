@@ -13,6 +13,7 @@ import { imageRoles } from "./image-policy";
 import { imageCommand, imageFileHash, imageIdentity } from "./image-tools";
 
 export const imageSmokeTests = {
+  desktop: ["deploy/image/desktop-readiness.test.ts"],
   checkpoints: [
     "packages/supervisor/src/checkpoints/filesystem-upload.test.ts",
     "packages/supervisor/src/checkpoints/filesystem-download.test.ts",
@@ -120,6 +121,7 @@ export async function smokeCandidateImages(directory: string, commit: string, ar
     if (code) throw new Error(`Candidate image smoke failed: ${name}; see ${file}`);
   }
   try {
+    await run("desktop-readiness", await imageTestCommand(fixture, "desktop", images.desktop as string));
     await run("filesystem", await imageTestCommand(fixture, "filesystem", images.server as string));
     await run("volume-usage", await volumeUsageCommand(fixture, images.server as string));
     await run("workspace-checkpoints", await imageTestCommand(fixture, "checkpoints", images.workspace as string));
