@@ -17,7 +17,7 @@ export async function fenceWorkspaceLeaseRows(
   await tx
     .update(tables.workspaceLeases)
     .set({ state: "revoking", updatedAt: at })
-    .where(pendingWorkspaceLeases(tables, workspaceId));
+    .where(and(pendingWorkspaceLeases(tables, workspaceId), notInArray(tables.workspaceLeases.state, ["revoking"])));
 }
 
 export async function prepareLeaseTransition(

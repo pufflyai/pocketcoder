@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../examples/e2e/managed-monitoring.ts",
+    "../examples/e2e/monitoring-storage-fault.test.ts",
+    "../examples/e2e/monitoring-notification.test.ts",
+    "../deploy/monitoring/write-config.ts"
+  ]
+}

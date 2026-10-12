@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { accountService, createManagerApp, type ManagerConfig } from "@pstdio/pocketcoder-manager";
 import type { ManagerBackupConfig } from "@pstdio/pocketcoder-manager/backup";
 import { KubernetesAccounts } from "@pstdio/pocketcoder-manager/kubernetes";
+import { managerMonitoring, monitoringProbes } from "@pstdio/pocketcoder-manager/monitoring";
 import { ManagerStore } from "@pstdio/pocketcoder-manager/store";
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { freePort, waitFor } from "./local-process";
@@ -16,6 +17,7 @@ export async function managedLifecycleFixture(
       controller: { image: string; tag: string },
     ) => Promise<ManagerConfig["releases"]>;
     command?: (args: string[], input?: string) => Promise<string>;
+    monitoring?: boolean;
   } = {},
 ) {
   const cluster = await createKubernetesCluster({ networkPolicy: "calico" });
@@ -24,6 +26,7 @@ export async function managedLifecycleFixture(
   let service: ReturnType<typeof accountService> | undefined;
   let manager: ReturnType<typeof Bun.serve> | undefined;
   let forward: ReturnType<typeof Bun.spawn> | undefined;
+  let monitoring: ReturnType<typeof managerMonitoring> | undefined;
   async function close() {
     if (forward) {
       forward.kill();
@@ -31,6 +34,7 @@ export async function managedLifecycleFixture(
     }
     await manager?.stop(true);
     await service?.close();
+    await monitoring?.close();
     await store?.close();
     process.env.KUBECONFIG = priorConfig;
     await cluster.close();
@@ -74,20 +78,28 @@ export async function managedLifecycleFixture(
     };
     store = await ManagerStore.create(directory);
     const token = await store.createOperator(new Date(Date.now() + 30 * 60_000));
+    const metricsToken = options.monitoring
+      ? await store.createOperator(new Date(Date.now() + 30 * 60_000), "metrics")
+      : undefined;
     service = accountService(store, new KubernetesAccounts(options.command, backups));
-    manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
+    monitoring = options.monitoring ? managerMonitoring(store, monitoringProbes(directory)) : undefined;
+    const hostname = options.monitoring ? "0.0.0.0" : "127.0.0.1";
+    manager = Bun.serve({ hostname, port: 0, fetch: createManagerApp(store, config, service, monitoring).fetch });
     const request = (path: string, input: RequestInit = {}) =>
       fetch(new URL(path, manager?.url), {
         ...input,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...input.headers },
       });
     async function restartManager() {
+      const port = manager?.port;
       await manager?.stop(true);
       await service?.close();
+      await monitoring?.close();
       await store?.close();
       store = await ManagerStore.create(directory);
       service = accountService(store, new KubernetesAccounts(options.command, backups));
-      manager = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: createManagerApp(store, config, service).fetch });
+      monitoring = options.monitoring ? managerMonitoring(store, monitoringProbes(directory)) : undefined;
+      manager = Bun.serve({ hostname, port, fetch: createManagerApp(store, config, service, monitoring).fetch });
     }
     async function connect(namespace: string) {
       if (forward) {
@@ -115,6 +127,9 @@ export async function managedLifecycleFixture(
       cluster,
       workspace,
       request,
+      metricsToken,
+      metricsTarget: () => `host.docker.internal:${manager?.port}`,
+      sampleMonitoring: () => monitoring?.sample() ?? Promise.resolve(),
       restartManager,
       connect,
       reconcile: () => service?.reconcile(),

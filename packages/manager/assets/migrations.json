@@ -90,5 +90,15 @@
     "folderMillis": 1791790637000,
     "hash": "cc43186365c15c5a3f0f4f7a3fd0dd30612aefba852f52b565b0be64142e9373",
     "name": "20261012073717_melodic_celestials"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"operators\" ADD COLUMN \"purpose\" text DEFAULT 'operator' NOT NULL;",
+      "\nALTER TABLE \"operators\" ADD CONSTRAINT \"operator_purpose\" CHECK (\"purpose\" in ('operator','metrics'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791804472000,
+    "hash": "c2375c18fc9cd9a860a82d6c5da3b019d6494b961aee7cba156efa478ecc5e37",
+    "name": "20261012112752_tearful_gorilla_man"
   }
 ]

@@ -9,6 +9,7 @@ export interface LiveConnection {
   epoch: number;
   ws: WSContext;
   lastSeqIn: number;
+  lastHeartbeatAt: Date;
   seqOut: number;
   inflight: Map<string, PendingRelay>;
   streams: Map<string, RelayStreamChannel>;

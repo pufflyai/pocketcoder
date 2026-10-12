@@ -162,6 +162,7 @@ export async function handleConnectedFrame(
       closeProtocol(ws, "already registered");
       return;
     case "heartbeat":
+      connection.lastHeartbeatAt = new Date();
       if (frame.payload.agentapi_state === "running") {
         await deps.store.updateWorkspace(frame.workspace_id, { lastActivityAt: new Date() }, new Date());
       }

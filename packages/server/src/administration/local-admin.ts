@@ -37,6 +37,7 @@ export async function startLocalAdmin(deps: {
   offNodeRecovery?: OffNodeRecovery;
   accountLifecycle?: AccountLifecycle;
   maintenance?: Maintenance;
+  monitoring?: () => Promise<unknown>;
 }) {
   const app = new Hono();
   const store = deps.store;
@@ -102,6 +103,10 @@ export async function startLocalAdmin(deps: {
   }
   registerUsageRuntimeRoute(app, store);
   app.get("/v1/release", (context) => context.json(controllerRelease));
+  if (deps.monitoring) {
+    const monitoring = deps.monitoring;
+    app.get("/v1/monitoring", async (context) => context.json(await monitoring()));
+  }
   if (deps.purgeCleanup) registerPurgeAdmin(app, deps.purgeCleanup);
   if (deps.accountPurge) registerPurgeKeyStatus(app, store, deps.accountPurge);
   if (deps.accountLifecycle) {

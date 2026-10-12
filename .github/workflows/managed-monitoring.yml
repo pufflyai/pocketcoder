@@ -1,0 +1,42 @@
+name: managed-monitoring
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions: {}
+
+concurrency:
+  group: managed-monitoring-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  managed-monitoring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Verify signed storage faults and journal restart health
+        env:
+          RUN_S3_INTEGRATION: "1"
+        run: bun test packages/db/src/journal/acknowledgement.test.ts examples/e2e/monitoring-storage-fault.test.ts
+      - name: Prepare the workspace fixture
+        run: |
+          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
+          docker build -t pocketcoder-workspace:managed-monitoring deploy/image
+      - name: Scrape managed accounts and prove operator alert delivery and recovery
+        env:
+          POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:managed-monitoring
+        run: bun run example:e2e:managed-monitoring
