@@ -10,6 +10,11 @@ const request = (owner: Owner, path: string, options: RequestInit = {}) =>
     ...options,
     headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json", ...options.headers },
   });
+// Policy drops show up as timeouts. Any other failure (refused, TLS, HTTP) means the
+// packet got through, so only a timeout after a successful DNS lookup counts as denial.
+function reachability(reach: string[], deny: string[]) {
+  return `const{lookup}=await import('node:dns/promises');const reached=async(url)=>{try{await fetch(url,{signal:AbortSignal.timeout(3000),tls:{rejectUnauthorized:false}});return true}catch(error){return error.name!=='TimeoutError'}};for(const url of ${JSON.stringify(reach)})if(!(await reached(url)))throw new Error('Expected access: '+url);for(const url of ${JSON.stringify(deny)}){await lookup(new URL(url).hostname);if(await reached(url))throw new Error('Network access allowed: '+url)}console.log('${reach.length} reached; ${deny.length} denied by policy timeout')`;
+}
 export async function runManagedEcho(owner: Owner, manifest: unknown) {
   const imported = await request(owner, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
   if (!imported.ok) throw new Error(`Managed template refused: ${await imported.text()}`);
@@ -66,8 +71,37 @@ export async function assertManagedIsolation(
     pod.spec.volumes.some((v: Record<string, unknown>) => v.persistentVolumeClaim || v.hostPath)
   )
     throw new Error("Workspace can read standing credentials or private controller storage");
-  const probe = `await fetch('http://controller.${one.namespace}.svc:8091/readyz',{signal:AbortSignal.timeout(1000)});const urls=['http://controller.${two.namespace}.svc:8090/readyz','http://controller.${two.namespace}.svc:8091/readyz','http://controller.${one.namespace}.svc:8090/readyz'];for(const url of urls){let allowed=false;try{await fetch(url,{signal:AbortSignal.timeout(1000)});allowed=true}catch{}if(allowed)throw new Error('Private controller network access allowed')}console.log('AgentAPI reachable; cross-account and own operator network access denied')`;
-  console.log(await cluster.kube(["-n", one.namespace, "exec", pod.metadata.name, "--", "bun", "-e", probe]));
+  const workspaceProbe = reachability(
+    [`http://controller.${one.namespace}.svc:8091/readyz`],
+    [
+      `http://controller.${two.namespace}.svc:8090/readyz`,
+      `http://controller.${two.namespace}.svc:8091/readyz`,
+      `http://controller.${one.namespace}.svc:8090/readyz`,
+      "https://kubernetes.default.svc/version",
+    ],
+  );
+  console.log(await cluster.kube(["-n", one.namespace, "exec", pod.metadata.name, "--", "bun", "-e", workspaceProbe]));
+  const controller = JSON.parse(
+    await cluster.kube(["-n", one.namespace, "get", "pods", "-l", "pocketcoder.dev/role=controller", "-o", "json"]),
+  ).items[0];
+  const controllerProbe = reachability(
+    ["https://kubernetes.default.svc/version"],
+    [`http://controller.${two.namespace}.svc:8090/readyz`, `https://${controller.status.hostIP}:10250/healthz`],
+  );
+  console.log(
+    await cluster.kube([
+      "-n",
+      one.namespace,
+      "exec",
+      controller.metadata.name,
+      "-c",
+      "controller",
+      "--",
+      "bun",
+      "-e",
+      controllerProbe,
+    ]),
+  );
   for (const owner of owners) {
     const other = owner === one ? two : one;
     const denied = Bun.spawn(
