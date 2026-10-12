@@ -15,6 +15,7 @@ import type { OffNodeRecovery } from "../recovery/off-node-recovery";
 import { startAdminSocket } from "./admin-socket";
 import { registerPurgeAdmin } from "./purge-admin";
 import { registerPurgeKeyStatus } from "./purge-key-status";
+import { controllerRelease } from "./release";
 import { registerUsageRuntimeRoute } from "./usage-runtime";
 
 const OwnerRequestSchema = z.strictObject({
@@ -42,7 +43,8 @@ export async function startLocalAdmin(deps: {
   app.use("*", bodyLimit({ maxSize: 16_384, onError: (context) => context.json({ error: "body too large" }, 413) }));
   if (deps.assertAccountAllowed) {
     const gate = accountPurgeGate(deps.assertAccountAllowed);
-    for (const path of ["/v1/owner", "/v1/backup/*", "/v1/backup", "/v1/account/resume"]) app.use(path, gate);
+    for (const path of ["/v1/owner", "/v1/backup/*", "/v1/backup", "/v1/account/resume", "/v1/account/verify"])
+      app.use(path, gate);
   }
   if (deps.maintenance) {
     const maintenance = deps.maintenance;
@@ -99,11 +101,13 @@ export async function startLocalAdmin(deps: {
     });
   }
   registerUsageRuntimeRoute(app, store);
+  app.get("/v1/release", (context) => context.json(controllerRelease));
   if (deps.purgeCleanup) registerPurgeAdmin(app, deps.purgeCleanup);
   if (deps.accountPurge) registerPurgeKeyStatus(app, store, deps.accountPurge);
   if (deps.accountLifecycle) {
     const lifecycle = deps.accountLifecycle;
     app.get("/v1/account", (context) => context.json(lifecycle.status()));
+    app.post("/v1/account/verify", async (context) => context.json(await lifecycle.verify()));
     for (const kind of ["suspend", "resume"] as const) {
       app.post(`/v1/account/${kind}`, async (context) => {
         const input = z.strictObject({ request_id: z.uuid() }).safeParse(await context.req.json().catch(() => null));

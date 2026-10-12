@@ -1,5 +1,6 @@
 import type { PGliteStore } from "@pstdio/pocketcoder-db";
 import type { OffNode } from "@pstdio/pocketcoder-db/off-node";
+import type { accountState } from "../maintenance/account-state";
 import type { Maintenance } from "../maintenance/maintenance";
 import { createOffNodeRecovery } from "../recovery/off-node-recovery";
 import { type ControllerKeys, createControllerBackup } from "./controller-backup";
@@ -9,12 +10,14 @@ export function composeBackups(
   input: { store: PGliteStore; keyBundle?: ControllerKeys; offNode?: OffNode; directory: string },
   maintenance: Maintenance,
   checkpointDirectory?: string,
+  state?: Awaited<ReturnType<typeof accountState>>,
 ) {
   const backup = createControllerBackup({
     store: input.store,
     maintenance,
     keys: input.keyBundle,
     checkpointDirectory,
+    suspended: state ? () => state.state.state === "suspended" : undefined,
   });
   return {
     backup,

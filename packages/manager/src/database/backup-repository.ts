@@ -88,7 +88,7 @@ export function backupRepository({ db, tables: { accounts, operations, backups }
       if (receipt.operationId !== operationId) throw new Error("Backup operation identity differs.");
       await db.transaction(async (tx) => {
         const [operation] = await tx.select().from(operations).where(eq(operations.id, operationId)).for("update");
-        if (operation?.kind !== "backup" || operation.accountId !== receipt.accountId)
+        if (!operation || !["backup", "upgrade"].includes(operation.kind) || operation.accountId !== receipt.accountId)
           throw new Error("Backup account identity differs.");
         const [account] = await tx.select().from(accounts).where(eq(accounts.id, receipt.accountId));
         if (!account) throw new Error("Backup account is missing.");
@@ -106,7 +106,11 @@ export function backupRepository({ db, tables: { accounts, operations, backups }
           .onConflictDoNothing();
         await tx
           .update(operations)
-          .set({ state: "succeeded", phase: "complete", errorCode: null, completedAt: new Date() })
+          .set(
+            operation.kind === "upgrade"
+              ? { backupId: operationId, phase: "scale" }
+              : { state: "succeeded", phase: "complete", errorCode: null, completedAt: new Date() },
+          )
           .where(eq(operations.id, operationId));
       });
     },
@@ -140,7 +144,7 @@ export function backupRepository({ db, tables: { accounts, operations, backups }
       validate();
       await db.transaction(async (tx) => {
         const [operation] = await tx.select().from(operations).where(eq(operations.id, operationId)).for("update");
-        if (operation?.kind !== "restore" || operation.phase !== "restore")
+        if (!operation || !["restore", "upgrade"].includes(operation.kind) || operation.phase !== "restore")
           throw new Error("Restore operation phase differs.");
         await tx.update(accounts).set({ volumeName }).where(eq(accounts.id, operation.accountId));
         await tx.update(operations).set({ phase: "recover" }).where(eq(operations.id, operationId));

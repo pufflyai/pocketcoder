@@ -19,6 +19,14 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
   return {
     getAccount,
     getOperation,
+    async accountOperation(accountId: string, requestId: string) {
+      validate();
+      const [row] = await db
+        .select()
+        .from(operations)
+        .where(and(eq(operations.accountId, accountId), eq(operations.requestId, requestId)));
+      return row ?? null;
+    },
     // The plan is built only for a new account, so a replay never depends on the current settings.
     async createAccount(requestId: string, input: AccountInput, plan: () => AccountPlan, authorityExpiresAt: Date) {
       validate();
@@ -85,7 +93,7 @@ export function accountRepository({ db, tables: { accounts, operations }, valida
     },
     async setOperationPhase(
       id: string,
-      phase: "controller" | "scale" | "capture" | "fence" | "restore" | "recover" | "open",
+      phase: "controller" | "scale" | "capture" | "fence" | "restore" | "recover" | "open" | "install" | "verify",
     ) {
       validate();
       await db.update(operations).set({ phase }).where(eq(operations.id, id));

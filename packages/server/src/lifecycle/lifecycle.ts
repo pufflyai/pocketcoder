@@ -222,7 +222,7 @@ export async function startPocketCoderServer(
         pepper: config.pepper,
         accountLifecycle,
         maintenance,
-        ...composeBackups(initialized, maintenance, transferOptions?.directory),
+        ...composeBackups(initialized, maintenance, transferOptions?.directory, durableAccountState),
       });
       agentServer = Bun.serve({
         hostname: config.agentHost,

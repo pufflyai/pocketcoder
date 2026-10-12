@@ -6,6 +6,7 @@ import { KubernetesAccounts } from "./kubernetes/accounts";
 import { purgeControllerFiles } from "./kubernetes/purge-files";
 import { loadManagerPurgeConfig, loadPurgePhysicalStorage } from "./purge/config";
 import { managerRecoveryCommand } from "./recovery/command";
+import { ReleaseManifestSchema } from "./upgrade/releases";
 
 const dataDir = process.env.POCKETCODER_MANAGER_DIR ?? "./manager_data";
 const purgePath = process.env.POCKETCODER_MANAGER_PURGE_CONFIG;
@@ -31,6 +32,12 @@ if (process.argv[2] === "operator") {
     controllerImage: process.env.POCKETCODER_MANAGER_CONTROLLER_IMAGE,
     runtimeClassName: process.env.POCKETCODER_MANAGER_RUNTIME_CLASS,
     purgeAuthority: true,
+    ...(process.env.POCKETCODER_MANAGER_RELEASE_MANIFEST
+      ? {
+          releases: ReleaseManifestSchema.parse(await Bun.file(process.env.POCKETCODER_MANAGER_RELEASE_MANIFEST).json())
+            .releases,
+        }
+      : {}),
     ...(backups ? { offNodeBackups: true } : {}),
     ...(process.env.POCKETCODER_MANAGER_STORAGE_CLASS
       ? { storageClassName: process.env.POCKETCODER_MANAGER_STORAGE_CLASS }
