@@ -91,7 +91,8 @@
     "example:e2e:managed-interruption": "bun --no-env-file examples/e2e/managed-interruption.ts",
     "example:e2e:managed-account-purge": "bun --no-env-file examples/e2e/managed-purge-physical.ts",
     "example:e2e:managed-account-purge:bootstrap": "bun --no-env-file examples/e2e/managed-purge.ts",
-    "example:e2e:managed-public-views": "bun --no-env-file examples/e2e/managed-public-views.ts"
+    "example:e2e:managed-public-views": "bun --no-env-file examples/e2e/managed-public-views.ts",
+    "example:e2e:manager-recovery": "bun --no-env-file examples/e2e/manager-recovery.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

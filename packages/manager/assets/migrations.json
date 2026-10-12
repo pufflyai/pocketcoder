@@ -69,5 +69,14 @@
     "folderMillis": 1791693435000,
     "hash": "fb96f8239061d234784ccb7d4a72b972b1994633df778b7f6819f549e34bdd08",
     "name": "20261011043715_tearful_war_machine"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"manager_installation\" (\n\t\"id\" integer PRIMARY KEY DEFAULT 1,\n\t\"journal_id\" uuid NOT NULL,\n\tCONSTRAINT \"manager_single_installation\" CHECK (\"id\" = 1)\n);\n"
+    ],
+    "bps": true,
+    "folderMillis": 1791764281000,
+    "hash": "5f30bd4ad4f861a8fae73eb409595bb6f42e3ad3674d82a1e084bea8ab7aacd7",
+    "name": "20261012001801_military_thunderbolt_ross"
   }
 ]

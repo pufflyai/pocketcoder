@@ -98,6 +98,8 @@ export async function managerContext(dataDir?: string) {
     const database = client;
     return {
       db,
+      directory: folder?.dir,
+      sourceWriter: () => folder?.sourceWriter(),
       client: database,
       tables: managerSchema("pocketcoder_manager"),
       validate: () => folder?.validate(),
