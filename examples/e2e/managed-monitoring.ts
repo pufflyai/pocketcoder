@@ -99,6 +99,7 @@ try {
     "authenticated real scraping",
   );
   const pressure = join(f.cluster.directory, "monitoring-pressure");
+  m.startFault("disk");
   await writeFile(pressure, Buffer.alloc(128 * 1024 ** 2));
   await f.cluster.kube([
     "-n",
@@ -127,6 +128,7 @@ try {
     "await (await import('node:fs/promises')).unlink('/private/monitoring-pressure')",
   ]);
   await m.resolved("disk");
+  m.startFault("queue");
   const active = [];
   for (let index = 0; index < 3; index++)
     active.push(await createHarnessWorkspace({ baseUrl: url, key: owner.token, template: template.metadata.name }));
@@ -165,11 +167,19 @@ try {
     template: template.metadata.name,
     ownerToken: owner.token,
   });
-  const expiring = await f.currentStore()?.createOperator(new Date(Date.now() + 15_000), "metrics");
+  const expiresAt = new Date(Date.now() + 15_000);
+  const expiring = await f.currentStore()?.createOperator(expiresAt, "metrics");
   if (!expiring) throw new Error("Finite expiry fixture issuance failed");
+  m.startFault("credential");
+  m.startFault("observation");
   await m.rotateToken(expiring);
   await m.firing("credential");
-  await m.firing("observation");
+  await waitFor(
+    async () => Date.now() >= +expiresAt && (await m.query('up{job="pocketcoder-manager"}')) === 0,
+    30_000,
+    "expired metrics key stops scraping",
+  );
+  await m.firing("observation", 30_000, { job: "pocketcoder-manager", account: undefined });
   await m.rotateToken(f.metricsToken);
   await m.resolved("credential");
   await m.resolved("observation");
@@ -194,6 +204,7 @@ try {
   );
 } catch (error) {
   if (fixture && namespace) {
+    if (monitoring) console.error(JSON.stringify(await monitoring.diagnostics()));
     console.error(await (await fixture.request("/metrics")).text());
     await managedDiagnostics(fixture, namespace);
   }

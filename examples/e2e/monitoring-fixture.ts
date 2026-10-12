@@ -5,11 +5,7 @@ import { join } from "node:path";
 import { monitoringConfig, monitoringImages } from "../../deploy/monitoring/config";
 import type { Thresholds } from "../../deploy/monitoring/rules";
 import { command, freePort, waitFor } from "./local-process";
-
-interface Notification {
-  status: string;
-  alerts: { status: string; labels: { family: string; operator: string }; annotations: { response: string } }[];
-}
+import { faultLabels, matchingNotification, type Notification } from "./monitoring-notification";
 
 export async function monitoringFixture(input: { token: string; target: string; thresholds: Partial<Thresholds> }) {
   const directory = await mkdtemp(join(tmpdir(), "pc53-monitoring-"));
@@ -20,6 +16,7 @@ export async function monitoringFixture(input: { token: string; target: string; 
   const alertPort = freePort();
   const received: Notification[] = [];
   const cursors = new Map<string, number>();
+  const episodes = new Map<string, Record<string, string>>();
   const receiver = Bun.serve({
     hostname: "0.0.0.0",
     port: 0,
@@ -118,49 +115,60 @@ export async function monitoringFixture(input: { token: string; target: string; 
     );
     async function alerts() {
       const response = await fetch(`${url}/api/v1/alerts`);
-      const body = (await response.json()) as { data: { alerts: { state: string; labels: { family: string } }[] } };
+      const body = (await response.json()) as { data: { alerts: { state: string; labels: Record<string, string> }[] } };
       return body.data.alerts;
     }
-    async function notification(family: string, status: string) {
+    async function notification(family: string, status: string, expected: Record<string, string>[]) {
+      let matched!: NonNullable<ReturnType<typeof matchingNotification>>;
       await waitFor(
-        async () =>
-          received
-            .slice(cursors.get(family) ?? 0)
-            .some((batch) =>
-              batch.alerts.some(
-                (alert) =>
-                  alert.labels.family === family &&
-                  alert.status === status &&
-                  alert.labels.operator === "au-re" &&
-                  alert.annotations.response.length > 10,
-              ),
-            ),
+        async () => {
+          const found = matchingNotification(received, cursors.get(family) ?? 0, status, expected);
+          if (!found) return false;
+          matched = found;
+          return true;
+        },
         30_000,
         `${family} ${status} operator webhook`,
       );
-      cursors.set(family, received.length);
+      cursors.set(family, matched.index + 1);
+      return matched.labels;
     }
     return {
+      startFault(family: string) {
+        cursors.set(family, received.length);
+        episodes.delete(family);
+      },
       async rotateToken(token: string) {
         await writeFile(join(directory, "token.next"), token, { mode: 0o600 });
         await rename(join(directory, "token.next"), join(directory, "token"));
       },
-      async firing(family: string, timeoutMs = 30_000) {
+      async firing(family: string, timeoutMs = 30_000, scope: Record<string, string | undefined> = {}) {
+        let expected: Record<string, string>[] = [];
         await waitFor(
-          async () => (await alerts()).some((alert) => alert.labels.family === family && alert.state === "firing"),
+          async () => {
+            expected = faultLabels(
+              (await alerts())
+                .filter((alert) => alert.labels.family === family && alert.state === "firing")
+                .map((alert) => alert.labels),
+              scope,
+            );
+            return expected.length > 0;
+          },
           timeoutMs,
           `${family} alert firing`,
         );
-        await notification(family, "firing");
+        episodes.set(family, await notification(family, "firing", expected));
         console.log(JSON.stringify({ alertFired: family, operator: "au-re", delivery: "owned localhost webhook" }));
       },
       async resolved(family: string) {
+        const labels = episodes.get(family);
+        if (!labels) throw new Error(`No delivered firing alert for ${family}`);
         await waitFor(
           async () => !(await alerts()).some((alert) => alert.labels.family === family && alert.state === "firing"),
           30_000,
           `${family} alert cleared`,
         );
-        await notification(family, "resolved");
+        await notification(family, "resolved", [labels]);
         console.log(JSON.stringify({ alertResolved: family, operator: "au-re" }));
       },
       async query(expression: string) {
@@ -168,6 +176,13 @@ export async function monitoringFixture(input: { token: string; target: string; 
           data: { result: { value: [number, string] }[] };
         };
         return Number(body.data.result[0]?.value[1]);
+      },
+      async diagnostics() {
+        return {
+          received,
+          prometheus: await alerts(),
+          alertmanager: await (await fetch(`http://127.0.0.1:${alertPort}/api/v2/alerts`)).json(),
+        };
       },
       close,
     };
