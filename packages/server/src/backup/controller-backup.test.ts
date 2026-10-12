@@ -130,3 +130,25 @@ test("a controller whose keys came from the environment refuses a backup it coul
   await expect(backup({ output: join(out, "env.tar"), timeout_ms: 5000 }, signal)).rejects.toThrow("key bundle");
   expect(await readdir(out)).toEqual([]);
 }, 30_000);
+
+test("a suspended account can take a verified backup while admission stays fenced", async () => {
+  const { f, out, maintenance, signal } = await controller();
+  maintenance.fence();
+  let suspended = false;
+  const backup = createControllerBackup({
+    store: f.store,
+    maintenance,
+    keys,
+    checkpointDirectory: f.directory,
+    suspended: () => suspended,
+  });
+  await expect(backup({ output: join(out, "pending.tar"), timeout_ms: 5000 }, signal)).rejects.toMatchObject({
+    code: "maintenance.active",
+  });
+  suspended = true;
+  const output = join(out, "suspended.tar");
+  await backup({ output, timeout_ms: 5000 }, signal);
+  expect((await verifyBackup(output)).manifest.checkpoints).toHaveLength(1);
+  expect(maintenance.fenced).toBe(true);
+  await expect(maintenance.admit(async () => {})).rejects.toMatchObject({ code: "maintenance.active" });
+}, 30_000);

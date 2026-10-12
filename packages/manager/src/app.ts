@@ -12,8 +12,10 @@ import {
 } from "./config";
 import type { Account, ManagerStore } from "./database/store";
 import { accountOrigins } from "./kubernetes/public-hosts";
+import { registerUpgradeRoutes } from "./upgrade/routes";
 
 export { accountService } from "./accounts/service";
+export type { ManagerConfig } from "./config";
 export { usageSampler } from "./usage/sampler";
 export function accountResource(account: Account) {
   const origins = account.plan.publicHosts && accountOrigins(account.id, account.plan.publicHosts);
@@ -54,6 +56,8 @@ export function createManagerApp(store: ManagerStore, input: ManagerConfig, serv
     const result = await store.createAccount(requestId, input, plan, c.get("operator").expiresAt);
     return c.json({ account: accountResource(result.account), operation: result.operation }, 202);
   });
+  registerUpgradeRoutes(app, config.releases ?? [], service);
+  app.get("/v1/releases", (c) => c.json({ items: config.releases ?? [] }));
   app.get("/v1/accounts", async (c) => c.json({ items: (await store.listAccounts()).map(accountResource) }));
   app.post("/v1/accounts/:id/purge", async (c) =>
     c.json(

@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { AccountPlan } from "../config";
+import type { Upgrade } from "../upgrade/releases";
 
 export function managerSchema(schema?: string) {
   const table: PgTableFn<string | undefined> = schema ? pgSchema(schema).table : pgTable;
@@ -28,7 +29,9 @@ export function managerSchema(schema?: string) {
       requestId: text("request_id").notNull().unique(),
       requestDigest: text("request_digest").notNull(),
       plan: jsonb().$type<AccountPlan>().notNull(),
-      state: text().$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming" | "restoring">().notNull(),
+      state: text()
+        .$type<"provisioning" | "ready" | "suspending" | "suspended" | "resuming" | "restoring" | "upgrading">()
+        .notNull(),
       volumeName: text("volume_name").notNull().default("controller-data"),
       bootstrapRequestId: uuid("bootstrap_request_id"),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
@@ -36,7 +39,7 @@ export function managerSchema(schema?: string) {
     (t) => [
       check(
         "account_state",
-        sql`${t.state} in ('provisioning','ready','suspending','suspended','resuming','restoring')`,
+        sql`${t.state} in ('provisioning','ready','suspending','suspended','resuming','restoring','upgrading')`,
       ),
     ],
   );
@@ -47,12 +50,27 @@ export function managerSchema(schema?: string) {
       accountId: uuid("account_id")
         .notNull()
         .references(() => accounts.id, { onDelete: "cascade" }),
-      kind: text().$type<"provision" | "suspend" | "resume" | "backup" | "restore">().notNull().default("provision"),
+      kind: text()
+        .$type<"provision" | "suspend" | "resume" | "backup" | "restore" | "upgrade">()
+        .notNull()
+        .default("provision"),
+      upgrade: jsonb().$type<Upgrade>(),
       backupId: uuid("backup_id"),
       computeProof: jsonb("compute_proof").$type<Record<string, unknown>>(),
       requestId: text("request_id").notNull().default("provision"),
       phase: text()
-        .$type<"controller" | "scale" | "complete" | "capture" | "fence" | "restore" | "recover" | "open">()
+        .$type<
+          | "controller"
+          | "scale"
+          | "complete"
+          | "capture"
+          | "fence"
+          | "restore"
+          | "recover"
+          | "open"
+          | "install"
+          | "verify"
+        >()
         .notNull()
         .default("controller"),
       state: text().$type<"pending" | "running" | "succeeded">().notNull(),
@@ -62,10 +80,10 @@ export function managerSchema(schema?: string) {
     },
     (t) => [
       unique("operation_identity").on(t.accountId, t.requestId),
-      check("operation_kind", sql`${t.kind} in ('provision','suspend','resume','backup','restore')`),
+      check("operation_kind", sql`${t.kind} in ('provision','suspend','resume','backup','restore','upgrade')`),
       check(
         "operation_phase",
-        sql`${t.phase} in ('controller','scale','complete','capture','fence','restore','recover','open')`,
+        sql`${t.phase} in ('controller','scale','complete','capture','fence','restore','recover','open','install','verify')`,
       ),
       check("operation_state", sql`${t.state} in ('pending','running','succeeded')`),
     ],
