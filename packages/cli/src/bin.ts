@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const target = `${process.platform}-${process.arch}`;
-const targets = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"];
+const targets = ["darwin-arm64", "linux-arm64", "linux-x64"];
 if (!targets.includes(target)) throw new Error(`Unsupported PocketCoder platform: ${target}`);
 const executable = fileURLToPath(new URL(`./native/${target}/pocketcoder`, import.meta.url));
 const child = spawn(executable, process.argv.slice(2), { stdio: "inherit" });

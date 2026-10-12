@@ -9,7 +9,7 @@ const launcher = await Bun.build({
   target: "node",
 });
 if (!launcher.success) throw new AggregateError(launcher.logs, "CLI launcher build failed");
-for (const target of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+for (const target of ["darwin-arm64", "linux-arm64", "linux-x64"]) {
   const executable = join(root, "dist/native", target, "pocketcoder");
   const child = Bun.spawn(
     [
