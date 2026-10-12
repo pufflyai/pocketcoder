@@ -6,6 +6,10 @@ A terminal UI for PocketCoder workspaces, built on the [Pi coding agent](https:/
 local Pi TUI → PocketCoder service relay → AgentAPI → remote coding agent
 ```
 
+See the [Pi client runbook](../../docs/pi-client-runbook.md) for candidate pins,
+connection, reconnect, interruption, attachments, explicit restore and cleanup.
+The [PC-114 demo result](../../docs/pi-bridge-demo.md) records the checked flow.
+
 AgentAPI message snapshots stream into Pi while a turn is running. Each
 snapshot replaces Pi's mutable partial message, so terminal rewrites render
 without duplicated text; the completed message still comes from AgentAPI's
