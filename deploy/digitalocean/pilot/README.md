@@ -87,10 +87,30 @@ Stop if the reconciler removes the runtime or the trial cannot enforce egress.
 There is no runc fallback. Moving to a different cluster provider or self-managed
 nodes is a separate operator decision. Do not silently change the agreed plan.
 
-Before the hosted demo, implement and test the manager's Cilium readiness check:
-the current manager requires Calico, whereas DOKS supplies Cilium. Also render
-the private manager deployment and gVisor RuntimeClass scheduling from the
-observed node setup. These are remaining PC-84 work; they are not claimed done.
+The manager accepts exactly one enforcing provider, Calico or Cilium. It refuses
+Cilium in audit mode, with Kubernetes NetworkPolicy disabled, or with enforcement
+overridden per node or by agent arguments. On Cilium it also lets controllers
+reach the `kube-apiserver` entity. That rule matters when the API server runs on
+cluster nodes, as in kind. On managed DOKS the existing `ipBlock` rule should
+already match. `bun run example:e2e:managed-accounts -- --cilium` proves the kind
+case.
+
+Capture these read-only before the hosted demo and compare them with the kind proof:
+
+- the `default/kubernetes` endpoint addresses. If they are public, the workspace
+  probe must still show that workspaces cannot reach the API.
+- `cilium-config` keys `kube-proxy-replacement`, `bpf-lb-sock`,
+  `bpf-lb-sock-hostns-only`, `policy-audit-mode`, `enable-k8s-networkpolicy` and
+  `labels`. With socket load balancing enabled, gVisor pods need
+  `bpf-lb-sock-hostns-only: true`, so check it before the gVisor installer review.
+- the `ciliumidentities` count before and after workspaces start. Each workspace
+  label adds an identity.
+
+Also render the private manager deployment and the gVisor RuntimeClass scheduling
+from the observed node setup. The manager's RBAC must allow reading DaemonSets and
+the `cilium-config` ConfigMap in `kube-system`, listing CiliumNodeConfigs, and
+writing CiliumNetworkPolicies in account namespaces. These remain PC-84 work and
+are not claimed done.
 
 Sources: [DOKS managed workers](https://docs.digitalocean.com/products/kubernetes/details/managed/),
 [gVisor containerd setup](https://gvisor.dev/docs/user_guide/containerd/quick_start/),

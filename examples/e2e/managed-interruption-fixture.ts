@@ -30,7 +30,7 @@ export async function managedInterruptionFixture() {
     }
   }
   try {
-    const owned = await createKubernetesCluster({ networkPolicy: true });
+    const owned = await createKubernetesCluster({ networkPolicy: "calico" });
     cluster = owned;
     const kubeconfig = await managerKubeconfig(owned);
     const candidate = process.env.POCKETCODER_E2E_WORKSPACE_IMAGE;

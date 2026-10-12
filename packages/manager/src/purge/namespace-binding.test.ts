@@ -19,7 +19,9 @@ test("the real account namespace carries an opaque, valid original CREATE reques
         }),
         new Date(Date.now() + 60_000),
       );
-      const namespace = accountManifests(account, ["10.0.0.1"]).find((resource) => resource.kind === "Namespace");
+      const namespace = accountManifests(account, ["10.0.0.1"], "calico").find(
+        (resource) => resource.kind === "Namespace",
+      );
       const labels = namespace?.metadata.labels as Record<string, string>;
       const binding = labels["pocketcoder.dev/create-request"];
       expect(binding).toBe(`h${Buffer.from(createRequestDigest(requestId), "hex").toString("base64url")}h`);

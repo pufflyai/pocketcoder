@@ -3,13 +3,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { installCalico } from "./kubernetes-calico";
+import { installCilium } from "./kubernetes-cilium";
 import { command } from "./local-process";
 import { buildManagedController } from "./managed-controller-image";
 
 const NODE_IMAGE = "kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5";
 export const ROOT = resolve(import.meta.dir, "../..");
 
-export async function createKubernetesCluster(options: { networkPolicy?: boolean } = {}) {
+export async function createKubernetesCluster(options: { networkPolicy?: "calico" | "cilium" } = {}) {
   const name = `pc-restore-${randomUUID().slice(0, 8)}`;
   const directory = await mkdtemp(join(tmpdir(), "pc-kubernetes-"));
   const kubeconfig = join(directory, "kubeconfig");
@@ -74,7 +75,8 @@ export async function createKubernetesCluster(options: { networkPolicy?: boolean
       "--wait",
       options.networkPolicy ? "0s" : "60s",
     ]);
-    if (options.networkPolicy) await installCalico(kube);
+    if (options.networkPolicy === "calico") await installCalico(kube);
+    if (options.networkPolicy === "cilium") await installCilium(kube);
     const nodes = [`${name}-control-plane`, `${name}-worker`];
     await kube(["taint", "nodes", nodes[0] as string, "node-role.kubernetes.io/control-plane-"]);
     for (const node of nodes) {
