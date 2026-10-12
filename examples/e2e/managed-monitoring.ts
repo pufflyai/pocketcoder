@@ -83,7 +83,6 @@ try {
       diskFraction: 0,
       diskBytes: minimum - 64 * 1024 ** 2,
       queueSeconds: 2,
-      heartbeatSeconds: 20,
       cleanupSeconds: 3,
       backupSeconds: 60,
       journalSeconds: 10,

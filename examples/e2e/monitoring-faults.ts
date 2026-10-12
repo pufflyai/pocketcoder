@@ -24,7 +24,8 @@ export async function monitoringFaults(input: {
   const signal = await monitoringContainerSignal(f, account.namespace, `pocketcoder.workspace=${input.workspace}`);
   try {
     await signal("SIGSTOP");
-    await m.firing("heartbeat");
+    // Use the production threshold so normal heartbeat and sample delays remain healthy.
+    await m.firing("heartbeat", 75_000);
   } finally {
     await signal("SIGCONT");
   }

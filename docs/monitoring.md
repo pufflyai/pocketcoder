@@ -140,6 +140,7 @@ It applies bounded disk pressure, real scheduler pressure, a stopped supervisor,
 an unavailable controller, unavailable cell capacity, stale backups, and failed off-node journal writes.
 The owned proxy forwards real signed storage requests and returns 503 for writes during the journal fault.
 Reads remain available so the fault reaches the enforced mutation and its pending journal acknowledgement.
+The heartbeat fault keeps the production 60-second threshold; its deliberate stopped interval must exceed it.
 Each alert must fire, reach the named receiver with response instructions, and resolve after its operator action.
 The demo checks that a missing controller does not block its healthy peer.
 It records local validation, not hosted pilot acceptance.

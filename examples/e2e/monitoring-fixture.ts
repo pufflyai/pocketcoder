@@ -145,10 +145,10 @@ export async function monitoringFixture(input: { token: string; target: string; 
         await writeFile(join(directory, "token.next"), token, { mode: 0o600 });
         await rename(join(directory, "token.next"), join(directory, "token"));
       },
-      async firing(family: string) {
+      async firing(family: string, timeoutMs = 30_000) {
         await waitFor(
           async () => (await alerts()).some((alert) => alert.labels.family === family && alert.state === "firing"),
-          30_000,
+          timeoutMs,
           `${family} alert firing`,
         );
         await notification(family, "firing");
