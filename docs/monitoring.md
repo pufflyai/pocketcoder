@@ -111,7 +111,7 @@ Manager disaster-recovery backups remain governed by the manager recovery runboo
 
 A configured journal without an acknowledged cursor, or pending journal work older than one minute, alerts.
 An idle journal with no pending work does not alert just because its last acknowledgement is old.
-Restore off-node storage access. Retry the failed action or run a verified backup to acknowledge the current cursor.
+Restore off-node storage access. Retry failed actions or run a verified backup for each affected account to acknowledge its current cursor.
 Check that revoked keys remain revoked and deleted data stays deleted.
 
 ## Observation
@@ -137,7 +137,9 @@ Run `bun run example:e2e:managed-monitoring` with Docker, kind, and kubectl avai
 The demo owns its Kind cluster, RustFS bucket, Prometheus, Alertmanager, and localhost receiver.
 It uses finite host-only keys and validates both monitoring configurations with the real binaries.
 It applies bounded disk pressure, real scheduler pressure, a stopped supervisor, denied provider deletion,
-an unavailable controller, unavailable cell capacity, stale backups, and an off-node journal outage.
+an unavailable controller, unavailable cell capacity, stale backups, and failed off-node journal writes.
+The owned proxy forwards real signed storage requests and returns 503 for writes during the journal fault.
+Reads remain available so the fault reaches the enforced mutation and its pending journal acknowledgement.
 Each alert must fire, reach the named receiver with response instructions, and resolve after its operator action.
 The demo checks that a missing controller does not block its healthy peer.
 It records local validation, not hosted pilot acceptance.

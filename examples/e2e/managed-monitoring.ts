@@ -8,9 +8,9 @@ import { managedDiagnostics } from "./managed-diagnostics";
 import { managedLifecycleFixture } from "./managed-lifecycle-fixture";
 import { monitoringFaults } from "./monitoring-faults";
 import { monitoringFixture } from "./monitoring-fixture";
-import { offNodeFixture } from "./off-node-fixture";
+import { monitoringStorageFixture } from "./monitoring-storage-fault";
 
-const storage = await offNodeFixture();
+const storage = await monitoringStorageFixture();
 let fixture: Awaited<ReturnType<typeof managedLifecycleFixture>> | undefined;
 let monitoring: Awaited<ReturnType<typeof monitoringFixture>> | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -159,7 +159,7 @@ try {
     request,
     workspace: active[1]?.workspaceId,
     backup,
-    storageName: storage.storage.config.bucket,
+    failStorageWrites: storage.failWrites,
     reconnect: async () => {
       url = await f.connect(account.namespace);
     },

@@ -28,10 +28,10 @@ jobs:
           printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
           chmod 0755 "$RUNNER_TEMP/kind"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Verify real journal failure and restart health
+      - name: Verify signed storage faults and journal restart health
         env:
           RUN_S3_INTEGRATION: "1"
-        run: bun test packages/db/src/journal/acknowledgement.test.ts
+        run: bun test packages/db/src/journal/acknowledgement.test.ts examples/e2e/monitoring-storage-fault.test.ts
       - name: Prepare the workspace fixture
         run: |
           bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist

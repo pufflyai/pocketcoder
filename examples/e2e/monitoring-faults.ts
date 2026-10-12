@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { command, waitFor } from "./local-process";
+import { ErrorEnvelopeSchema } from "@pstdio/pocketcoder-contracts";
+import { waitFor } from "./local-process";
 import type { managedLifecycleFixture } from "./managed-lifecycle-fixture";
 import { prepareManagedWarm } from "./managed-warm";
 import { monitoringContainerSignal } from "./monitoring-container-signal";
@@ -13,7 +14,7 @@ export async function monitoringFaults(input: {
   request: (path: string, init?: RequestInit) => Promise<Response>;
   workspace: string | undefined;
   backup: (id: string) => Promise<void>;
-  storageName: string;
+  failStorageWrites: (enabled: boolean) => Promise<void>;
   reconnect: () => Promise<void>;
   template: string;
   ownerToken: string;
@@ -82,12 +83,13 @@ export async function monitoringFaults(input: {
   const child = (await childResponse.json()) as { key: { id: string }; token: string };
   if (!childResponse.ok || !child.token) throw new Error("Journal finite test key issuance failed");
   try {
-    await command(["docker", "stop", "-t", "1", input.storageName], { quiet: true });
+    await input.failStorageWrites(true);
     const revoked = await request(`/v1/principals/${principal.id}/keys/${child.key.id}`, { method: "DELETE" });
-    if (revoked.status < 400) throw new Error("Storage outage did not fail remote acknowledgement");
+    if (ErrorEnvelopeSchema.parse(await revoked.json()).error.code !== "journal.pending")
+      throw new Error("The real journal write fault did not leave the enforced revocation pending");
     await m.firing("journal");
   } finally {
-    await command(["docker", "start", input.storageName], { quiet: true });
+    await input.failStorageWrites(false);
   }
   await waitFor(
     async () => {
@@ -107,6 +109,7 @@ export async function monitoringFaults(input: {
     throw new Error("Journal recovery revived revoked authority");
   await input.reconnect();
   await input.backup(account.id);
+  await input.backup(input.other.id);
   await m.resolved("journal");
   // A real exited warm container leaves provider cleanup pending while RBAC denies deletion.
   await prepareManagedWarm(f, account.namespace, input.template, input.ownerToken);
