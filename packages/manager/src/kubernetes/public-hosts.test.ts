@@ -31,7 +31,7 @@ const account = (plan: Account["plan"]): Account => ({
   createdAt: new Date(),
 });
 type Resource = { kind: string; metadata: { name: string; namespace?: string; labels?: object }; spec?: unknown };
-const render = (plan: Account["plan"]) => accountManifests(account(plan), ["10.0.0.1"]) as Resource[];
+const render = (plan: Account["plan"]) => accountManifests(account(plan), ["10.0.0.1"], "calico") as Resource[];
 
 test("an account owns its API host, wildcard view zone, certificate and route", () => {
   const resources = render(accountPlan(config, { name: "one", parents: ["https://app.example.org"] }));

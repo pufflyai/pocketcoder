@@ -11,7 +11,7 @@ import { requireKindStorage } from "./managed-diagnostics";
 export async function managedLifecycleFixture(
   configureBackups?: (cluster: Awaited<ReturnType<typeof createKubernetesCluster>>) => Promise<ManagerBackupConfig>,
 ) {
-  const cluster = await createKubernetesCluster({ networkPolicy: true });
+  const cluster = await createKubernetesCluster({ networkPolicy: "calico" });
   const priorConfig = process.env.KUBECONFIG;
   let store: Awaited<ReturnType<typeof ManagerStore.create>> | undefined;
   let service: ReturnType<typeof accountService> | undefined;

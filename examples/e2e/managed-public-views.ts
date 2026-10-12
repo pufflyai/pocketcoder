@@ -20,7 +20,7 @@ type Created = {
   account: { id: string; namespace: string; api_origin: string; view_origin: string };
   operation: { id: string };
 };
-const cluster = await createKubernetesCluster({ networkPolicy: true });
+const cluster = await createKubernetesCluster({ networkPolicy: "calico" });
 const originalConfig = process.env.KUBECONFIG;
 let store: Awaited<ReturnType<typeof ManagerStore.create>> | undefined;
 let server: ReturnType<typeof Bun.serve> | undefined;

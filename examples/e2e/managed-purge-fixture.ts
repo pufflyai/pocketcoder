@@ -42,7 +42,7 @@ export async function managedPurgeFixture(options: { physicalStorage?: boolean }
     if (failures.length) throw new AggregateError(failures, "Managed purge fixture cleanup failed");
   }
   try {
-    const owned = await createKubernetesCluster({ networkPolicy: true });
+    const owned = await createKubernetesCluster({ networkPolicy: "calico" });
     cluster = owned;
     const kubeconfig = await managerKubeconfig(owned);
     process.env.KUBECONFIG = kubeconfig;

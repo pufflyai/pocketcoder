@@ -2,10 +2,12 @@ import type { Account } from "../database/store";
 import { createBindingLabel, createNamespaceLabel } from "../purge/namespace-binding";
 import { accountController } from "./controller";
 import { accountNetworkPolicies } from "./network";
+import type { PolicyProvider } from "./policy-provider";
 import { publicHostManifests } from "./public-hosts";
 export function accountManifests(
   account: Account,
   apiAddresses: string[],
+  provider: PolicyProvider,
   storageDestinations: { cidr: string; port: number }[] = [],
 ) {
   const labels = { "pocketcoder.dev/account": account.id };
@@ -83,7 +85,7 @@ export function accountManifests(
         resources: { requests: { storage: "10Gi" } },
       },
     },
-    ...accountNetworkPolicies(account, apiAddresses, storageDestinations),
+    ...accountNetworkPolicies(account, apiAddresses, provider, storageDestinations),
     ...accountController(account),
     ...publicHostManifests(account),
   ];
