@@ -48,10 +48,10 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
 # The indexes pin all package versions, including indirect dependencies.
 RUN case "$TARGETARCH" in \
       amd64) printf '%s\n' \
-        '42c9134738be2d87c35ebdabdaa23b72b79160c3dfa8bfbee727612cf5c04329' \
+        '2784f87a5eb8bad43dedb6a00c1f4b912485405db8b90d1e869236085c45ffcc' \
         '24fc2ccb08f3125429a38b31bd6c76a7b394c6236df0975760dc8259e50dfbd5' ;; \
       arm64) printf '%s\n' \
-        '1f16499aa3c91409911de0d6cc0f9d3afddafec96dfa6924479ed9d0b1228b64' \
+        '1e223627b4049bf957c16a2adcb04bedcb0379da4c672e620bc3f0311b5e71c9' \
         '28053719c18be2ee9cf4dfaa9703450225628ed1f2bded0f3758d72b4fb57634' ;; \
       *) exit 1 ;; \
     esac | sort > /opt/apk-index-checksums
