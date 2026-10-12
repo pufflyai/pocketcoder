@@ -47,7 +47,7 @@ resource "digitalocean_kubernetes_cluster" "recovery" {
 
   node_pool {
     name       = "pc103-system"
-    size       = "s-4vcpu-8gb"
+    size       = "s-2vcpu-4gb"
     node_count = 2
     labels     = { "pocketcoder.dev/pool" = "system" }
   }
@@ -57,9 +57,8 @@ resource "digitalocean_kubernetes_node_pool" "workspaces" {
   cluster_id = digitalocean_kubernetes_cluster.recovery.id
   name       = "pc103-workspaces"
   size       = "s-4vcpu-8gb"
-  auto_scale = true
-  min_nodes  = 1
-  max_nodes  = 2
+  auto_scale = false
+  node_count = 1
   labels     = { "pocketcoder.dev/pool" = "workspaces" }
 
   taint {

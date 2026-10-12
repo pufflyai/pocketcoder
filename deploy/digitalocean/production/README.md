@@ -15,8 +15,8 @@ the project assignment. No existing resource is imported or changed.
 | Role | Candidate resource | Placement and storage |
 | --- | --- | --- |
 | Control plane | HA DOKS, `pocketcoder-pc103-recovery` | ams3; Kubernetes `1.34.12-do.0` |
-| Account controllers and edge | Two `s-4vcpu-8gb` system workers | One controller replica/account; two edge replicas spread across workers |
-| Coding workspaces | One to two `s-4vcpu-8gb` workers | Workspace taint; gVisor only; Cilium enforced |
+| Account controllers and edge | Two `s-2vcpu-4gb` system workers | One controller replica/account; two edge replicas spread across workers |
+| Coding workspaces | One fixed `s-4vcpu-8gb` worker | Workspace taint; gVisor only; Cilium enforced |
 | Manager and backup timers | `pocketcoder-pc103-operator`, `s-2vcpu-4gb` | Loopback manager listener; SSH tunnel for operators |
 | Manager data | `pocketcoder-pc103-manager`, 10 GiB | Private ext4 volume; one kernel writer lock |
 | Independent manager authority | `pocketcoder-pc103-journal`, 1 GiB | Separate volume and rollback boundary; never archived |
@@ -31,10 +31,18 @@ before applying, including a replacement node and temporary recovery host.
 
 Terraform does not bootstrap services, install gVisor, create the public edge,
 or enable backups. Those steps follow approval and the PC-84 runtime proof.
-The two system workers reserve capacity for a failed worker's controllers.
-This is a sizing candidate, not a measured account-capacity limit. Placement,
-remaining-worker headroom and the second edge replica must be proved before
-opening traffic. PC-54 owns measured admission limits.
+Each system worker has 2 vCPUs and 4 GiB. Before opening traffic, prove that
+one worker can run both synthetic account controllers, the edge and required
+system services with headroom. If that proof fails, reduce admitted account
+capacity or revise the plan; do not silently resize workers. PC-54 owns measured
+admission limits. This candidate is not a tested customer capacity.
+
+The workspace pool has no autoscaling. New work must queue or be refused when
+the single worker is full. A failed workspace worker pauses coding until its
+replacement is ready; the two system workers retain account controller and edge
+placement. The recovery trial must include that delay in RTO. Keep gVisor,
+enforced egress, HA control plane, separate operator data and independent
+journals. Adding a second permanent workspace worker needs a new cost decision.
 
 ## Verified prices and budget
 
@@ -45,24 +53,37 @@ use the same version as the separately tested pilot.
 
 | Resource | Monthly USD budget |
 | --- | ---: |
-| Two system workers | 96.00 |
+| Two system workers | 48.00 |
 | One workspace worker | 48.00 |
 | Operator host | 24.00 |
 | HA control plane | 40.00 |
 | One regional load balancer, one size unit | 12.00 |
 | Spaces base subscription | 5.00 |
 | 32 GiB of manager/journal/account/monitoring volumes | 3.20 |
-| **Baseline** | **228.20** |
-| Second workspace worker | +48.00 |
+| **Baseline** | **180.20** |
 | Two extra 10 GiB restore volumes, if retained | +2.00 |
-| **Planned steady ceiling** | **278.20** |
+| **Planned steady ceiling** | **182.20** |
+
+This replaces the rejected $228.20 baseline / $278.20 ceiling. The operator
+asked on 12 October to stay closer to $200/month. Smaller system workers save
+$48/month; fixing the workspace pool at one node removes another $48/month
+from the former ceiling. The listed steady resources leave $17.80/month below
+$200 for variable costs. This is not a provider-enforced total bill cap.
 
 These are current list-price estimates, not a measured bill. Tax, excess
 network traffic, Spaces storage above the shared 250 GiB allowance, snapshots,
 and temporary replacement hosts are extra. A replacement operator host adds
-up to $24/month while it exists. Budget $12 for a 24-hour disposable proof
-with one temporary replacement host, before those extras. Detached volumes
-still accrue charges.
+up to $24/month while it exists, or $0.86 for 24 hours. Budget $15 for a
+24-hour disposable proof with one temporary replacement host. The listed
+resources, retained restore volumes and that host cost about $7.36 for the day
+using the verified hourly worker prices and prorating the other listed charges
+over 28 days. Reserve the full $5 Spaces monthly price conservatively; replacing
+its daily share with that reserve brings the estimate to about $12.19.
+Spaces documents hourly proration when all buckets are deleted; cleanup must
+verify that condition before relying on the lower charge.
+Stay within the $15 trial budget and
+stop if the remaining budget cannot cover owned cleanup. Detached volumes still
+accrue charges.
 
 Sources: [DOKS billing](https://docs.digitalocean.com/products/kubernetes/details/pricing/),
 [volume billing](https://docs.digitalocean.com/products/volumes/details/pricing/),
@@ -77,8 +98,10 @@ alone does not establish those properties.
 The 12 October plan has **10 additions, 0 changes, 0 deletions**. It is stored
 at `~/.pocketcoder-operator/pc103/recovery.tfplan`, mode 0600, in a mode-0700
 operator folder. Its proposed SSH key is the existing public key `do-aure`,
-ID `50859617`. Its proposed SSH source is `83.249.36.119/32`; confirm the source
-before applying. Never copy private keys or tokens into Terraform variables.
+ID `50859617`. The operator confirmed this key and SSH source
+`83.249.36.119/32` in review request `a2f9a43a` on 12 October. Recheck that the
+source address still matches before applying. Never copy private keys or tokens
+into Terraform variables.
 
 Refresh the plan if its source files, region inventory, source address or price
 change. Keep state and finite kubeconfigs in the private operator folder.
@@ -108,8 +131,10 @@ secure storage. Neither belongs in a workspace or database archive.
 
 ## Decision and remaining proof
 
-The operator must approve the candidate layout, $278.20/month steady ceiling,
-and $12/24-hour named synthetic failure trial before apply. Customer enablement
+The operator must approve the revised layout, $182.20/month steady ceiling
+plus listed variable costs, and $15/24-hour named synthetic failure trial before
+apply. The previous cost decision was denied; SSH access was confirmed.
+Customer enablement
 remains PC-69's separate decision. The saved lean pilot approval does not cover
 this larger layout.
 
