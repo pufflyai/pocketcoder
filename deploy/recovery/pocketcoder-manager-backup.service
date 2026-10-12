@@ -1,0 +1,17 @@
+[Unit]
+Description=Capture an encrypted PocketCoder manager backup with its writer stopped
+After=pocketcoder-account-backups.service
+
+[Service]
+Type=oneshot
+User=pocketcoder-operator
+Group=pocketcoder-operator
+UMask=0077
+WorkingDirectory=/opt/pocketcoder
+EnvironmentFile=/etc/pocketcoder-private/manager.env
+ExecStart=+/usr/bin/systemctl stop pocketcoder-manager.service
+ExecStart=/usr/local/bin/bun --no-env-file deploy/recovery/run-manager-backup.ts
+ExecStopPost=+/usr/bin/systemctl start pocketcoder-manager.service
+KillMode=control-group
+TimeoutStopSec=30s
+TimeoutStartSec=20min
