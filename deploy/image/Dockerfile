@@ -48,11 +48,11 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
 # The indexes pin all package versions, including indirect dependencies.
 RUN case "$TARGETARCH" in \
       amd64) printf '%s\n' \
-        '51c35337f1d7c1149833854d6e75e45b3279be8d5690951ce1c59ce2b3122d9a' \
+        '89a24bf1ae041c9fc8a5ed303837aa865d6bfee24dd42d08bf021fd106d26791' \
         '6571c980dff490d90f63f6f1f8790fafec8e10534a8b3d41a3b077ea3d52c137' ;; \
       arm64) printf '%s\n' \
         '3fde43dc10e3bf4e0900ddee9988c40c02881626050a872815d7c828d2e9308b' \
-        '74ff3e83c634c919bec131fd27aa7abf2ee986046eefc09691b6e7e58d8ed17e' ;; \
+        '86fd26abf4d0b7dd643e9ec43b2a295d23a74abc65396aa914431822c76cd5be' ;; \
       *) exit 1 ;; \
     esac | sort > /opt/apk-index-checksums
 # Openbox needs a passwd record for the UID enforced by the workspace driver.
