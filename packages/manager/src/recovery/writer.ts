@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { SourceWriterSchema } from "@pstdio/pocketcoder-contracts";
@@ -116,6 +116,7 @@ export async function transferManagerWriter(
     return;
   }
   // Holding the original installation's kernel lock proves its manager is stopped during transfer.
+  if (!lstatSync(previous.writer.directory).isDirectory()) throw new Error("Manager recovery source identity differs.");
   const source = lockDataFolder(previous.writer.directory);
   try {
     if (!isDeepStrictEqual(source.sourceWriter(), previous.writer))
