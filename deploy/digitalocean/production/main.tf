@@ -28,7 +28,7 @@ variable "operator_sources" {
 resource "digitalocean_vpc" "recovery" {
   name        = "pocketcoder-pc103-ams3"
   region      = "ams3"
-  ip_range    = "10.110.64.0/20"
+  ip_range    = "10.110.128.0/20"
   description = "PC-103 disposable recovery proof; production layout candidate"
 }
 

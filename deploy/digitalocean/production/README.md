@@ -2,9 +2,10 @@
 
 The full monthly operating budget is **$200 maximum**. It includes tax,
 variable charges, recovery tests and owned cleanup. No extra trial budget or
-automatic cost increase is authorized. This layout has not been applied.
-Customer admission stays closed. The PC-84/85 pilot still needs its finite
-operator access and hosted runtime proof.
+automatic cost increase is authorized. The disposable trial was started on
+13 October 2026 with the finite `pocketcoder-writer` context. Its recorded expiry
+is 13 January 2027. Customer admission stays closed. Hosted runtime and recovery
+proof remain incomplete.
 
 `main.tf` prepares ten new resources in the existing Pockercoder project,
 `126c5d77-926b-475b-8111-e30f3992a338`, in Pufflig AB. The project is not
@@ -24,11 +25,14 @@ the project assignment. No existing resource is imported or changed.
 | Independent manager authority | `pocketcoder-pc103-journal`, 1 GiB | Separate volume and rollback boundary; never archived |
 | Two synthetic accounts | Two CSI volumes, 10 GiB each | Manager-created; retain exact volume IDs |
 | Monitoring | One 1 GiB volume | PC-53 configuration and named operator receiver |
-| Off-node evidence | Private versioned Spaces bucket in ams3 | Encrypted archives and current journals; no CDN |
+| Off-node evidence | Backend decision pending | Spaces failed the immutable-writer check; recovery remains closed |
 
-The proposed VPC is `10.110.64.0/20`. Read-only inventory on 12 October 2026
-showed no overlap. The only existing cluster is `kito2-somefrogs-staging`;
-it is outside this proof. The droplet limit is 25. Recheck inventory and quota
+The proposed VPC is `10.110.128.0/20`. On 13 October 2026, DigitalOcean refused
+the earlier `10.110.64.0/20`: it overlaps the existing Kubernetes service range
+`10.110.64.0/19`, which the VPC list does not expose. Check both VPC ranges and
+each cluster's `cluster_subnet` and `service_subnet` before choosing a network.
+The only existing cluster is `kito2-somefrogs-staging`; it is outside this proof.
+The droplet limit is 25. Recheck inventory and quota
 before applying, including a replacement node and temporary recovery host.
 
 Terraform does not bootstrap services, install gVisor, create the public edge,
@@ -104,9 +108,12 @@ Sources: [DOKS billing](https://docs.digitalocean.com/products/kubernetes/detail
 [volume billing](https://docs.digitalocean.com/products/volumes/details/pricing/),
 [load balancer billing](https://docs.digitalocean.com/products/networking/load-balancers/details/pricing/),
 [Spaces billing](https://docs.digitalocean.com/products/spaces/details/pricing/).
-Spaces conditional writes and consistent writer/version listings still need
-the actual bucket proof; [S3 compatibility](https://docs.digitalocean.com/products/spaces/reference/s3-compatibility/)
-alone does not establish those properties.
+The actual Spaces bucket proof failed on 13 October 2026: two conditional PUTs
+to the same key both succeeded and the second value became current. Versioning
+retained both versions but did not protect the immutable writer claim. Spaces
+cannot hold the current recovery journals safely. Keep recovery closed until
+a storage backend passes the existing conditional-write contract. Evidence and
+the repeatable command are in PC-103 report RP-250.
 
 ## Saved plan and access
 
@@ -125,8 +132,10 @@ Finite access must cover only the named trial resources and their cleanup:
 cluster/VPC/pool creation and deletion, operator Droplet/firewall/volume
 creation and attachment, provider power-off evidence, and project assignment.
 PC-111's pilot scopes do not cover every extra PC-103 resource.
-The $200 boundary is already the saved cost decision. Finite access is still
-missing; it must cover only these named resources.
+The $200 boundary is already the saved cost decision. The replacement finite
+context now permits the named resource reads and the trial apply. The operator
+must supply a local private key matching the approved `do-aure` public key;
+the currently loaded SSH agent key differs.
 
 After obtaining the required finite resource access, use the private-folder plan flow from
 [PC-84](../pilot/README.md). Never apply from repository state.
@@ -148,8 +157,8 @@ secure storage. Neither belongs in a workspace or database archive.
 ## Decision and remaining proof
 
 Work within the saved $200/month boundary. Do not ask to raise it or add a
-separate trial allowance. SSH source/key were confirmed. Apply still needs
-finite authority for the named resources and a forecast inside the boundary.
+separate trial allowance. SSH source/key were confirmed. The trial apply used
+the confirmed finite context and the saved forecast inside the boundary.
 Customer enablement remains PC-69's separate decision.
 
 PC-103 remains incomplete until the [failure runbook](../../../docs/hosted-node-recovery.md)
