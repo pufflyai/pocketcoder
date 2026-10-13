@@ -12,6 +12,7 @@ import {
 } from "@pstdio/pocketcoder-db/off-node";
 import { ManagerError } from "../accounts/errors";
 import { managerJournal } from "../recovery/journal";
+import type { SourceConfig } from "../recovery/source-binding";
 import { createPurgeCompletion } from "./completion";
 import { createRequestDigest, intentKeys, type PurgeIntent, PurgeIntentSchema } from "./intent";
 import { createProvisionHistory } from "./provision-history";
@@ -19,6 +20,7 @@ import { createProvisionHistory } from "./provision-history";
 export interface PurgeAuthorityConfig {
   directory: string;
   storage: ObjectStorageConfig;
+  source?: SourceConfig;
 }
 const equal = (left: PurgeIntent, right: PurgeIntent) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -114,6 +116,7 @@ export async function createPurgeAuthority(dataDir: string, config: PurgeAuthori
     await refresh();
     return {
       refresh,
+      sourceConfig: config.source,
       acknowledge,
       journal,
       completion,

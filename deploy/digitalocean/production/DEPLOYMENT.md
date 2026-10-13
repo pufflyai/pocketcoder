@@ -55,7 +55,8 @@ credential values:
   "runtimeClass": "pc103-gvisor",
   "storageConfigFile": "/private/operator/storage.json",
   "encryptionKeyFile": "/private/operator/archive-key",
-  "cloudCredentialFile": "/private/operator/cloud-credential.json"
+  "cloudCredentialFile": "/private/operator/cloud-credential.json",
+  "source": { "volumeId": "<retained manager volume UUID>" }
 }
 ```
 
@@ -100,10 +101,43 @@ recovery marker to make a restored host start.
 
 ## Recovery proof
 
-Use the same recorded release and startup inputs for a fenced replacement.
-Retain the original volume IDs and independent authority. Complete the existing
-restore and journal replay protocol before expecting a relocated manager to
-start. A changed source device/inode still refuses unproved transfer.
+The manager binds its writer to the provider host and exact volume UUID, name,
+region and sole attachment. The runtime can stat only the named block device;
+raw disk reads must fail. Native directory, file descriptor and kernel-lock
+checks still use the current Linux device number. Only a verified current
+immutable claim permits comparison with the saved device number after reboot.
+A fresh volume publishes a bound generation-zero claim before admission.
+
+For a retained-volume host replacement, save the readiness record before the
+fault. Keep the source host powered off after a completed hard `power_off`
+action. Record `source.migration` in the private deployment input: `operationId`,
+`previousClaimDigest`, `sourceHost` (`hostId`, `region`), `powerOffActionId`, the
+saved `sourceReady` body (`hostId`, `readyAt`, `bootId`, `commit`, `sha256`) and
+`sourceReadyDigest`. The claim digest uses its exact schema JSON encoding. The readiness digest uses
+SHA256 of its JSON body with keys sorted alphabetically. This is
+trusted operator migration evidence, not evidence reconstructed from a lost host.
+
+Copy the original startup file to a retained private file. Set
+`retained_source_cloud_init_file` to it, copy the reviewed `source.tf` to the
+private Terraform folder, and move the original state once:
+
+```sh
+terraform state mv digitalocean_droplet.operator 'digitalocean_droplet.operator_source[0]'
+```
+
+Generate the new startup file and inspect a saved plan. It must retain the source
+host, manager volume and independent journal. The new host alone receives the
+attachments. The source is retained temporarily inside the recovery reserve,
+with `prevent_destroy` until the handoff is acknowledged. Startup rechecks both
+provider ownership and source power-off after immutable claim publication. A
+pending transfer, changed source or rolled-back marker keeps admission closed.
+The new claim is appended; earlier claims and journal identity stay unchanged.
+
+Repeat the same fenced process for another host replacement. Each transfer
+retains its immutable predecessor, preparation and completion records. An old
+bundle rejects the new claim schema. Recovery from an encrypted archive onto a
+fresh or cloned volume is still a separate acceptance gap; the raw local restore
+path refuses provider-bound claims. Do not edit markers or writer claims.
 
 First-boot and reboot readiness, delivered alerts, worker runtime validation,
 remaining-node capacity and real failure/recovery measurements are still required

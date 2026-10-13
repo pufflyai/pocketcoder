@@ -176,6 +176,7 @@ has actual provider evidence: powered-off source node, relocated volume,
 single writer, working workspace, manager restore with current purge replay,
 and measured recovery times. No hosted RPO or RTO has been measured yet.
 The current manager transfer binds the original filesystem device/inode.
-An unreachable or differently numbered source device remains fenced. Never
+An unreachable or unproved source remains fenced. A verified host and exact
+provider volume permit Linux device renumbering while native locks stay strict. Never
 edit writer markers to force relocation; the provider-backed transfer path
 must still be implemented and proved during the owned recovery work.
