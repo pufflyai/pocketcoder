@@ -91,27 +91,31 @@ systemctl is-active pocketcoder-manager.service
         "root:root",
         "0644",
       ),
-      file("/etc/pocketcoder-private/manager.env", `${environment}\n`, "10001:10001"),
+      file("/etc/pocketcoder-private/manager.env", `${environment}\n`, "pocketcoder-operator:pocketcoder-operator"),
       file(
         "/etc/pocketcoder-private/download.conf",
         `url = ${JSON.stringify(input.artifact.url)}\noutput = /var/lib/pocketcoder-operator.tar.gz\nlocation\n`,
       ),
-      file("/etc/pocketcoder-private/cloud-credential.json", json(input.cloudCredential), "10001:10001"),
-      file("/etc/pocketcoder-private/archive-key", input.encryptionKey, "10001:10001"),
+      file(
+        "/etc/pocketcoder-private/cloud-credential.json",
+        json(input.cloudCredential),
+        "pocketcoder-operator:pocketcoder-operator",
+      ),
+      file("/etc/pocketcoder-private/archive-key", input.encryptionKey, "pocketcoder-operator:pocketcoder-operator"),
       file(
         "/etc/pocketcoder-private/off-node.json",
         json({ storage: input.storage, encryptionKeyFile: "/etc/pocketcoder-private/archive-key" }),
-        "10001:10001",
+        "pocketcoder-operator:pocketcoder-operator",
       ),
       file(
         "/etc/pocketcoder-private/purge.json",
         json({ directory: "/mnt/pc103-journal/authority", storage: input.storage }),
-        "10001:10001",
+        "pocketcoder-operator:pocketcoder-operator",
       ),
       file(
         "/etc/pocketcoder-private/account-backups.json",
         json({ managerUrl: "http://127.0.0.1:8092", tokenFile: "/etc/pocketcoder-private/schedule-operator-token" }),
-        "10001:10001",
+        "pocketcoder-operator:pocketcoder-operator",
       ),
     ],
     runcmd: [

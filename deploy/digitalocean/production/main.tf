@@ -118,6 +118,11 @@ resource "digitalocean_firewall" "operator" {
     port_range            = "30900"
     destination_addresses = [digitalocean_vpc.recovery.ip_range]
   }
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "80"
+    destination_addresses = ["169.254.169.254/32"]
+  }
 }
 
 resource "digitalocean_volume" "manager" {

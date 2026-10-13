@@ -87,12 +87,14 @@ private input and are held by the storage service and trusted controllers.
 
 The selected endpoint node is a recorded trial placement, not an availability
 claim. Fencing, volume movement, endpoint changes and remaining-node headroom
-must be proved before accepting storage-node recovery. Actual controller access
-through Cilium and NodePort also needs a live check.
+must be proved before accepting storage-node recovery. The deployment also owns a Cilium policy for account controllers: node TCP
+30900 before routing, and only the named RustFS Pods on TCP 9000 after routing.
+Live probes must prove controller access and workspace denial.
 
 Manager data, independent authority and backup receipts stay on their separate
 retained mounts. The archive key stays outside both volumes. The manager listens
-only on loopback. A failed storage contract or uncertain writer identity stops
+only on loopback. Operator egress permits HTTP only to the provider metadata
+address for host identity and provider console access. A failed storage contract or uncertain writer identity stops
 startup. Deployment does not reset a lock, writer claim, deletion journal or
 recovery marker to make a restored host start.
 

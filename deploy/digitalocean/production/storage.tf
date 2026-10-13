@@ -176,3 +176,33 @@ resource "kubernetes_network_policy_v1" "backups" {
     }
   }
 }
+
+# Cilium checks the node port before translating this private route to a Pod.
+resource "kubernetes_manifest" "controller_backups" {
+  manifest = {
+    apiVersion = "cilium.io/v2"
+    kind       = "CiliumClusterwideNetworkPolicy"
+    metadata   = { name = "pc103-controller-backups" }
+    spec = {
+      endpointSelector = {
+        matchLabels = { "k8s:pocketcoder.dev/role" = "controller" }
+        matchExpressions = [{
+          key      = "k8s:io.cilium.k8s.namespace.labels.pocketcoder.dev/account"
+          operator = "Exists"
+        }]
+      }
+      egress = [{
+        toEntities = ["host", "remote-node"]
+        toPorts    = [{ ports = [{ port = "30900", protocol = "TCP" }] }]
+        }, {
+        toEndpoints = [{
+          matchLabels = {
+            "k8s:io.kubernetes.pod.namespace" = kubernetes_namespace_v1.backups.metadata[0].name
+            "k8s:app.kubernetes.io/name"      = "pc103-backup-store"
+          }
+        }]
+        toPorts = [{ ports = [{ port = "9000", protocol = "TCP" }] }]
+      }]
+    }
+  }
+}
