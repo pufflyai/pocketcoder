@@ -24,6 +24,9 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+      - name: Install pstdio extension dependencies
+        working-directory: .pstdio/extensions/pocketcoder
+        run: bun install --frozen-lockfile
       - name: Verify Linux syscall trace prerequisite
         run: strace --version
       - name: Lint, format-check, and detect unused code

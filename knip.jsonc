@@ -19,7 +19,7 @@
       "ignoreDependencies": ["nx"]
     },
     ".pstdio/extensions/*": {
-      "entry": ["src/view.ts", "**/*.test.ts"]
+      "entry": ["extension.ts", "**/*.test.ts"]
     },
     "packages/db": {
       "entry": [
