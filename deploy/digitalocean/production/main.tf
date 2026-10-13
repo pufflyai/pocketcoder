@@ -5,6 +5,10 @@ terraform {
       source  = "digitalocean/digitalocean"
       version = "2.105.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "3.2.1"
+    }
   }
 }
 
@@ -23,6 +27,12 @@ variable "operator_sources" {
     condition     = length(var.operator_sources) > 0 && alltrue([for cidr in var.operator_sources : can(cidrhost(cidr, 0))])
     error_message = "Provide the approved operator source CIDRs."
   }
+}
+
+variable "operator_cloud_init_file" {
+  type        = string
+  sensitive   = true
+  description = "Private generated startup configuration outside repositories and workspaces."
 }
 
 resource "digitalocean_vpc" "recovery" {
@@ -69,13 +79,14 @@ resource "digitalocean_kubernetes_node_pool" "workspaces" {
 }
 
 resource "digitalocean_droplet" "operator" {
-  name     = "pocketcoder-pc103-operator"
-  region   = "ams3"
-  size     = "s-2vcpu-4gb"
-  image    = "ubuntu-24-04-x64"
-  vpc_uuid = digitalocean_vpc.recovery.id
-  ssh_keys = [var.operator_ssh_key_id]
-  tags     = ["pocketcoder-pc103-recovery"]
+  name      = "pocketcoder-pc103-operator"
+  region    = "ams3"
+  size      = "s-2vcpu-4gb"
+  image     = "ubuntu-24-04-x64"
+  vpc_uuid  = digitalocean_vpc.recovery.id
+  ssh_keys  = [var.operator_ssh_key_id]
+  user_data = file(var.operator_cloud_init_file)
+  tags      = ["pocketcoder-pc103-recovery"]
 }
 
 resource "digitalocean_firewall" "operator" {
@@ -101,6 +112,11 @@ resource "digitalocean_firewall" "operator" {
     protocol              = "udp"
     port_range            = "53"
     destination_addresses = ["0.0.0.0/0", "::/0"]
+  }
+  outbound_rule {
+    protocol              = "tcp"
+    port_range            = "30900"
+    destination_addresses = [digitalocean_vpc.recovery.ip_range]
   }
 }
 

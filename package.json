@@ -103,7 +103,9 @@
     "monitoring:config": "bun deploy/monitoring/write-config.ts",
     "backup:accounts": "bun --no-env-file deploy/recovery/run-account-backups.ts",
     "backup:manager": "bun --no-env-file deploy/recovery/run-manager-backup.ts",
-    "example:e2e:managed-scheduled-backups": "bun --no-env-file examples/e2e/managed-scheduled-backups.ts"
+    "example:e2e:managed-scheduled-backups": "bun --no-env-file examples/e2e/managed-scheduled-backups.ts",
+    "operator:bundle": "bun deploy/digitalocean/production/bundle.ts",
+    "operator:cloud-init": "bun --no-env-file deploy/digitalocean/production/write-cloud-init.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

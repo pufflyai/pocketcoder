@@ -1,4 +1,8 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["../deploy/recovery/*.ts", "../examples/e2e/managed-scheduled-backups.ts"]
+  "include": [
+    "../deploy/recovery/*.ts",
+    "../examples/e2e/managed-scheduled-backups.ts",
+    "../deploy/digitalocean/production/*.ts"
+  ]
 }

@@ -7,11 +7,13 @@ automatic cost increase is authorized. The disposable trial was started on
 is 13 January 2027. Customer admission stays closed. Hosted runtime and recovery
 proof remain incomplete.
 
-`main.tf` prepares ten new resources in the existing Pockercoder project,
+The initial `main.tf` apply created ten new infrastructure resources in the existing Pockercoder project,
 `126c5d77-926b-475b-8111-e30f3992a338`, in Pufflig AB. The project is not
 disposable. The resources are a dedicated VPC, standard DOKS cluster, workspace pool,
 operator host and firewall, two operator volumes and their attachments, and
-the project assignment. No existing resource is imported or changed.
+the project assignment. No Kito resource is imported or changed. `storage.tf` adds the approved private
+RustFS service and its separate 10-GiB PVC to the same cell. Operator startup data
+now records the release, services and credential renewal.
 
 ## Layout
 
@@ -25,7 +27,7 @@ the project assignment. No existing resource is imported or changed.
 | Independent manager authority | `pocketcoder-pc103-journal`, 1 GiB | Separate volume and rollback boundary; never archived |
 | Two synthetic accounts | Two CSI volumes, 10 GiB each | Manager-created; retain exact volume IDs |
 | Monitoring | One 1 GiB volume | PC-53 configuration and named operator receiver |
-| Off-node evidence | Backend decision pending | Spaces failed the immutable-writer check; recovery remains closed |
+| Off-node evidence | Approved RustFS on a separate 10-GiB PVC | Private NodePort; first boot, storage recovery and headroom must be proved |
 
 The proposed VPC is `10.110.128.0/20`. On 13 October 2026, DigitalOcean refused
 the earlier `10.110.64.0/20`: it overlaps the existing Kubernetes service range
@@ -35,8 +37,11 @@ The only existing cluster is `kito2-somefrogs-staging`; it is outside this proof
 The droplet limit is 25. Recheck inventory and quota
 before applying, including a replacement node and temporary recovery host.
 
-Terraform does not bootstrap services, install gVisor, create the public edge,
-or enable backups. Those steps follow approval and the PC-84 runtime proof.
+Terraform supplies the generated operator startup configuration. It installs a
+checksum-pinned operator release, mounts the retained volumes, renews finite
+access, starts the manager and backup schedules, and records authenticated
+readiness. See [repeatable operator deployment](DEPLOYMENT.md). The reserved
+gVisor change and the public edge remain separate rollout steps.
 Each system worker has 2 vCPUs and 4 GiB. Before opening traffic, prove that
 one worker can run both synthetic account controllers, the edge and required
 system services with headroom. If that proof fails, reduce admitted account
@@ -70,13 +75,13 @@ use the same version as the separately tested pilot.
 | Operator host | 24.00 |
 | Standard managed control plane | 0.00 |
 | One regional load balancer, one size unit | 12.00 |
-| Spaces base subscription | 5.00 |
-| 32 GiB of manager/journal/account/monitoring volumes | 3.20 |
-| **Baseline** | **140.20** |
+| Unused object-storage/transfer reserve | 5.00 |
+| 42 GiB of manager/journal/account/monitoring/RustFS volumes | 4.20 |
+| **Baseline** | **141.20** |
 | Two extra 10 GiB restore volumes, if retained | +2.00 |
-| **Listed resources with restore volumes** | **142.20** |
-| Conservative 25% tax reserve on listed resources | 35.55 |
-| Remaining room for variable charges and recovery | 22.25 |
+| **Listed resources with restore volumes** | **143.20** |
+| Conservative 25% tax reserve on listed resources | 35.80 |
+| Remaining room for variable charges and recovery | 21.00 |
 | **Total monthly boundary** | **200.00** |
 
 This replaces the earlier proposals. On 12 October the operator made $200/month
@@ -111,8 +116,9 @@ Sources: [DOKS billing](https://docs.digitalocean.com/products/kubernetes/detail
 The actual Spaces bucket proof failed on 13 October 2026: two conditional PUTs
 to the same key both succeeded and the second value became current. Versioning
 retained both versions but did not protect the immutable writer claim. Spaces
-cannot hold the current recovery journals safely. Keep recovery closed until
-a storage backend passes the existing conditional-write contract. Evidence and
+cannot hold the current recovery journals safely. The operator approved RustFS
+on 13 October, using the unused reserve for its volume and tax. Keep recovery
+closed until the live backend passes the conditional-write and recovery proofs. Evidence and
 the repeatable command are in PC-103 report RP-250.
 
 ## Saved plan and access
@@ -133,9 +139,9 @@ cluster/VPC/pool creation and deletion, operator Droplet/firewall/volume
 creation and attachment, provider power-off evidence, and project assignment.
 PC-111's pilot scopes do not cover every extra PC-103 resource.
 The $200 boundary is already the saved cost decision. The replacement finite
-context now permits the named resource reads and the trial apply. The operator
-must supply a local private key matching the approved `do-aure` public key;
-the currently loaded SSH agent key differs.
+context now permits the named resource reads and the trial apply. The approved SSH public key remains available for diagnosis. Its local private
+key is not required to install services; Terraform startup configuration performs
+that installation.
 
 After obtaining the required finite resource access, use the private-folder plan flow from
 [PC-84](../pilot/README.md). Never apply from repository state.
@@ -149,17 +155,21 @@ terraform -chdir=deploy/digitalocean/production show -no-color \
   ~/.pocketcoder-operator/pc103/recovery.tfplan
 ```
 
-Install pinned candidate artifacts on the separate operator host, with no
-public manager port. Mount operator volumes at stable paths. Keep private
-configuration and the separate archive key recoverable from the operator's
-secure storage. Neither belongs in a workspace or database archive.
+Generate the private startup configuration and apply its reviewed Terraform
+plan through [the deployment command path](DEPLOYMENT.md). The manager stays on
+loopback, and the manager and journal volumes retain stable mount paths. Keep
+the private input and separate archive key recoverable in operator storage.
+Neither belongs in a workspace or database archive. Changing startup data
+replaces the operator host; verify fencing and retain both volumes first.
 
 ## Decision and remaining proof
 
 Work within the saved $200/month boundary. Do not ask to raise it or add a
 separate trial allowance. SSH source/key were confirmed. The trial apply used
 the confirmed finite context and the saved forecast inside the boundary.
-Customer enablement remains PC-69's separate decision.
+The operator approved the exact RP-250 gVisor installer and diff and the RustFS
+backend in request `a766926d`. The named worker installation completed with both
+checksums verified and containerd active. Customer enablement remains PC-69's separate decision.
 
 PC-103 remains incomplete until the [failure runbook](../../../docs/hosted-node-recovery.md)
 has actual provider evidence: powered-off source node, relocated volume,

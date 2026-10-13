@@ -4,7 +4,7 @@ Response owner: **au-re**. This is PC-103's prepared operating procedure.
 The full monthly operating boundary is $200, including tax, variable charges,
 recovery tests and cleanup. There is no extra trial allowance. The named trial
 cell has been created. Worker customization, compatible backup storage and
-operator-host access remain pending. Hosted failure acceptance remains open. See
+the operator deployment inputs remain pending. Hosted failure acceptance remains open. See
 [the concrete layout and budget](../deploy/digitalocean/production/README.md).
 
 ## Backup schedules
@@ -15,67 +15,33 @@ and 12:45 UTC, after any running account backup service finishes.
 Two snapshots per day leave room to detect and retry a failed capture before
 the 24-hour recovery-point target. A scheduled start is not a verified backup.
 
-Create `/etc/pocketcoder-private/account-backups.json`, mode 0600, owned by
-`pocketcoder-operator`. Its token file is also mode 0600:
+The deployment generates private schedule, manager, purge and off-node configuration
+under `/etc/pocketcoder-private`. Generated files use mode 0600 and their directory
+uses mode 0700. They stay outside manager data, independent journal and workspace
+volumes. The separate archive key remains recoverable in private operator storage.
 
-```json
-{
-  "managerUrl": "http://127.0.0.1:8092",
-  "tokenFile": "/etc/pocketcoder-private/schedule-operator-token"
-}
-```
+The account runner captures ready accounts once per twelve-hour UTC window and
+polls durable operations. A retry reuses its capture identity and requires a
+verified receipt. It reports non-ready accounts as unavailable and does not
+silently resume them. Failures remain visible to the existing alert route.
 
-Use a finite full manager operator key, with the existing maximum 24-hour
-expiry. A metrics-only key is refused. Rotate before expiry; never extend the
-lifetime to make scheduling unattended. Keep all operator paths outside
-account and workspace volumes.
+The manager backup service stops the manager and captures under its real kernel
+lock. Its systemd cleanup stops the exact capture container before restarting
+the manager, including after timeout or cancellation. The same maintenance lock
+serializes finite key rotation. A retry verifies the saved encrypted object and
+retains the last successful receipt; it does not create another archive version.
 
-The account runner requests one capture per ready account per twelve-hour UTC
-window and polls its durable operation. It requires a saved receipt for a
-successful operation. Retrying within the window reuses the operation, including
-after a manager restart. All ready accounts are admitted before polling starts,
-using one shared fifteen-minute polling deadline. A failed account does not
-prevent attempts for its healthy peers; the cycle fails if any capture fails
-or times out.
-Non-ready accounts are reported as unavailable without changing their state.
-For a suspended account, verify its last backup covers its last data changes;
-never silently resume it to make the schedule green.
+Use the [repeatable operator deployment](../deploy/digitalocean/production/DEPLOYMENT.md).
+Terraform startup configuration installs the checked release and generates the
+services. Each boot refreshes Kubernetes access, verifies the storage contract,
+rotates finite manager keys, waits for authenticated readiness, runs account and
+manager captures in order, and starts their timers. The boot service owns this
+order; the timers do not start independently with stale credentials.
 
-Create `/etc/pocketcoder-private/manager.env`, mode 0600, with paths only:
-
-```ini
-POCKETCODER_MANAGER_DIR=/mnt/pc103-manager/manager_data
-POCKETCODER_MANAGER_PURGE_CONFIG=/etc/pocketcoder-private/purge.json
-POCKETCODER_MANAGER_OFF_NODE_CONFIG=/etc/pocketcoder-private/off-node.json
-POCKETCODER_MANAGER_BACKUP_RECEIPTS=/mnt/pc103-journal/backup-receipts
-```
-
-Create the receipt directory with mode 0700 and the operator user as owner
-before starting the manager. The manager and backup runner use
-the same private configuration and user. The backup service stops
-`pocketcoder-manager.service`, captures under the real kernel lock, and starts
-the manager through `ExecStopPost`, including after capture failure.
-Account controllers remain running. A persistent request file keeps one manager
-capture identity per UTC window. A retry downloads and verifies its saved
-encrypted object; it does not create another archive version.
-The capture runs as the operator user in the backup unit's own process group.
-Only service stop/start commands run as root. Timeout or explicit stop ends
-the capture group before the manager is started again.
-
-Install the four units from `deploy/recovery` in `/etc/systemd/system` on the
-operator host. Install the checked-out candidate in `/opt/pocketcoder` and Bun
-at `/usr/local/bin/bun`. The manager service must already be configured.
-Validate all units with that host's `systemd-analyze verify` before enabling.
-Terraform and local tests do not enable them.
-
-```sh
-systemctl daemon-reload
-systemctl start pocketcoder-account-backups.service
-systemctl start pocketcoder-manager-backup.service
-systemctl enable --now pocketcoder-account-backups.timer pocketcoder-manager-backup.timer
-systemctl list-timers 'pocketcoder-*'
-journalctl -u pocketcoder-account-backups.service -u pocketcoder-manager-backup.service
-```
+The private readiness ConfigMap records the exact operator Droplet ID, source
+commit and archive checksum after successful initial captures. Match all three
+to the deployment plan. This proves startup, not node-failure recovery or alert
+delivery. No interactive SSH installation is part of the deployment.
 
 Keep the [PC-53 scraper and receiver](monitoring.md) active. Account backup age,
 journal acknowledgement, observation gaps and pending work use existing alerts.
