@@ -105,7 +105,29 @@ An account configured for off-node backups alerts when it has no receipt or its 
 Age uses the verified receipt's snapshot time, including delayed receipt acceptance.
 Run a backup with a new request ID. Verify its saved receipt and off-node object version.
 The rule does not schedule backups. Operators must arrange the account backup schedule.
-Manager disaster-recovery backups remain governed by the manager recovery runbook.
+
+## Manager backup
+
+Set `POCKETCODER_MANAGER_BACKUP_RECEIPTS` to the same private receipt directory
+in the manager service and backup runner. Create it before starting the manager,
+with mode 0700 and the operator service user as owner. Keep it outside manager,
+account and workspace data. The manager reads schedule health and the last
+verified receipt through its existing metrics endpoint.
+
+A configured schedule alerts when no verified recovery point exists or its
+snapshot is older than one day. Receipt file modification time does not reset
+this age. Failed captures retain the last successful recovery point and fire
+the failure alert. An interrupted attempt still marked started after twenty
+minutes also fires it; this matches the backup service's capture limit.
+Unreadable state, missing receipt files or a different journal identity fire
+the observation-gap alert. Unknown observations cannot prove backup health.
+
+Check `journalctl -u pocketcoder-manager-backup.service`, storage access and
+private file access. Fix the cause, then start the backup service again.
+A retry in the same UTC window verifies the same encrypted archive.
+Confirm fresh observations, a verified receipt and notification recovery.
+See [the hosted backup procedure](hosted-node-recovery.md) before stopping or
+restoring the manager.
 
 ## Journal
 
@@ -146,6 +168,13 @@ An earlier account alert cannot count as delivery for a later scrape or credenti
 Each alert must fire, reach the named receiver with response instructions, and resolve after its operator action.
 The demo checks that a missing controller does not block its healthy peer.
 It records local validation, not hosted pilot acceptance.
+
+Run `bun test deploy/monitoring/manager-backup.test.ts` for the manager schedule
+alerts. It uses the real encrypted runner, RustFS, Prometheus, Alertmanager and
+an owned localhost receiver. It checks failed capture and successful retry,
+stale receipt age, interrupted-attempt state and lost receipt access, including
+delivery and resolution. The age and interruption cases use private fixture
+records; they do not prove a hosted timer timeout or node failure.
 
 ## Response commands
 

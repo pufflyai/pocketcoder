@@ -2,6 +2,7 @@ import { type ControllerHealthSchema, diskHeadroom } from "@pstdio/pocketcoder-s
 import type { z } from "zod";
 import type { Account, ManagerStore } from "../database/store";
 import { accountMetrics } from "./account-metrics";
+import { type ManagerBackupObservation, type ManagerBackupSample, managerBackupMetrics } from "./backup-schedule";
 import type { cellCapacity } from "./cell";
 import { prometheus } from "./prometheus";
 
@@ -19,12 +20,19 @@ export function managerMonitoring(
     directory?: string;
     account?: (account: Account) => Promise<z.infer<typeof ControllerHealthSchema>>;
     cell?: () => Promise<ReturnType<typeof cellCapacity>>;
+    backup?: () => Promise<ManagerBackupObservation>;
   } = {},
 ) {
   const observations = new Map<string, z.infer<typeof ControllerHealthSchema> | null>();
   let cell: { at: number; value: ReturnType<typeof cellCapacity> } | null = null;
+  let backup: ManagerBackupSample | null = null;
   let running: Promise<void> | undefined;
   let stopping = false;
+  async function sampleBackup() {
+    if (!probes.backup) return;
+    const value = await observe(probes.backup);
+    backup = value ? { at: Date.now() / 1000, value } : null;
+  }
   async function sampleAccounts(accounts: Account[]) {
     const read = probes.account;
     const ready = accounts.filter((account) => account.state === "ready");
@@ -51,6 +59,7 @@ export function managerMonitoring(
           const value = await observe(probes.cell);
           cell = value ? { at: Date.now() / 1000, value } : null;
         }
+        await sampleBackup();
         await sampleAccounts(accounts);
       })().finally(() => {
         running = undefined;
@@ -68,6 +77,7 @@ export function managerMonitoring(
       );
       output.add("cell_observed", cell ? 1 : 0);
       output.add("cell_observation_age_seconds", cell ? Math.max(0, now - cell.at) : null);
+      managerBackupMetrics(output, Boolean(probes.backup), backup, now);
       if (cell)
         for (const [name, value] of Object.entries(cell.value))
           output.add(`cell_${name.replace(/[A-Z]/g, (s) => `_${s.toLowerCase()}`)}`, value);

@@ -1,9 +1,11 @@
+import { requireOutsideDataFolder } from "@pstdio/pocketcoder-db/off-node";
 import { accountService, createManagerApp, usageSampler } from "./app";
 import { loadManagerBackupConfig } from "./backup/config";
 import { ManagerConfigSchema } from "./config";
 import { ManagerStore } from "./database/store";
 import { KubernetesAccounts } from "./kubernetes/accounts";
 import { purgeControllerFiles } from "./kubernetes/purge-files";
+import { managerBackupProbe } from "./monitoring/backup-schedule";
 import { monitoringProbes } from "./monitoring/kubernetes";
 import { managerMonitoring } from "./monitoring/metrics";
 import { loadManagerPurgeConfig, loadPurgePhysicalStorage } from "./purge/config";
@@ -50,7 +52,7 @@ if (operatorCommand) {
       ? { publicHosts: JSON.parse(process.env.POCKETCODER_MANAGER_PUBLIC_HOSTS) }
       : {}),
   });
-  if (!purge) throw new Error("Private purge authority is required.");
+  if (!purge || !store.purge) throw new Error("Private purge authority is required.");
   const physical = await loadPurgePhysicalStorage(purge, dataDir);
   const service = accountService(
     store,
@@ -58,7 +60,10 @@ if (operatorCommand) {
     physical,
   );
   const usage = usageSampler(store);
-  const monitoring = managerMonitoring(store, monitoringProbes(dataDir));
+  const receipts = process.env.POCKETCODER_MANAGER_BACKUP_RECEIPTS;
+  if (receipts) await requireOutsideDataFolder(dataDir, receipts);
+  const backupProbe = receipts ? managerBackupProbe(receipts, store.purge.journal.head().journalId) : undefined;
+  const monitoring = managerMonitoring(store, { ...monitoringProbes(dataDir), backup: backupProbe });
   const app = createManagerApp(store, config, service, monitoring);
   const endpoint = new URL(`http://${process.env.POCKETCODER_MANAGER_HTTP ?? "127.0.0.1:8092"}`);
   const server = Bun.serve({

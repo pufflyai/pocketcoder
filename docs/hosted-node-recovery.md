@@ -2,9 +2,9 @@
 
 Response owner: **au-re**. This is PC-103's prepared operating procedure.
 The full monthly operating boundary is $200, including tax, variable charges,
-recovery tests and cleanup. There is no extra trial allowance. Apply still needs
-finite access for the named resources and a forecast within that boundary.
-Hosted failure acceptance remains open. See
+recovery tests and cleanup. There is no extra trial allowance. The named trial
+cell has been created. Worker customization, compatible backup storage and
+operator-host access remain pending. Hosted failure acceptance remains open. See
 [the concrete layout and budget](../deploy/digitalocean/production/README.md).
 
 ## Backup schedules
@@ -50,7 +50,8 @@ POCKETCODER_MANAGER_OFF_NODE_CONFIG=/etc/pocketcoder-private/off-node.json
 POCKETCODER_MANAGER_BACKUP_RECEIPTS=/mnt/pc103-journal/backup-receipts
 ```
 
-The receipt directory's parent must exist. The manager and backup runner use
+Create the receipt directory with mode 0700 and the operator user as owner
+before starting the manager. The manager and backup runner use
 the same private configuration and user. The backup service stops
 `pocketcoder-manager.service`, captures under the real kernel lock, and starts
 the manager through `ExecStopPost`, including after capture failure.
@@ -78,10 +79,13 @@ journalctl -u pocketcoder-account-backups.service -u pocketcoder-manager-backup.
 
 Keep the [PC-53 scraper and receiver](monitoring.md) active. Account backup age,
 journal acknowledgement, observation gaps and pending work use existing alerts.
-Confirm notification reaches au-re before the trial. Manager timer failure and
-receipt age still need actual alert wiring on the host; PC-53's account backup
-rule does not monitor them. Backup coverage is incomplete until that route
-is demonstrated too.
+The manager's receipt directory also feeds the manager backup failure, age
+and observation-gap alerts through its existing metrics endpoint. Failed
+captures preserve the last verified receipt. An attempt left started past the
+twenty-minute capture limit alerts after manager restart. Confirm notification
+reaches au-re before the trial, including a failed manager capture and its
+successful retry. Local delivery tests do not prove this route is installed
+on the host. Backup coverage is incomplete until host delivery is demonstrated.
 
 ## Close admission and establish fencing
 
