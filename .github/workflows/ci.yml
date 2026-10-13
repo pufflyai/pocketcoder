@@ -28,6 +28,9 @@ jobs:
       - name: Install pstdio extension dependencies
         working-directory: .pstdio/extensions/pocketcoder
         run: bun install --frozen-lockfile
+      - name: Install workspace extension dependencies
+        working-directory: .pstdio/extensions/pocketcoder-workspaces
+        run: bun install --frozen-lockfile
       - name: Verify Linux syscall trace prerequisite
         run: strace --version
       - name: Install desktop regression tools

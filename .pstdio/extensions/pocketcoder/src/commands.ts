@@ -5,6 +5,7 @@ import {
   workbenchPages,
   workbenchResourceKinds,
 } from "@pstdio/sdk/extensions";
+import { catalogChoices, launchInstance } from "./instance-commands";
 import { instancesFor } from "./instances";
 import { type Machine, machineRef } from "./machines";
 import { changed, instanceKind } from "./resources";
@@ -44,24 +45,6 @@ export const templateChoices = defineCommand({
     return items
       .filter((item) => item.status === "active")
       .map((item) => ({ value: `${item.name}@${item.version}`, label: `${item.name} (${item.version})` }));
-  },
-});
-
-export const launchInstance = defineCommand({
-  id: "instances.launch",
-  title: "Launch PocketCoder instance",
-  cli: true,
-  mutating: true,
-  palette: [{ group: "PocketCoder", label: "Launch PocketCoder instance" }],
-  params: {
-    name: params.text({ label: "Instance name", required: true }),
-    binary: params.text({ label: "PocketCoder 1.0 executable", required: true, defaultValue: "pocketcoder" }),
-    templates: params.text({ label: "Prepared agent template folder (optional)" }),
-  },
-  async run(ctx, input) {
-    const instance = await instancesFor(ctx.projectId).launch(input);
-    await ctx.events.emit(changed, {});
-    return instance;
   },
 });
 
@@ -119,7 +102,7 @@ export const launchMachine = defineCommand({
   title: "Launch agent machine",
   cli: true,
   mutating: true,
-  palette: [{ group: "PocketCoder", label: "Launch agent machine" }],
+  palette: [{ group: "PocketCoder Lab", label: "Launch agent machine" }],
   params: {
     instance: instanceParam,
     template: params.select({
@@ -216,6 +199,7 @@ export const refresh = defineCommand({
 });
 
 export const commands = [
+  catalogChoices,
   instanceChoices,
   templateChoices,
   launchInstance,
