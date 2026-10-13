@@ -204,6 +204,7 @@ export async function handleConnectedFrame(
           content: frame.payload.content,
           occurredAt: new Date(frame.payload.occurred_at),
           metadata: frame.payload.metadata,
+          identity: frame.payload.identity,
           createdAt: new Date(),
         });
       } catch (error) {

@@ -32,6 +32,40 @@ test("source credentials are values for setup rather than mounted paths", () => 
 });
 
 describe("conversation contracts", () => {
+  test("preserves externally issued turn and event identities in conversation frames", () => {
+    const identity = {
+      schema: "pocketcoder.conversation/v2" as const,
+      authority: "external" as const,
+      conversation_id: "10000000-0000-4000-8000-000000000001",
+      request_id: "10000000-0000-4000-8000-000000000002",
+      turn_id: "10000000-0000-4000-8000-000000000003",
+      request_fingerprint: "a".repeat(64),
+      event_id: "10000000-0000-4000-8000-000000000004",
+      message_id: "answer-1",
+      sequence: 1,
+      revision: 1,
+    };
+    const payload = {
+      message_id: "event-1:1",
+      role: "assistant" as const,
+      content: "New answer",
+      occurred_at: "2026-10-13T12:00:00Z",
+      metadata: {},
+      identity,
+    };
+    expect(ConversationMessageInputSchema.parse(payload)).toEqual(payload);
+    const frame = AgentFrameSchema.parse({
+      v: PROTOCOL_VERSION,
+      type: "conversation_message",
+      workspace_id: "10000000-0000-4000-8000-000000000005",
+      connection_id: "10000000-0000-4000-8000-000000000006",
+      seq: 2,
+      sent_at: "2026-10-13T12:00:00Z",
+      payload,
+    });
+    expect(frame.payload).toEqual(payload);
+  });
+
   test("accepts bounded canonical messages and protocol frames", () => {
     const payload = {
       message_id: "provider-message-1",

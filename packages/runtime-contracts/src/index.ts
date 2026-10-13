@@ -25,6 +25,8 @@ export {
   type AuthStore,
   type CheckpointUsage,
   type ConversationMessageRow,
+  type ConversationRequestResult,
+  type ConversationRequestRow,
   type ConversationStateRow,
   type ConversationStore,
   type KeyListFilter,

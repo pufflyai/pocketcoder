@@ -1,6 +1,8 @@
 export type {
   CheckpointResource,
   CheckpointState,
+  ConversationMessageIdentity,
+  ConversationRequestIdentity,
   KeyIssueRequest,
   KeyIssueResponse,
   KeyListResponse,

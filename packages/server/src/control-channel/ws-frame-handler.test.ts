@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { type AgentFrame, PROTOCOL_VERSION } from "@pstdio/pocketcoder-contracts";
+import { type AgentFrame, ConversationRequestIdentitySchema, PROTOCOL_VERSION } from "@pstdio/pocketcoder-contracts";
 import type { WSContext } from "hono/ws";
 import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
 import { handleConnectedFrame } from "./ws-frame-handler";
 
-test.each(["retained", "deleted", "purged", "missing"] as const)(
-  "a received transcript frame after finalization respects %s history",
-  async (history) => {
+// Control-channel wiring: identity and retention must both survive decoded frames.
+test.each([
+  ...(["retained", "deleted", "purged", "missing"] as const).map((history) => ({ history, identified: false })),
+  { history: "retained" as const, identified: true },
+])(
+  "a received transcript frame respects $history history (identified=$identified)",
+  async ({ history, identified }) => {
     const server = await createTestServer({ globalActiveWorkspaces: 0 });
     const response = await server.app.request(
       "/v1/workspaces",
@@ -37,6 +41,22 @@ test.each(["retained", "deleted", "purged", "missing"] as const)(
         metadata: {},
       },
     };
+    const identity = {
+      schema: "pocketcoder.conversation/v2" as const,
+      authority: "external" as const,
+      conversation_id: id,
+      request_id: "10000000-0000-4000-8000-000000000002",
+      turn_id: "10000000-0000-4000-8000-000000000003",
+      request_fingerprint: "a".repeat(64),
+      event_id: "10000000-0000-4000-8000-000000000004",
+      message_id: "agentapi:3",
+      sequence: 1,
+      revision: 1,
+    };
+    if (identified) {
+      await server.store.acceptConversationRequest(id, ConversationRequestIdentitySchema.parse(identity), new Date());
+      frame.payload.identity = identity;
+    }
     let release!: () => void;
     const earlierWork = new Promise<void>((resolve) => {
       release = resolve;
@@ -70,6 +90,7 @@ test.each(["retained", "deleted", "purged", "missing"] as const)(
     await pending;
     await receive();
     const messages = await server.store.readConversation(id, 0, 10);
+    if (history === "retained") expect(messages[0]?.identity).toEqual(identified ? identity : undefined);
     expect((await server.store.getWorkspace(id))?.state).toBe("canceled");
     expect(messages.map((message) => message.content)).toEqual(history === "retained" ? ["accepted before Stop"] : []);
   },

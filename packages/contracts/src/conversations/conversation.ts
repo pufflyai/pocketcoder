@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CursorPageSchema, CursorQuerySchema } from "../common/pagination";
+import { ConversationMessageIdentitySchema, ConversationProtocolSupportSchema } from "./identity";
 
 export const CONVERSATION_ROLES = ["user", "assistant", "system", "tool"] as const;
 export type ConversationRole = (typeof CONVERSATION_ROLES)[number];
@@ -14,17 +15,20 @@ export const ConversationMessageInputSchema = z.object({
   content: z.string().max(256 * 1024),
   occurred_at: z.iso.datetime(),
   metadata: ConversationMetadataSchema.default({}),
+  identity: ConversationMessageIdentitySchema.nullable().optional(),
 });
 export type ConversationMessageInput = z.infer<typeof ConversationMessageInputSchema>;
 
 export const ConversationMessageResourceSchema = ConversationMessageInputSchema.extend({
   seq: z.number().int().positive(),
+  identity: ConversationMessageIdentitySchema.nullable().default(null),
 });
 export type ConversationMessageResource = z.infer<typeof ConversationMessageResourceSchema>;
 
 export const ConversationListQuerySchema = CursorQuerySchema(200, 100);
 
 export const ConversationPageSchema = CursorPageSchema(ConversationMessageResourceSchema).extend({
+  protocol: ConversationProtocolSupportSchema.nullable().default(null),
   retention: z.object({
     status: z.literal("retained"),
     expires_at: z.iso.datetime().nullable(),

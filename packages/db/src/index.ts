@@ -9,6 +9,7 @@ export {
   migrateDatabase,
 } from "./migrations/migrator";
 export {
+  conversationRequests,
   eventOutbox,
   machineKeys,
   principals,

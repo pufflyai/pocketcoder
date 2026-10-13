@@ -53,6 +53,14 @@ export {
   type ConversationRole,
 } from "./conversations/conversation";
 export {
+  type ConversationMessageIdentity,
+  ConversationMessageIdentitySchema,
+  ConversationProtocolSupportSchema,
+  type ConversationRequestIdentity,
+  ConversationRequestIdentitySchema,
+  ConversationRequestReceiptSchema,
+} from "./conversations/identity";
+export {
   findNetworkRule,
   isPrivateAddress,
   NETWORK_STATES,

@@ -1,9 +1,14 @@
-import { type ConversationMessageResource, ConversationPageSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  type ConversationMessageResource,
+  ConversationPageSchema,
+  type ConversationRequestIdentity,
+  ConversationRequestReceiptSchema,
+} from "@pstdio/pocketcoder-contracts";
 import { type CursorListQuery, page, queryString } from "../../transport/common";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
 
 export type ConversationMessage = ConversationMessageResource;
-export type ConversationPage = import("../../transport/common").Page<ConversationMessageResource>;
+export type ConversationPage = Awaited<ReturnType<ConversationsApi["list"]>>;
 
 export class ConversationsApi {
   constructor(private readonly transport: PocketCoderTransport) {}
@@ -14,6 +19,14 @@ export class ConversationsApi {
       ConversationPageSchema,
       options,
     );
-    return page(body);
+    return { ...page(body), protocol: body.protocol, retention: body.retention };
+  }
+
+  async acceptRequest(id: string, identity: ConversationRequestIdentity, options: RequestOptions = {}) {
+    return this.transport.request(
+      `/v1/workspaces/${encodeURIComponent(id)}/conversation/requests`,
+      ConversationRequestReceiptSchema,
+      { ...options, method: "POST", body: JSON.stringify(identity) },
+    );
   }
 }

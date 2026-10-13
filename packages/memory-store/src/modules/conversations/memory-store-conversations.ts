@@ -1,28 +1,86 @@
-import type { ConversationMessageRow, ConversationStateRow } from "@pstdio/pocketcoder-runtime-contracts";
+import {
+  type ConversationRequestIdentity,
+  ConversationRequestIdentitySchema,
+  canonicalJson,
+  digestOf,
+} from "@pstdio/pocketcoder-contracts";
+import type {
+  ConversationMessageRow,
+  ConversationRequestResult,
+  ConversationRequestRow,
+  ConversationStateRow,
+} from "@pstdio/pocketcoder-runtime-contracts";
 import { MAX_CONVERSATION_BYTES, MAX_CONVERSATION_MESSAGES, type MemoryState } from "../../state/memory-store-base";
+
+function requestSnapshot(row: ConversationRequestRow) {
+  return { ...row, identity: { ...row.identity }, acceptedAt: new Date(row.acceptedAt) };
+}
+
+function messageSnapshot(row: ConversationMessageRow) {
+  return { ...row, metadata: { ...row.metadata }, ...(row.identity ? { identity: { ...row.identity } } : {}) };
+}
 
 export class MemoryConversationStore {
   constructor(
     private readonly context: Pick<
       MemoryState,
-      "conversationStates" | "conversations" | "conversationBytes" | "workspaces"
+      "conversationStates" | "conversations" | "conversationBytes" | "workspaces" | "conversationRequests"
     >,
   ) {}
+  async acceptConversationRequest(workspaceId: string, identity: ConversationRequestIdentity, at: Date) {
+    identity = ConversationRequestIdentitySchema.parse(identity);
+    const workspace = this.context.workspaces.get(workspaceId)!;
+    if (workspace.purgeRequestedAt) throw new Error("conversation.deleted");
+    const principalId = workspace.principalId;
+    const key = JSON.stringify([principalId, identity.conversation_id, identity.request_id]);
+    const existing = this.context.conversationRequests.get(key);
+    if (existing) {
+      return {
+        kind: canonicalJson(existing.identity) === canonicalJson(identity) ? "replayed" : "conflict",
+        request: requestSnapshot(existing),
+      } satisfies ConversationRequestResult;
+    }
+    const request = { principalId, identity: { ...identity }, acceptedAt: new Date(at) };
+    this.context.conversationRequests.set(key, request);
+    return { kind: "accepted", request: requestSnapshot(request) } satisfies ConversationRequestResult;
+  }
   async appendConversationMessage(
     input: Omit<ConversationMessageRow, "seq">,
   ): Promise<{ message: ConversationMessageRow; created: boolean }> {
     const state = this.context.conversationStates.get(input.workspaceId);
     if (state?.status === "deleted") throw new Error("conversation.deleted");
     if (this.context.workspaces.get(input.workspaceId)?.purgeRequestedAt) throw new Error("conversation.deleted");
+    if (input.identity) {
+      const principalId = this.context.workspaces.get(input.workspaceId)!.principalId;
+      const identity = ConversationRequestIdentitySchema.parse(input.identity);
+      const key = JSON.stringify([principalId, identity.conversation_id, identity.request_id]);
+      const accepted = this.context.conversationRequests.get(key);
+      if (!accepted || canonicalJson(accepted.identity) !== canonicalJson(identity)) {
+        throw new Error("conversation.request_not_accepted");
+      }
+    }
     const rows = this.context.conversations.get(input.workspaceId) ?? [];
-    const existing = rows.find((row) => row.messageId === input.messageId);
-    if (existing) return { message: { ...existing }, created: false };
+    const messageId = input.identity
+      ? digestOf([
+          input.identity.conversation_id,
+          input.identity.turn_id,
+          input.identity.event_id,
+          input.identity.revision,
+        ])
+      : input.messageId;
+    const existing = rows.find((row) => row.messageId === messageId);
+    if (existing) return { message: messageSnapshot(existing), created: false };
     const storedBytes = this.context.conversationBytes.get(input.workspaceId) ?? 0;
     const inputBytes = Buffer.byteLength(input.content) + Buffer.byteLength(JSON.stringify(input.metadata));
     if (rows.length >= MAX_CONVERSATION_MESSAGES || storedBytes + inputBytes > MAX_CONVERSATION_BYTES) {
       throw new Error("conversation.quota_exceeded");
     }
-    const message = { ...input, seq: (rows.at(-1)?.seq ?? 0) + 1 };
+    const message = {
+      ...input,
+      messageId,
+      ...(input.identity ? { identity: { ...input.identity } } : {}),
+      seq: (rows.at(-1)?.seq ?? 0) + 1,
+    };
     rows.push(message);
     this.context.conversations.set(input.workspaceId, rows);
     this.context.conversationBytes.set(input.workspaceId, storedBytes + inputBytes);
@@ -35,14 +93,14 @@ export class MemoryConversationStore {
         updatedAt: input.createdAt,
       });
     }
-    return { message: { ...message }, created: true };
+    return { message: messageSnapshot(message), created: true };
   }
 
   async readConversation(workspaceId: string, afterSeq: number, limit: number): Promise<ConversationMessageRow[]> {
     return (this.context.conversations.get(workspaceId) ?? [])
       .filter((row) => row.seq > afterSeq)
       .slice(0, limit)
-      .map((row) => ({ ...row, metadata: { ...row.metadata } }));
+      .map(messageSnapshot);
   }
 
   async getConversationState(workspaceId: string): Promise<ConversationStateRow | null> {

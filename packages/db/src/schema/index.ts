@@ -12,13 +12,14 @@ export function createSchema(schema?: string) {
   return {
     ...access,
     ...workspaces,
-    ...createActivityTables(table, workspaces),
+    ...createActivityTables(table, workspaces, access),
     ...createPersistenceTables(table, access, workspaces),
   };
 }
 
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
+  conversationRequests,
   templates,
   principals,
   machineKeys,
