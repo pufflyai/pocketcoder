@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,6 +150,10 @@ test.skipIf(!enabled)(
       await expect(completeManagerRecovery(restore)).rejects.toThrow();
       await store.close();
       store = undefined;
+      await rename(dataDir, `${dataDir}.unavailable`);
+      await expect(completeManagerRecovery(restore)).rejects.toThrow();
+      expect(existsSync(dataDir)).toBe(false);
+      await rename(`${dataDir}.unavailable`, dataDir);
       expect((await command(target, "recover", restore.operationId)).state).toBe("completed");
       store = await ManagerStore.create(target, purge);
       expect((await store.listAccounts()).map((account) => account.id)).toEqual([survivor.account.id]);

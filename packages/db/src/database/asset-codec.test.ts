@@ -17,7 +17,8 @@ const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).diges
 const engine = dirname(fileURLToPath(import.meta.resolve("@electric-sql/pglite")));
 function frame(bytes: Uint8Array, windowLog = 24) {
   return zstdCompressSync(bytes, {
-    params: { [constants.ZSTD_c_compressionLevel]: 19, [constants.ZSTD_c_windowLog]: windowLog },
+    // Only the window limit matters; slow compression makes fixture creation hit the test deadline.
+    params: { [constants.ZSTD_c_compressionLevel]: 1, [constants.ZSTD_c_windowLog]: windowLog },
   });
 }
 

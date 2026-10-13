@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ManagerConfig } from "@pstdio/pocketcoder-manager";
 import { controllerRelease } from "@pstdio/pocketcoder-server/release";
@@ -8,6 +8,21 @@ import { type createKubernetesCluster, ROOT } from "./kubernetes-cluster";
 
 type Cluster = Awaited<ReturnType<typeof createKubernetesCluster>>;
 type Release = NonNullable<ManagerConfig["releases"]>[number];
+
+async function buildUpgradeBundles(directory: string, plugin: BunPlugin) {
+  for (const [entry, output] of [
+    ["packages/server/src/index.ts", "server"],
+    ["packages/cli/src/index.ts", "cli"],
+  ] as const) {
+    const result = await Bun.build({
+      entrypoints: [join(ROOT, entry)],
+      target: "bun",
+      outdir: join(directory, output),
+      plugins: [plugin],
+    });
+    if (!result.success) throw new AggregateError(result.logs, "Upgrade fixture bundle failed.");
+  }
+}
 
 export async function upgradeImages(cluster: Cluster, source: { tag: string; image: string }) {
   const directory = join(cluster.directory, "upgrades");
@@ -56,6 +71,9 @@ export async function upgradeImages(cluster: Cluster, source: { tag: string; ima
   };
   const releases = [first];
   const tags: string[] = [];
+  const changedBundles = join(directory, "changed");
+  await buildUpgradeBundles(changedBundles, plugin);
+  const prepared = [];
   for (const [name, version, fault, changed] of [
     ["compatible", "1.0.0-rc.2", "write", false],
     ["migration", "1.0.0-rc.3", "migration", true],
@@ -65,18 +83,9 @@ export async function upgradeImages(cluster: Cluster, source: { tag: string; ima
     const context = join(directory, name);
     await mkdir(context);
     const plugins = changed ? [plugin] : [];
-    for (const [entry, output] of [
-      ["packages/server/src/index.ts", "server"],
-      ["packages/cli/src/index.ts", "cli"],
-    ]) {
-      const result = await Bun.build({
-        entrypoints: [join(ROOT, entry as string)],
-        target: "bun",
-        outdir: join(context, output as string),
-        plugins,
-      });
-      if (!result.success) throw new AggregateError(result.logs, "Upgrade fixture bundle failed.");
-    }
+    if (changed)
+      for (const output of ["server", "cli"])
+        await cp(join(changedBundles, output), join(context, output), { recursive: true });
     const entry = join(directory, `${name}.ts`);
     await writeFile(entry, faultEntry(name, fault));
     const result = await Bun.build({
@@ -91,10 +100,14 @@ export async function upgradeImages(cluster: Cluster, source: { tag: string; ima
     tags.push(tag);
     await writeFile(
       join(context, "Dockerfile"),
-      `FROM ${source.tag}\nCOPY server /opt/pocketcoder/server\nCOPY cli /opt/pocketcoder/cli\nCOPY probe /opt/pocketcoder/probe\nCMD ["bun","/opt/pocketcoder/probe/${name}.js"]\n`,
+      `FROM ${source.tag}\n${changed ? "COPY server /opt/pocketcoder/server\nCOPY cli /opt/pocketcoder/cli\n" : ""}COPY probe /opt/pocketcoder/probe\nCMD ["bun","/opt/pocketcoder/probe/${name}.js"]\n`,
     );
     await cluster.run(["docker", "build", "-t", tag, context]);
-    await cluster.run(["kind", "load", "docker-image", "--name", cluster.name, tag]);
+    prepared.push({ name, version, changed, tag });
+  }
+  // Export shared layers once, then import the complete fixture set into each node.
+  await cluster.run(["kind", "load", "docker-image", "--name", cluster.name, ...tags]);
+  for (const { name, version, changed, tag } of prepared) {
     const image = await imageReference(cluster, tag);
     releases.push({
       ...first,

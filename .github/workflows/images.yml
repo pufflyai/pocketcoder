@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      operator-release:
+        description: Build and publish only the tested synthetic operator bundle
+        type: boolean
+        default: false
       native-diagnostics:
         description: Run isolated native startup diagnostics without image builds or publication
         type: boolean
@@ -25,7 +29,7 @@ env:
 
 jobs:
   test:
-    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
+    if: github.event_name != 'pull_request' && !inputs.operator-release && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
@@ -47,7 +51,7 @@ jobs:
 
   validate:
     needs: test
-    if: always() && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
+    if: always() && !inputs.operator-release && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -159,3 +163,37 @@ jobs:
           name: pocketcoder-candidate-image-digests-${{ env.CANDIDATE_COMMIT }}
           path: ${{ runner.temp }}/images/published.json
           if-no-files-found: error
+
+  operator-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.operator-release
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Test the extracted release outside the source checkout
+        run: bun test deploy/digitalocean/production
+      - name: Build the exact committed operator release
+        run: bun run operator:bundle "$RUNNER_TEMP/operator"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-operator-${{ github.sha }}
+          path: ${{ runner.temp }}/operator
+          if-no-files-found: error
+      - name: Publish the checksum-pinned synthetic operator candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="operator-candidate-$GITHUB_SHA"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release download "$tag" --pattern operator.json --dir "$RUNNER_TEMP/previous"
+            bun -e 'const a=await Bun.file(process.argv[1]).json(); const b=await Bun.file(process.argv[2]).json(); if(a.commit!==b.commit || a.sha256!==b.sha256) throw new Error("Existing candidate differs; refuse overwrite.");' "$RUNNER_TEMP/previous/operator.json" "$RUNNER_TEMP/operator/operator.json"
+          else
+            gh release create "$tag" "$RUNNER_TEMP/operator/operator.tar.gz" "$RUNNER_TEMP/operator/operator.json" \
+              --target "$GITHUB_SHA" --prerelease --title "Operator candidate $GITHUB_SHA" \
+              --notes "Checksum-pinned operator bundle for synthetic deployment and recovery validation."
+          fi

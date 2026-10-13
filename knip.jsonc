@@ -7,6 +7,7 @@
         "deploy/image/echo-harness.ts",
         "deploy/image/desktop-harness.ts",
         "deploy/image/browser-harness.ts",
+        "deploy/digitalocean/production/run-access.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
         "scripts/native-startup-runner.ts",

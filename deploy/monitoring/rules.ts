@@ -72,6 +72,24 @@ export function monitoringRules(operator: string, runbookUrl: string, input: Par
             "Run an account backup with a new request ID. Verify its receipt and off-node version before clearing the alert.",
           ),
           rule(
+            "ManagerBackupAge",
+            "manager-backup",
+            `(pocketcoder_manager_backup_configured == 1) and ((pocketcoder_manager_backup_present == 0) or (pocketcoder_manager_backup_age_seconds > ${limits.backupSeconds}))`,
+            "Run the manager backup service. Verify the encrypted off-node receipt before clearing the alert.",
+          ),
+          rule(
+            "ManagerBackupFailure",
+            "manager-backup",
+            "(pocketcoder_manager_backup_configured == 1) and ((pocketcoder_manager_backup_failed > 0) or (pocketcoder_manager_backup_in_progress_seconds > 1200))",
+            "Check the manager backup service and storage access. Retry the same schedule window after fixing the failure.",
+          ),
+          rule(
+            "ManagerBackupObservationGap",
+            "manager-backup",
+            `(pocketcoder_manager_backup_configured == 1) and ((pocketcoder_manager_backup_observed == 0) or (pocketcoder_manager_backup_observation_age_seconds > ${limits.observationSeconds}))`,
+            "Restore private receipt access and verify its journal identity. Missing observations cannot prove backup health.",
+          ),
+          rule(
             "JournalPending",
             "journal",
             `(pocketcoder_account_journal_configured == 1) and on(account) ((pocketcoder_account_journal_acknowledged == 0) or (pocketcoder_account_journal_pending_seconds > ${limits.journalSeconds}))`,

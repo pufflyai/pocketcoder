@@ -1,0 +1,10 @@
+[Unit]
+Description=Capture PocketCoder account backups twice each day
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00 UTC
+Persistent=true
+Unit=pocketcoder-account-backups.service
+
+[Install]
+WantedBy=timers.target
