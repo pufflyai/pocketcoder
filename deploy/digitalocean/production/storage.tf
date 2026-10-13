@@ -105,6 +105,7 @@ resource "kubernetes_deployment_v1" "backups" {
             limits   = { cpu = "1", memory = "512Mi" }
           }
           security_context {
+            run_as_non_root            = true
             allow_privilege_escalation = false
             capabilities { drop = ["ALL"] }
           }
