@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { freePort, runCli } from "./local-cli";
@@ -78,6 +78,16 @@ export function createInstances(root: string) {
     get,
     start,
     request,
+    async connection(id: string) {
+      try {
+        const owner = await read<{ token: string; expiresAt: string }>(id, "owner.json");
+        if (Date.parse(owner.expiresAt) <= Date.now()) return "Key expired";
+        await request(id, "/v1/templates?limit=1", { signal: AbortSignal.timeout(2_000) });
+        return "Connected";
+      } catch {
+        return "Unreachable";
+      }
+    },
     async items<T>(id: string, path: string) {
       const items: T[] = [];
       let cursor: string | null = null;
@@ -95,7 +105,7 @@ export function createInstances(root: string) {
       const entries = await readdir(root, { withFileTypes: true });
       return Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => get(entry.name)));
     },
-    async launch(input: { name: string; binary: string; templates?: string }) {
+    async launch(input: { name: string; binary: string; templates?: string; manifest?: unknown }) {
       const id = randomUUID();
       await mkdir(directory(id), { recursive: true, mode: 0o700 });
       await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
@@ -112,8 +122,19 @@ export function createInstances(root: string) {
       };
       await write(id, "instance.json", instance);
       const started = await start(id);
-      if (input.templates) await this.importTemplates(id, input.templates);
-      return started;
+      try {
+        if (input.manifest)
+          await request(id, "/v1/templates", {
+            method: "POST",
+            body: JSON.stringify({ manifest: input.manifest }),
+          });
+        if (input.templates) await this.importTemplates(id, input.templates);
+        return started;
+      } catch (error) {
+        await this.stop(id);
+        await rm(directory(id), { recursive: true });
+        throw error;
+      }
     },
     async importTemplates(id: string, templates: string) {
       const instance = await get(id);
