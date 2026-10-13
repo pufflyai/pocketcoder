@@ -8,11 +8,15 @@ import { ObjectStorageError, readPrivateFile, writePrivateJson } from "@pstdio/p
 import { z } from "zod";
 import type { ManagerContext } from "../database/context";
 import type { PurgeAuthority } from "../purge/authority";
+import { SourceBindingSchema } from "./source-binding";
+import { authorizeManagerSource } from "./source-transfer";
 
-const ClaimSchema = z.strictObject({
+export const ClaimSchema = z.strictObject({
   journalId: z.uuid(),
   generation: z.number().int().nonnegative(),
   writer: SourceWriterSchema,
+  sourceBinding: SourceBindingSchema.optional(),
+  sourceTransfer: z.uuid().optional(),
 });
 export const InstallationSchema = ClaimSchema.extend({
   recoveryOperationId: z.uuid().optional(),
@@ -44,7 +48,8 @@ export async function currentManagerWriter(authority: PurgeAuthority) {
     throw new Error("Manager writer history is incomplete.");
   return claims.at(-1) ?? null;
 }
-async function publish(authority: PurgeAuthority, claim: z.infer<typeof ClaimSchema>) {
+export async function publishManagerWriter(authority: PurgeAuthority, claim: z.infer<typeof ClaimSchema>) {
+  authority.dependencies.validate();
   try {
     await authority.storage.putIfAbsent(claimKey(claim), Buffer.from(JSON.stringify(claim)));
   } catch (error) {
@@ -52,6 +57,7 @@ async function publish(authority: PurgeAuthority, claim: z.infer<typeof ClaimSch
   }
   if (!isDeepStrictEqual(await currentManagerWriter(authority), claim))
     throw new Error("Manager writer transfer was not acknowledged.");
+  authority.dependencies.validate();
 }
 export async function bindManagerWriter(context: ManagerContext, authority: PurgeAuthority) {
   const writer = context.sourceWriter();
@@ -60,7 +66,7 @@ export async function bindManagerWriter(context: ManagerContext, authority: Purg
   if (current && !isDeepStrictEqual(current.writer, writer))
     throw new Error("Manager writer belongs to another installation; recovery is required.");
   const claim = current ?? { journalId: authority.journal.head().journalId, generation: 0, writer };
-  await publish(authority, claim);
+  await publishManagerWriter(authority, claim);
   await context.db
     .insert(context.tables.installation)
     .values({ id: 1, journalId: claim.journalId })
@@ -84,7 +90,10 @@ export async function assertManagerInstallation(context: ManagerContext, authori
   }
   if (binding && binding.journalId !== authority.journal.head().journalId)
     throw new Error("Manager recovery journal identity differs.");
-  const current = await currentManagerWriter(authority);
+  let current = await currentManagerWriter(authority);
+  if (!current && (binding || hasMarker)) throw new Error("Manager recovery writer evidence is missing.");
+  if (current?.sourceBinding || authority.sourceConfig)
+    current = await authorizeManagerSource(context, authority, current);
   if (!current) {
     if (binding || hasMarker) throw new Error("Manager recovery writer evidence is missing.");
     return;
@@ -105,6 +114,7 @@ export async function transferManagerWriter(
   receipt: unknown,
 ) {
   const previous = await currentManagerWriter(authority);
+  if (previous?.sourceBinding) throw new Error("Bound manager recovery requires a verified physical source transfer.");
   const writer = context.sourceWriter();
   if (!previous || !writer) throw new Error("Manager recovery source writer evidence is missing.");
   if (isDeepStrictEqual(previous.writer, writer)) {
@@ -122,7 +132,7 @@ export async function transferManagerWriter(
     if (!isDeepStrictEqual(source.sourceWriter(), previous.writer))
       throw new Error("Manager recovery source identity differs.");
     const claim = { ...previous, generation: previous.generation + 1, writer };
-    await publish(authority, claim);
+    await publishManagerWriter(authority, claim);
     await writePrivateJson(
       installationPath(writer.directory),
       { ...claim, recoveryOperationId: operationId, recoveryReceiptDigest: recoveryReceiptDigest(receipt) },
