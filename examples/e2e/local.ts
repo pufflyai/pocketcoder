@@ -281,6 +281,12 @@ try {
     });
     console.log("PocketCoder local harness E2E passed:");
     console.log(JSON.stringify(report, null, 2));
+    if (harness === "pi" && usesFakeGateway) {
+      await command(["bun", "test", "examples/harnesses/pi/agentapi-compat.test.ts"], {
+        env: { POCKETCODER_PI_TEST_URL: baseUrl, POCKETCODER_PI_TEST_KEY: key },
+      });
+      console.log("Pi repeated-reply regression passed: four stable and durable file replies.");
+    }
   }
 } finally {
   await cleanup();
