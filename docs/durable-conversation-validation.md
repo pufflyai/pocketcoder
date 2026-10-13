@@ -102,7 +102,22 @@ checks cover authorization and legacy history. Control-channel checks cover fram
 wiring and retained history. See [the v2 protocol](conversation-identities.md).
 These checks prove consumer support; they do not prove installed producer emission.
 
-## 6. Inspect a running workspace manually
+## 6. Validate explicit provider facts
+
+```sh
+bun test packages/remote/src/stream/agentapi-events.test.ts \
+  packages/remote/src/client/identified-turn.test.ts \
+  packages/supervisor/src/agent/agentapi.test.ts
+```
+
+Expected: explicit intermediate/final/tool-only/activity/terminal facts decode;
+final text survives interruption; duplicate or stale revisions and unrelated turns
+do not replace the accepted turn; canonical facts survive checkpoint-history
+projection; finishing a reader releases its stream. The store tests in step 5
+also round-trip activity facts against real PostgreSQL and detach memory snapshots.
+No installed producer or deployment capability is claimed by these fixtures.
+
+## 7. Inspect a running workspace manually
 
 For a server and participating harness you already run, set the machine key and
 workspace id, then read the first page:

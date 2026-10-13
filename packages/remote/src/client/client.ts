@@ -1,5 +1,7 @@
+import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
 import { type AgentApiEvent, readAgentApiEvents } from "../stream/agentapi-events";
 import { type AgentApiMessage, changesUrlFor, delay, isAgentMessage, parseMessages } from "./client-helpers";
+import { type IdentifiedTurnOptions, sendIdentifiedTurn } from "./identified-turn";
 import { RemoteRequestError, type RemoteRequestPhase, remoteResponseError } from "./remote-request-error";
 
 export type { AgentApiMessage } from "./client-helpers";
@@ -248,6 +250,20 @@ export class RemoteAgentClient {
       if (error instanceof RemoteRequestError) throw error;
       return signal.aborted ? "aborted" : "retry";
     }
+  }
+
+  async sendTurn(prompt: string, identity: ConversationRequestIdentity, options: IdentifiedTurnOptions = {}) {
+    return sendIdentifiedTurn(
+      {
+        request: (path, init) => this.request(path, init),
+        waitForInput: (signal) => this.waitForInput(signal),
+        timeoutMs: this.timeoutMs,
+        pollIntervalMs: this.pollIntervalMs,
+      },
+      prompt,
+      identity,
+      options,
+    );
   }
 
   async send(

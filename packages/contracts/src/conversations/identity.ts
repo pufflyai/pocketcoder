@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationFactSchema } from "./facts";
 
 export const ConversationRequestIdentitySchema = z.object({
   schema: z.literal("pocketcoder.conversation/v2"),
@@ -21,6 +22,7 @@ export const ConversationMessageIdentitySchema = ConversationRequestIdentitySche
   message_id: z.string().min(1).max(256),
   sequence: z.number().int().nonnegative(),
   revision: z.number().int().positive(),
+  fact: ConversationFactSchema.optional(),
 });
 export type ConversationMessageIdentity = z.infer<typeof ConversationMessageIdentitySchema>;
 
