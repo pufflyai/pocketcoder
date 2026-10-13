@@ -60,7 +60,7 @@
     "test:deploy": "bun test deploy",
     "test:integration": "bun test packages/db/src/pglite-conformance.test.ts packages/db/src/modules/persistence/conformance.test.ts packages/db/src/modules/workspaces/conformance.test.ts packages/server/src/persistence/persistence-pglite-conformance.test.ts packages/drivers/src/docker/docker-registry-conformance.test.ts packages/drivers/src/docker/docker-conformance.test.ts packages/drivers/src/docker/docker-egress-conformance.test.ts packages/drivers/src/kubernetes/kubernetes.test.ts packages/egress/src/proxy/docker-conformance.test.ts packages/egress/src/proxy/kubernetes-conformance.test.ts",
     "test:unit": "lerna run test --concurrency 1 -- --path-ignore-patterns='**/*conformance.test.ts' --path-ignore-patterns='**/*.benchmark.test.ts'",
-    "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json && tsc --project examples/native/tsconfig.json && tsc --project scripts/tsconfig.images.json && tsc --project scripts/tsconfig.monitoring.json",
+    "typecheck": "lerna run typecheck && tsc --project examples/resume/tsconfig.json && tsc --project examples/native/tsconfig.json && tsc --project scripts/tsconfig.images.json && tsc --project scripts/tsconfig.monitoring.json && tsc --project scripts/tsconfig.recovery.json",
     "version-packages": "changeset version",
     "example:pi:resume": "bun examples/resume/run.ts",
     "example:pi:resume:check": "bun examples/resume/run.ts --check",
@@ -100,7 +100,12 @@
     "example:e2e:managed-public-views": "bun --no-env-file examples/e2e/managed-public-views.ts",
     "example:e2e:manager-recovery": "bun --no-env-file examples/e2e/manager-recovery.ts",
     "example:e2e:managed-monitoring": "bun --no-env-file examples/e2e/managed-monitoring.ts",
-    "monitoring:config": "bun deploy/monitoring/write-config.ts"
+    "monitoring:config": "bun deploy/monitoring/write-config.ts",
+    "backup:accounts": "bun --no-env-file deploy/recovery/run-account-backups.ts",
+    "backup:manager": "bun --no-env-file deploy/recovery/run-manager-backup.ts",
+    "example:e2e:managed-scheduled-backups": "bun --no-env-file examples/e2e/managed-scheduled-backups.ts",
+    "operator:bundle": "bun deploy/digitalocean/production/bundle.ts",
+    "operator:cloud-init": "bun --no-env-file deploy/digitalocean/production/write-cloud-init.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
@@ -126,6 +131,7 @@
     "nx": "^23.1.0",
     "playwright": "1.64.0",
     "semver": "7.8.4",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "zod": "^4.0.0"
   }
 }

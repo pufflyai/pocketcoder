@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { desktopIsManaged, desktopWindow, windowManagerIsReady } from "./desktop-readiness";
+import { desktopDisplayCommand, desktopIsManaged, desktopWindow, windowManagerIsReady } from "./desktop-readiness";
 
 const command = process.argv.slice(2);
 if (!command.length) throw new Error("A template-owned agent command is required.");
@@ -31,7 +31,7 @@ async function stop() {
 process.once("SIGTERM", () => void stop());
 process.once("SIGINT", () => void stop());
 try {
-  const x = spawn(["Xvfb", ":99", "-screen", "0", "1280x800x24", "-nolisten", "tcp", "-ac"]);
+  const x = spawn(desktopDisplayCommand());
   const deadline = Date.now() + 10_000;
   while (!existsSync("/tmp/.X11-unix/X99")) {
     if (x.exitCode !== null || stopping || Date.now() >= deadline) throw new Error("Desktop display did not start.");

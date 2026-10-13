@@ -17,6 +17,7 @@ API drives the whole lifecycle.
 | [Architecture](architecture.md) | Components, database schema, workspace state machine, agent protocol |
 | [Agent transport decision](agent-transport-decision.md) | Why templates keep PTY/ACP and what must be true before another transport is added |
 | [Manager recovery](manager-recovery.md) | Encrypted manager backup, deletion replay, writer transfer and restart |
+| [Hosted node recovery](hosted-node-recovery.md) | Backup schedules, prepared production cost/layout, source fencing and required failure evidence |
 | [Deployment](deployment.md) | Container images, docker compose, Kubernetes, data folder, configuration reference |
 | [Security model](security.md) | Trust zones, credential lifetime rules, what the deployment's model gateway must enforce |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
