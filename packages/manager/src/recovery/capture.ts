@@ -15,12 +15,14 @@ import { managerContext } from "../database/context";
 import { createPurgeAuthority, type PurgeAuthority } from "../purge/authority";
 import { readManagerArchive, writeManagerArchive } from "./archive";
 import { ManagerReceiptSchema } from "./manifest";
+import { requireExistingSource } from "./source-transfer";
 import { type ManagerBackupOptions, managerEncryptionKey, managerStaging } from "./staging";
 import { assertManagerInstallation, bindManagerWriter } from "./writer";
 
 export async function captureManagerBackup(input: ManagerBackupOptions) {
   const options = { ...input, operationId: z.uuid().parse(input.operationId) };
   const key = await managerEncryptionKey(options);
+  if (options.purge.source?.migrationFile) requireExistingSource(options.dataDir);
   const context = await managerContext(options.dataDir);
   let authority: PurgeAuthority | undefined;
   let stage: Awaited<ReturnType<typeof managerStaging>> | undefined;

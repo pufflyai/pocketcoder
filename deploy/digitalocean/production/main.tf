@@ -91,7 +91,7 @@ resource "digitalocean_droplet" "operator" {
 
 resource "digitalocean_firewall" "operator" {
   name        = "pocketcoder-pc103-operator"
-  droplet_ids = [digitalocean_droplet.operator.id]
+  droplet_ids = concat([digitalocean_droplet.operator.id], digitalocean_droplet.operator_source[*].id)
 
   inbound_rule {
     protocol         = "tcp"
@@ -155,12 +155,12 @@ resource "digitalocean_volume_attachment" "journal" {
 
 resource "digitalocean_project_resources" "recovery" {
   project = "126c5d77-926b-475b-8111-e30f3992a338"
-  resources = [
+  resources = concat([
     digitalocean_kubernetes_cluster.recovery.urn,
     digitalocean_droplet.operator.urn,
     digitalocean_volume.manager.urn,
     digitalocean_volume.journal.urn,
-  ]
+  ], digitalocean_droplet.operator_source[*].urn)
 }
 
 output "cluster_id" {

@@ -19,6 +19,7 @@ exec /usr/bin/docker run --rm --name "$name" --network host --user 10001:10001 \
   --volume "/etc/pocketcoder-private:/etc/pocketcoder-private:$access" \\
   --volume /mnt/pc103-manager:/mnt/pc103-manager \\
   --volume /mnt/pc103-journal:/mnt/pc103-journal \\
+  --volume /dev/disk/by-id/scsi-0DO_Volume_pocketcoder-pc103-manager:/etc/pocketcoder-private/source-block-device:ro \\
   --entrypoint /usr/local/bin/bun ${runtimeImage} "/opt/pocketcoder/current/$script" "$@"
 `;
   const maintenance = `#!/bin/sh
