@@ -2,6 +2,38 @@ import { describe, expect, test } from "bun:test";
 import { agentApiConversationMessages } from "./agentapi";
 
 describe("AgentAPI transcript projection", () => {
+  // Provider history wiring: checkpoint synchronization must preserve explicit
+  // producer facts and IDs rather than reconstruct a final answer from roles.
+  test.each(["unclassified", "final_response", "turn_terminal"] as const)(
+    "retains supplied %s facts from canonical provider history",
+    (type) => {
+      const message = {
+        message_id: "event-1:1",
+        role: "assistant" as const,
+        content: "Preserved text",
+        occurred_at: "2026-10-13T12:00:00Z",
+        metadata: {},
+        identity: {
+          schema: "pocketcoder.conversation/v2" as const,
+          authority: "external" as const,
+          conversation_id: "10000000-0000-4000-8000-000000000001",
+          request_id: "10000000-0000-4000-8000-000000000002",
+          turn_id: "10000000-0000-4000-8000-000000000003",
+          request_fingerprint: "a".repeat(64),
+          event_id: "10000000-0000-4000-8000-000000000004",
+          message_id: "answer",
+          sequence: 1,
+          revision: 1,
+          ...(type === "unclassified"
+            ? {}
+            : {
+                fact: type === "final_response" ? { type } : { type, outcome: "interrupted" as const },
+              }),
+        },
+      };
+      expect(agentApiConversationMessages({ messages: [message] })).toEqual([message]);
+    },
+  );
   test("projects stable AgentAPI history to canonical durable messages", () => {
     expect(
       agentApiConversationMessages({

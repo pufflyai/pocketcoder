@@ -17,7 +17,13 @@ function requestSnapshot(row: ConversationRequestRow) {
 }
 
 function messageSnapshot(row: ConversationMessageRow) {
-  return { ...row, metadata: { ...row.metadata }, ...(row.identity ? { identity: { ...row.identity } } : {}) };
+  return {
+    ...row,
+    metadata: { ...row.metadata },
+    ...(row.identity
+      ? { identity: { ...row.identity, ...(row.identity.fact ? { fact: { ...row.identity.fact } } : {}) } }
+      : {}),
+  };
 }
 
 export class MemoryConversationStore {
@@ -75,12 +81,7 @@ export class MemoryConversationStore {
     if (rows.length >= MAX_CONVERSATION_MESSAGES || storedBytes + inputBytes > MAX_CONVERSATION_BYTES) {
       throw new Error("conversation.quota_exceeded");
     }
-    const message = {
-      ...input,
-      messageId,
-      ...(input.identity ? { identity: { ...input.identity } } : {}),
-      seq: (rows.at(-1)?.seq ?? 0) + 1,
-    };
+    const message = messageSnapshot({ ...input, messageId, seq: (rows.at(-1)?.seq ?? 0) + 1 });
     rows.push(message);
     this.context.conversations.set(input.workspaceId, rows);
     this.context.conversationBytes.set(input.workspaceId, storedBytes + inputBytes);

@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import type { ConversationFact, ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
 import { type StoreContractHarness, withStore } from "./store-fixture";
 
 function requiredIdentity<T>(identity: T | null | undefined): T {
   if (!identity) throw new Error("conversation identity missing");
   return identity;
+}
+
+function requiredActivity(fact: ConversationFact | undefined) {
+  if (fact?.type !== "activity_started") throw new Error("activity missing");
+  return fact;
 }
 
 export function registerConversationIdentityContract(name: string, harness: StoreContractHarness) {
@@ -42,6 +47,13 @@ export function registerConversationIdentityContract(name: string, harness: Stor
               message_id: "answer-1",
               sequence: 1,
               revision: 1,
+              fact: {
+                type: "activity_started" as const,
+                activity_id: "10000000-0000-4000-8000-000000000011",
+                kind: "tool" as const,
+                label: "Read selected files",
+                started_at: null,
+              },
             },
           };
           await expect(store.appendConversationMessage(message)).rejects.toThrow("conversation.request_not_accepted");
@@ -61,6 +73,9 @@ export function registerConversationIdentityContract(name: string, harness: Stor
             request: accepted.request,
           });
           const appended = await store.appendConversationMessage(message);
+          const activity = requiredActivity(requiredIdentity(appended.message.identity).fact);
+          activity.label = "altered display label";
+          expect(message.identity.fact.label).toBe("Read selected files");
           requiredIdentity(appended.message.identity).turn_id = "10000000-0000-4000-8000-000000000010";
           expect(await store.appendConversationMessage(message)).toMatchObject({ created: false });
           expect(await store.readConversation(original.id, 0, 10)).toEqual([

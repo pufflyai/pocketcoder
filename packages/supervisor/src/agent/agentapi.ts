@@ -7,6 +7,8 @@ export function agentApiConversationMessages(input: unknown) {
   return messages.flatMap((value) => {
     if (!value || typeof value !== "object") return [];
     const message = value as Record<string, unknown>;
+    const canonical = ConversationMessageInputSchema.safeParse(message);
+    if (canonical.success && canonical.data.identity) return [canonical.data];
     if (
       !Number.isSafeInteger(message.id) ||
       (message.id as number) < 0 ||
@@ -24,6 +26,7 @@ export function agentApiConversationMessages(input: unknown) {
       content: message.content,
       occurred_at: occurredAt.toISOString(),
       metadata: { provider: "agentapi", agentapi_id: String(message.id) },
+      ...(message.identity === undefined ? {} : { identity: message.identity }),
     });
     return parsed.success ? [parsed.data] : [];
   });

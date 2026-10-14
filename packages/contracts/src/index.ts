@@ -52,6 +52,7 @@ export {
   type ConversationResumeReason,
   type ConversationRole,
 } from "./conversations/conversation";
+export { type ConversationFact, ConversationFactSchema } from "./conversations/facts";
 export {
   type ConversationMessageIdentity,
   ConversationMessageIdentitySchema,

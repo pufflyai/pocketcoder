@@ -38,6 +38,37 @@ The in-memory adapter provides the same reconciliation contract while its proces
 is alive. Accepted contexts remain independent of transcript retention, so
 removing message content does not make a previous request acceptable again.
 
+## Explicit producer facts
+
+A capable message identity may carry `fact`. Supported types are `intermediate`,
+`final_response`, `tool_only`, `activity_started`, `activity_finished`, and
+`turn_terminal`. Text remains in the message content. A final response identifies
+answer text; it does not mean execution succeeded. The separate terminal outcome
+is `completed`, `failed`, `interrupted`, `canceled`, or `lost`. An interrupted turn
+may retain a final-response chunk. A tool-only turn has no invented answer.
+
+Activity start/end facts retain the supplied UUID, safe label/type, and observed
+ISO time. Unknown times are null. The schema never includes private reasoning,
+raw command fields, credentials, percentages, or guessed duration. The producer
+owns safe labels; the consumer drops undeclared fields. Facts persist inside the
+existing JSON identity envelope, with the same request binding and replay scope.
+
+The provider SSE event is `conversation_message`, with a canonical message as
+its data. Provider history may contain the same canonical records; supervisor
+checkpoint synchronization preserves them. Legacy AgentAPI records remain valid.
+
+`RemoteAgentClient.sendTurn(prompt, identity, { signal, attachmentIds, onEvent })`
+is the explicit adapter path. Use it only with a verified v2 producer and a
+previously accepted request context. It forwards that context, filters unrelated
+requests, emits each event revision once, and waits for `turn_terminal`. Its
+result contains `identity`, `outcome`, nullable `finalResponse`, and `toolOnly`.
+A stream reconnect retains the last final response and replay filter. A stable
+status or an old assistant message cannot complete this path. Cancellation and
+transport failure remain errors; observed facts have already reached `onEvent`.
+
+`send` remains the legacy adapter path for producers lacking explicit facts.
+Consumer tests alone do not allow callers to enable the capable path in a release.
+
 ## Capability and existing history
 
 The history page advertises protocol transport and persistence support under

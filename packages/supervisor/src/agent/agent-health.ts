@@ -1,4 +1,4 @@
-import type { AgentFrame, ExecSpec } from "@pstdio/pocketcoder-contracts";
+import type { AgentFrame, ConversationMessageInput, ExecSpec } from "@pstdio/pocketcoder-contracts";
 import { agentApiConversationMessages } from "./agentapi";
 
 type AgentState = "unknown" | "stable" | "running";
@@ -23,6 +23,7 @@ export class AgentHealthMonitor {
   private currentState: AgentState = "unknown";
   private stateRevision = 0;
   private lastMessageId = -1;
+  private readonly eventRevisions = new Map<string, number>();
   private transcriptSync: Promise<void> | null = null;
   private readonly serviceHealth = new Map<string, string>();
 
@@ -33,6 +34,7 @@ export class AgentHealthMonitor {
       send: SendFrame;
       log(message: string): void;
     },
+    private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
   get state() {
@@ -66,7 +68,7 @@ export class AgentHealthMonitor {
     if (!service) return;
     let health: "healthy" | "unhealthy" | "starting" = "starting";
     try {
-      const response = await fetch(new URL(service.healthPath, service.baseUrl), {
+      const response = await this.fetchImpl(new URL(service.healthPath, service.baseUrl), {
         signal: AbortSignal.timeout(3000),
       });
       health = response.ok ? "healthy" : "unhealthy";
@@ -90,7 +92,7 @@ export class AgentHealthMonitor {
     const service = this.callbacks.exec()?.services.agent;
     if (!service || timeoutMs <= 0) return null;
     try {
-      const response = await fetch(new URL(service.healthPath, service.baseUrl), {
+      const response = await this.fetchImpl(new URL(service.healthPath, service.baseUrl), {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) return null;
@@ -127,19 +129,30 @@ export class AgentHealthMonitor {
     for (const name of Object.keys(exec.services)) await this.probeService(exec, name, force);
   }
 
+  private forwardIdentifiedMessage(message: ConversationMessageInput) {
+    const envelope = message.identity;
+    if (!envelope) return false;
+    const key = JSON.stringify([envelope.conversation_id, envelope.turn_id, envelope.event_id]);
+    if ((this.eventRevisions.get(key) ?? 0) >= envelope.revision) return true;
+    if (!this.callbacks.send("conversation_message", message)) throw new Error("workspace connection closed");
+    this.eventRevisions.set(key, envelope.revision);
+    return true;
+  }
+
   private async performMessageSync(signal?: AbortSignal) {
     const service = this.callbacks.exec()?.services.agent;
     if (!service) return;
     const wasStable = this.currentState === "stable";
     const revision = this.stateRevision;
     try {
-      const response = await fetch(new URL("/messages", service.baseUrl), {
+      const response = await this.fetchImpl(new URL("/messages", service.baseUrl), {
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
       });
       if (!response.ok) throw new Error(`AgentAPI messages returned ${response.status}`);
       const messages = agentApiConversationMessages(await response.json());
       const completeTail = wasStable && this.currentState === "stable" && revision === this.stateRevision;
       for (const [index, message] of messages.entries()) {
+        if (this.forwardIdentifiedMessage(message)) continue;
         // AgentAPI mutates its last assistant message until the turn settles.
         if (index === messages.length - 1 && message.role === "assistant" && !completeTail) break;
         const id = Number(message.message_id.slice("agentapi:".length));
