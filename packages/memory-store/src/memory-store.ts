@@ -29,6 +29,7 @@ export class MemoryStore implements Store {
     this.terminal = new MemoryTerminalStore(this.context);
     this.log = new MemoryLogStore(this.context);
     this.conversation = new MemoryConversationStore(this.context);
+    this.acceptConversationRequest = this.conversation.acceptConversationRequest.bind(this.conversation);
     this.outbox = new MemoryOutboxStore(this.context);
     this.init = this.context.init.bind(this.context);
     this.acquireCoordinatorLease = this.context.acquireCoordinatorLease.bind(this.context);
@@ -254,6 +255,8 @@ export class MemoryStore implements Store {
   readonly appendNetworkEvents: MemoryLogStore["appendNetworkEvents"];
 
   readonly readNetworkEvents: MemoryLogStore["readNetworkEvents"];
+
+  readonly acceptConversationRequest: MemoryConversationStore["acceptConversationRequest"];
 
   readonly appendConversationMessage: MemoryConversationStore["appendConversationMessage"];
 

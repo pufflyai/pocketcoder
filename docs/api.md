@@ -146,47 +146,8 @@ and `created_before` is exclusive.
 
 ## Durable conversation history
 
-```text
-GET    /v1/workspaces/{id}/conversation   scope conversations:read    query: cursor (opaque), limit (max 200)
-DELETE /v1/workspaces/{id}/conversation   scope conversations:delete  idempotent
-```
-
-The transcript is append-only durable data and remains available after the
-workspace becomes terminal. It does not use the live relay. Each item has a
-PocketCoder sequence, harness-stable `message_id`, `role` (`user`,
-`assistant`, `system`, or `tool`), bounded text `content`, `occurred_at`, and
-bounded redacted string metadata. Responses include `next_cursor` and the
-retention deadline. Each workspace is capped at 100,000 messages and 50 MiB
-of canonical content/metadata; each message is capped at 256 KiB.
-
-AgentAPI-native workspaces capture accepted user input and earlier completed
-`/messages` entries while the agent is running. The final assistant entry stays
-pending until a read starts and finishes under the same stable health revision.
-The numeric AgentAPI id becomes `agentapi:<id>`, and AgentAPI's
-`agent` role becomes `assistant`; replay is idempotent. Legacy harness adapters
-may still write one canonical line per complete message:
-
-```text
-POCKETCODER_CONVERSATION {"message_id":"provider-7","role":"assistant","content":"Done","occurred_at":"2026-08-03T08:00:00.000Z","metadata":{"provider":"agentapi"}}
-```
-
-Before cooperative Stop or shutdown, the supervisor waits for an older history
-read and starts a fresh one before forwarding TERM. This shares the existing
-termination grace period. A failed read is reported and physical termination
-continues; a slow read cannot extend the deadline. KILL bypasses this final read.
-Frames remain ordered on the control channel; a disconnected channel or forced
-kill cannot guarantee delivery of the latest input.
-The server saves transcript frames already received even if provider cleanup
-finishes before queued writes. Deleted or purged history stays deleted.
-Stop responses and terminal state do not acknowledge queued transcript writes;
-an immediate history read can lag.
-Checkpoint preparation also starts a fresh stable read within its deadline.
-
-The supervisor validates and forwards the event over its ordered protocol;
-replaying a message id is idempotent. Adapters must redact secrets and
-provider-private tool/attachment data before emission. Expired transcripts
-return `410 conversation.expired`; explicitly deleted transcripts return
-`410 conversation.deleted` and cannot be appended again.
+See [conversation history and request identities](conversation-identities.md)
+for retention, deletion, v2 identity receipts, and compatibility.
 
 ## Service relay
 
@@ -329,49 +290,8 @@ activity for the idle timeout. Existing machine keys do not gain
 
 ## Attach, checkpoints, and restore
 
-Attach is ordinary use of the existing workspace and allowlisted relay; it
-creates no human session credential. It is valid only while the execution is
-`ready`.
-
-```text
-POST /v1/workspaces/{id}/preserve       scope workspaces:preserve
-GET  /v1/workspaces/{id}/checkpoints    scope checkpoints:read
-GET  /v1/checkpoints/{id}               scope checkpoints:read
-POST /v1/checkpoints/{id}/verify        scope checkpoints:read
-DELETE /v1/checkpoints/{id}             scope checkpoints:delete
-POST /v1/checkpoints/{id}/restore       scope workspaces:restore
-POST /v1/workspaces/{id}/recreate       scope workspaces:restore
-POST /v1/workspaces/{id}/resume         scope workspaces:restore
-GET  /v1/operations/{id}                scope workspaces:read
-GET  /v1/workspaces/{id}/outputs        scope outputs:read
-```
-
-All mutating checkpoint routes require `Idempotency-Key`. Preserve rejects new
-relay work; native workspaces wait for stable AgentAPI, synchronize its final
-messages, and gracefully terminate it. PocketCoder then snapshots
-only template-declared mounts, verifies the manifest, and makes the source
-terminal `preserved`. Restore never reopens it: a new queued workspace gets
-the exact template snapshot, fresh provider and credentials, lineage fields,
-and an independent writable storage allocation.
-
-`conversation_restore` is `supported`, `filesystem_only`, or `unknown`; the
-workspace also exposes `conversation_resume: {status, reason}`. `recreate`
-and checkpoint `restore` are generic filesystem recovery. `resume` is the
-stricter conversation operation: it selects the latest ready checkpoint,
-creates a new workspace with source/checkpoint lineage only when capability is
-`supported`, and otherwise returns `409 resume.unsupported` with stable
-`details.reason` (`filesystem_only` or `capability_unknown`). No operation
-promises process-memory, socket, in-flight request, or external side-effect
-restoration.
-Ready checkpoint content is immutable. Expired checkpoints are removed by the
-retention sweep through the same durable delete operation.
-
-Administrative storage inspection is available at `GET
-/v1/storage/inventory`; `POST /v1/storage/prune` runs an immediate retention
-sweep. The sweep also physically removes expired transcript rows while keeping
-their expiry tombstones, and reports `transcripts_deleted`. Both routes require
-`admin`. Inventory returns opaque IDs only, never physical paths or backend
-references.
+See [checkpoint and restore routes](checkpoint-api.md) for persistence,
+conversation resume, and retention sweeps.
 
 ## Lifecycle events
 

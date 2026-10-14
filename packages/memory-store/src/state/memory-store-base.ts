@@ -3,6 +3,7 @@ import type { WorkspaceState } from "@pstdio/pocketcoder-contracts";
 import {
   buildEventEnvelope,
   type ConversationMessageRow,
+  type ConversationRequestRow,
   type ConversationStateRow,
   type LogRow,
   type MachineKeyRow,
@@ -48,6 +49,7 @@ export const CHANGE_PATCH_KEYS = new Set([
 ]);
 
 export class MemoryState {
+  conversationRequests = new Map<string, ConversationRequestRow>();
   templates: TemplateRow[] = [];
 
   principals: PrincipalRow[] = [];

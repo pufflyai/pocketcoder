@@ -47,6 +47,7 @@ export async function createTestServer(limits = {}, readiness?: Readiness): Prom
       "workspaces:cancel",
       "workspaces:restore",
       "conversations:read",
+      "conversations:write",
       "conversations:delete",
       "services:relay",
       "logs:read",

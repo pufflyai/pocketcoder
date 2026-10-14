@@ -72,7 +72,7 @@ docker run --detach --name pocketcoder-validation-postgres \
 until docker exec pocketcoder-validation-postgres pg_isready -U pocketcoder; do sleep 1; done
 
 POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
-  bun test packages/db/src/store.test.ts
+  bun test packages/db/src/postgres-conformance.test.ts
 
 docker rm --force pocketcoder-validation-postgres
 ```
@@ -81,7 +81,28 @@ Expected result: the PostgreSQL suite runs rather than skips, applies the full
 migration chain in `packages/db/drizzle` without drift, appends one message,
 treats a replayed `message_id` as idempotent, and reads sequence `1` back.
 
-## 5. Inspect a running workspace manually
+## 5. Validate supplied request identities
+
+With the disposable PostgreSQL URL from step 4:
+
+```sh
+POCKETCODER_TEST_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:55432/pocketcoder \
+  bun test packages/contracts/src/conversations/conversation.test.ts \
+  packages/memory-store/src/memory-store.test.ts \
+  packages/db/src/postgres-conformance.test.ts \
+  packages/server/src/conversations/conversation-requests.test.ts \
+  packages/server/src/control-channel/ws-frame-handler.test.ts
+```
+
+The same shared contract runs against memory and PostgreSQL. It covers external
+and generic identities, simultaneous retries, resumed workspace generations,
+conflicting fingerprints, principal/conversation scoping, repeated delivery,
+provider IDs reused in another turn, and immutable returned identities. API/SDK
+checks cover authorization and legacy history. Control-channel checks cover frame
+wiring and retained history. See [the v2 protocol](conversation-identities.md).
+These checks prove consumer support; they do not prove installed producer emission.
+
+## 6. Inspect a running workspace manually
 
 For a server and participating harness you already run, set the machine key and
 workspace id, then read the first page:

@@ -4,6 +4,8 @@ import {
   ApiError,
   ConversationListQuerySchema,
   ConversationPageSchema,
+  ConversationRequestIdentitySchema,
+  ConversationRequestReceiptSchema,
   OutputListQuerySchema,
   OutputPageSchema,
   parseDurationMs,
@@ -23,6 +25,43 @@ export function registerConversationRoutes({
   store: Store;
   service: WorkspaceService;
 }) {
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/v1/workspaces/{id}/conversation/requests",
+      operationId: "acceptConversationRequest",
+      tags: ["Conversations"],
+      middleware: [requireScope("conversations:write")] as const,
+      request: {
+        params: z.object({ id: z.uuid() }),
+        body: { content: { "application/json": { schema: ConversationRequestIdentitySchema } }, required: true },
+      },
+      responses: {
+        201: {
+          description: "Accepted request identity receipt",
+          content: { "application/json": { schema: ConversationRequestReceiptSchema } },
+        },
+        200: {
+          description: "Previously accepted request identity receipt",
+          content: { "application/json": { schema: ConversationRequestReceiptSchema } },
+        },
+        ...COMMON_ERROR_RESPONSES,
+      },
+    }),
+    async (c) => {
+      const workspace = await service.getOwned(c.get("principal"), c.req.valid("param").id);
+      const result = await store.acceptConversationRequest(workspace.id, c.req.valid("json"), new Date());
+      if (result.kind === "conflict")
+        throw new ApiError(
+          "idempotency.conflict",
+          "This request ID already has a different accepted identity or fingerprint.",
+        );
+      return c.json(
+        { kind: result.kind, identity: result.request.identity, accepted_at: result.request.acceptedAt.toISOString() },
+        result.kind === "accepted" ? 201 : 200,
+      );
+    },
+  );
   app.openapi(
     createRoute({
       method: "get",
@@ -79,9 +118,15 @@ export function registerConversationRoutes({
             content: row.content,
             occurred_at: row.occurredAt.toISOString(),
             metadata: row.metadata,
+            identity: row.identity ?? null,
           })),
           next_cursor: hasMore && last ? encodeCursor("conversation", last.seq) : null,
           retention: { status: "retained" as const, expires_at: expiresAt?.toISOString() ?? null },
+          protocol: {
+            schema: "pocketcoder.conversation/v2" as const,
+            request_identity_authorities: ["external" as const, "generic" as const],
+            producer_capabilities: null,
+          },
         },
         200,
       );

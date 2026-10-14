@@ -97,6 +97,7 @@ export class PostgresStore implements Store {
     this.appendNetworkEvents = networkAudit.appendNetworkEvents;
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
+    this.acceptConversationRequest = conversations.acceptConversationRequest;
     this.appendConversationMessage = conversations.appendConversationMessage;
     this.readConversation = conversations.readConversation;
     this.getConversationState = conversations.getConversationState;
@@ -176,6 +177,7 @@ export class PostgresStore implements Store {
   readonly readLogTail: Store["readLogTail"];
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
+  readonly acceptConversationRequest: Store["acceptConversationRequest"];
   readonly appendConversationMessage: Store["appendConversationMessage"];
   readonly readConversation: Store["readConversation"];
   readonly getConversationState: Store["getConversationState"];
