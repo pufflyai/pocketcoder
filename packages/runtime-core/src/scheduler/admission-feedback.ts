@@ -11,10 +11,17 @@ export function capacityReason(row: WorkspaceRow, counts: ActiveCounts, limits: 
   return null;
 }
 
-export async function recordCapacityReasons(context: SchedulerContext, counts: ActiveCounts) {
+export async function recordCapacityReasons(
+  context: SchedulerContext,
+  counts: ActiveCounts,
+  snapshot?: { queued: WorkspaceRow[]; queuedCount: number },
+) {
+  // The FIFO snapshot is complete when no principal has a backlog. Avoid
+  // another database scan on the normal one-workspace launch path.
+  const knownQueued = snapshot && snapshot.queuedCount === snapshot.queued.length ? snapshot.queued : undefined;
   // External actor/policy denials describe only the checked workspace. Controller
   // counters can explain all queued rows without guessing an external identity.
-  const queued = (await context.deps.store.listNonterminal()).filter((row) => row.state === "queued");
+  const queued = knownQueued ?? (await context.deps.store.listNonterminal()).filter((row) => row.state === "queued");
   let changed = false;
   for (const row of queued) {
     const reason = capacityReason(row, counts, context.deps.limits);

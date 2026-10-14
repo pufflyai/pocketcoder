@@ -79,7 +79,8 @@ export class SchedulerAdmission {
         this.context.report("admit.snapshot", err);
         return;
       }
-      if (await recordCapacityReasons(this.context, snapshot.counts)) {
+      if (snapshot.queuedCount === 0) return;
+      if (await recordCapacityReasons(this.context, snapshot.counts, snapshot)) {
         // Feedback bumps the cursor used by the atomic warm lease. Refresh
         // before policy evaluation; later changes still fail the stale guard.
         snapshot = await store.readAdmissionSnapshot();
@@ -93,10 +94,10 @@ export class SchedulerAdmission {
       const rotation = this.principalRotation(byPrincipal);
       const before = counts.global;
       if (!(await this.admitRound(byPrincipal, rotation, counts))) return;
+      // All rows in this snapshot were admitted; new arrivals wait for the next tick.
+      if (counts.global - before === queuedCount) return;
       await recordCapacityReasons(this.context, counts);
       if (counts.global >= limits.globalActiveWorkspaces) return;
-      // All rows in this snapshot were admitted; new arrivals wait for the next tick.
-      if (queuedCount === queued.length && counts.global - before === queued.length) return;
     }
   }
 
