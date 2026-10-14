@@ -79,8 +79,9 @@ docker build -t pocketcoder-workspace:dev deploy/image
 ## Docker compose
 
 [`deploy/compose/docker-compose.yaml`](../deploy/compose/docker-compose.yaml)
-runs the server with an embedded PGlite database. For a full containerized control plane, run the
-server image with:
+runs RustFS for local S3-compatible object storage. The `full` profile also runs
+the server with an embedded PGlite database. For a full containerized control
+plane, run the server image with:
 
 - the docker socket mounted (`/var/run/docker.sock`) and the socket's gid in
   `group_add`, so the Docker driver can create workspace containers;
@@ -98,14 +99,35 @@ content-addressed workspace image) lives in
 `bun run example:e2e:local` for the credential-free echo harness, or use the
 same runner with the Pi example and an OpenAI-compatible model gateway.
 
-The compose file also has a `full` profile for a containerized server with
-persistent workspaces:
+Set RustFS credentials in your operator shell before starting Compose:
+
+```sh
+export RUSTFS_ACCESS_KEY="$(openssl rand -hex 16)"
+export RUSTFS_SECRET_KEY="$(openssl rand -base64 32)"
+docker compose -f deploy/compose/docker-compose.yaml up -d --wait
+```
+
+The RustFS S3 API is at `http://127.0.0.1:9000`. Open the console at
+`http://127.0.0.1:9001` and sign in with those credentials to create buckets.
+Clients inside the Compose network use `http://rustfs:9000`. Both host ports
+bind only to loopback. Set `RUSTFS_IMAGE` to override the pinned image.
+
+Keep the credentials in the operator environment, outside workspace input,
+templates, and mounts. Reuse them when restarting Compose. The `rustfs-data`
+volume keeps objects across container replacement and `docker compose down`;
+adding `--volumes` deletes that data.
+
+PocketCoder checkpoints still use controller-owned filesystem archives. The
+server has no S3 checkpoint backend yet.
+
+To also start the containerized server with persistent workspaces, use the
+`full` profile in the same shell:
 
 ```sh
 export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
 export POCKETCODER_HOST_DATA_ROOT=/absolute/host/path/pocketcoder-data
 mkdir -p "$POCKETCODER_HOST_DATA_ROOT"/{input,workspaces,checkpoints}
-docker compose -f deploy/compose/docker-compose.yaml --profile full up -d
+docker compose -f deploy/compose/docker-compose.yaml --profile full up -d --wait
 ```
 
 Set `POCKETCODER_SERVER_IMAGE` to an exact candidate digest and use `--no-build`
