@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { MachineKeyRow } from "@pstdio/pocketcoder-runtime-contracts";
-import type { PreparedStore, StoreContractHarness } from "./store-contract";
+import type { PreparedStore, StoreContractHarness } from "./store-fixture";
 
 export function registerCleanupContract(
   name: string,

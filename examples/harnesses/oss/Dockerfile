@@ -7,18 +7,19 @@ COPY . .
 RUN bun install --frozen-lockfile \
   && bun build packages/supervisor/src/index.ts --target bun --outfile /out/supervisor.js
 
-FROM oven/bun:1.4.2-slim AS agentapi-download
+# Keep examples on the same reviewed AgentAPI fix as the workspace image.
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS agentapi-build
 ARG TARGETARCH
-ARG AGENTAPI_VERSION=0.12.2
-RUN case "$TARGETARCH" in \
-    amd64) AGENTAPI_SHA256="fcc9318c50183c22e5fcbda1fa5a4838dc082b36fc91b6f01172730e86813125" ;; \
-    arm64) AGENTAPI_SHA256="d4f76702f1ce852c4ba2027f51dae1a94d5b27e02b4aee20cd37eda8a8996c11" ;; \
-    *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
-  esac \
-  && AGENTAPI_URL="https://github.com/coder/agentapi/releases/download/v${AGENTAPI_VERSION}/agentapi-linux-${TARGETARCH}" \
-  && bun -e 'const response = await fetch(process.argv[1]); if (!response.ok) throw new Error(`download failed: ${response.status}`); await Bun.write(process.argv[2], response);' "$AGENTAPI_URL" /agentapi \
-  && echo "$AGENTAPI_SHA256  /agentapi" | sha256sum -c - \
-  && chmod 0755 /agentapi
+ENV GOTOOLCHAIN=local
+WORKDIR /src
+ADD --checksum=sha256:ac268b66c61be487bf3a3917a791abd10f3211b8ca8640897b884e2ba836d769 https://codeload.github.com/coder/agentapi/tar.gz/9ff117e231822f670305254ef24f6389f75953f4 /tmp/agentapi.tar.gz
+COPY deploy/image/agentapi-identical-replies.patch /tmp/agentapi-identical-replies.patch
+RUN apk add --no-cache patch \
+  && tar -xzf /tmp/agentapi.tar.gz --strip-components=1 \
+  && patch -p1 < /tmp/agentapi-identical-replies.patch \
+  && go get golang.org/x/text@v0.39.0 \
+  && go mod verify \
+  && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
 FROM oven/bun:1.4.2-slim
 
@@ -26,7 +27,7 @@ WORKDIR /opt/oss
 COPY examples/harnesses/oss/package.json examples/harnesses/oss/bun.lock ./
 RUN bun install --production --frozen-lockfile
 
-COPY --from=agentapi-download /agentapi /usr/local/bin/agentapi
+COPY --from=agentapi-build /agentapi /usr/local/bin/agentapi
 COPY --from=supervisor-build /out/supervisor.js /opt/pocketcoder/supervisor.js
 COPY deploy/image/pocketcoder-supervisor /usr/local/bin/pocketcoder-supervisor
 COPY examples/harnesses/oss/run-codex /usr/local/bin/run-codex

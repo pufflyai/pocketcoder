@@ -1,4 +1,4 @@
-import { TERMINAL_STATES } from "@pstdio/pocketcoder-contracts";
+import { type AdmissionReason, TERMINAL_STATES } from "@pstdio/pocketcoder-contracts";
 import type { ActiveCounts, WorkspaceAdmissionClaim } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, count, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, notifyChange, type QueryContext } from "../../database/context";
@@ -39,6 +39,18 @@ export function createAdmission(context: DatabaseContext) {
     return counts;
   }
   return {
+    async setQueuedAdmissionReason(id: string, reason: AdmissionReason | null, at: Date) {
+      const changed = await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
+        if (current?.state !== "queued" || current.purgeRequestedAt || current.reasonCode === reason) return false;
+        await tx
+          .update(workspaces)
+          .set({ reasonCode: reason, updatedAt: at, changeSeq: sql`${workspaces.changeSeq}+1` })
+          .where(eq(workspaces.id, id));
+        return true;
+      });
+      if (changed) notifyChange(context, id);
+    },
     async listNonterminal() {
       return (
         await db
@@ -67,6 +79,7 @@ export function createAdmission(context: DatabaseContext) {
           .update(workspaces)
           .set({
             state: "provisioning",
+            reasonCode: null,
             updatedAt: claim.at,
             changeSeq: sql`${workspaces.changeSeq}+1`,
             provisioningMode: "cold",

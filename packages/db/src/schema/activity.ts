@@ -1,6 +1,7 @@
 import { REASON_CODES, WORKSPACE_STATES } from "@pstdio/pocketcoder-contracts";
 import type {
   ConversationMessageRow,
+  ConversationRequestRow,
   ConversationStateRow,
   LogRow,
   StateHistoryRow,
@@ -20,13 +21,28 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { createAccessTables } from "./access";
 import { sqlValues, timestamptz } from "./columns";
 import type { createWorkspaceTables } from "./workspaces";
 
 export function createActivityTables(
   table: PgTableFn<string | undefined> = pgTable,
   { workspaces }: ReturnType<typeof createWorkspaceTables>,
+  { principals }: ReturnType<typeof createAccessTables>,
 ) {
+  const conversationRequests = table(
+    "conversation_requests",
+    {
+      principalId: uuid("principal_id")
+        .notNull()
+        .references(() => principals.id),
+      conversationId: uuid("conversation_id").notNull(),
+      requestId: uuid("request_id").notNull(),
+      identity: jsonb("identity").$type<ConversationRequestRow["identity"]>().notNull(),
+      acceptedAt: timestamptz("accepted_at").notNull(),
+    },
+    (table) => [primaryKey({ columns: [table.principalId, table.conversationId, table.requestId] })],
+  );
   const workspaceOutputs = table(
     "workspace_outputs",
     {
@@ -63,6 +79,7 @@ export function createActivityTables(
       content: text("content").notNull(),
       occurredAt: timestamptz("occurred_at").notNull(),
       metadata: jsonb("metadata").$type<NonNullable<ConversationMessageRow["metadata"]>>().notNull().default({}),
+      identity: jsonb("identity").$type<NonNullable<ConversationMessageRow["identity"]>>(),
       createdAt: timestamptz("created_at").notNull(),
     },
     (table) => [
@@ -130,6 +147,7 @@ export function createActivityTables(
   );
 
   return {
+    conversationRequests,
     workspaceOutputs,
     workspaceConversations,
     workspaceConversationMessages,

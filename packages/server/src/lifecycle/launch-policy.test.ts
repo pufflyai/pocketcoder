@@ -1,6 +1,34 @@
 import { expect, test } from "bun:test";
 import { createLaunchPolicy } from "./launch-policy";
 
+test.each([
+  [403, { allowed: false, reason: "active-capacity", scope: "global" }, "admission_policy_global_capacity"],
+  [403, { allowed: false, reason: "active-capacity", scope: "actor" }, "admission_actor_capacity"],
+  [403, { allowed: false, reason: "private-policy-detail" }, "admission_denied"],
+  [503, { reason: "active-capacity", scope: "global" }, "admission_unavailable"],
+] as const)("launch policy reports a bounded reason for HTTP %s: %j", async (status, body, reason) => {
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch: () => Response.json(body, { status }),
+  });
+  try {
+    const authorize = createLaunchPolicy(server.url.toString(), "synthetic-control-token");
+    expect(
+      await authorize({
+        id: "generation",
+        principalId: "principal",
+        externalId: "task",
+        templateName: "template",
+        launchMode: "create",
+        metadata: {},
+      }),
+    ).toEqual({ allowed: false, reason });
+  } finally {
+    server.stop(true);
+  }
+});
+
 test.each(["allow", "deny", "wrong-workspace", "unavailable", "redirect", "malformed"])(
   "launch policy requires an explicit matching response: %s",
   async (mode) => {
@@ -32,7 +60,13 @@ test.each(["allow", "deny", "wrong-workspace", "unavailable", "redirect", "malfo
         metadata: {},
         launchInput: { bootstrap_code: "never-forward" },
       };
-      expect(await authorize(workspace)).toBe(mode === "allow");
+      const result = await authorize(workspace);
+      if (mode === "allow") expect(result).toBe(true);
+      else
+        expect(result).toEqual({
+          allowed: false,
+          reason: mode === "deny" || mode === "wrong-workspace" ? "admission_denied" : "admission_unavailable",
+        });
     } finally {
       server.stop(true);
     }

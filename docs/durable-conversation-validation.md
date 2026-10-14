@@ -67,7 +67,42 @@ The suites run in memory and on disk. They check transcript deduplication,
 transaction rollback, migration history, writer locking and SIGKILL recovery.
 The compiled fixture runs without a source checkout or adjacent database assets.
 
-## 5. Inspect a running workspace manually
+## 5. Validate supplied request identities
+
+Run the shared contract against memory and disk PGlite:
+
+```sh
+bun test packages/contracts/src/conversations/conversation.test.ts \
+  packages/memory-store/src/memory-store.test.ts \
+  packages/db/src/pglite-conformance.test.ts \
+  packages/server/src/conversations/conversation-requests.test.ts \
+  packages/server/src/control-channel/ws-frame-handler.test.ts
+```
+
+The same shared contract runs against memory and disk PGlite. It covers external
+and generic identities, simultaneous retries, resumed workspace generations,
+conflicting fingerprints, principal/conversation scoping, repeated delivery,
+provider IDs reused in another turn, and immutable returned identities. API/SDK
+checks cover authorization and legacy history. Control-channel checks cover frame
+wiring and retained history. See [the v2 protocol](conversation-identities.md).
+These checks prove consumer support; they do not prove installed producer emission.
+
+## 6. Validate explicit provider facts
+
+```sh
+bun test packages/remote/src/stream/agentapi-events.test.ts \
+  packages/remote/src/client/identified-turn.test.ts \
+  packages/supervisor/src/agent/agentapi.test.ts
+```
+
+Expected: explicit intermediate/final/tool-only/activity/terminal facts decode;
+final text survives interruption; duplicate or stale revisions and unrelated turns
+do not replace the accepted turn; canonical facts survive checkpoint-history
+projection; finishing a reader releases its stream. The store tests in step 5
+also round-trip activity facts against PGlite.
+No installed producer or deployment capability is claimed by these fixtures.
+
+## 7. Inspect a running workspace manually
 
 For a server and participating harness you already run, set the machine key and
 workspace id, then read the first page:

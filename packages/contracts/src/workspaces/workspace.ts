@@ -56,7 +56,28 @@ export function canTransition(from: WorkspaceState, to: WorkspaceState): boolean
   return TRANSITIONS[from].includes(to);
 }
 
+export const ADMISSION_REASONS = [
+  "admission_global_capacity",
+  "admission_principal_capacity",
+  "admission_template_capacity",
+  "admission_policy_global_capacity",
+  "admission_actor_capacity",
+  "admission_denied",
+  "admission_unavailable",
+] as const;
+export type AdmissionReason = (typeof ADMISSION_REASONS)[number];
+export type AdmissionDecision =
+  | boolean
+  | {
+      allowed: false;
+      reason: Exclude<
+        AdmissionReason,
+        "admission_global_capacity" | "admission_principal_capacity" | "admission_template_capacity"
+      >;
+    };
+
 export const REASON_CODES = [
+  ...ADMISSION_REASONS,
   "child_exit_success",
   "child_exit_failure",
   "setup_failed",
@@ -92,8 +113,8 @@ export type ReasonCode = (typeof REASON_CODES)[number];
 export const AGENT_STATES = ["unknown", "running", "stable"] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 
-// `requested` means the interrupt keys were sent, not that the turn stopped:
-// callers wait for `agent_state: "stable"` to see it settle.
+// `requested` only confirms delivery of interrupt keys. Stable terminal input
+// is a readiness observation; capable producers report a separate turn outcome.
 export const AgentInterruptResponseSchema = z.object({
   status: z.enum(["requested", "idle"]),
 });

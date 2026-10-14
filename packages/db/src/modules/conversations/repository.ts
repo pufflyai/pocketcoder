@@ -1,32 +1,46 @@
+import { digestOf } from "@pstdio/pocketcoder-contracts";
 import type { ConversationMessageRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, asc, count, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { requireContentWritable } from "../persistence/content";
 
+import { createConversationRequests } from "./request-receipts";
+
 const MAX_CONVERSATION_BYTES = 50 * 1024 * 1024;
 const MAX_CONVERSATION_MESSAGES = 100_000;
 export function createConversations(context: DatabaseContext) {
+  const requestReceipts = createConversationRequests(context);
   const {
     db,
     journal,
     tables: { workspaceConversations: conversations, workspaceConversationMessages: messages },
   } = context;
   return {
+    acceptConversationRequest: requestReceipts.acceptConversationRequest,
     async appendConversationMessage(input: Omit<ConversationMessageRow, "seq">) {
       return db.transaction(async (tx) => {
         await requireContentWritable(tx, context.tables, input.workspaceId);
         await lock(tx, input.workspaceId, 7081);
+        await requestReceipts.requireAccepted(tx, input);
         const [state] = await tx
           .select({ status: conversations.status })
           .from(conversations)
           .where(eq(conversations.workspaceId, input.workspaceId))
           .for("update");
         if (state?.status === "deleted") throw new Error("conversation.deleted");
+        const messageId = input.identity
+          ? digestOf([
+              input.identity.conversation_id,
+              input.identity.turn_id,
+              input.identity.event_id,
+              input.identity.revision,
+            ])
+          : input.messageId;
         const [existing] = await tx
           .select()
           .from(messages)
-          .where(and(eq(messages.workspaceId, input.workspaceId), eq(messages.messageId, input.messageId)));
+          .where(and(eq(messages.workspaceId, input.workspaceId), eq(messages.messageId, messageId)));
         if (existing) return { message: existing, created: false };
         await tx
           .insert(conversations)
@@ -37,13 +51,16 @@ export function createConversations(context: DatabaseContext) {
             seq: sql`coalesce(max(${messages.seq}),0)`.mapWith(Number),
             count: count(),
             bytes:
-              sql`coalesce(sum(octet_length(${messages.content})+octet_length(${messages.metadata}::text)),0)`.mapWith(
+              sql`coalesce(sum(octet_length(${messages.content})+octet_length(${messages.metadata}::text)+coalesce(octet_length(${messages.identity}::text),0)),0)`.mapWith(
                 Number,
               ),
           })
           .from(messages)
           .where(eq(messages.workspaceId, input.workspaceId));
-        const inputBytes = Buffer.byteLength(input.content) + Buffer.byteLength(JSON.stringify(input.metadata));
+        const inputBytes =
+          Buffer.byteLength(input.content) +
+          Buffer.byteLength(JSON.stringify(input.metadata)) +
+          (input.identity ? Buffer.byteLength(JSON.stringify(input.identity)) : 0);
         if (
           requiredRow(stats).count >= MAX_CONVERSATION_MESSAGES ||
           requiredRow(stats).bytes + inputBytes > MAX_CONVERSATION_BYTES
@@ -51,7 +68,7 @@ export function createConversations(context: DatabaseContext) {
           throw new Error("conversation.quota_exceeded");
         const [message] = await tx
           .insert(messages)
-          .values({ ...input, seq: requiredRow(stats).seq + 1 })
+          .values({ ...input, messageId, seq: requiredRow(stats).seq + 1 })
           .returning();
         return { message: requiredRow(message), created: true };
       });
