@@ -1,5 +1,13 @@
 # @pstdio/pocketcoder-sdk
 
+## 0.6.1
+
+### Patch Changes
+
+- [#116](https://github.com/pufflyai/pocketcoder/pull/116) [`2d0a29a`](https://github.com/pufflyai/pocketcoder/commit/2d0a29a09df9e367bda96efbd356aaec15a1d987) Thanks [@au-re](https://github.com/au-re)! - Preserve supplied conversation identities and reconcile accepted requests across workspace generations.
+
+- [#117](https://github.com/pufflyai/pocketcoder/pull/117) [`3f8e03d`](https://github.com/pufflyai/pocketcoder/commit/3f8e03dca7f8e7dfde5f81607663d94778228bd7) Thanks [@au-re](https://github.com/au-re)! - Retain explicit conversation, activity, and terminal facts through v2 identified turns without inferring a final answer from agent status.
+
 ## 0.6.0
 
 ### Minor Changes
