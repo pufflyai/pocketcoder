@@ -12,7 +12,8 @@ PocketCoder launches AgentAPI and owns its loopback HTTP lifecycle (`GET
 consumer-owned AgentAPI wrapper or PocketCoder-specific Pi HTTP adapter.
 
 The image pins Pi to `0.83.0` and AgentAPI to `0.12.2`. The Dockerfile verifies
-AgentAPI's downloaded checksum for both supported Linux architectures.
+the pinned AgentAPI source checksum, applies the repeated-reply patch, and builds
+the binary for each supported Linux architecture.
 AgentAPI does not yet include a native Pi terminal profile, so
 `agentapi-compat.ts` displays a `>` immediately above Pi's editor for
 AgentAPI's generic input-readiness detector. It does not implement HTTP routes,

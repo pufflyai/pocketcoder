@@ -55,14 +55,7 @@ export {
   type ConversationRole,
 } from "./conversations/conversation";
 export { type ConversationFact, ConversationFactSchema } from "./conversations/facts";
-export {
-  type ConversationMessageIdentity,
-  ConversationMessageIdentitySchema,
-  ConversationProtocolSupportSchema,
-  type ConversationRequestIdentity,
-  ConversationRequestIdentitySchema,
-  ConversationRequestReceiptSchema,
-} from "./conversations/identity";
+export * from "./conversations/identity";
 export { BROWSER_IMAGE_BYTES, BrowserFrames, browserFrameChunks } from "./displays/browser-frames";
 export {
   BROWSER_HEIGHT,
@@ -328,6 +321,9 @@ export {
   TerminalSessionSchema,
 } from "./terminals/terminal";
 export {
+  ADMISSION_REASONS,
+  type AdmissionDecision,
+  type AdmissionReason,
   AGENT_STATES,
   type AgentInterruptResponse,
   AgentInterruptResponseSchema,

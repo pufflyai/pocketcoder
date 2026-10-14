@@ -1,6 +1,13 @@
-import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-sdk";
 import { type AgentApiEvent, readAgentApiEvents } from "../stream/agentapi-events";
-import { type AgentApiMessage, changesUrlFor, delay, isAgentMessage, parseMessages } from "./client-helpers";
+import {
+  type AgentApiMessage,
+  changesUrlFor,
+  delay,
+  isAgentMessage,
+  parseMessages,
+  parseWorkspaceChange,
+} from "./client-helpers";
 import { type IdentifiedTurnOptions, sendIdentifiedTurn } from "./identified-turn";
 import { RemoteRequestError, type RemoteRequestPhase, remoteResponseError } from "./remote-request-error";
 
@@ -22,20 +29,9 @@ interface AgentApiStatus {
   status?: string;
 }
 
-interface WorkspaceChange {
-  cursor?: unknown;
-  workspace?: {
-    agent_state?: unknown;
-  };
-}
-
-type FetchLike = typeof fetch;
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 type SnapshotCallback = (snapshot: string) => void;
 type AcceptedCallback = () => void;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 export class RemoteAgentClient {
   readonly serviceUrl: string;
@@ -125,17 +121,7 @@ export class RemoteAgentClient {
       return undefined;
     }
     if (!response.ok) throw await remoteResponseError(response, phase, promptAccepted);
-    const body = (await response.json()) as WorkspaceChange;
-    if (
-      typeof body.cursor !== "number" ||
-      !isRecord(body.workspace) ||
-      (body.workspace.agent_state !== "unknown" &&
-        body.workspace.agent_state !== "running" &&
-        body.workspace.agent_state !== "stable")
-    ) {
-      throw new Error("PocketCoder changes response was malformed");
-    }
-    return { cursor: body.cursor, agentState: body.workspace.agent_state };
+    return parseWorkspaceChange(await response.json());
   }
 
   // A workspace reports itself ready once its services answer health checks,

@@ -65,6 +65,7 @@ export function buildWarmClaimQuery({
       .update(workspaces)
       .set({
         state: "provisioning",
+        reasonCode: null,
         provisioningMode: "warm",
         providerKind: sql`${leased.driverKind}`,
         providerRef: sql`${leased.providerRef}`,

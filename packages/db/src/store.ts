@@ -116,6 +116,7 @@ export class PGliteStore implements Store {
     this.countActive = admission.countActive;
     this.countQueued = admission.countQueued;
     this.claimWorkspaceAdmission = admission.claimWorkspaceAdmission;
+    this.setQueuedAdmissionReason = admission.setQueuedAdmissionReason;
     const transitions = createTransitions(context);
     this.updateWorkspace = transitions.updateWorkspace;
     this.transition = transitions.transition;
@@ -228,6 +229,7 @@ export class PGliteStore implements Store {
   readonly countActive: Store["countActive"];
   readonly countQueued: Store["countQueued"];
   readonly claimWorkspaceAdmission: Store["claimWorkspaceAdmission"];
+  readonly setQueuedAdmissionReason: Store["setQueuedAdmissionReason"];
   readonly updateWorkspace: Store["updateWorkspace"];
   readonly transition: Store["transition"];
   readonly listStateHistory: Store["listStateHistory"];

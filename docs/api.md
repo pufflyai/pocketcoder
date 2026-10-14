@@ -558,3 +558,17 @@ at-least-once, ordering is not guaranteed.
 `pocketcoder-supervisor` inside workspaces. It authenticates with a one-time
 registration secret (first connection) or a server-issued reconnect
 credential — never with machine keys. Callers never use it.
+
+## Queued admission and explicit conversation outcomes
+
+Queued workspace responses expose bounded admission reasons through `reason_code`;
+see [admission feedback](admission.md). The change cursor advances when the reason
+changes and the reason clears on admission. Limits and termination proof remain
+unchanged.
+
+`POST /v1/workspaces/{id}/conversation/requests` accepts a caller-owned v2 request
+identity under `conversations:write`. Replays return the same receipt; conflicting
+input returns 409. History includes nullable message identities and explicit facts.
+See [conversation identities](conversation-identities.md) for the request fields,
+producer contract and the distinction between final text and terminal outcome.
+`agent_state: stable` reports input readiness, not completed model work.

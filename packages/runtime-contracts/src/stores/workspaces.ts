@@ -1,4 +1,5 @@
 import type {
+  AdmissionReason,
   AgentState,
   ConversationRestoreCapability,
   LaunchMode,
@@ -180,6 +181,7 @@ export interface WorkspaceStore {
   listNonterminal(): Promise<WorkspaceRow[]>;
   countActive(): Promise<ActiveCounts>;
   countQueued(): Promise<number>;
+  setQueuedAdmissionReason(id: string, reason: AdmissionReason | null, at: Date): Promise<void>;
   claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim): Promise<WorkspaceRow | null>;
   updateWorkspace(id: string, patch: WorkspacePatch, at: Date): Promise<void>;
   waitForWorkspaceChange(id: string, afterSeq: number, timeoutMs: number, signal?: AbortSignal): Promise<void>;

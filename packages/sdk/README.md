@@ -42,7 +42,10 @@ metadata-only terminal audit history.
 `client.agent.interrupt(id)` stops the agent's current turn and keeps the
 workspace and conversation. It returns `{ status: "requested" }` when it sent
 the template's interrupt keys, or `{ status: "idle" }` when the agent was
-already waiting for input. Wait for `agent_state: "stable"` before the next
+already waiting for input. Stable state reports input readiness rather than a completed model turn.
+For capable producers, observe the explicit terminal fact in
+[conversation history](../../docs/conversation-identities.md). Wait for
+`agent_state: "stable"` before the next
 message.
 
 Use `client.raw(path, init)` for endpoints not yet represented by a typed

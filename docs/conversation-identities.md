@@ -33,9 +33,9 @@ scoped by logical conversation, turn, event, and revision, so reused provider ID
 in a later turn remain distinct. `identity.message_id` is the caller's message
 identity; the outer history `message_id` is the storage deduplication key.
 
-Receipts are durable in PostgreSQL and shared by resumed workspace generations.
-The in-memory adapter provides the same reconciliation contract while its process
-is alive. Accepted contexts remain independent of transcript retention, so
+Receipts are durable in PGlite and shared by resumed workspace generations.
+Memory and disk PGlite use the same reconciliation contract. Accepted contexts
+remain independent of transcript retention, so
 removing message content does not make a previous request acceptable again.
 
 ## Explicit producer facts
@@ -57,7 +57,8 @@ The provider SSE event is `conversation_message`, with a canonical message as
 its data. Provider history may contain the same canonical records; supervisor
 checkpoint synchronization preserves them. Legacy AgentAPI records remain valid.
 
-`RemoteAgentClient.sendTurn(prompt, identity, { signal, attachmentIds, onEvent })`
+`RemoteAgentClient` is exported from `@pstdio/pocketcoder-remote/extension`.
+`sendTurn(prompt, identity, { signal, attachmentIds, onEvent })`
 is the explicit adapter path. Use it only with a verified v2 producer and a
 previously accepted request context. It forwards that context, filters unrelated
 requests, emits each event revision once, and waits for `turn_terminal`. Its
@@ -99,7 +100,7 @@ PocketCoder sequence, harness-stable `message_id`, `role` (`user`,
 `assistant`, `system`, or `tool`), bounded text `content`, `occurred_at`, and
 bounded redacted string metadata. Responses include `next_cursor` and the
 retention deadline. Each workspace is capped at 100,000 messages and 50 MiB
-of canonical content/metadata; each message is capped at 256 KiB.
+of canonical content, metadata, and identity data; each message is capped at 256 KiB.
 
 AgentAPI-native workspaces capture accepted user input and earlier completed
 `/messages` entries while the agent is running. The final assistant entry stays
@@ -129,4 +130,3 @@ replaying a message id is idempotent. Adapters must redact secrets and
 provider-private tool/attachment data before emission. Expired transcripts
 return `410 conversation.expired`; explicitly deleted transcripts return
 `410 conversation.deleted` and cannot be appended again.
-

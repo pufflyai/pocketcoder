@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf } from "@pstdio/pocketcoder-contracts";
 import { registerCleanupContract } from "./cleanup-contract";
+
+export type { StoreContractHarness, StoreContractInstance } from "./store-fixture";
+
 import { registerConversationIdentityContract } from "./conversation-identity-contract";
 import { prepareStore, type StoreContractHarness, withStore } from "./store-fixture";
-
-export type { PreparedStore, StoreContractHarness, StoreContractInstance } from "./store-fixture";
 
 export function registerStoreContract(name: string, harness: StoreContractHarness): void {
   registerConversationIdentityContract(name, harness);

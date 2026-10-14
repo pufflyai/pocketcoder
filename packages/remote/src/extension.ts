@@ -19,6 +19,8 @@ import { emitRemoteResponse } from "./stream/response-stream";
 import { registerConversationRenderers } from "./ui/renderers";
 import { STATUS_KEY, StatusPoller } from "./ui/status";
 
+export { RemoteAgentClient, type RemoteAgentClientConfig } from "./client/client";
+
 const PROVIDER = "pocketcoder-agentapi";
 const MODEL = "remote-agent";
 

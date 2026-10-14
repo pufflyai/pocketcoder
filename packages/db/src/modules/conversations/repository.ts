@@ -51,13 +51,16 @@ export function createConversations(context: DatabaseContext) {
             seq: sql`coalesce(max(${messages.seq}),0)`.mapWith(Number),
             count: count(),
             bytes:
-              sql`coalesce(sum(octet_length(${messages.content})+octet_length(${messages.metadata}::text)),0)`.mapWith(
+              sql`coalesce(sum(octet_length(${messages.content})+octet_length(${messages.metadata}::text)+coalesce(octet_length(${messages.identity}::text),0)),0)`.mapWith(
                 Number,
               ),
           })
           .from(messages)
           .where(eq(messages.workspaceId, input.workspaceId));
-        const inputBytes = Buffer.byteLength(input.content) + Buffer.byteLength(JSON.stringify(input.metadata));
+        const inputBytes =
+          Buffer.byteLength(input.content) +
+          Buffer.byteLength(JSON.stringify(input.metadata)) +
+          (input.identity ? Buffer.byteLength(JSON.stringify(input.identity)) : 0);
         if (
           requiredRow(stats).count >= MAX_CONVERSATION_MESSAGES ||
           requiredRow(stats).bytes + inputBytes > MAX_CONVERSATION_BYTES

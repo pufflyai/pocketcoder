@@ -40,7 +40,13 @@ export function createWarmPools(context: DatabaseContext) {
     async claimWarmPoolRuntime(claim: WarmPoolClaim) {
       const current = claim.workspace;
       const payload = buildEventEnvelope(
-        { ...current, state: "provisioning", provisioningMode: "warm", changeSeq: current.changeSeq + 1 },
+        {
+          ...current,
+          state: "provisioning",
+          reasonCode: null,
+          provisioningMode: "warm",
+          changeSeq: current.changeSeq + 1,
+        },
         claim.at,
       );
       claimQuery ??= createWarmClaimQuery(context);

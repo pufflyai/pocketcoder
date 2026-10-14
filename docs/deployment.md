@@ -350,3 +350,15 @@ Unbound providers contain only template identity and a single-use pool enrollmen
   auto-deleted.
 
 The controller needs namespaced Pod patch permission to retain termination evidence, plus read-only Node identity access. Bind `pocketcoder-node-identity` to the controller ServiceAccount in the deployed namespace. Workspace ServiceAccounts have no API token. Missing evidence keeps cleanup and capacity release pending.
+
+## AgentAPI reply compatibility
+
+The pinned AgentAPI 0.12.2 build includes a small reviewed patch so an identical
+nonempty answer still belongs to a later user turn. The workspace image and
+Pi/OSS example images apply the same patch. Candidate smoke tests exercise two
+identical replies through the installed binary on each architecture. Replace the
+patch when a reviewed upstream release includes the fix.
+
+For capable producers, use explicit v2 facts and terminal outcomes. Quiet terminal
+output cannot prove model completion. Legacy terminal-based agents may still
+need activity heartbeats in their adapter. See [the conversation contract](conversation-identities.md).

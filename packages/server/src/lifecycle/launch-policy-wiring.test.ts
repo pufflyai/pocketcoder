@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { WorkspaceResourceSchema } from "@pstdio/pocketcoder-contracts";
 import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { buildServer } from "../app";
@@ -36,7 +37,15 @@ test("authenticated workspace creation reaches the configured admission hook bef
   await server.scheduler.tick();
   expect(seen).toContain(workspace.id);
   expect(driver.inputFor(workspace.id)).toBeUndefined();
+  const queued = WorkspaceResourceSchema.parse(
+    await (await server.app.request(`/v1/workspaces/${workspace.id}`, authed(token))).json(),
+  );
+  expect(queued).toMatchObject({ state: "queued", reason_code: "admission_denied" });
   allowed = true;
   await server.scheduler.tick();
   expect(driver.inputFor(workspace.id)?.workspace_id).toBe(workspace.id);
+  const admitted = WorkspaceResourceSchema.parse(
+    await (await server.app.request(`/v1/workspaces/${workspace.id}`, authed(token))).json(),
+  );
+  expect(admitted.reason_code).toBeNull();
 });

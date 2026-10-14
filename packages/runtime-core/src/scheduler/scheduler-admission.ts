@@ -3,7 +3,7 @@ import { type ProviderInput, runtimeCredentialReferences } from "@pstdio/pocketc
 import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
-
+import { capacityReason, recordAdmissionReason, recordCapacityReasons } from "./admission-feedback";
 import { cleanupUncommittedProvider } from "./provider-termination";
 import type { SchedulerContext } from "./scheduler-base";
 
@@ -28,11 +28,7 @@ export class SchedulerAdmission {
   }
 
   canAdmit(row: WorkspaceRow, counts: ActiveCounts): boolean {
-    const { limits } = this.context.deps;
-    const principalActive = counts.byPrincipal[row.principalId] ?? 0;
-    if (principalActive >= limits.perPrincipalActiveWorkspaces) return false;
-    const templateLimit = limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
-    return (counts.byTemplate[row.templateName] ?? 0) < templateLimit;
+    return capacityReason(row, counts, this.context.deps.limits) === null;
   }
 
   recordAdmission(row: WorkspaceRow, counts: ActiveCounts): void {
@@ -75,12 +71,19 @@ export class SchedulerAdmission {
   async admit(): Promise<void> {
     const { store, limits } = this.context.deps;
     while (true) {
+      if (this.context.deps.admissionFenced?.()) return;
       let snapshot: Awaited<ReturnType<typeof store.readAdmissionSnapshot>>;
       try {
         snapshot = await store.readAdmissionSnapshot();
       } catch (err) {
         this.context.report("admit.snapshot", err);
         return;
+      }
+      if (snapshot.queuedCount === 0) return;
+      if (await recordCapacityReasons(this.context, snapshot.counts, snapshot)) {
+        // Feedback bumps the cursor used by the atomic warm lease. Refresh
+        // before policy evaluation; later changes still fail the stale guard.
+        snapshot = await store.readAdmissionSnapshot();
       }
       const { counts, queued, queuedCount } = snapshot;
       if (counts.global >= limits.globalActiveWorkspaces) return;
@@ -91,17 +94,26 @@ export class SchedulerAdmission {
       const rotation = this.principalRotation(byPrincipal);
       const before = counts.global;
       if (!(await this.admitRound(byPrincipal, rotation, counts))) return;
-      if (counts.global >= limits.globalActiveWorkspaces) return;
       // All rows in this snapshot were admitted; new arrivals wait for the next tick.
-      if (queuedCount === queued.length && counts.global - before === queued.length) return;
+      if (counts.global - before === queuedCount) return;
+      await recordCapacityReasons(this.context, counts);
+      if (counts.global >= limits.globalActiveWorkspaces) return;
     }
   }
 
   private async authorized(row: WorkspaceRow): Promise<boolean> {
     if (!this.context.deps.authorizeLaunch) return true;
     try {
-      return (await this.context.deps.authorizeLaunch(row)) === true;
+      const decision = await this.context.deps.authorizeLaunch(row);
+      if (decision === true) return true;
+      await recordAdmissionReason(
+        this.context,
+        row.id,
+        typeof decision === "object" ? decision.reason : "admission_denied",
+      );
+      return false;
     } catch {
+      await recordAdmissionReason(this.context, row.id, "admission_unavailable");
       this.context.report(`admit.policy.${row.id}`, new Error("Launch policy unavailable"));
       return false;
     }

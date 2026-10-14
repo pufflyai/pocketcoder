@@ -38,6 +38,7 @@ export const imageSmokeTests = {
 
 // Host-side flows that drive the exact candidate images.
 export const imageSmokeFlows = {
+  agentapi: ["deploy/image/agentapi.conformance.test.ts"],
   desktop: ["examples/e2e/desktop.ts"],
   browser: ["examples/e2e/browser.ts"],
   egress: [
@@ -121,6 +122,9 @@ export async function smokeCandidateImages(directory: string, commit: string, ar
     if (code) throw new Error(`Candidate image smoke failed: ${name}; see ${file}`);
   }
   try {
+    await run("agentapi-repeated-replies", [process.execPath, "test", ...imageSmokeFlows.agentapi], {
+      POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: images.workspace as string,
+    });
     await run("desktop-readiness", await imageTestCommand(fixture, "desktop", images.desktop as string));
     await run("filesystem", await imageTestCommand(fixture, "filesystem", images.server as string));
     await run("volume-usage", await volumeUsageCommand(fixture, images.server as string));

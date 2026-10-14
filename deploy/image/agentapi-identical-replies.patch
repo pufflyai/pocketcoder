@@ -1,0 +1,7 @@
+--- a/lib/screentracker/pty_conversation.go
++++ b/lib/screentracker/pty_conversation.go
+@@ -347 +347,3 @@
+-	if lastAgentMessage.Message == agentMessage {
++	// A repeated nonempty answer still completes a new user turn.
++	// Keep screen deduplication only when no new message is due.
++	if lastAgentMessage.Message == agentMessage && (agentMessage == "" || !shouldCreateNewMessage) {
