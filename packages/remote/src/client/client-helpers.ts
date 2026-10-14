@@ -41,6 +41,20 @@ export function parseMessages(value: unknown): AgentApiMessage[] {
   });
 }
 
+export function parseWorkspaceChange(value: unknown) {
+  if (
+    !isRecord(value) ||
+    typeof value.cursor !== "number" ||
+    !isRecord(value.workspace) ||
+    (value.workspace.agent_state !== "unknown" &&
+      value.workspace.agent_state !== "running" &&
+      value.workspace.agent_state !== "stable")
+  ) {
+    throw new Error("PocketCoder changes response was malformed");
+  }
+  return { cursor: value.cursor, agentState: value.workspace.agent_state };
+}
+
 export function isAgentMessage(message: AgentApiMessage): boolean {
   return message.role === "agent" || message.role === "assistant";
 }

@@ -1,5 +1,5 @@
 import { redact } from "@pstdio/pocketcoder-auth";
-import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import { type AdmissionDecision, parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type {
   StorageRef,
   WorkspaceDriver,
@@ -86,7 +86,7 @@ export interface SchedulerDeps {
   // URL workspaces use to reach this server (may differ from listen addr).
   workspaceServerUrl: string;
   warmPool?: WarmPoolManager;
-  authorizeLaunch?: (workspace: WorkspaceRow) => Promise<boolean>;
+  authorizeLaunch?: (workspace: WorkspaceRow) => Promise<AdmissionDecision>;
   admissionFenced?: () => boolean;
   preserveByPolicy?: (row: WorkspaceRow, trigger: "idle" | "deadline" | "clean_exit" | "failure") => Promise<boolean>;
   now?: () => Date;

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { ExecSpecSchema } from "@pstdio/pocketcoder-contracts";
+import { type ConversationMessageInput, ExecSpecSchema } from "@pstdio/pocketcoder-contracts";
 import { AgentHealthMonitor } from "./agent-health";
 
 const cleanup: Array<() => void> = [];
@@ -20,8 +20,10 @@ function message(id: number, role: "user" | "agent", content: string) {
 }
 
 function fixture(fetch: (request: Request) => Response | Promise<Response>) {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch });
-  cleanup.push(() => server.stop(true));
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) =>
+    fetch(
+      input instanceof Request ? new Request(input, init) : new Request(String(input), init),
+    )) as typeof globalThis.fetch;
   const exec = ExecSpecSchema.parse({
     agentapi_native: true,
     setup: [],
@@ -29,7 +31,7 @@ function fixture(fetch: (request: Request) => Response | Promise<Response>) {
     env: {},
     services: {
       agent: {
-        baseUrl: server.url.toString(),
+        baseUrl: "http://agent.test",
         healthPath: "/status",
         required: true,
         routes: [{ method: "GET", path: "/messages" }],
@@ -43,18 +45,21 @@ function fixture(fetch: (request: Request) => Response | Promise<Response>) {
   const contents: string[] = [];
   const logs: string[] = [];
   let connected = true;
-  const monitor = new AgentHealthMonitor({
-    exec: () => exec,
-    childPhase: () => "running",
-    send: (type, payload) => {
-      if (type === "conversation_message") {
-        if (!connected) return false;
-        contents.push((payload as { content: string }).content);
-      }
-      return true;
+  const monitor = new AgentHealthMonitor(
+    {
+      exec: () => exec,
+      childPhase: () => "running",
+      send: (type, payload) => {
+        if (type === "conversation_message") {
+          if (!connected) return false;
+          contents.push((payload as { content: string }).content);
+        }
+        return true;
+      },
+      log: (line) => logs.push(line),
     },
-    log: (line) => logs.push(line),
-  });
+    fetchImpl,
+  );
   return {
     monitor,
     contents,
@@ -191,4 +196,46 @@ test("final sync deadline includes waiting for an older read", async () => {
   released.release();
   await expect(final).rejects.toThrow("shutdown deadline");
   await periodic;
+});
+
+// Supervisor wiring: explicit history facts cannot pass through the legacy
+// numeric-ID/stable-tail filter during checkpoint or periodic synchronization.
+test.each(["running", "stable"] as const)("forwards identified facts and revisions once while %s", async (state) => {
+  const identity = {
+    schema: "pocketcoder.conversation/v2" as const,
+    authority: "external" as const,
+    conversation_id: "10000000-0000-4000-8000-000000000001",
+    request_id: "10000000-0000-4000-8000-000000000002",
+    turn_id: "10000000-0000-4000-8000-000000000003",
+    request_fingerprint: "a".repeat(64),
+  };
+  const messages: ConversationMessageInput[] = [
+    { type: "intermediate" },
+    { type: "final_response" },
+    { type: "turn_terminal", outcome: "interrupted" },
+  ].map((fact, index) => ({
+    message_id: `event-${index + 1}:1`,
+    role: "assistant",
+    content: `fact-${index + 1}`,
+    occurred_at: "2026-10-13T12:00:00Z",
+    metadata: {},
+    identity: {
+      ...identity,
+      event_id: `10000000-0000-4000-8000-${String(index + 4).padStart(12, "0")}`,
+      message_id: "answer",
+      sequence: index + 1,
+      revision: 1,
+      fact: fact as NonNullable<ConversationMessageInput["identity"]>["fact"],
+    },
+  }));
+  const { monitor, contents } = fixture(() => Response.json({ messages }));
+  monitor.setAgentState(state);
+  await monitor.syncMessages();
+  await monitor.syncMessages();
+  expect(contents).toEqual(["fact-1", "fact-2", "fact-3"]);
+  const original = messages[1];
+  if (!original?.identity) throw new Error("identity missing");
+  messages.push({ ...original, content: "updated final", identity: { ...original.identity, revision: 2 } });
+  await monitor.syncMessages();
+  expect(contents).toEqual(["fact-1", "fact-2", "fact-3", "updated final"]);
 });

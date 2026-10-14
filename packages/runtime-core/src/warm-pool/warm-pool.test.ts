@@ -55,12 +55,14 @@ describe("warm workspace pooling", () => {
     await scheduler.admit();
     expect(assignments.inputs).toHaveLength(0);
     expect((await store.getWorkspace(workspace.id))?.state).toBe("queued");
+    expect((await store.getWorkspace(workspace.id))?.reasonCode).toBe("admission_denied");
     allowed = true;
     await scheduler.admit();
 
     const after = await store.getWorkspace(workspace.id);
     expect(after?.state).toBe("provisioning");
     expect(after?.provisioningMode).toBe("warm");
+    expect(after?.reasonCode).toBeNull();
     expect(driver.created).toHaveLength(0);
     expect(assignments.inputs).toEqual([{ runtimeId: runtime?.id as string, workspaceId: workspace.id }]);
     expect(manager.metrics.warmHits).toBe(1);

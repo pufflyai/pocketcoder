@@ -18,6 +18,7 @@ function message(seq: number, overrides: Partial<ConversationMessage> = {}): Con
     content: `message ${seq}`,
     occurred_at: "2026-01-01T00:00:00Z",
     metadata: {},
+    identity: null,
     ...overrides,
   };
 }

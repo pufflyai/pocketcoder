@@ -285,3 +285,7 @@ jobs:
         env:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:managed-upgrade
         run: bun run example:e2e:managed-upgrade
+      - name: Verify identical replies with the installed AgentAPI
+        env:
+          POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: pocketcoder-workspace:managed-upgrade
+        run: bun test deploy/image/agentapi.conformance.test.ts

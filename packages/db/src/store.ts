@@ -116,6 +116,7 @@ export class PGliteStore implements Store {
     this.countActive = admission.countActive;
     this.countQueued = admission.countQueued;
     this.claimWorkspaceAdmission = admission.claimWorkspaceAdmission;
+    this.setQueuedAdmissionReason = admission.setQueuedAdmissionReason;
     const transitions = createTransitions(context);
     this.updateWorkspace = transitions.updateWorkspace;
     this.transition = transitions.transition;
@@ -155,6 +156,7 @@ export class PGliteStore implements Store {
     this.appendNetworkEvents = networkAudit.appendNetworkEvents;
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
+    this.acceptConversationRequest = conversations.acceptConversationRequest;
     this.appendConversationMessage = conversations.appendConversationMessage;
     this.readConversation = conversations.readConversation;
     this.getConversationState = conversations.getConversationState;
@@ -227,6 +229,7 @@ export class PGliteStore implements Store {
   readonly countActive: Store["countActive"];
   readonly countQueued: Store["countQueued"];
   readonly claimWorkspaceAdmission: Store["claimWorkspaceAdmission"];
+  readonly setQueuedAdmissionReason: Store["setQueuedAdmissionReason"];
   readonly updateWorkspace: Store["updateWorkspace"];
   readonly transition: Store["transition"];
   readonly listStateHistory: Store["listStateHistory"];
@@ -257,6 +260,7 @@ export class PGliteStore implements Store {
   readonly readLogTail: Store["readLogTail"];
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
+  readonly acceptConversationRequest: Store["acceptConversationRequest"];
   readonly appendConversationMessage: Store["appendConversationMessage"];
   readonly readConversation: Store["readConversation"];
   readonly getConversationState: Store["getConversationState"];

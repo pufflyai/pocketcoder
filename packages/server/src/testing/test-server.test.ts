@@ -51,6 +51,7 @@ export async function createTestServer(
       "workspaces:cancel",
       "workspaces:restore",
       "conversations:read",
+      "conversations:write",
       "conversations:delete",
       "services:relay",
       "logs:read",

@@ -131,6 +131,7 @@ async function handleConversation(deps: WsDeps, frame: Extract<AgentFrame, { typ
       content: frame.payload.content,
       occurredAt: new Date(frame.payload.occurred_at),
       metadata: frame.payload.metadata,
+      identity: frame.payload.identity,
       createdAt: new Date(),
     });
   } catch (error) {

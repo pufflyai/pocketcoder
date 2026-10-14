@@ -1,0 +1,13 @@
+CREATE TABLE "conversation_requests" (
+	"principal_id" uuid,
+	"conversation_id" uuid,
+	"request_id" uuid,
+	"identity" jsonb NOT NULL,
+	"accepted_at" timestamp with time zone NOT NULL,
+	CONSTRAINT "conversation_requests_pkey" PRIMARY KEY("principal_id","conversation_id","request_id")
+);
+--> statement-breakpoint
+ALTER TABLE "workspace_conversation_messages" ADD COLUMN "identity" jsonb;--> statement-breakpoint
+ALTER TABLE "conversation_requests" ADD CONSTRAINT "conversation_requests_principal_id_principals_id_fkey" FOREIGN KEY ("principal_id") REFERENCES "principals"("id");--> statement-breakpoint
+ALTER TABLE "workspace_state_history" DROP CONSTRAINT "workspace_state_history_reason_check", ADD CONSTRAINT "workspace_state_history_reason_check" CHECK ("reason_code" IS NULL OR "reason_code" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));--> statement-breakpoint
+ALTER TABLE "workspaces" DROP CONSTRAINT "workspaces_reason_code_check", ADD CONSTRAINT "workspaces_reason_code_check" CHECK ("reason_code" IS NULL OR "reason_code" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));

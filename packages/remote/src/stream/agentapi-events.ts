@@ -1,3 +1,5 @@
+import { type ConversationMessageInput, ConversationMessageInputSchema } from "@pstdio/pocketcoder-contracts";
+
 interface MessageUpdate {
   event: "message_update";
   data: {
@@ -25,7 +27,12 @@ interface AgentError {
   };
 }
 
-export type AgentApiEvent = MessageUpdate | StatusChange | AgentError;
+interface ConversationEvent {
+  event: "conversation_message";
+  data: ConversationMessageInput;
+}
+
+export type AgentApiEvent = MessageUpdate | StatusChange | AgentError | ConversationEvent;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -55,6 +62,11 @@ function parseEvent(block: string): AgentApiEvent | null {
   const payload = eventPayload(block);
   if (!payload) return null;
   const { event, parsed } = payload;
+  if (event === "conversation_message") {
+    const message = ConversationMessageInputSchema.safeParse(parsed);
+    if (message.success && message.data.identity?.fact) return { event, data: message.data };
+    return null;
+  }
   if (
     event === "message_update" &&
     typeof parsed.id === "number" &&
@@ -99,6 +111,7 @@ export async function* readAgentApiEvents(
     }
   } finally {
     signal.removeEventListener("abort", abort);
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }

@@ -142,7 +142,7 @@ describe("workspace creation", () => {
 
 describe("workspace creation diagnostics", () => {
   test("long-polls a durable workspace change cursor", async () => {
-    const { app, store, token } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
+    const { app, store, token, scheduler } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const createdRes = await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -152,17 +152,21 @@ describe("workspace creation diagnostics", () => {
       }),
     );
     const created = (await createdRes.json()) as { id: string; change_cursor: number };
+    await scheduler.admit();
+    const latestRes = await app.request(`/v1/workspaces/${created.id}`, authed(token));
+    const latest = (await latestRes.json()) as { change_cursor: number; reason_code: string };
+    expect(latest.reason_code).toBe("admission_global_capacity");
     const noChange = await app.request(
-      `/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=0`,
+      `/v1/workspaces/${created.id}/changes?after=${latest.change_cursor}&wait=0`,
       authed(token),
     );
     expect(noChange.status).toBe(200);
     expect((await noChange.json()) as unknown).toMatchObject({
-      cursor: created.change_cursor,
+      cursor: latest.change_cursor,
       changed: false,
     });
 
-    const waitUrl = `/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=1`;
+    const waitUrl = `/v1/workspaces/${created.id}/changes?after=${latest.change_cursor}&wait=1`;
     const waiting = [app.request(waitUrl, authed(token)), app.request(waitUrl, authed(token))] as const;
     await new Promise((resolve) => setTimeout(resolve, 20));
     await store.transition(created.id, {
@@ -180,7 +184,7 @@ describe("workspace creation diagnostics", () => {
       workspace: { state: string; change_cursor: number };
     };
     expect(body.changed).toBe(true);
-    expect(body.cursor).toBeGreaterThan(created.change_cursor);
+    expect(body.cursor).toBeGreaterThan(latest.change_cursor);
     expect(body.workspace.state).toBe("canceled");
     expect(body.workspace.change_cursor).toBe(body.cursor);
     expect((await secondChanged.json()) as unknown).toMatchObject({

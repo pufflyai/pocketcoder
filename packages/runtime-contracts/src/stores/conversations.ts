@@ -1,4 +1,19 @@
-import type { ConversationRole } from "@pstdio/pocketcoder-contracts";
+import type {
+  ConversationMessageIdentity,
+  ConversationRequestIdentity,
+  ConversationRole,
+} from "@pstdio/pocketcoder-contracts";
+
+export interface ConversationRequestRow {
+  principalId: string;
+  identity: ConversationRequestIdentity;
+  acceptedAt: Date;
+}
+
+export type ConversationRequestResult = {
+  kind: "accepted" | "replayed" | "conflict";
+  request: ConversationRequestRow;
+};
 
 export interface ConversationMessageRow {
   workspaceId: string;
@@ -8,6 +23,7 @@ export interface ConversationMessageRow {
   content: string;
   occurredAt: Date;
   metadata: Record<string, string>;
+  identity?: ConversationMessageIdentity | null;
   createdAt: Date;
 }
 
@@ -20,6 +36,11 @@ export interface ConversationStateRow {
 }
 
 export interface ConversationStore {
+  acceptConversationRequest(
+    workspaceId: string,
+    identity: ConversationRequestIdentity,
+    at: Date,
+  ): Promise<ConversationRequestResult>;
   appendConversationMessage(
     row: Omit<ConversationMessageRow, "seq">,
   ): Promise<{ message: ConversationMessageRow; created: boolean }>;

@@ -76,7 +76,7 @@ export async function checkPackedPackages(tarballs: Record<string, string>) {
     await Bun.write(
       join(tempDir, "consumer.ts"),
       `import { PocketCoderClient, type RestoreRequest, type WorkspaceResource, WorkspaceTurnResolver } from "@pstdio/pocketcoder-sdk";
-import { createRemoteExtension, type RemoteExtensionOptions } from "@pstdio/pocketcoder-remote/extension";
+import { createRemoteExtension, type RemoteExtensionOptions, RemoteAgentClient } from "@pstdio/pocketcoder-remote/extension";
 
 const restore: RestoreRequest = {
   external_id: "restored-workspace",
@@ -93,6 +93,8 @@ const resolver = new WorkspaceTurnResolver({
 });
 const extensionOptions: RemoteExtensionOptions = { resolver };
 const extension = createRemoteExtension(extensionOptions);
+const agent = new RemoteAgentClient({ serviceUrl: "https://agent.test", key: "synthetic" });
+void agent.sendTurn;
 
 void restore;
 void useWorkspace;

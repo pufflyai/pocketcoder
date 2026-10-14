@@ -251,5 +251,18 @@
     "folderMillis": 1791625675000,
     "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1",
     "name": "20261010094755_colorful_kabuki"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"conversation_requests\" (\n\t\"principal_id\" uuid,\n\t\"conversation_id\" uuid,\n\t\"request_id\" uuid,\n\t\"identity\" jsonb NOT NULL,\n\t\"accepted_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"conversation_requests_pkey\" PRIMARY KEY(\"principal_id\",\"conversation_id\",\"request_id\")\n);\n",
+      "\nALTER TABLE \"workspace_conversation_messages\" ADD COLUMN \"identity\" jsonb;",
+      "\nALTER TABLE \"conversation_requests\" ADD CONSTRAINT \"conversation_requests_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"workspace_state_history\" DROP CONSTRAINT \"workspace_state_history_reason_check\", ADD CONSTRAINT \"workspace_state_history_reason_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));",
+      "\nALTER TABLE \"workspaces\" DROP CONSTRAINT \"workspaces_reason_code_check\", ADD CONSTRAINT \"workspaces_reason_code_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));"
+    ],
+    "bps": true,
+    "folderMillis": 1791972009000,
+    "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82",
+    "name": "20261014100009_marvelous_praxagora"
   }
 ]

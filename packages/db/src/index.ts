@@ -11,6 +11,7 @@ export {
 } from "./migrations/migrator";
 export type { RecoveryState } from "./recovery/state";
 export {
+  conversationRequests,
   eventOutbox,
   machineKeys,
   principals,

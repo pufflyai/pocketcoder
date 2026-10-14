@@ -25,7 +25,10 @@ ARG TARGETARCH
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY --from=agentapi-chat /src/ /src/
-RUN go get golang.org/x/text@v0.39.0 \
+COPY agentapi-identical-replies.patch /tmp/agentapi-identical-replies.patch
+RUN apk add --no-cache patch \
+  && patch -p1 < /tmp/agentapi-identical-replies.patch \
+  && go get golang.org/x/text@v0.39.0 \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
