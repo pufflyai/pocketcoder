@@ -76,6 +76,9 @@ export interface TemplateSnapshot {
 }
 
 export function normalizeTemplateSnapshot(snapshot: TemplateSnapshot): TemplateSnapshot {
+  if ("format" in snapshot && snapshot.format !== "pocketcoder.dev/v1alpha1") {
+    throw new Error(`unsupported immutable snapshot format for the alpha runtime: ${String(snapshot.format)}`);
+  }
   return {
     ...snapshot,
     spec: TemplateSpecSchema.parse(snapshot.spec),

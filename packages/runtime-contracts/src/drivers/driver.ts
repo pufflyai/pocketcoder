@@ -1,5 +1,6 @@
 import type {
   CheckpointManifest,
+  InstalledWorkload,
   PersistenceMount,
   PoolProviderInput,
   ProviderInput,
@@ -29,6 +30,9 @@ export interface ProviderState {
   running: boolean;
   exitCode: number | null;
   detail?: string;
+  // Observed producer and qualified storage for this exact incarnation. An
+  // omitted descriptor advertises no canonical workload capabilities.
+  workload?: InstalledWorkload;
 }
 
 export interface DiscoveredProvider {

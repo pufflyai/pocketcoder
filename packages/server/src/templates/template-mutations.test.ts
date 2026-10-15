@@ -265,3 +265,16 @@ test("binding a source issuer requires secrets administration", async () => {
   const operator = await fixture(["templates:write", "secrets:write"]);
   expect((await operator.publish(privateSource)).status).toBe(201);
 });
+
+test("canonical G0 manifests cannot be published or imported into an alpha deployment", async () => {
+  const f = await fixture(["templates:write"], ["*"], ["*"]);
+  const path = join(import.meta.dir, "../../../../examples/workloads/finite-process.json");
+  const manifest = await Bun.file(path).json();
+  expect((await f.publish(manifest)).status).toBe(400);
+  expect(await f.store.listTemplates(null)).toEqual([]);
+  const result = await loadTemplateDir(f.store, join(import.meta.dir, "../../../../examples/workloads"));
+  expect(result.loaded).toEqual([]);
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0]?.message).toContain("unsupported template format");
+  expect(await f.store.listTemplates(null)).toEqual([]);
+});

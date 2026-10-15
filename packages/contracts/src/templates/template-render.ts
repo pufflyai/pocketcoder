@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from "../common/canonical";
 import { type ParsedTemplate, parseTemplateManifest } from "./template";
+import { parseWorkloadTemplate } from "./workload-template";
 
 const PLACEHOLDER_IMAGE = /@sha256:0{64}$/;
 const RELEASE_TRIPLET = /^\d+\.\d+\.\d+$/;
@@ -64,6 +65,18 @@ function valueAt(root: unknown, pointer: string): unknown {
 }
 
 export function renderTemplateManifest(input: unknown, options: TemplateRenderOptions = {}): ParsedTemplate {
+  return renderManifest(input, options, parseTemplateManifest);
+}
+
+export function renderWorkloadTemplateManifest(input: unknown, options: TemplateRenderOptions = {}) {
+  return renderManifest(input, options, parseWorkloadTemplate);
+}
+
+function renderManifest<T extends ParsedTemplate | ReturnType<typeof parseWorkloadTemplate>>(
+  input: unknown,
+  options: TemplateRenderOptions,
+  parse: (input: unknown) => T,
+) {
   const rendered = structuredClone(input);
   if (options.image !== undefined) setExisting(rendered, "/spec/image", options.image);
   for (const raw of options.set ?? []) {
@@ -80,10 +93,10 @@ export function renderTemplateManifest(input: unknown, options: TemplateRenderOp
     throw new Error("spec.version must be a release triplet like 1.2.3");
   }
 
-  const normalized = parseTemplateManifest(rendered).manifest;
+  const normalized = parse(rendered).manifest;
   const { version: _version, ...specWithoutVersion } = normalized.spec;
   const revision = sha256Hex(canonicalJson({ ...normalized, spec: specWithoutVersion })).slice(0, 12);
-  return parseTemplateManifest({
+  return parse({
     ...normalized,
     spec: { ...normalized.spec, version: `${baseVersion}-${revision}` },
   });
