@@ -59,7 +59,9 @@ export class WaitingRuntime {
     switch (frame.type) {
       case "process_start": {
         if (!canStart) throw new Error("Runtime is stopping");
-        const command = this.spec.operations[frame.payload.operation];
+        const command = Object.hasOwn(this.spec.operations, frame.payload.operation)
+          ? this.spec.operations[frame.payload.operation]
+          : undefined;
         if (!command || this.spec.profile !== "finite-process") throw new Error("Unsupported finite operation");
         const previous = this.process.lookup(frame.payload.execution);
         this.process.start(frame.payload.execution, frame.payload.fingerprint, {
