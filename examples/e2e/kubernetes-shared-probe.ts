@@ -7,6 +7,7 @@ import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder
 import { PGliteStore } from "@pstdio/pocketcoder-db";
 import { FilesystemInputStorage, KubernetesDriver, KubernetesSharedStorage } from "@pstdio/pocketcoder-drivers";
 import type { InputProjectionRef, ProviderRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import { measureSharedCapacity } from "./kubernetes-shared-capacity";
 import { crashAndRestartPublisher, resumePublisher } from "./kubernetes-shared-publisher";
 
 const namespace = "pc-shared";
@@ -163,6 +164,13 @@ try {
   );
   assert.equal(await kube(["get", "secret", `pocketcoder-ws-${row.id}-input`, "--ignore-not-found", "-o", "json"]), "");
   const first = await launch(row, nodes[0] as string);
+  assert.equal(
+    await run(
+      first.pod.metadata.name,
+      "await Bun.write('/outputs/probe.txt','writable');console.log(await Bun.file('/outputs/probe.txt').text())",
+    ),
+    "writable",
+  );
   console.log(
     JSON.stringify({ volumeIdentity: first.ref.storageIdentity, runtimeClass: first.pod.spec.runtimeClassName }),
   );
@@ -289,31 +297,7 @@ try {
   await restarted.deleteStorage(sibling.allocation.ref);
   assert.equal((await restarted.listStorage()).length, 0);
   await restarted.purgeInputs(row.id);
-  const concurrency = [];
-  for (const attempts of [1, 5, 20]) {
-    const started = performance.now();
-    const results = await Promise.allSettled(
-      Array.from({ length: attempts }, () =>
-        restarted.allocate({
-          storageId: randomUUID(),
-          workspaceId: randomUUID(),
-          uid: 10001,
-          gid: 10001,
-          mounts: parsed.manifest.spec.persistence.mounts,
-        }),
-      ),
-    );
-    const admitted = results.filter((result) => result.status === "fulfilled");
-    assert.equal(admitted.length, Math.min(attempts, 4));
-    concurrency.push({
-      attempts,
-      admitted: admitted.length,
-      rejected: attempts - admitted.length,
-      durationMs: Math.round(performance.now() - started),
-    });
-    for (const result of admitted) await restarted.deleteStorage(result.value.ref);
-  }
-  console.log(JSON.stringify({ storageConcurrency: concurrency }));
+  await measureSharedCapacity(restarted, parsed.manifest.spec.persistence.mounts);
   console.log(
     JSON.stringify({
       result: "passed",

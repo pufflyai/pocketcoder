@@ -13,7 +13,9 @@ export function persistentVolumes(mounts: RuntimeMountRef[], shared: Map<number,
     if (mount.source.kind === "shared-filesystem" && resolved)
       return {
         name: `persistent-${index}`,
-        persistentVolumeClaim: { claimName: resolved.claimName, readOnly: !!mount.readOnly },
+        // Kubelet shares the claim's backing mount. Restrict each input bind,
+        // so that the same claim can still serve writable output subdirectories.
+        persistentVolumeClaim: { claimName: resolved.claimName },
       };
     if (mount.source.kind !== "empty-dir")
       throw new Error("Kubernetes mount requires configured shared storage or bounded emptyDir");
