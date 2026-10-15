@@ -1,10 +1,18 @@
-import { type ExecSpec, type ProviderInput, parseDurationMs, ServerFrameSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  type ExecSpec,
+  type ProviderInput,
+  parseDurationMs,
+  type ServerFrame,
+  ServerFrameSchema,
+} from "@pstdio/pocketcoder-contracts";
 import { AgentConnection } from "./agent/agent-connection";
 import { AgentHealthMonitor } from "./agent/agent-health";
 import { shutdownAgent } from "./agent/agent-shutdown";
+import { handleControlFrame } from "./agent/control-frames";
 import { handleInteractiveFrame } from "./agent/interactive-frames";
 import { createSupervisorHarness } from "./agent/supervisor-harness";
 import { SupervisorTransfers } from "./agent/supervisor-transfers";
+import { WaitingRuntime } from "./agent/waiting-runtime";
 import { AttachmentManager } from "./attachments/attachments";
 import { prepareWorkspace } from "./bootstrap/prepare-workspace";
 import { SetupCompletion } from "./bootstrap/setup-completion";
@@ -41,6 +49,8 @@ class Supervisor {
   private readonly harness: ReturnType<typeof createSupervisorHarness>;
   private readonly credentials: WorkspaceCredentials;
   private exec: ExecSpec | null = null;
+  private waiting: WaitingRuntime | null = null;
+  private runtimePrepared = false;
   private readonly setupAbort = new AbortController();
   private readonly setupCompletion = new SetupCompletion((requestId) =>
     this.sendFrame("setup_complete", { request_id: requestId }),
@@ -53,7 +63,7 @@ class Supervisor {
   private execReady!: () => void;
   private readonly execReadyPromise: Promise<void>;
 
-  constructor(input: ProviderInput) {
+  constructor(private readonly input: ProviderInput) {
     this.connection = new AgentConnection(input, {
       services: () => (this.exec ? Object.keys(this.exec.services) : []),
       onMessage: (raw) => void this.handleMessage(raw),
@@ -135,6 +145,7 @@ class Supervisor {
     try {
       return await this.runWorkspace();
     } finally {
+      await this.waiting?.close();
       await this.credentials.stop();
       process.off("SIGINT", shutdown);
       process.off("SIGTERM", shutdown);
@@ -164,9 +175,15 @@ class Supervisor {
       },
     });
     if (failed !== null) return failed;
-    if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
+    if (exec.workload) {
+      this.waiting = new WaitingRuntime(this.input, exec, this.sendFrame.bind(this), this.logs);
+      this.waiting.startInfrastructure();
+      this.harness.phase = "waiting";
+    } else if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
+    this.runtimePrepared = true;
     this.timers.push(this.healthMonitor.start(exec));
     const networkMonitor = startNetworkMonitor(exec, this.sendFrame.bind(this), (code) => {
+      this.waiting?.signal("SIGKILL");
       this.harness.child?.kill("SIGKILL");
       this.exitWith(code);
     });
@@ -182,52 +199,42 @@ class Supervisor {
     const parsed = ServerFrameSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) return;
     const frame = parsed.data;
-    if (await handleInteractiveFrame(frame, this.terminals, this.attachments)) return;
-    switch (frame.type) {
-      case "credential_renewed":
-        await this.credentials.renewed(frame.payload);
-        return;
-      case "credential_installed_ack":
-        this.credentials.confirmed(frame.payload);
-        return;
-      case "setup_complete_ack":
-        this.setupCompletion.acknowledge(frame.payload.request_id);
-        return;
-      case "registered_ack": {
-        this.connection.setEpoch(frame.payload.epoch);
-        try {
-          await this.credentials.install(frame.payload.credentials);
-        } catch {
-          await this.gracefulShutdown();
-          return;
-        }
-        if (frame.payload.reconnect_credential) {
-          this.connection.setReconnectCredential(frame.payload.reconnect_credential);
-        }
-        if (this.healthMonitor.state !== "unknown") {
-          this.sendFrame("agent_state", { state: this.healthMonitor.state });
-        }
-        if (!this.exec) {
-          this.exec = frame.payload.exec;
-          this.execReady();
-          void this.attachments.cleanupStartup().catch(() => {});
-        }
+    if (this.runtimePrepared && this.waiting) {
+      try {
+        if (this.waiting.handle(frame, !this.quiescing && !this.shuttingDown)) return;
+      } catch (error) {
+        this.logs.log(String(error));
         return;
       }
-      case "screenshot_capture":
-        if (!this.quiescing && !this.shuttingDown)
-          void this.screenshots.capture(frame.payload).catch(() => this.logs.log("Screenshot capture failed."));
+    }
+    if (await handleInteractiveFrame(frame, this.terminals, this.attachments)) return;
+    if (
+      await handleControlFrame(frame, {
+        credentials: this.credentials,
+        setupCompletion: this.setupCompletion,
+        screenshots: this.screenshots,
+        proxy: this.proxy,
+        transfers: this.transfers,
+        logs: this.logs,
+        exec: this.exec,
+        stopping: this.quiescing || this.shuttingDown,
+      })
+    )
+      return;
+    switch (frame.type) {
+      case "registered_ack": {
+        await this.registered(frame);
         return;
-      case "preview_socket":
-      case "proxy_request":
-      case "proxy_stream_ack":
-      case "proxy_stream_cancel":
-        await this.proxy.handle(frame);
-        return;
+      }
       case "signal": {
         if (frame.payload.signal === "KILL") {
           this.forwardSignal("SIGKILL");
           this.sendFrame("termination_ack", { phase: "killed" });
+          if (this.waiting) {
+            await this.waiting.close();
+            await this.flushAndClose();
+            this.exitWith(0);
+          }
         } else {
           await this.gracefulShutdown();
         }
@@ -242,17 +249,32 @@ class Supervisor {
         await this.gracefulShutdown();
         return;
       }
-      case "prepare_checkpoint_archive":
-        if (this.exec)
-          await this.transfers.prepare(frame.payload, this.exec).catch((error) => this.logs.log(String(error)));
-        return;
-      case "checkpoint_upload":
-        await this.transfers.upload(frame.payload).catch((error) => this.logs.log(String(error)));
-        return;
       case "prepare_checkpoint": {
         await this.quiesce(frame.payload.operation_id, frame.payload.deadline_ms);
         return;
       }
+    }
+  }
+
+  private async registered(frame: Extract<ServerFrame, { type: "registered_ack" }>) {
+    this.connection.setEpoch(frame.payload.epoch);
+    try {
+      await this.credentials.install(frame.payload.credentials);
+    } catch {
+      await this.gracefulShutdown();
+      return;
+    }
+    if (frame.payload.reconnect_credential) {
+      this.connection.setReconnectCredential(frame.payload.reconnect_credential);
+    }
+    if (this.healthMonitor.state !== "unknown") {
+      this.sendFrame("agent_state", { state: this.healthMonitor.state });
+    }
+    if (this.runtimePrepared) this.waiting?.reconnect();
+    if (!this.exec) {
+      this.exec = frame.payload.exec;
+      this.execReady();
+      void this.attachments.cleanupStartup().catch(() => {});
     }
   }
 
@@ -278,7 +300,9 @@ class Supervisor {
     this.setupAbort.abort();
     this.setupCompletion.cancel();
     this.harness.phase = "terminating";
-    if (this.harness.child && this.harness.exitCode === null) {
+    if (this.waiting) {
+      this.waiting.signal(signal);
+    } else if (this.harness.child && this.harness.exitCode === null) {
       this.harness.child.kill(signal);
     } else if (this.harness.exitCode !== null) {
       this.exitWith(this.harness.exitCode);
@@ -307,10 +331,15 @@ class Supervisor {
         if (exec?.agentapi_native) await this.healthMonitor.syncMessages({ fresh: true, signal });
       },
       signal: this.forwardSignal.bind(this),
-      exited: () => this.harness.child?.exited ?? Promise.resolve(0),
+      exited: () => this.waiting?.process.exited() ?? this.harness.child?.exited ?? Promise.resolve(0),
       send: this.sendFrame.bind(this),
       log: this.logs.log.bind(this.logs),
     });
+    if (this.waiting) {
+      await this.waiting.close();
+      await this.flushAndClose();
+      this.exitWith(0);
+    }
   }
 
   private async flushAndClose(): Promise<void> {

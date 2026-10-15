@@ -2,16 +2,32 @@ import type {
   AdmissionReason,
   AgentState,
   ConversationRestoreCapability,
+  FiniteProcessFact,
+  InstalledWorkload,
   LaunchMode,
   NetworkState,
   ReasonCode,
   ResolvedSource,
   SourceDescriptor,
   TemplateSnapshot,
+  WaitingRuntimeSpec,
+  WorkloadTemplateSnapshot,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 
+export interface WorkspaceRuntimeRegistration {
+  incarnationId: string;
+  containerIdentity: string;
+  profile: WaitingRuntimeSpec["profile"];
+  producer: InstalledWorkload | null;
+  template?: WorkloadTemplateSnapshot;
+  readyAt?: string;
+  endedAt?: string;
+}
+
 export interface WorkspaceRow {
+  runtimeRegistration: WorkspaceRuntimeRegistration | null;
+  finiteProcess: FiniteProcessFact | null;
   id: string;
   principalId: string;
   externalId: string;
@@ -173,6 +189,14 @@ export interface TransitionRequest {
 }
 
 export interface WorkspaceStore {
+  bindWorkspaceRuntime(
+    id: string,
+    runtime: WorkspaceRuntimeRegistration,
+    providerRef: Record<string, unknown>,
+  ): Promise<boolean>;
+  markWorkspaceRuntimeReady(id: string, incarnationId: string, connectionEpoch: number, at: Date): Promise<boolean>;
+  recordFiniteProcess(id: string, connectionEpoch: number, fact: FiniteProcessFact): Promise<boolean>;
+  endWorkspaceRuntime(id: string, incarnationId: string, at: Date): Promise<void>;
   insertWorkspace(row: WorkspaceInsert, options?: { maxQueuedWorkspaces?: number }): Promise<WorkspaceInsertResult>;
   getWorkspaceByIdempotency(principalId: string, idempotencyKey: string): Promise<WorkspaceRow | null>;
   getWorkspace(id: string): Promise<WorkspaceRow | null>;

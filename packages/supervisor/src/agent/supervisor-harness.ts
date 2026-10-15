@@ -4,7 +4,7 @@ import { reportRestoreReady } from "../bootstrap/supervisor-restore";
 import { enforcedEnvironment } from "../bootstrap/supervisor-utils";
 import type { SupervisorLogs } from "../observability/supervisor-logs";
 
-type ChildPhase = "starting" | "setup" | "running" | "exited" | "terminating";
+type ChildPhase = "starting" | "setup" | "waiting" | "running" | "exited" | "terminating";
 
 export function createSupervisorHarness(
   input: ProviderInput,
@@ -44,6 +44,7 @@ export function createSupervisorHarness(
 }
 
 export function spawnHarness(exec: ExecSpec, input: ProviderInput) {
+  if (!exec.harness) throw new Error("No automatic harness is declared");
   // The caller's opaque launch input reaches the harness in memory
   // only; it is never written to the workspace filesystem by the
   // supervisor and the server erases its copy at readiness.

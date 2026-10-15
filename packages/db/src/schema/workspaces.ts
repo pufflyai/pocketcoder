@@ -65,6 +65,8 @@ export function createWorkspaceTables(
       failureLastLogSeq: bigint("failure_last_log_seq", { mode: "number" }),
       terminalIntent: text("terminal_intent").$type<NonNullable<WorkspaceRow["terminalIntent"]>>(),
       launchInput: jsonb("launch_input").$type<NonNullable<WorkspaceRow["launchInput"]>>(),
+      runtimeRegistration: jsonb("runtime_registration").$type<NonNullable<WorkspaceRow["runtimeRegistration"]>>(),
+      finiteProcess: jsonb("finite_process").$type<NonNullable<WorkspaceRow["finiteProcess"]>>(),
       providerKind: text("provider_kind"),
       providerRef: jsonb("provider_ref").$type<NonNullable<WorkspaceRow["providerRef"]>>(),
       provisioningMode: text("provisioning_mode").$type<NonNullable<WorkspaceRow["provisioningMode"]>>(),

@@ -20,6 +20,8 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
   snapshotServices,
   TERMINAL_REPLAY_BUFFER_BYTES,
+  WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
+  waitingExecSpec,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { MiddlewareHandler } from "hono";
@@ -72,6 +74,11 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
   )
     return { error: "Runtime credentials require agent protocol version 9." };
+  if (
+    row?.runtimeRegistration &&
+    (row.runtimeRegistration.endedAt || credentials.protocolVersion < WAITING_RUNTIME_MIN_PROTOCOL_VERSION)
+  )
+    return { error: "Waiting runtime is ended or requires protocol version 12." };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
   if (
     deps.checkpointTransfers &&
@@ -124,6 +131,8 @@ export function agentConnectValidator(deps: WsDeps): MiddlewareHandler<AppEnv> {
 }
 
 export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, restoreMode: RestoreMode): ExecSpec {
+  if (row.runtimeRegistration?.template)
+    return waitingExecSpec(row.runtimeRegistration.template, row.runtimeRegistration.incarnationId, row.launchMode);
   const spec = row.templateSnapshot.spec;
   const sourceSpec = spec.source;
   const sourceRepository =

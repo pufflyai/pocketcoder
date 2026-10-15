@@ -264,5 +264,15 @@
     "folderMillis": 1791972009000,
     "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82",
     "name": "20261014100009_marvelous_praxagora"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspaces\" ADD COLUMN \"runtime_registration\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"finite_process\" jsonb;"
+    ],
+    "bps": true,
+    "folderMillis": 1792083815000,
+    "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7",
+    "name": "20261015170335_nasty_jigsaw"
   }
 ]

@@ -31,6 +31,8 @@ export async function reconcileProviderRow(
     deps.log?.(`reconcile: template digest mismatch for ${row.id}; failing workspace`);
   }
   const lost = !found || mismatched;
+  if (lost && row.runtimeRegistration)
+    await deps.store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, now);
   if (lost && (row.state === "connected" || row.state === "ready")) {
     await deps.store.transition(row.id, {
       from: [row.state],

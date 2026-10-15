@@ -27,6 +27,7 @@ export * from "./stores/checkpoint-transfers";
 export * from "./stores/leases";
 export * from "./stores/secrets";
 export * from "./stores/storage-reservations";
+export type { WorkspaceRuntimeRegistration } from "./stores/workspaces";
 export {
   type ActiveCounts,
   type AuthStore,
