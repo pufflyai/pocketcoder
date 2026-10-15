@@ -55,9 +55,9 @@ Workspace TERM/KILL closes the finite process group and infrastructure. Detached
 children have no survival guarantee. Explicit workspace services have their own
 groups and are not canceled with a finite command.
 
-Docker binds the runtime to its observed container ID and rejects an in-place
-restart as the same incarnation. Restore needs a new workspace UUID. Kubernetes
-waiting-profile qualification, durable dispatch/cancel acceptance, trusted inputs
+Docker binds the runtime to its observed container ID and start time. An in-place
+restart changes that execution-lifetime token and ends the old incarnation.
+Restore needs a new workspace UUID. Kubernetes waiting-profile qualification, durable dispatch/cancel acceptance, trusted inputs
 and automatic exports belong to their later gates. Canonical public publication
 remains disabled until those requirements are implemented.
 

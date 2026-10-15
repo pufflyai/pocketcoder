@@ -236,13 +236,14 @@ export class DockerDriver implements WorkspaceDriver {
       const out = await runDocker(this.opts.dockerBin, [
         "inspect",
         "--format",
-        "{{.State.Running}} {{.State.ExitCode}} {{.Id}} {{.RestartCount}}",
+        "{{.State.Running}} {{.State.ExitCode}} {{.Id}} {{.State.StartedAt}}",
         ref.id,
       ]);
-      const [running, exitCode, identity, restarts] = out.split(" ");
+      const [running, exitCode, containerId, startedAt] = out.split(" ");
       return {
         exists: true,
-        ...(identity && restarts === "0" ? { containerIdentity: identity } : {}),
+        // A manual restart keeps the container ID and can keep RestartCount at zero.
+        containerIdentity: `${containerId}@${startedAt}`,
         running: running === "true",
         exitCode: running === "true" ? null : Number(exitCode),
       };
