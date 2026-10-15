@@ -1,8 +1,10 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export function physicalPath(path: string): string {
+  if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink() && !existsSync(path))
+    throw new Error("Unresolved filesystem link.");
   if (existsSync(path)) return realpathSync(path);
   return join(physicalPath(dirname(path)), basename(path));
 }
@@ -26,8 +28,16 @@ export function inputId(id: string) {
   return id;
 }
 export async function directory(path: string, mode = 0o700) {
-  await mkdir(path, { recursive: true, mode });
+  try {
+    await assertDirectory(path);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await directory(dirname(path));
+  await mkdir(path, { mode });
   await assertDirectory(path);
+  await syncDirectory(dirname(path));
 }
 export async function assertDirectory(path: string) {
   const info = await lstat(path);
@@ -36,5 +46,9 @@ export async function assertDirectory(path: string) {
 }
 export async function syncDirectory(path: string) {
   const handle = await open(path, "r");
-  try { await handle.sync(); } finally { await handle.close(); }
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
