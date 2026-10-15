@@ -42,8 +42,9 @@ snapshots keep their original automatic harness lifecycle.
 
 The existing workspace row holds `runtimeRegistration` and `finiteProcess`.
 The driver supplies container identity; a WebSocket connection epoch is transport
-state. Docker exposes its immutable container ID only for a runtime that has not
-restarted. A lost, stopped or replaced container ends the registration. An
+state. Docker combines its immutable container ID with its observed start time
+to identify one execution lifetime. Even a manual restart changes that token.
+A lost, stopped, restarted or replaced container ends the old registration. An
 inspection outage is retried and does not prove container loss. Kubernetes does
 not yet supply this identity and cannot prepare a waiting profile.
 

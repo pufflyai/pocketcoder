@@ -61,7 +61,7 @@ async function handleNetworkState(deps: WsDeps, frame: NetworkStateFrame): Promi
   const row = await deps.store.getWorkspace(frame.workspace_id);
   if (!row || isTerminal(row.state)) return;
   await deps.store.updateWorkspace(row.id, { networkState: frame.payload.state }, new Date());
-  if (frame.payload.state === "ready") await maybeMarkReady(deps, row, row.health, "ready");
+  if (row.runtimeRegistration && frame.payload.state === "ready") await maybeMarkReady(deps, row, row.health, "ready");
   if (frame.payload.state === "degraded") {
     await deps.scheduler.finalize(row, "failed", "network_policy_failed", new Date());
   }

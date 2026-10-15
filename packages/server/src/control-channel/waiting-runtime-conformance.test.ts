@@ -34,7 +34,7 @@ async function docker(...args: string[]) {
   return output.trim();
 }
 
-test.skipIf(!available).each(["crash", "deadline", "cancel-owned"])(
+test.skipIf(!available).each(["crash", "deadline", "cancel-owned", "restart"])(
   "Docker runtime records exact lifecycle ownership after %s",
   async (ending) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "pc-waiting-docker-")));
@@ -132,6 +132,7 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned"])(
         "-d",
         "--restart=no",
         "--network=bridge",
+        ...(process.platform === "linux" ? ["--add-host", "host.docker.internal:host-gateway"] : []),
         "--memory=256m",
         "--cpus=1",
         "-v",
@@ -143,7 +144,9 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned"])(
       );
       const ref = { kind: "docker", id: container };
       const observed = await driver.inspect(ref);
-      expect(observed.containerIdentity).toBe(container);
+      expect(observed.containerIdentity).toBe(
+        `${container}@${await docker("inspect", "--format", "{{.State.StartedAt}}", container)}`,
+      );
       const unavailableDriver = new DockerDriver({
         inputDir: join(root, "inputs"),
         dockerBin: join(root, "unavailable-docker"),
@@ -200,7 +203,13 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned"])(
           patch: { terminalIntent: "canceled" },
         });
       }
-      if (ending !== "deadline") await docker("kill", "--signal=KILL", container);
+      if (ending === "restart") {
+        await docker("restart", "--signal=KILL", container);
+        const restarted = await driver.inspect(ref);
+        expect(restarted.running).toBe(true);
+        expect(await docker("inspect", "--format", "{{.Id}} {{.RestartCount}}", container)).toBe(`${container} 0`);
+        expect(restarted.containerIdentity).not.toBe(incarnation);
+      } else if (ending !== "deadline") await docker("kill", "--signal=KILL", container);
       else now = new Date(Date.now() + 600001);
       await scheduler.sweep();
       await scheduler.drain();
@@ -222,6 +231,7 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned"])(
         signal: ending === "deadline" ? "SIGTERM" : null,
       });
       expect((await store.getWorkspace(id))?.runtimeRegistration?.endedAt).toBeString();
+      expect((await store.getWorkspace(id))?.runtimeRegistration?.incarnationId).toBe(incarnation);
       expect(
         received.filter((frame) => frame.type === "finite_process" && frame.payload.phase === "running"),
       ).toHaveLength(1);
