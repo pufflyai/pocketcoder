@@ -18,6 +18,8 @@ import { createBinaryOutputs } from "./modules/outputs/binary-outputs";
 import { createOutputs } from "./modules/outputs/repository";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
 import { createContentPurge } from "./modules/persistence/content";
+import { createInputManifests } from "./modules/persistence/inputs/manifests";
+import { createInputObjects } from "./modules/persistence/inputs/objects";
 import { createOperations } from "./modules/persistence/operations";
 import { createStorageReservations } from "./modules/persistence/reservations";
 import { createStorage } from "./modules/persistence/storage";
@@ -35,6 +37,7 @@ import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
 
 export class PGliteStore implements Store {
+  readonly inputs: Store["inputs"];
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
   readonly binaryOutputs: ReturnType<typeof createBinaryOutputs>;
   readonly storageReservations: ReturnType<typeof createStorageReservations>;
@@ -53,6 +56,7 @@ export class PGliteStore implements Store {
       if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
       return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
     };
+    this.inputs = { ...createInputObjects(context), ...createInputManifests(context) };
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.binaryOutputs = createBinaryOutputs(context);
     this.storageReservations = createStorageReservations(context);

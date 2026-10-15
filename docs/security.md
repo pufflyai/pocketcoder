@@ -168,3 +168,18 @@ if renewal fails. Preserve, purge and termination fence renewal and wait for
 revocation or recorded expiry. Restored workspaces receive fresh authority.
 See the [runtime issuer recipe](runtime-credentials.md) for configuration, the
 HTTPS issuer contract, and the real Docker/Kubernetes validation command.
+
+## Immutable inputs
+
+Canonical input bytes live in a private controller root outside every workload
+mount. Descriptors and ordered manifest pins live in PGlite. Workload sidecars,
+home files, permission bits and self-reported hashes never grant input authority.
+The controller reserves capacity before reading bodies, verifies declared size and
+digest, syncs publication and commits readiness only after bytes are durable.
+
+Lost or corrupt canonical storage marks an input unavailable and blocks dispatch.
+Restore requires new staging references. Retention cannot remove pinned inputs;
+finalization releases pins, then the unreferenced retention clock applies.
+Read-only projection enforcement is delivered by the driver tickets. Until it is
+installed, attachment-bearing legacy messages are rejected. See
+[immutable input storage](input-storage.md) for configuration, retries and recovery.

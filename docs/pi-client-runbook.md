@@ -77,7 +77,7 @@ Switching workspaces also interrupts an active turn. Quitting only disconnects.
 For an attachment, type `/attach /absolute/path/report.txt`, then send the
 next message. Or include `@./report.txt` in the message. The bridge uploads
 the bytes through the attachment API before sending the prompt. The remote
-agent receives a path under `$HOME/.pcd/attachments`. A failed upload leaves
+agent attachment dispatch requires a qualified immutable projection driver (PC-128/PC-130). Until then attachment-bearing prompts are rejected. A failed upload leaves
 explicit queued files available for another attempt.
 
 ## Preserve and resume

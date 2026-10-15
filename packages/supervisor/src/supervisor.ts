@@ -274,7 +274,6 @@ class Supervisor {
     if (!this.exec) {
       this.exec = frame.payload.exec;
       this.execReady();
-      void this.attachments.cleanupStartup().catch(() => {});
     }
   }
 

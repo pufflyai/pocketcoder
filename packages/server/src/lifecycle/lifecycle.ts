@@ -17,6 +17,7 @@ import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
 import { startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
+import { inputStorageOptions } from "./input-storage-config";
 import { loadLaunchPolicy } from "./launch-policy";
 import {
   configuredIssuer,
@@ -119,6 +120,7 @@ export async function startPocketCoderServer(
       assertAccountAllowed,
       publicViews: config.publicViews,
       screenshotOptions: screenshotOptions(config),
+      inputStorageOptions: inputStorageOptions(config),
       issuerClient: configuredIssuer(config),
       ...(authorizeLaunch ? { authorizeLaunch } : {}),
       store,
@@ -147,6 +149,7 @@ export async function startPocketCoderServer(
     maintenance.settleWith(() => persistence.drain());
     maintenance.settleWith(() => screenshots?.drain() ?? Promise.resolve());
     await store.binaryOutputs.prune(new Date());
+    await built.inputs?.reconcile();
 
     const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
     const pendingTransfers = await reconcileCheckpointPreserves(
@@ -198,6 +201,7 @@ export async function startPocketCoderServer(
       persistence,
       workspaceLeases,
       checkpointTransfers: built.checkpointTransfers,
+      inputs: built.inputs,
       readiness,
       metrics,
     });

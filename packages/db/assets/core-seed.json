@@ -2,8 +2,13 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
+<<<<<<< HEAD
   "checksum": "28e6a8d38c975a74a1ff6c4eab7d98af635806db94d2d4b8b52834933336f99c",
   "sourceChecksum": "75719df95bd6c552e4b6f4012796fa935c1dcb4fc2cf999153ee4f7870fb7a14",
+=======
+  "checksum": "5c0bc5cdcced9b386bbe72b805646b1df910b688817fd99ebfa50459c7a9e6c9",
+  "sourceChecksum": "6b4788b762f27fa6fdc3a54d1c405d06dc55dc7dc4f5071da25b1e01571844c4",
+>>>>>>> 92a027d7d32ebe0e70606099ba114140e30448b8
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -80,8 +85,13 @@
       "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82"
     },
     {
+<<<<<<< HEAD
       "name": "20261015170335_nasty_jigsaw",
       "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7"
+=======
+      "name": "20261015170552_swift_sleeper",
+      "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd"
+>>>>>>> 92a027d7d32ebe0e70606099ba114140e30448b8
     }
   ]
 }

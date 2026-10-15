@@ -9,6 +9,7 @@ import type { WorkspaceService } from "../workspaces/service";
 // No arbitrary URL, port, path, header set, protocol upgrade, or TCP stream.
 
 export interface RelayDeps {
+  inputs?: import("../attachments/input-storage").InputStorage;
   store: Store;
   hub: Hub;
   service: WorkspaceService;

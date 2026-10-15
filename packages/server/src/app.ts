@@ -19,6 +19,7 @@ import { registerAdministrationRoutes } from "./administration/administration-ro
 import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
+import { InputStorage, type InputStorageOptions } from "./attachments/input-storage";
 import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
@@ -57,6 +58,7 @@ import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
   assertAccountAllowed?: () => Promise<void>;
+  inputStorageOptions?: InputStorageOptions;
   screenshotOptions?: ScreenshotOptions;
   publicViews?: import("./config/public-views").PublicViewConfig;
   authorizeLaunch?: SchedulerDeps["authorizeLaunch"];
@@ -82,6 +84,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  inputs?: InputStorage;
   controlActivity: ControlActivity;
   screenshots?: Screenshots;
   app: OpenAPIHono<AppEnv>;
@@ -163,7 +166,9 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   });
   const service = new WorkspaceService({ store, scheduler, limits });
   const screenshots = composeScreenshots(deps, hub, service);
+  const inputs = composeInputs(deps);
   const persistence = new PersistenceService({
+    purgeInputs: (id) => inputs?.purge(id) ?? assertNoStoredInputs(store, id),
     store,
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
     scheduler,
@@ -275,9 +280,10 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     upgradeWebSocket(terminalWsEvents(terminalDeps)),
   );
 
-  registerRelayRoutes(app, { store, hub, service });
+  registerRelayRoutes(app, { store, hub, service, inputs });
 
   return {
+    inputs,
     controlActivity: activity,
     app,
     screenshots,
@@ -292,4 +298,13 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     ...(checkpointTransfers ? { checkpointTransfers } : {}),
     ...(warmPool ? { warmPool } : {}),
   };
+}
+
+async function assertNoStoredInputs(store: Store, workspaceId: string) {
+  if ((await store.inputs.list()).some((row) => row.reference.workspaceId === workspaceId && row.state !== "expired"))
+    throw new Error("Canonical input storage is unavailable for purge.");
+}
+
+function composeInputs(deps: BuildDeps) {
+  if (deps.inputStorageOptions) return new InputStorage(deps.store.inputs, deps.inputStorageOptions);
 }

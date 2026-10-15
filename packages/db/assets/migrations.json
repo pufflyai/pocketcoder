@@ -161,7 +161,9 @@
     "name": "20260922062201_brave_the_spike"
   },
   {
-    "sql": ["ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"],
+    "sql": [
+      "ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"
+    ],
     "bps": true,
     "folderMillis": 1791218323000,
     "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155",
@@ -231,7 +233,9 @@
     "name": "20261009131616_small_purple_man"
   },
   {
-    "sql": ["ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"],
+    "sql": [
+      "ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"
+    ],
     "bps": true,
     "folderMillis": 1791593063000,
     "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f",
@@ -274,5 +278,18 @@
     "folderMillis": 1792083815000,
     "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7",
     "name": "20261015170335_nasty_jigsaw"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"input_manifests\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"manifest\" jsonb NOT NULL,\n\t\"finalized_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"input_objects\" (\n\t\"workspace_id\" uuid,\n\t\"file_id\" uuid,\n\t\"principal_id\" uuid NOT NULL,\n\t\"reservation_id\" uuid NOT NULL,\n\t\"reference\" jsonb NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"transfer_expires_at\" timestamp with time zone NOT NULL,\n\t\"retained_until\" timestamp with time zone NOT NULL,\n\t\"published_at\" timestamp with time zone,\n\t\"retention_ms\" bigint NOT NULL,\n\tCONSTRAINT \"input_objects_pkey\" PRIMARY KEY(\"workspace_id\",\"file_id\")\n);\n",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_reservation_id_storage_reservations_id_fkey\" FOREIGN KEY (\"reservation_id\") REFERENCES \"storage_reservations\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1792083952000,
+    "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd",
+    "name": "20261015170552_swift_sleeper"
   }
 ]

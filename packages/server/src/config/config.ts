@@ -4,12 +4,14 @@ import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
+import { type InputStorageConfig, inputStorageConfig } from "./input-storage-config";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
 
 type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig {
+  inputStorage?: InputStorageConfig;
   offNodeConfigFile?: string;
   purgeConfigFile?: string;
   publicViews?: PublicViewConfig;
@@ -293,6 +295,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     throw new Error("POCKETCODER_EGRESS_IMAGE must be an immutable sha256 digest reference");
   }
   return {
+    inputStorage: inputStorageConfig(env.POCKETCODER_INPUT_STORAGE),
     publicViews: publicViewConfig(env.POCKETCODER_PUBLIC_VIEWS),
     ...(env.POCKETCODER_PURGE_CONFIG ? { purgeConfigFile: env.POCKETCODER_PURGE_CONFIG } : {}),
     ...(env.POCKETCODER_OFF_NODE_CONFIG ? { offNodeConfigFile: env.POCKETCODER_OFF_NODE_CONFIG } : {}),

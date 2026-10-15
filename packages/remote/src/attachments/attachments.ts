@@ -143,7 +143,7 @@ export class TurnAttachmentBatch {
           body: entry.file.bytes,
           sizeBytes: entry.file.bytes.byteLength,
         });
-        ids.push(uploaded.id);
+        ids.push(uploaded.fileId);
       } catch (error) {
         if (error instanceof ControlPlaneError) {
           throw new RemoteRequestError({
