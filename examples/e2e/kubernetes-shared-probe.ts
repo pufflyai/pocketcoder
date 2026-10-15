@@ -324,6 +324,9 @@ try {
       },
     }),
   );
+} catch (error) {
+  console.error(await kube(["get", "pods", "-o", "json"]).catch(() => "Pod diagnosis unavailable"));
+  throw error;
 } finally {
   for (const { driver: runtime, ref } of active) {
     await runtime.stop(ref, 1).catch(() => {});
