@@ -209,6 +209,7 @@ export {
   SourceResolvedPayload,
   SUPPORTED_PROTOCOL_VERSIONS,
   TerminationAckPayload,
+  WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol";
 export {
   CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
@@ -240,6 +241,7 @@ export {
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
+export { waitingExecSpec } from "./protocol/waiting-exec";
 export {
   type AccountPurgeCompletion,
   AccountPurgeCompletionSchema,
@@ -291,6 +293,7 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/finite-process";
 export * from "./workspaces/workload-operation";
 export {
   ADMISSION_REASONS,

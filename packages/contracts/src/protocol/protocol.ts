@@ -13,6 +13,12 @@ import { ConversationMessageInputSchema } from "../conversations/conversation";
 import { ScreenshotCapturePayload } from "../displays/screenshot";
 import { CONVERSATION_RESTORE_CAPABILITIES } from "../persistence/persistence";
 import { PreviewSocketPayload } from "../previews/preview";
+import {
+  FiniteProcessFactSchema,
+  ProcessCancelPayload,
+  ProcessStartPayload,
+  ProcessTargetPayload,
+} from "../workspaces/finite-process";
 import { ExecSpecSchema } from "./protocol-exec";
 
 export {
@@ -80,7 +86,8 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
+export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 12;
 export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
@@ -95,6 +102,7 @@ export const SUPPORTED_PROTOCOL_VERSIONS = [
   8,
   9,
   10,
+  11,
   PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -121,6 +129,7 @@ const EnvelopeBase = z.object({
     z.literal(8),
     z.literal(9),
     z.literal(10),
+    z.literal(11),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -144,12 +153,12 @@ export const RegisteredPayload = z.object({
 });
 
 export const HeartbeatPayload = z.object({
-  child: z.enum(["starting", "setup", "running", "exited", "terminating"]),
+  child: z.enum(["starting", "setup", "waiting", "running", "exited", "terminating"]),
   agentapi_state: z.enum(["unknown", "stable", "running"]).optional(),
 });
 
 export const ProcessStatePayload = z.object({
-  phase: z.enum(["starting", "setup", "running", "exited", "terminating"]),
+  phase: z.enum(["starting", "setup", "waiting", "running", "exited", "terminating"]),
   exit_code: z.number().int().nullable().optional(),
   setup_step: z.string().optional(),
   detail: z.string().max(512).optional(),
@@ -214,6 +223,8 @@ export const RestoreStatusPayload = z.object({
 export const ConversationMessagePayload = ConversationMessageInputSchema;
 
 export const AgentFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("runtime_ready"), payload: z.object({ incarnationId: z.string().min(1) }) }),
+  EnvelopeBase.extend({ type: z.literal("finite_process"), payload: FiniteProcessFactSchema }),
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
@@ -298,6 +309,10 @@ export const PrepareCheckpointPayload = z.object({
 });
 
 export const ServerFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("process_start"), payload: ProcessStartPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_lookup"), payload: ProcessTargetPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_cancel"), payload: ProcessCancelPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_ack"), payload: ProcessTargetPayload }),
   EnvelopeBase.extend({ type: z.literal("screenshot_capture"), payload: ScreenshotCapturePayload }),
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renewed"), payload: CredentialRenewedPayload }),

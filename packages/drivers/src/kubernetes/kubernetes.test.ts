@@ -75,6 +75,8 @@ function fixtureWorkspace(): WorkspaceRow {
   const now = new Date();
   const id = randomUUID();
   return {
+    runtimeRegistration: null,
+    finiteProcess: null,
     id,
     principalId: randomUUID(),
     externalId: "kubernetes-fixture",

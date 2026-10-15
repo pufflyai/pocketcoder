@@ -161,7 +161,9 @@
     "name": "20260922062201_brave_the_spike"
   },
   {
-    "sql": ["ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"],
+    "sql": [
+      "ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"
+    ],
     "bps": true,
     "folderMillis": 1791218323000,
     "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155",
@@ -231,7 +233,9 @@
     "name": "20261009131616_small_purple_man"
   },
   {
-    "sql": ["ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"],
+    "sql": [
+      "ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"
+    ],
     "bps": true,
     "folderMillis": 1791593063000,
     "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f",
@@ -277,5 +281,15 @@
     "folderMillis": 1792083952000,
     "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd",
     "name": "20261015170552_swift_sleeper"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspaces\" ADD COLUMN \"runtime_registration\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"finite_process\" jsonb;"
+    ],
+    "bps": true,
+    "folderMillis": 1792134090000,
+    "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7",
+    "name": "20261016070130_blue_robbie_robertson"
   }
 ]

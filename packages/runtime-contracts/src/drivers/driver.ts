@@ -26,6 +26,7 @@ export interface WorkspaceLaunch {
 }
 
 export interface ProviderState {
+  containerIdentity?: string;
   exists: boolean;
   running: boolean;
   exitCode: number | null;

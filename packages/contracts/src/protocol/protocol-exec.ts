@@ -3,6 +3,7 @@ import { DisplaySchema } from "../displays/display";
 import { CONVERSATION_RESTORE_CAPABILITIES, LAUNCH_MODES, SourceDescriptorSchema } from "../persistence/persistence";
 import { PreviewsSchema } from "../previews/preview";
 import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "../templates/template";
+import { WaitingRuntimeSpecSchema } from "../workspaces/finite-process";
 import { RestoreTransferSpecSchema } from "./protocol-checkpoint";
 
 export const SOURCE_CREDENTIAL_MAX_BYTES = 65_536;
@@ -15,7 +16,8 @@ export type RestoreMode = z.infer<typeof RestoreModeSchema>;
 export const ExecSpecSchema = z.object({
   agentapi_native: z.boolean().default(false),
   setup: z.array(SetupStepSchema),
-  harness: HarnessSchema,
+  harness: HarnessSchema.nullable(),
+  workload: WaitingRuntimeSpecSchema.optional(),
   env: z.record(z.string(), z.string()),
   services: z.record(z.string(), ServiceSchema),
   previews: PreviewsSchema.optional(),

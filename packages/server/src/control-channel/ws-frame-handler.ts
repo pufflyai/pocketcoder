@@ -2,15 +2,15 @@ import {
   type AgentFrame,
   isTerminal,
   STREAMING_MIN_PROTOCOL_VERSION,
-  snapshotServices,
   TERMINAL_MIN_PROTOCOL_VERSION,
   type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
 import { confirmCredential, renewCredential } from "./credential-frames";
 import type { LiveConnection } from "./hub";
-import { completeSourceSetup, setupAuthorityClosed } from "./setup-authority";
+import { handleRuntimeFrame } from "./runtime-frames";
+import { maybeMarkReady } from "./runtime-readiness";
+import { completeSourceSetup } from "./setup-authority";
 import type { CloseProtocol, WsDeps } from "./ws-types";
 
 type ServiceHealthFrame = Extract<AgentFrame, { type: "service_health" }>;
@@ -26,50 +26,10 @@ async function handleServiceHealth(deps: WsDeps, frame: ServiceHealthFrame): Pro
   await maybeMarkReady(deps, row, health, row.networkState);
 }
 
-async function maybeMarkReady(
-  deps: WsDeps,
-  row: WorkspaceRow,
-  health: Record<string, string>,
-  networkState: WorkspaceRow["networkState"],
-) {
-  if (row.state !== "connected" || !(await setupAuthorityClosed(deps.store, row))) return;
-  const connection = deps.hub.get(row.id);
-  if (deps.checkpointTransfers && row.launchMode === "restore") {
-    if (!connection?.restoreInstalled || !connection.harnessRunning) return;
-  }
-  const allRequiredHealthy = Object.entries(snapshotServices(row.templateSnapshot))
-    .filter(([, service]) => service.required)
-    .every(([name]) => health[name] === "healthy");
-  if (!allRequiredHealthy) return;
-  if (row.templateSnapshot.spec.network.mode === "restricted" && networkState !== "ready") return;
-  const now = new Date();
-  if (row.sourceDescriptor && !row.resolvedSource) {
-    await deps.scheduler.finalize(row, "failed", "source_resolution_failed", now);
-    return;
-  }
-  if (deps.checkpointTransfers && row.launchMode === "restore" && connection) {
-    try {
-      if (await deps.checkpointTransfers.ready(connection)) return;
-      throw new Error("Restore readiness did not settle.");
-    } catch (error) {
-      deps.log?.(`restore ${row.id}: ${String(error)}`);
-      await deps.checkpointTransfers.disconnected?.(connection);
-      deps.hub.close(row.id);
-      await deps.scheduler.beginTermination(row, "failed", "restore_failed", now);
-      return;
-    }
-  }
-  await deps.store.transition(row.id, {
-    from: ["connected"],
-    to: "ready",
-    at: now,
-    patch: { readyAt: now, lastActivityAt: now, launchInput: null },
-  });
-}
-
 async function handleProcessState(deps: WsDeps, frame: ProcessStateFrame): Promise<void> {
   const row = await deps.store.getWorkspace(frame.workspace_id);
   if (!row || isTerminal(row.state) || row.state === "preserving") return;
+  if (row.runtimeRegistration) return;
   if (frame.payload.phase === "running") {
     await maybeMarkReady(deps, row, row.health, row.networkState);
     return;
@@ -101,6 +61,7 @@ async function handleNetworkState(deps: WsDeps, frame: NetworkStateFrame): Promi
   const row = await deps.store.getWorkspace(frame.workspace_id);
   if (!row || isTerminal(row.state)) return;
   await deps.store.updateWorkspace(row.id, { networkState: frame.payload.state }, new Date());
+  if (frame.payload.state === "ready") await maybeMarkReady(deps, row, row.health, "ready");
   if (frame.payload.state === "degraded") {
     await deps.scheduler.finalize(row, "failed", "network_policy_failed", new Date());
   }
@@ -149,6 +110,7 @@ export async function handleConnectedFrame(
 ): Promise<void> {
   await deps.assertAccountAllowed?.();
   if (frame.type !== "conversation_message" && deps.hub.get(connection.workspaceId) !== connection) return;
+  if (await handleRuntimeFrame(deps, connection, ws, frame, closeProtocol)) return;
   switch (frame.type) {
     case "credential_renew":
       await renewCredential(deps, connection, frame.payload);

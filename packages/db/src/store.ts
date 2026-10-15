@@ -31,6 +31,7 @@ import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
 import { createAdmission } from "./modules/workspaces/admission";
 import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
+import { createFiniteProcesses } from "./modules/workspaces/finite-process";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
@@ -109,6 +110,11 @@ export class PGliteStore implements Store {
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
     this.revokeMachineKey = journal.after(auth.revokeMachineKey);
     this.touchMachineKey = auth.touchMachineKey;
+    const processes = createFiniteProcesses(context);
+    this.bindWorkspaceRuntime = processes.bindWorkspaceRuntime;
+    this.markWorkspaceRuntimeReady = processes.markWorkspaceRuntimeReady;
+    this.recordFiniteProcess = processes.recordFiniteProcess;
+    this.endWorkspaceRuntime = processes.endWorkspaceRuntime;
     const workspaces = createWorkspaces(context);
     this.insertWorkspace = workspaces.insertWorkspace;
     this.getWorkspaceByIdempotency = workspaces.getWorkspaceByIdempotency;
@@ -179,6 +185,10 @@ export class PGliteStore implements Store {
     this.appendEvent = outbox.appendEvent;
     this.waitForWorkspaceChange = createWorkspaceWaiter(context, workspaces.getWorkspace);
   }
+  readonly markWorkspaceRuntimeReady: Store["markWorkspaceRuntimeReady"];
+  readonly bindWorkspaceRuntime: Store["bindWorkspaceRuntime"];
+  readonly recordFiniteProcess: Store["recordFiniteProcess"];
+  readonly endWorkspaceRuntime: Store["endWorkspaceRuntime"];
   readonly listWorkspaceStorage: Store["listWorkspaceStorage"];
   readonly purgeWorkspaceContent: Store["purgeWorkspaceContent"];
   readonly writeSecret: Store["writeSecret"];
