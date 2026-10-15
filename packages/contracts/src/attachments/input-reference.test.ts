@@ -25,7 +25,11 @@ test("accepted inputs bind exact ready workspace-scoped versions and their manif
     [{ ...object, visibility: "expired" }],
     [object, object],
   ]) {
-    expect(AcceptedInputManifestSchema.safeParse({ ...inputs, objects }).success).toBe(false);
+    const changed = { ...contents, objects };
+    const result = AcceptedInputManifestSchema.safeParse({ ...changed, digest: digestOf(changed) });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("invalid input objects were accepted");
+    expect(result.error.issues.every((issue) => issue.path[0] === "objects")).toBe(true);
   }
   expect(AcceptedInputManifestSchema.safeParse({ ...inputs, digest: `sha256:${"b".repeat(64)}` }).success).toBe(false);
   expect(InputObjectReferenceSchema.safeParse({ ...object, path: "/host/private" }).success).toBe(false);
