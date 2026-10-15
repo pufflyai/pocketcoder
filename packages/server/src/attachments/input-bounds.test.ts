@@ -72,6 +72,72 @@ test("symlink substitution of canonical payload is unavailable evidence", async 
   }
 });
 
+test("cancellation before the first body read keeps the interruption error and releases storage", async () => {
+  const f = await inputFixture();
+  try {
+    const reference = f.reference();
+    const body = new ReadableStream<Uint8Array>({ pull() {} }, { highWaterMark: 0 });
+    await expect(
+      f.service.upload(f.principal.id, reference, f.workspace.deadlineAt, body, AbortSignal.abort()),
+    ).rejects.toMatchObject({ code: "attachment.interrupted" });
+    expect((await f.store.inputs.get(f.workspace.id, reference.fileId))?.state).toBe("expired");
+    expect((await f.store.storageReservations.usage(f.workspace.id, f.principal.id)).workspace.bytes).toBe(0);
+    expect(await f.driver.list()).toEqual([]);
+  } finally {
+    await f.dispose();
+  }
+});
+
+for (const existing of [false, true])
+  test(`queued admission preserves ${existing ? "descriptor conflicts" : "transfer expiry"} without body reads`, async () => {
+    const f = await inputFixture();
+    const fileId = randomUUID();
+    const accepted = existing ? await f.upload("original", f.reference("original", fileId)) : undefined;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holder = f.context.db.transaction(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    try {
+      await entered.promise;
+      f.limits.transferMs = 20;
+      let reads = 0;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull() {
+            reads++;
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const reference = f.reference("changed", fileId);
+      const result = f.service
+        .upload(f.principal.id, reference, f.workspace.deadlineAt, body, new AbortController().signal)
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+      await Bun.sleep(30);
+      release.resolve();
+      await holder;
+      expect(await result).toMatchObject({ code: existing ? "attachment.conflict" : "attachment.interrupted" });
+      expect(reads).toBe(0);
+      const stored = await f.store.inputs.get(f.workspace.id, reference.fileId);
+      if (accepted) expect(stored?.reference).toEqual(accepted.reference);
+      else expect(stored).toBeNull();
+      expect((await f.store.storageReservations.usage(f.workspace.id, f.principal.id)).workspace).toEqual({
+        bytes: accepted?.reference.sizeBytes ?? 0,
+        files: existing ? 1 : 0,
+      });
+      expect(await f.driver.list()).toHaveLength(existing ? 1 : 0);
+    } finally {
+      release.resolve();
+      await holder;
+      await f.dispose();
+    }
+  });
+
 test("idle body deadline releases its transfer and selected bytes rebuild a lost projection", async () => {
   const f = await inputFixture();
   try {

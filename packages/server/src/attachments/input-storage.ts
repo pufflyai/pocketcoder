@@ -41,18 +41,25 @@ export class InputStorage {
     reference = InputObjectReferenceSchema.parse(reference);
     const now = Date.now();
     const expiresAt = new Date(Math.min(deadline.getTime(), now + this.options.limits.transferMs));
-    const claimed = await this.store.begin(
-      {
-        reference,
-        principalId,
-        reservationId: randomUUID(),
-        transferExpiresAt: expiresAt,
-        retentionMs: this.options.limits.retentionMs,
-        retainedUntil: new Date(now + this.options.limits.retentionMs),
-      },
-      this.options.limits,
-      this.options.capacity,
-    );
+    const claimed = await this.store
+      .begin(
+        {
+          reference,
+          principalId,
+          reservationId: randomUUID(),
+          transferExpiresAt: expiresAt,
+          retentionMs: this.options.limits.retentionMs,
+          retainedUntil: new Date(now + this.options.limits.retentionMs),
+        },
+        this.options.limits,
+        this.options.capacity,
+      )
+      .catch((error) => {
+        // Expiry can roll back admission before the upload owns any storage or reads its body.
+        if (!(error instanceof ApiError) && Date.now() >= expiresAt.getTime())
+          throw new ApiError("attachment.interrupted", "Input transfer ended before publication.");
+        throw error;
+      });
     const row = claimed.row;
     if (!claimed.created) {
       await this.verify(row);
@@ -81,7 +88,8 @@ export class InputStorage {
       let received = 0;
       const hash = createHash("sha256");
       while (reader) {
-        const { done, value } = await Promise.race([reader.read(), interrupted]);
+        // Cancellation can close the reader while storage opens. Preserve the earlier interruption.
+        const { done, value } = await Promise.race([interrupted, reader.read()]);
         if (signal.aborted) throw new ApiError("attachment.interrupted", "Input transfer ended before publication.");
         if (done) break;
         received += value.byteLength;
