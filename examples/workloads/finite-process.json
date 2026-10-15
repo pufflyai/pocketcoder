@@ -1,0 +1,60 @@
+{
+  "apiVersion": "pocketcoder.dev/v1",
+  "kind": "Template",
+  "metadata": {
+    "name": "workload-fixture"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "registry.test/workload@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "protocol": "pocketcoder.workload/v1"
+    },
+    "profile": "finite-process",
+    "adapters": {
+      "main": {
+        "kind": "process",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocol": "fixture/v1",
+        "command": ["/bin/echo", "done"]
+      }
+    },
+    "operations": {
+      "run": {
+        "adapter": "main",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "requiredCapabilities": [],
+        "outputRoots": ["/outputs"]
+      }
+    },
+    "services": {},
+    "previews": {},
+    "credentialSlots": {},
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "network": {
+      "mode": "restricted",
+      "allow": []
+    },
+    "security": {},
+    "limits": {
+      "deadlineSeconds": 600,
+      "finalizationSeconds": 30,
+      "inputFileBytes": 1048576,
+      "stagedInputBytes": 8388608,
+      "inputFiles": 16,
+      "inFlightTransfers": 2,
+      "exportBytes": 4194304,
+      "exportFiles": 16,
+      "unreferencedInputRetentionSeconds": 600,
+      "exportRetentionSeconds": 900
+    }
+  }
+}

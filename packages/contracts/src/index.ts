@@ -25,6 +25,7 @@ export {
   attachmentManifest,
   splitAttachmentManifest,
 } from "./attachments/attachment";
+export * from "./attachments/input-reference";
 export * from "./auth/keys";
 export * from "./auth/principals";
 export * from "./checkpoints";
@@ -84,6 +85,7 @@ export {
   NetworkRuleSchema,
   type NetworkState,
 } from "./network/network";
+export * from "./outputs/export-reference";
 export {
   CHECKPOINT_STATES,
   type CheckpointManifest,
@@ -245,52 +247,21 @@ export {
   AccountPurgeIntentSchema,
 } from "./recovery/account-purge";
 export * from "./recovery/source-writer";
+export * from "./secrets/credential-slot";
 export * from "./secrets/secret";
 export * from "./templates/runtime-credentials";
-export {
-  type Agent,
-  AgentSchema,
-  agentApiHarness,
-  type CheckpointHook,
-  CheckpointHookSchema,
-  DurationSchema,
-  findRoute,
-  type Harness,
-  HarnessSchema,
-  isAgentApiNative,
-  isNormalizedPath,
-  normalizeTemplateSnapshot,
-  type ParsedTemplate,
-  parseTemplateManifest,
-  ResourcesSchema,
-  SecuritySchema,
-  ServiceRouteSchema,
-  ServiceSchema,
-  type SetupStep,
-  SetupStepSchema,
-  type SourceSpec,
-  SourceSpecSchema,
-  secretMountPath,
-  snapshotOf,
-  snapshotServices,
-  type TemplateManifest,
-  TemplateManifestSchema,
-  type TemplateService,
-  type TemplateServiceRoute,
-  type TemplateSnapshot,
-  type TemplateSpec,
-  TemplateSpecSchema,
-  type Terminal,
-  TerminalSchema,
-  TimeoutsSchema,
-  templateServices,
-  timeoutMs,
-} from "./templates/template";
+export * from "./templates/template";
 export { TemplatePublishRequestSchema, TemplateVersionParamsSchema } from "./templates/template-api";
 export {
   renderTemplateManifest,
+  renderWorkloadTemplateManifest,
   type TemplateRenderOptions,
 } from "./templates/template-render";
+export * from "./templates/workload-admission";
+export * from "./templates/workload-capabilities";
+export * from "./templates/workload-format";
+export * from "./templates/workload-input-schema";
+export * from "./templates/workload-template";
 export {
   type ClientTerminalMessage,
   ClientTerminalMessageSchema,
@@ -320,6 +291,7 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/workload-operation";
 export {
   ADMISSION_REASONS,
   type AdmissionDecision,

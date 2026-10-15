@@ -1,4 +1,124 @@
-# Templates
+# Canonical workload templates
+
+`pocketcoder.dev/v1` defines one workload contract. Operations select pinned
+`process`, `service`, `pi`, or `agentapi` adapters. An arbitrary process needs no
+agent wrapper or credentials. Generic HTTP transport can use the `service`
+profile with no operation adapters. That profile promises no request recovery or
+cloud-interactive execution semantics.
+
+PC-125 delivers the G0 contract and offline tools. The current controller and
+supervisor execute only `v1alpha1`; publication and startup import reject `v1`
+before admission. The process, storage, adapter and preview gates must install
+and qualify their implementations before a deployment enables either minimum
+workload profile. Offline validation is not qualification.
+
+## Contract owners
+
+| Contract | Owner |
+| --- | --- |
+| Manifest, adapters, operations and snapshots | `contracts/src/templates/workload-template.ts`, exposed through `template-schema.ts` |
+| Installed image/runtime/adapter/storage identities and capabilities | `contracts/src/templates/workload-capabilities.ts`; driver-observed `ProviderState.workload` in `runtime-contracts/src/drivers/driver.ts` |
+| Profile, pin, deadline and deployment ceiling checks | `contracts/src/templates/workload-admission.ts` |
+| Accepted input objects and ordered manifests | `contracts/src/attachments/input-reference.ts` |
+| Execution references, frozen acceptance fingerprints and cancellation | `contracts/src/workspaces/workload-operation.ts` |
+| Immutable retained exports | `contracts/src/outputs/export-reference.ts` |
+| Trusted policy references for expiring credentials | `contracts/src/secrets/credential-slot.ts` |
+
+Paths in this table are under `packages/`. Process and conversation request owners
+remain authoritative. The execution reference selects one of them; it creates no
+second scheduler or universal mutable execution record. A driver that omits
+`ProviderState.workload` advertises no canonical capabilities.
+
+## Authoring and rendering
+
+See the complete [credential-free finite process fixture](../examples/workloads/finite-process.json).
+Its image, runtime and adapter hashes are test identities, not installed artifacts.
+Resolve customization during the image build. Replace those pins with actual
+immutable artifacts and render a new template version:
+
+```sh
+pcd templates validate examples/workloads/finite-process.json
+pcd templates render examples/workloads/finite-process.json \
+  --image 'registry.example/workload@sha256:<64-hex-digest>' \
+  --set '/spec/runtime/digest="sha256:<64-hex-digest>"' \
+  --set '/spec/adapters/main/digest="sha256:<64-hex-digest>"' \
+  --out build/workloads
+```
+
+Render hashes all normalized deployable content except `spec.version`, including
+the format, image, runtime, adapter pins, operations and limits. It produces the
+same `1.0.0-<12-character-hash>` for identical content. Runtime inheritance and
+caller-selected commands, mounts or adapters are not part of the contract.
+
+A generic HTTP service can replace the fixture's profile and declarations with:
+
+```json
+{
+  "profile": "service",
+  "adapters": {},
+  "operations": {},
+  "services": {
+    "api": {
+      "baseUrl": "http://127.0.0.1:8080",
+      "process": { "command": ["bun", "/app/service.ts"] },
+      "routes": [{ "method": "POST", "path": "/work" }]
+    }
+  }
+}
+```
+
+Pi and AgentAPI use the same adapter declaration and operation schema. Set `kind`
+to `pi` or `agentapi`, pin its actual implementation digest and protocol, and set
+the template-owned command. A `service` adapter references a declared service
+instead of a command. HTTP or SSE transport alone proves no execution support.
+
+Operation `inputSchema` uses a deliberate JSON Schema subset: scalar `type`
+values (`string`, `number`, `integer`, `boolean`, `null`), arrays with `items`,
+and objects with `properties`, optional `required`, and `additionalProperties:
+false`. Objects and arrays can nest. Required names must be declared and unique.
+Unknown keywords and invalid property definitions fail validation; no adapter
+silently ignores them. The operation's root input is an object.
+
+## Admission and bounds
+
+`workloadAdmission` requires trusted driver evidence for the exact image, template,
+runtime and adapter pins, an observed workspace/incarnation, qualified durable
+storage, a supported deployment profile, and a future `expiresAt`. Capability
+requirements come from the profile and each operation. Every required operation
+capability must be present in both the installed runtime and the selected producer.
+A manifest declaration or installed package version alone proves nothing. A weak
+producer's `workspace-cancel` or `unknown-outcome` cannot substitute for targeted
+cancel or durable request lookup.
+
+Finite process requires explicit start, exact exit/signal observation, targeted
+cancel and stop-before-export. Cloud interactive requires deduplicated acceptance,
+request lookup, targeted turn cancel, explicit publication, workspace-lived
+services and revocable browser grants. Both require readiness without a task,
+later immutable inputs, serial operations and retained exports. They use explicit
+release and a finite deadline, with no automatic idle expiry.
+
+Every template declares every `limits` field. There are no production defaults.
+The fixture sets 1 MiB per input, 8 MiB staged input, 16 input files, 2 transfers,
+4 MiB exports, 16 export files, 600 seconds unreferenced-input retention, 900
+seconds export retention, a 600-second deadline and 30-second finalization budget.
+Deployment ceilings cap every field. Missing, zero, unsafe, unbounded or excessive
+values fail. A single input cannot exceed staged capacity; finalization cannot
+exceed the workspace deadline. Retention remains independent of compute lifetime.
+
+`credentialSlots` may be empty. A slot references a trusted, versioned control-plane
+policy and either fixed scope or a post-create grant. Adapter or service-process
+env uses `credentialSlot:<name>`; no standing secret is stored in the manifest.
+Delivery is a workspace-scoped expiring file, bounded by both the slot lifetime
+and the workspace's actual remaining lifetime. This schema does not implement
+issuance or grants; the existing lease owner implements that later gate.
+
+## Alpha runtime reference
+
+The rest of this page describes the existing `v1alpha1` runtime. It is not a
+translation of the canonical format. See [migration](migration.md) for deliberate
+replacement and immutable snapshot support checks.
+
+## Alpha template format
 
 A template (`pocketcoder.dev/v1alpha1 Template`, JSON or YAML) is a reviewed,
 versioned definition of a coding-agent environment. An operator with
