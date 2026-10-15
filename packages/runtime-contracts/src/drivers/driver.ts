@@ -82,6 +82,7 @@ export interface WorkspaceDriver {
 export type RuntimeMountSource =
   | { kind: "host-path"; path: string }
   | { kind: "tmpfs"; maxBytes: number; uid: number; gid: number }
+  | { kind: "shared-filesystem"; allocationId: string; directory: string }
   | { kind: "empty-dir"; maxBytes: number };
 
 export interface RuntimeMountRef {
