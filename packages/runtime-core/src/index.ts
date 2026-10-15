@@ -4,7 +4,7 @@ export type {
   InputClaim,
   InputLimits,
   InputManifestRow,
-  InputProjectionRef,
+  InputProjectionRef, InputProjectionStorage, PublishedInputProjection,
   InputStorageDriver,
   InputStore,
   ReadStorageCapacity,
