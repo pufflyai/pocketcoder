@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   DiscoveredProvider,
+  InputProjectionRef,
   DiscoveredWarmProvider,
   ProviderRef,
   ProviderState,
@@ -15,6 +16,7 @@ import type { RegistryResolver } from "../registry/registry";
 import { appendSecurityOptions, appendWorkspaceMounts } from "./docker-args";
 import { resolveDockerImage, runDocker } from "./docker-command";
 import { createDockerEgress } from "./docker-egress";
+import { DockerInputs, type DockerInputProjectionOptions, PROJECTION_LABEL } from "./docker-inputs";
 import { pullPrivateImage } from "./docker-registry";
 
 export { resolveDockerImage } from "./docker-command";
@@ -32,6 +34,7 @@ export interface DockerDriverOptions extends EgressDriverOptions {
   // Private directory for temporary provider input files, removed on
   // termination and after registration.
   inputDir?: string;
+  inputProjection?: DockerInputProjectionOptions;
   // Docker network to attach; defaults to the docker default bridge.
   network?: string;
   // Adds host.docker.internal:host-gateway so workspaces can reach a
@@ -43,11 +46,13 @@ export interface DockerDriverOptions extends EgressDriverOptions {
 
 export class DockerDriver implements WorkspaceDriver {
   readonly kind = "docker";
-  private readonly opts: Required<Omit<DockerDriverOptions, keyof EgressDriverOptions | "resolveRegistry">> &
+  private readonly inputs?: DockerInputs;
+  private readonly opts: Required<Omit<DockerDriverOptions, keyof EgressDriverOptions | "resolveRegistry" | "inputProjection">> &
     EgressDriverOptions &
     Pick<DockerDriverOptions, "resolveRegistry">;
 
   constructor(options: DockerDriverOptions = {}) {
+    this.inputs = options.inputProjection ? new DockerInputs(options.dockerBin ?? "docker", options.inputProjection, options.inputDir ?? join(tmpdir(), "pocketcoder-inputs")) : undefined;
     this.opts = {
       ...(options.resolveRegistry ? { resolveRegistry: options.resolveRegistry } : {}),
       inputDir: options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
@@ -68,6 +73,7 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
+    const projection = await this.inputs?.prepare(launch);
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
     if (spec.imagePullSecret) {
@@ -126,6 +132,7 @@ export class DockerDriver implements WorkspaceDriver {
       "-v",
       `${inputFile}:/run/pocketcoder/input:ro`,
     ];
+    if (projection) args.push(...this.inputs!.args(projection));
     appendWorkspaceMounts(args, launch);
     appendSecurityOptions(args, spec);
     if (egressId) {
@@ -147,6 +154,7 @@ export class DockerDriver implements WorkspaceDriver {
       return {
         kind: this.kind,
         id: containerId,
+        ...(projection ? { workspaceId: workspace.id, inputProjectionId: projection.projectionId } : {}),
         name: `pocketcoder-ws-${workspace.id}`,
         ...(egressId ? { egressId, egressName } : {}),
       };
@@ -159,6 +167,7 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
+    if (this.inputs) throw new Error("Immutable input projections require a fresh workspace; warm pools are unsupported.");
     const spec = launch.template.spec;
     if (spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
     await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
@@ -231,6 +240,11 @@ export class DockerDriver implements WorkspaceDriver {
     }
   }
 
+  async publishInputs(ref: ProviderRef, input: InputProjectionRef) {
+    if (!this.inputs) throw new Error("Docker daemon-host immutable input storage is not configured.");
+    return this.inputs.publish(ref, input);
+  }
+
   async inspect(ref: ProviderRef): Promise<ProviderState> {
     try {
       const out = await runDocker(this.opts.dockerBin, [
@@ -241,6 +255,7 @@ export class DockerDriver implements WorkspaceDriver {
       ]);
       const [running, exitCode] = out.split(" ");
       return {
+        ...(this.inputs && ref.inputProjectionId ? { inputStorage: await this.inputs.inspect(ref) } : {}),
         exists: true,
         running: running === "true",
         exitCode: running === "true" ? null : Number(exitCode),
@@ -270,6 +285,7 @@ export class DockerDriver implements WorkspaceDriver {
     if (typeof ref.egressId === "string") {
       await runDocker(this.opts.dockerBin, ["rm", "-f", ref.egressId]).catch(() => {});
     }
+    if (this.inputs && ref.inputProjectionId) await this.inputs.remove(ref);
     const name = typeof ref.name === "string" ? ref.name : "";
     const poolRuntimeId = typeof ref.poolRuntimeId === "string" ? ref.poolRuntimeId : "";
     if (poolRuntimeId) {
@@ -307,11 +323,11 @@ export class DockerDriver implements WorkspaceDriver {
       "--filter",
       `label=${WORKSPACE_LABEL}`,
       "--format",
-      `{{.ID}}\t{{.Label "${WORKSPACE_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}`,
+      `{{.ID}}\t{{.Label "${WORKSPACE_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}\t{{.Label "${PROJECTION_LABEL}"}}`,
     ]);
     if (!out) return [];
     return out.split("\n").map((line) => {
-      const [id = "", workspaceId = "", templateDigest = ""] = line.split("\t");
+      const [id = "", workspaceId = "", templateDigest = "", projectionId = ""] = line.split("\t");
       return {
         workspaceId,
         templateDigest,
@@ -319,6 +335,7 @@ export class DockerDriver implements WorkspaceDriver {
           kind: this.kind,
           id,
           name: `pocketcoder-ws-${workspaceId}`,
+          ...(projectionId ? { workspaceId, inputProjectionId: projectionId } : {}),
           egressId: `pocketcoder-egress-${workspaceId}`,
           egressName: `pocketcoder-egress-${workspaceId}`,
         },
