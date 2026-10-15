@@ -20,7 +20,14 @@ export type {
   WorkspaceStorageDriver,
   WorkspaceTransferRuntime,
 } from "./drivers/driver";
-export type { InputBackingRef, InputByteWriter, InputProjectionRef, InputProjectionStorage, PublishedInputProjection, InputStorageDriver } from "./drivers/inputs";
+export type {
+  InputBackingRef,
+  InputByteWriter,
+  InputProjectionRef,
+  InputProjectionStorage,
+  InputStorageDriver,
+  PublishedInputProjection,
+} from "./drivers/inputs";
 export { buildEventEnvelope } from "./events/events";
 export * from "./stores/binary-outputs";
 export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";

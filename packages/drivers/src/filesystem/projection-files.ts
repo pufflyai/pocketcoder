@@ -17,7 +17,9 @@ export async function verifyProjectionFile(path: string, size: number, digest: s
       position += bytesRead;
     }
     if (`sha256:${hash.digest("hex")}` !== digest) throw new Error("Input projection digest mismatch.");
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
 }
 
 export async function writeProjectionFile(path: string, stream: ReadableStream<Uint8Array>) {

@@ -358,7 +358,16 @@ PVC name, or backend. Mounts must be normalized, non-overlapping, outside
 `/run/pocketcoder`, `/proc`, `/sys`, and `/dev`, and must not overlap tmpfs
 paths.
 
-Uploaded attachments live under `$HOME/.pcd/attachments` and are ephemeral by
+Uploaded attachments use private controller storage; `$HOME` files and sidecars
+are not canonical inputs. Docker execution selections are published read-only at
+`/run/pocketcoder/inputs/<manifest-id>` when the deployment configures the
+[daemon-host publisher](input-storage.md#docker-projection). Templates cannot
+choose host paths or add mounts inside this root. Keep writable work and output
+paths separate. Canonical staging and projection need explicit finite limits.
+Legacy attachment-bearing relay remains unavailable until the operation owner
+installs dispatch fencing (PC-129).
+
+Workspace-local working files are ephemeral by
 default: they persist across preserve/restore only when a declared mount
 contains the workspace user's `$HOME/.pcd` directory.
 

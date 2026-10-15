@@ -1,8 +1,16 @@
+import { WorkloadImageSchema } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 
 const bound = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const InputStorageConfigSchema = z.strictObject({
   root: z.string().min(1),
+  projection: z
+    .strictObject({
+      root: z.string().min(1),
+      probeImage: WorkloadImageSchema,
+      capacity: z.strictObject({ bytes: bound, files: bound }),
+    })
+    .optional(),
   limits: z.strictObject({
     fileBytes: bound,
     stagedBytes: bound,

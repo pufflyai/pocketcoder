@@ -16,3 +16,8 @@ test("private owned roots do not pass Kubernetes setgid to captured directories"
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("storage initialization cannot take ownership of an input projection or its parent", () => {
+  for (const target of ["/run", "/run/pocketcoder/inputs", "/run/pocketcoder/inputs/execution"])
+    expect(() => prepareStorage({ uid: 10001, gid: 10001, targets: [target] })).toThrow("Input projections");
+});
