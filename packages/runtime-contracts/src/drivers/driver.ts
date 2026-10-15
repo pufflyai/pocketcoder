@@ -77,7 +77,8 @@ export interface WorkspaceDriver {
 }
 
 // Runtime mount refs are internal driver-neutral capabilities. Docker consumes
-// host paths or bounded disposable mounts; Kubernetes consumes bounded emptyDir. Public APIs
+// host paths or bounded disposable mounts; Kubernetes consumes bounded emptyDir
+// or an opaque shared allocation resolved by its configured storage owner. Public APIs
 // and template manifests never contain either physical form.
 export type RuntimeMountSource =
   | { kind: "host-path"; path: string }
@@ -123,6 +124,8 @@ export interface CheckpointRef {
 }
 
 export interface StorageAllocation {
+  // Trusted finite-output owners keep this allocation until extraction settles.
+  retainForExtraction?: boolean;
   storageId: string;
   workspaceId: string;
   mounts: PersistenceMount[];
@@ -166,6 +169,7 @@ export interface WorkspaceStorageDriver {
   ): Promise<SnapshotResult>;
   verifyCheckpoint(ref: CheckpointRef, expected: CheckpointManifest): Promise<CheckpointManifest>;
   deleteStorage(ref: StorageRef): Promise<void>;
+  completeExtraction?(ref: StorageRef): Promise<void>;
   deleteCheckpoint(ref: CheckpointRef): Promise<void>;
   listStorage(): Promise<DiscoveredStorage[]>;
   listCheckpoints(): Promise<DiscoveredCheckpoint[]>;

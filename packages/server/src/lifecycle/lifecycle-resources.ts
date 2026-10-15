@@ -15,6 +15,7 @@ import {
   FilesystemStorageDriver,
   KubernetesDriver,
   KubernetesSecretResolver,
+  KubernetesSharedStorage,
   type RegistryResolver,
 } from "@pstdio/pocketcoder-drivers";
 import {
@@ -73,7 +74,11 @@ export async function requireEgressImageForRestrictedTemplates(store: Store, con
   }
 }
 
-export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: RegistryResolver) {
+export function createWorkspaceDriver(
+  config: ServerConfig,
+  resolveRegistry?: RegistryResolver,
+  sharedStorage?: KubernetesSharedStorage,
+) {
   const egress = {
     ...(resolveRegistry ? { resolveRegistry } : {}),
     ...(config.egressImage ? { egressImage: config.egressImage } : {}),
@@ -81,6 +86,9 @@ export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: Re
   };
   if (config.driverKind === "kubernetes") {
     return new KubernetesDriver({
+      ...(config.kubernetesSharedStorage
+        ? { sharedStorage: sharedStorage ?? new KubernetesSharedStorage(config.kubernetesSharedStorage) }
+        : {}),
       ...egress,
       namespace: config.kubernetesNamespace,
       captureTerminationEvidence: true,
@@ -94,6 +102,7 @@ export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: Re
 }
 
 export function createStorageDriver(config: ServerConfig) {
+  if (config.kubernetesSharedStorage) return new KubernetesSharedStorage(config.kubernetesSharedStorage);
   if (config.storageBackend === "filesystem") {
     return new FilesystemStorageDriver({
       workspaceRoot: config.workspaceDataDir as string,

@@ -14,6 +14,7 @@
         "examples/e2e/managed-interruption-child.ts",
         "examples/e2e/managed-purge-bootstrap-child.ts",
         "examples/e2e/kind-purge-rbac.ts",
+        "examples/e2e/kubernetes-shared-probe.ts",
         "examples/**/*.test.ts"
       ],
       // Lerna invokes Nx internally for task hashing and caching.

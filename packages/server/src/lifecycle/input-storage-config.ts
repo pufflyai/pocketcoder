@@ -9,7 +9,7 @@ export function inputStorageOptions(config: ServerConfig): InputStorageOptions |
   if (!input) return;
   mkdirSync(input.root, { recursive: true, mode: 0o700 });
   const root = realpathSync(input.root);
-  const workloadRoots = [config.workspaceDataDir, config.inputDir]
+  const workloadRoots = [config.workspaceDataDir, config.inputDir, config.kubernetesSharedStorage?.root]
     .filter((p): p is string => !!p)
     .map((path) => {
       mkdirSync(path, { recursive: true });

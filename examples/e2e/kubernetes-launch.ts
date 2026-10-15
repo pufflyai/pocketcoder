@@ -1,6 +1,11 @@
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { controllerKubeconfig } from "./kubernetes-controller-rbac";
 
+if (process.argv.includes("--shared-storage")) {
+  await import("./kubernetes-shared-storage");
+  process.exit(0);
+}
+
 const cluster = await createKubernetesCluster();
 try {
   const namespace = "pc-launch";

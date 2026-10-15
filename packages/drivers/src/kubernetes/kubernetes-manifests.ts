@@ -1,14 +1,10 @@
 import { credentialMemoryPaths } from "@pstdio/pocketcoder-contracts";
-import type {
-  RuntimeMountRef,
-  RuntimeSecretRef,
-  WarmRuntimeLaunch,
-  WorkspaceLaunch,
-} from "@pstdio/pocketcoder-runtime-core";
+import type { RuntimeSecretRef, WarmRuntimeLaunch, WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { type KubernetesToleration, resourceRequirements, schedulingFields } from "./kubernetes-scheduling";
 
 import { storageInitializer } from "./kubernetes-storage-init";
+import { persistentVolumes, type ResolvedSharedMount } from "./kubernetes-volumes";
 
 interface ManifestOptions {
   podFinalizers?: string[];
@@ -19,15 +15,7 @@ interface ManifestOptions {
   runtimeClassName?: string;
   nodeSelector?: Record<string, string>;
   tolerations?: KubernetesToleration[];
-}
-
-function persistentVolumes(mounts: RuntimeMountRef[]) {
-  const volumes = mounts.map((mount, index) => {
-    if (mount.source.kind !== "empty-dir") throw new Error("Kubernetes workspace mounts require bounded emptyDir");
-    return { name: `persistent-${index}`, emptyDir: { sizeLimit: String(mount.source.maxBytes) } };
-  });
-  const volumeMounts = mounts.map((mount, index) => ({ name: `persistent-${index}`, mountPath: mount.target }));
-  return { volumes, volumeMounts };
+  sharedMounts?: Map<number, ResolvedSharedMount>;
 }
 
 function volumeForSecret(secret: RuntimeSecretRef, index: number) {
@@ -122,7 +110,7 @@ export function workspaceJobManifest(
     if (bytes < disposableBytes + 64 * 1024 ** 2)
       throw new Error("Source storage requires full ephemeral-storage requests and limits.");
   }
-  const persistent = persistentVolumes(launch.mounts);
+  const persistent = persistentVolumes(launch.mounts, options.sharedMounts);
   const secrets = launch.secrets.map(volumeForSecret);
   const memory = memoryVolumes(credentialMemoryPaths(spec));
   const labels = { [KUBERNETES_WORKSPACE_LABEL]: workspace.id };
