@@ -72,6 +72,22 @@ test("symlink substitution of canonical payload is unavailable evidence", async 
   }
 });
 
+test("cancellation before the first body read keeps the interruption error and releases storage", async () => {
+  const f = await inputFixture();
+  try {
+    const reference = f.reference();
+    const body = new ReadableStream<Uint8Array>({ pull() {} }, { highWaterMark: 0 });
+    await expect(
+      f.service.upload(f.principal.id, reference, f.workspace.deadlineAt, body, AbortSignal.abort()),
+    ).rejects.toMatchObject({ code: "attachment.interrupted" });
+    expect((await f.store.inputs.get(f.workspace.id, reference.fileId))?.state).toBe("expired");
+    expect((await f.store.storageReservations.usage(f.workspace.id, f.principal.id)).workspace.bytes).toBe(0);
+    expect(await f.driver.list()).toEqual([]);
+  } finally {
+    await f.dispose();
+  }
+});
+
 test("idle body deadline releases its transfer and selected bytes rebuild a lost projection", async () => {
   const f = await inputFixture();
   try {

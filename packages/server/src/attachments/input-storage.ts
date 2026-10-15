@@ -81,7 +81,8 @@ export class InputStorage {
       let received = 0;
       const hash = createHash("sha256");
       while (reader) {
-        const { done, value } = await Promise.race([reader.read(), interrupted]);
+        // Cancellation can close the reader while storage opens. Preserve the earlier interruption.
+        const { done, value } = await Promise.race([interrupted, reader.read()]);
         if (signal.aborted) throw new ApiError("attachment.interrupted", "Input transfer ended before publication.");
         if (done) break;
         received += value.byteLength;
