@@ -325,7 +325,9 @@ try {
     }),
   );
 } catch (error) {
-  console.error(await kube(["get", "pods", "-o", "json"]).catch(() => "Pod diagnosis unavailable"));
+  const pods = JSON.parse(await kube(["get", "pods", "-o", "json"]));
+  for (const pod of pods.items)
+    console.error(JSON.stringify({ metadata: pod.metadata, status: pod.status.containerStatuses }));
   throw error;
 } finally {
   for (const { driver: runtime, ref } of active) {

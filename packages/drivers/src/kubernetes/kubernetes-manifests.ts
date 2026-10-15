@@ -1,4 +1,4 @@
-import { credentialMemoryPaths } from "@pstdio/pocketcoder-contracts";
+import { credentialMemoryPaths, timeoutMs } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeSecretRef, WarmRuntimeLaunch, WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { type KubernetesToleration, resourceRequirements, schedulingFields } from "./kubernetes-scheduling";
@@ -126,6 +126,7 @@ export function workspaceJobManifest(
         metadata: { labels, annotations, ...(options.podFinalizers ? { finalizers: options.podFinalizers } : {}) },
         spec: {
           restartPolicy: "Never",
+          terminationGracePeriodSeconds: Math.ceil(timeoutMs(workspace.templateSnapshot, "terminateGrace") / 1000),
           ...(options.imagePullSecret ? { imagePullSecrets: [{ name: options.imagePullSecret }] } : {}),
           automountServiceAccountToken: false,
           ...schedulingFields(options),
@@ -209,6 +210,7 @@ export function warmJobManifest(
         metadata: { labels, annotations, ...(options.podFinalizers ? { finalizers: options.podFinalizers } : {}) },
         spec: {
           restartPolicy: "Never",
+          terminationGracePeriodSeconds: Math.ceil(timeoutMs(launch.template, "terminateGrace") / 1000),
           ...(options.imagePullSecret ? { imagePullSecrets: [{ name: options.imagePullSecret }] } : {}),
           automountServiceAccountToken: false,
           ...schedulingFields(options),

@@ -55,6 +55,7 @@ function fixtureWorkspace(): WorkspaceRow {
       harness: { command: ["/bin/sleep", "3600"] },
       env: { SAFE_VALUE: "yes", TOKEN: "secretRef:model/key" },
       resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
+      timeouts: { terminateGrace: "17s" },
       security: {
         uid: 12_345,
         gid: 23_456,
@@ -158,6 +159,7 @@ describe("Kubernetes workspace driver", () => {
             kind: string;
             stringData?: Record<string, string>;
             metadata: { labels: Record<string, string> };
+            spec?: { template: { spec: { terminationGracePeriodSeconds: number } } };
           },
       );
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Job"]);
@@ -167,6 +169,7 @@ describe("Kubernetes workspace driver", () => {
     const jobLabels = manifests[1]?.metadata.labels ?? {};
     expect(jobLabels["pocketcoder.pool-runtime"]).toBe(runtimeId);
     expect(jobLabels["pocketcoder.workspace"]).toBeUndefined();
+    expect(manifests[1]?.spec?.template.spec.terminationGracePeriodSeconds).toBe(17);
   });
   test("projects the portable launch contract into a namespaced Job", async () => {
     const fake = await fakeKubectl();
@@ -225,6 +228,7 @@ describe("Kubernetes workspace driver", () => {
           spec: {
             serviceAccountName: string;
             automountServiceAccountToken: boolean;
+            terminationGracePeriodSeconds: number;
             securityContext: {
               fsGroup: number;
               fsGroupChangePolicy: string;
@@ -242,6 +246,7 @@ describe("Kubernetes workspace driver", () => {
     };
     expect(job.spec.template.spec.serviceAccountName).toBe("workspace");
     expect(job.spec.template.spec.automountServiceAccountToken).toBe(false);
+    expect(job.spec.template.spec.terminationGracePeriodSeconds).toBe(17);
     expect(job.spec.template.spec.securityContext).toEqual({
       fsGroup: 23_456,
       fsGroupChangePolicy: "OnRootMismatch",
