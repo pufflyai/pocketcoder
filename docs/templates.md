@@ -367,9 +367,9 @@ paths separate. Canonical staging and projection need explicit finite limits.
 Legacy attachment-bearing relay remains unavailable until the operation owner
 installs dispatch fencing (PC-129).
 
-Workspace-local working files are ephemeral by
-default: they persist across preserve/restore only when a declared mount
-contains the workspace user's `$HOME/.pcd` directory.
+Workspace-local working files persist across preserve/restore only when their
+directory lies under a declared persistence mount. Canonical input references are
+not restored or silently rebound; stage new workspace-scoped IDs after restore.
 
 ```json
 {
