@@ -72,6 +72,7 @@ export class SchedulerLifecycle {
       });
       return;
     }
+    if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
     if (retainStorage && !this.context.deps.transferRuntime) {
       const storage = await store.getWorkspaceStorage(row.id);
       if (storage && !["retained", "deleted"].includes(storage.state)) {

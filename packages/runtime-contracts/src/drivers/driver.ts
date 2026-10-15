@@ -26,6 +26,8 @@ export interface WorkspaceLaunch {
 }
 
 export interface ProviderState {
+  // Opaque execution lifetime: this must change whenever the container starts again.
+  containerIdentity?: string;
   exists: boolean;
   running: boolean;
   exitCode: number | null;

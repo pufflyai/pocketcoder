@@ -24,11 +24,22 @@ export class SchedulerSweep {
         await this.sweepRow(row, now);
         // Retain provider identity while nodes still exist. Lifecycle deadlines
         // run first so an observation outage cannot prevent cancellation.
-        if (row.providerRef) await this.context.deps.driver.inspect(row.providerRef as ProviderRef);
+        const current = row.runtimeRegistration ? await this.context.deps.store.getWorkspace(row.id) : row;
+        if (current?.providerRef) await this.observeProvider(current, now);
       } catch (err) {
         this.context.report(`sweep.${row.id}`, err);
       }
     }
+  }
+
+  private async observeProvider(row: WorkspaceRow, now: Date) {
+    const observed = await this.context.deps.driver.inspect(row.providerRef as ProviderRef);
+    const runtime = row.runtimeRegistration;
+    if (!runtime || !["provisioning", "connected", "ready"].includes(row.state)) return;
+    if (observed.exists && observed.running && observed.containerIdentity === runtime.containerIdentity) return;
+    await this.context.deps.store.endWorkspaceRuntime(row.id, runtime.incarnationId, now);
+    // The guarded transition preserves cancellation or expiry already owned by another finalizer.
+    await this.lifecycle.beginTermination(row, "failed", "provider_lost", now);
   }
 
   async sweepQueued(row: WorkspaceRow, now: Date): Promise<void> {
@@ -63,6 +74,7 @@ export class SchedulerSweep {
       return;
     }
     const idle =
+      !row.runtimeRegistration &&
       row.state === "ready" &&
       row.lastActivityAt !== null &&
       now.getTime() - row.lastActivityAt.getTime() > this.context.timeoutMs(row, "idle");

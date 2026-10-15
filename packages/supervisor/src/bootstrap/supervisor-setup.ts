@@ -74,7 +74,7 @@ export async function runSetupSteps(
     callbacks.setSetupPhase();
     callbacks.send("process_state", { phase: "setup", setup_step: step.name });
     const proc = Bun.spawn(step.command, {
-      cwd: step.cwd ?? exec.harness.cwd ?? "/",
+      cwd: step.cwd ?? exec.harness?.cwd ?? "/",
       env: enforcedEnvironment(exec, {
         ...step.env,
         POCKETCODER_LAUNCH_MODE: exec.launch_mode,
