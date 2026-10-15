@@ -264,5 +264,18 @@
     "folderMillis": 1791972009000,
     "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82",
     "name": "20261014100009_marvelous_praxagora"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"input_manifests\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"manifest\" jsonb NOT NULL,\n\t\"finalized_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"input_objects\" (\n\t\"workspace_id\" uuid,\n\t\"file_id\" uuid,\n\t\"principal_id\" uuid NOT NULL,\n\t\"reservation_id\" uuid NOT NULL,\n\t\"reference\" jsonb NOT NULL,\n\t\"state\" text NOT NULL,\n\t\"transfer_expires_at\" timestamp with time zone NOT NULL,\n\t\"retained_until\" timestamp with time zone NOT NULL,\n\t\"published_at\" timestamp with time zone,\n\t\"retention_ms\" bigint NOT NULL,\n\tCONSTRAINT \"input_objects_pkey\" PRIMARY KEY(\"workspace_id\",\"file_id\")\n);\n",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"input_objects\" ADD CONSTRAINT \"input_objects_reservation_id_storage_reservations_id_fkey\" FOREIGN KEY (\"reservation_id\") REFERENCES \"storage_reservations\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1792083952000,
+    "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd",
+    "name": "20261015170552_swift_sleeper"
   }
 ]

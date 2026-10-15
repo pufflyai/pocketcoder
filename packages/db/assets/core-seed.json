@@ -2,8 +2,8 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "3bef48df71eedf7cbe2cb16de83ad3fcf2155ff2b70bec3c12061f73967db867",
-  "sourceChecksum": "76014002f5d52bbe21778c028c824e4292cee49364df6286c235cd13243418ab",
+  "checksum": "5c0bc5cdcced9b386bbe72b805646b1df910b688817fd99ebfa50459c7a9e6c9",
+  "sourceChecksum": "6b4788b762f27fa6fdc3a54d1c405d06dc55dc7dc4f5071da25b1e01571844c4",
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -78,6 +78,10 @@
     {
       "name": "20261014100009_marvelous_praxagora",
       "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82"
+    },
+    {
+      "name": "20261015170552_swift_sleeper",
+      "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd"
     }
   ]
 }

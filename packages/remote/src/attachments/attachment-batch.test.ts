@@ -29,12 +29,14 @@ function descriptor(request: Request) {
   const parts = new URL(request.url).pathname.split("/");
   const id = parts.at(-1) as string;
   return {
-    id,
+    workspaceId: parts[3],
+    fileId: id,
+    objectVersion: `sha256:${"a".repeat(64)}`,
     name: "file.txt",
-    path: `/home/pocketcoder/.pcd/attachments/${id}/file.txt`,
-    media_type: "text/plain",
-    size_bytes: Number(request.headers.get("content-length")),
-    sha256: "a".repeat(64),
+    mediaType: "text/plain",
+    sizeBytes: Number(request.headers.get("content-length")),
+    digest: `sha256:${"a".repeat(64)}`,
+    visibility: "ready",
   };
 }
 

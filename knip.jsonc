@@ -34,6 +34,7 @@
       "entry": [
         "src/**/*.test.ts",
         "src/lifecycle/startup-discovery-fixture.ts",
+        "src/attachments/input-crash-worker.ts",
         "src/lifecycle/startup-docker-fixture.ts",
         "src/persistence/checkpoint-transfer-crash-fixture.ts",
         "src/control-channel/ws-purge-race-child.ts",

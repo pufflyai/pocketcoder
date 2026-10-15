@@ -22,6 +22,7 @@ import type { Hub } from "../control-channel/hub";
 import type { WorkspaceService } from "../workspaces/service";
 
 export interface PersistenceServiceDeps {
+  purgeInputs?: (workspaceId: string) => Promise<void>;
   store: AuthStore &
     TemplateStore &
     WorkspaceStore &

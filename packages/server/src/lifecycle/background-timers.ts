@@ -10,6 +10,7 @@ import type { loadPolicyReconciliation } from "./policy-reconciliation";
 export function startBackgroundTimers(
   deps: Parameters<typeof createCoordinatorTick>[0] & {
     config: ServerConfig;
+    inputs?: import("../attachments/input-storage").InputStorage;
     maintenance: Maintenance;
     log: ServerLog;
     outbox: OutboxDispatcher;
@@ -26,6 +27,7 @@ export function startBackgroundTimers(
     start(
       60_000,
       async () => {
+        await deps.inputs?.reconcile();
         await deps.store.binaryOutputs.prune(new Date());
         const { deleted, skipped } = await persistence.pruneExpired();
         if (deleted > 0 || skipped > 0) log(`retention: deleted=${deleted} skipped=${skipped}`);

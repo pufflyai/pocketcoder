@@ -1,4 +1,8 @@
-import { type AttachmentDescriptor, AttachmentDescriptorSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  type AttachmentDescriptor,
+  type InputObjectReference,
+  InputObjectReferenceSchema,
+} from "@pstdio/pocketcoder-contracts";
 import type { PocketCoderTransport } from "../../transport/transport";
 
 export { splitAttachmentManifest } from "@pstdio/pocketcoder-contracts";
@@ -12,6 +16,7 @@ export interface AttachmentUploadInput {
   mediaType?: string;
   body: UploadBody;
   sizeBytes: number;
+  sha256?: string;
   signal?: AbortSignal;
   onProgress?: (uploadedBytes: number, totalBytes: number) => void;
 }
@@ -45,8 +50,16 @@ function progressStream(
 export class AttachmentsApi {
   constructor(private readonly transport: PocketCoderTransport) {}
 
-  async upload(workspaceId: string, input: AttachmentUploadInput): Promise<AttachmentDescriptor> {
+  async upload(workspaceId: string, input: AttachmentUploadInput): Promise<InputObjectReference> {
     const id = (input.id ?? crypto.randomUUID()).toLowerCase();
+    let sha256 = input.sha256;
+    if (!sha256) {
+      if (input.body instanceof ReadableStream)
+        throw new Error("Stream uploads require sha256 before body consumption.");
+      const digest = await crypto.subtle.digest("SHA-256", await new Response(input.body).arrayBuffer());
+      sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error("sha256 must be 64 lowercase hexadecimal characters.");
     const body = input.onProgress ? progressStream(input.body, input.sizeBytes, input.onProgress) : input.body;
     const init: RequestInit & { duplex?: "half" } = {
       method: "PUT",
@@ -55,13 +68,14 @@ export class AttachmentsApi {
         "content-type": input.mediaType ?? "application/octet-stream",
         "content-disposition": contentDisposition(input.name),
         "content-length": String(input.sizeBytes),
+        "x-content-sha256": sha256,
       },
       body,
       ...(body instanceof ReadableStream ? { duplex: "half" as const } : {}),
     };
     return await this.transport.request(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/attachments/${id}`,
-      AttachmentDescriptorSchema,
+      InputObjectReferenceSchema,
       init,
     );
   }

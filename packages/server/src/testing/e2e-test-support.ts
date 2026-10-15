@@ -1,8 +1,8 @@
 import { expect } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { type InputObjectReference, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 
 // A free port for the harness, reserved briefly so parallel or aborted runs
@@ -17,7 +17,7 @@ function freePort(): number {
 const HARNESS_PORT = freePort();
 
 export const HARNESS_SCRIPT = `
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 if (process.env.HARNESS_ENV_PATH) {
   await Bun.write(process.env.HARNESS_ENV_PATH, JSON.stringify({
     source: process.env.POCKETCODER_SOURCE ?? null,
@@ -60,15 +60,14 @@ Bun.serve({
 });
 `;
 
-// Uploads an attachment through the streaming API: the real supervisor
-// stores it under $HOME/.pcd/attachments, an identical retry is idempotent,
-// and a message referencing the ID reaches the harness with the generated
-// manifest and no attachment_ids.
+// Real HTTP staging must leave workload files outside canonical authority.
 export async function verifyAttachmentFlow(
   baseUrl: string,
   workspaceId: string,
   authHeaders: Record<string, string>,
   home: string,
+  root: string,
+  store: Store,
 ): Promise<void> {
   const attachmentId = randomUUID();
   const payload = "attachment payload for e2e";
@@ -79,54 +78,59 @@ export async function verifyAttachmentFlow(
       "content-type": "text/plain",
       "content-disposition": 'attachment; filename="notes.txt"',
       "content-length": String(payload.length),
+      "x-content-sha256": createHash("sha256").update(payload).digest("hex"),
     },
     body: payload,
   };
   const uploadUrl = `${baseUrl}/v1/workspaces/${workspaceId}/attachments/${attachmentId}`;
   const uploaded = await fetch(uploadUrl, uploadInit);
   expect(uploaded.status).toBe(201);
-  const descriptor = (await uploaded.json()) as { path: string; sha256: string };
-  expect(descriptor.path).toBe(join(home, ".pcd", "attachments", attachmentId, "notes.txt"));
-  expect(await Bun.file(descriptor.path).text()).toBe(payload);
-
+  const reference = (await uploaded.json()) as InputObjectReference;
+  expect(reference).toMatchObject({ workspaceId, fileId: attachmentId, visibility: "ready" });
+  expect(reference).not.toHaveProperty("path");
+  const row = await store.inputs.get(workspaceId, attachmentId);
+  if (!row) throw new Error("Expected a durable input descriptor.");
+  const canonical = join(root, workspaceId, attachmentId, row.reservationId, "payload");
+  expect(await Bun.file(canonical).text()).toBe(payload);
+  const workloadDirectory = join(home, ".pcd", "attachments", attachmentId);
+  expect(await Bun.file(join(workloadDirectory, "notes.txt")).exists()).toBe(false);
+  await mkdir(workloadDirectory, { recursive: true });
+  await writeFile(join(workloadDirectory, "notes.txt"), "forged workload bytes");
+  await writeFile(join(workloadDirectory, ".metadata.json"), JSON.stringify({ sha256: "forged" }));
   const retried = await fetch(uploadUrl, uploadInit);
   expect(retried.status).toBe(200);
-  expect(((await retried.json()) as { sha256: string }).sha256).toBe(descriptor.sha256);
+  expect(await retried.json()).toEqual(reference);
+  expect(await Bun.file(canonical).text()).toBe(payload);
 
   const attached = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/agent/message`, {
     method: "POST",
     headers: authHeaders,
-    body: JSON.stringify({
-      type: "user",
-      content: "read the attachment",
-      attachment_ids: [attachmentId],
-    }),
+    body: JSON.stringify({ type: "user", content: "read the attachment", attachment_ids: [attachmentId] }),
   });
-  expect(attached.status).toBe(200);
-  const manifestMessage = await waitFor(
-    async () => {
-      const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/services/agent/messages`, {
-        headers: authHeaders,
-      });
-      if (!res.ok) return null;
-      const body = (await res.json()) as { messages: Array<{ content: string }> };
-      return body.messages.find((m) => m.content.includes("<pocketcoder-attachments>"));
-    },
-    10_000,
-    "manifest-bearing message",
-  );
-  expect(manifestMessage.content).toContain(descriptor.path);
-  expect(manifestMessage.content).not.toContain("attachment_ids");
+  expect(attached.status).toBe(409);
+  expect(await attached.json()).toMatchObject({ error: { code: "attachment.unsupported" } });
+  const messages = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/services/agent/messages`, {
+    headers: authHeaders,
+  });
+  expect((await messages.json()) as unknown).toMatchObject({
+    messages: [
+      { role: "user", content: "hello agent" },
+      { role: "agent", content: "echo: hello agent" },
+    ],
+  });
+  const plain = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/agent/message`, {
+    method: "POST",
+    headers: authHeaders,
+    body: JSON.stringify({ type: "user", content: "plain followup" }),
+  });
+  expect(plain.status).toBe(200);
   await waitFor(
     async () => {
-      const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/conversation`, {
-        headers: authHeaders,
-      });
-      if (!res.ok) return null;
-      return ((await res.json()) as { items: unknown[] }).items.length >= 4;
+      const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/conversation`, { headers: authHeaders });
+      return ((await res.json()) as { items: unknown[] }).items.length === 4;
     },
     10_000,
-    "attachment turn in the durable conversation",
+    "plain followup in durable conversation",
   );
 }
 

@@ -4,6 +4,7 @@ import { createAccessTables } from "./access";
 import { createActivityTables } from "./activity";
 import { createBinaryOutputTables } from "./binary-outputs";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
+import { createInputTables } from "./inputs";
 import { createLeaseTables } from "./leases";
 import { createPersistenceTables } from "./persistence";
 import { createSecretTables } from "./secrets";
@@ -26,6 +27,7 @@ export function createSchema(schema?: string) {
     ...createActivityTables(table, workspaces, access),
     ...persistence,
     ...reservations,
+    ...createInputTables(table, access, workspaces, reservations),
     ...createBinaryOutputTables(table, access, workspaces, reservations),
     ...createCheckpointTransferTables(table, access, workspaces, persistence, reservations),
     ...createTransferControllerTable(table),
@@ -58,5 +60,7 @@ export const {
   workspaceOperations,
   checkpointTransfers,
   storageReservations,
+  inputObjects,
+  inputManifests,
   controllerState,
 } = createSchema();

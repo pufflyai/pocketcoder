@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
 import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
-import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
+import { FilesystemInputStorage, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { supervise } from "@pstdio/pocketcoder-supervisor";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
@@ -80,7 +80,26 @@ describe("end-to-end workspace lifecycle", () => {
         type: "setup-issuer",
         value: { url: issuer.url, authorization: issuer.authorization, policy: issuer.policy },
       });
+      const inputRoot = await mkdtemp(join(tmpdir(), "pc-e2e-trusted-inputs-"));
+      cleanups.push(() => rm(inputRoot, { recursive: true, force: true }));
       const built = buildServer({
+        inputStorageOptions: {
+          driver: new FilesystemInputStorage(inputRoot, [dir]),
+          limits: {
+            fileBytes: 1048576,
+            stagedBytes: 8388608,
+            files: 16,
+            transfers: 2,
+            transferMs: 30000,
+            retentionMs: 600000,
+          },
+          capacity: async () => ({
+            workspace: { bytes: 8388608, files: 16 },
+            principal: { bytes: 8388608, files: 16 },
+            instance: { bytes: 8388608, files: 16 },
+            freeDisk: { bytes: 16777216, files: 32, headroomBytes: 0, headroomFiles: 0 },
+          }),
+        },
         store,
         driver,
         storageDriver,
@@ -129,8 +148,7 @@ describe("end-to-end workspace lifecycle", () => {
       expect(driver.created[0]?.secrets).toEqual([]);
 
       // 3. Start the real supervisor with the provider input, pointed
-      // at the real WSS endpoint. HOME points at the test directory so
-      // supervisor-owned attachment storage stays inside the sandbox.
+      // at the real WSS endpoint. HOME is separate from canonical input storage.
       const originalHome = process.env.HOME;
       process.env.HOME = dir;
       cleanups.push(() => {
@@ -194,8 +212,8 @@ describe("end-to-end workspace lifecycle", () => {
       ]);
       expect(conversation.map(({ seq }) => seq)).toEqual([1, 2]);
 
-      // 5b. Attachments flow end-to-end through the real supervisor.
-      await verifyAttachmentFlow(baseUrl, ws.id, authHeaders, dir);
+      // 5b. HTTP staging stays outside workload authority, and dispatch fails closed.
+      await verifyAttachmentFlow(baseUrl, ws.id, authHeaders, dir, inputRoot, store);
 
       // 6. Undeclared routes stay rejected even on a live workspace.
       const forbidden = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/admin`, {
