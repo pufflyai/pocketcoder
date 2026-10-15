@@ -205,6 +205,8 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned", "restart"])(
       }
       if (ending === "restart") {
         await docker("restart", "--signal=KILL", container);
+        // Registration proves the new supervisor installed its signal handlers before cleanup.
+        await waitFor(async () => seq === 2);
         const restarted = await driver.inspect(ref);
         expect(restarted.running).toBe(true);
         expect(await docker("inspect", "--format", "{{.Id}} {{.RestartCount}}", container)).toBe(`${container} 0`);
