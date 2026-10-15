@@ -161,9 +161,7 @@
     "name": "20260922062201_brave_the_spike"
   },
   {
-    "sql": [
-      "ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"
-    ],
+    "sql": ["ALTER TABLE \"machine_keys\" ADD COLUMN \"template_names\" text[];"],
     "bps": true,
     "folderMillis": 1791218323000,
     "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155",
@@ -233,9 +231,7 @@
     "name": "20261009131616_small_purple_man"
   },
   {
-    "sql": [
-      "ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"
-    ],
+    "sql": ["ALTER TABLE \"checkpoint_controller_state\" ADD COLUMN \"journal\" jsonb;"],
     "bps": true,
     "folderMillis": 1791593063000,
     "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f",
