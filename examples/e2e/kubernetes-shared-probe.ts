@@ -8,6 +8,7 @@ import { PGliteStore } from "@pstdio/pocketcoder-db";
 import { FilesystemInputStorage, KubernetesDriver, KubernetesSharedStorage } from "@pstdio/pocketcoder-drivers";
 import type { InputProjectionRef, ProviderRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { measureSharedCapacity } from "./kubernetes-shared-capacity";
+import { diagnoseSharedPods } from "./kubernetes-shared-diagnostics";
 import { crashAndRestartPublisher, resumePublisher } from "./kubernetes-shared-publisher";
 
 const namespace = "pc-shared";
@@ -325,9 +326,7 @@ try {
     }),
   );
 } catch (error) {
-  const pods = JSON.parse(await kube(["get", "pods", "-o", "json"]));
-  for (const pod of pods.items)
-    console.error(JSON.stringify({ metadata: pod.metadata, status: pod.status.containerStatuses }));
+  await diagnoseSharedPods(kube);
   throw error;
 } finally {
   for (const { driver: runtime, ref } of active) {
