@@ -180,6 +180,11 @@ digest, syncs publication and commits readiness only after bytes are durable.
 Lost or corrupt canonical storage marks an input unavailable and blocks dispatch.
 Restore requires new staging references. Retention cannot remove pinned inputs;
 finalization releases pins, then the unreferenced retention clock applies.
-Read-only projection enforcement is delivered by the driver tickets. Until it is
-installed, attachment-bearing legacy messages are rejected. See
+Docker's optional daemon-host publisher enforces read-only projections from
+container creation. It checks resolved mount evidence and rejects nested mounts,
+backing aliases and image target aliases. Canonical roots and receipts stay outside
+all workload mounts. Publication requires verified pinned objects and a complete
+atomic copy. Kubernetes projection and operation dispatch fencing remain separate
+owners; attachment-bearing legacy messages are rejected until those owners are
+installed. See
 [immutable input storage](input-storage.md) for configuration, retries and recovery.

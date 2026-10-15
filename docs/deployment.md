@@ -78,6 +78,16 @@ docker build -t pocketcoder-workspace:dev deploy/image
 
 ## Docker compose
 
+Immutable inputs require the optional daemon-host publisher in
+[input storage](input-storage.md#docker-projection). Set its private root and
+explicit copy limits in `POCKETCODER_INPUT_STORAGE.projection`. Mount the root
+into the controller at its identical host path. Workspaces receive only their
+fresh directory at `/run/pocketcoder/inputs`, read-only from creation. Keep writable
+work/output roots separate. The driver rejects aliases, parent/nested mounts and
+unavailable daemon-host access. A schema declaration alone does not enable the
+capability. The pinned trusted helper and Docker PID namespace support are required;
+this setting does not enable Kubernetes projections or warm-pool projections.
+
 [`deploy/compose/docker-compose.yaml`](../deploy/compose/docker-compose.yaml)
 runs RustFS for local S3-compatible object storage. The `full` profile also runs
 the server with an embedded PGlite database. For a full containerized control
