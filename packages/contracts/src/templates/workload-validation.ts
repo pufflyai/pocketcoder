@@ -32,7 +32,9 @@ function validateProfile(spec: Spec, issue: Issue) {
     issue(["services"], "service profile requires declared transport");
   if (
     spec.profile === "finite-process" &&
-    (operations.length !== 1 || spec.adapters[operations[0]?.adapter ?? ""]?.kind !== "process")
+    (operations.length !== 1 ||
+      !Object.hasOwn(spec.adapters, operations[0]?.adapter ?? "") ||
+      spec.adapters[operations[0]?.adapter ?? ""]?.kind !== "process")
   ) {
     issue(["operations"], "finite-process requires one process operation");
   }
@@ -53,7 +55,7 @@ function validateAdapters(spec: Spec, issue: Issue) {
   for (const [name, adapter] of Object.entries(spec.adapters)) {
     const path = ["adapters", name];
     if (adapter.kind === "service") {
-      if (!adapter.service || !spec.services[adapter.service] || adapter.command)
+      if (!adapter.service || !Object.hasOwn(spec.services, adapter.service) || adapter.command)
         issue(path, "service adapters require a declared service and no process command");
     } else if (!adapter.command || adapter.service) {
       issue(path, "process, Pi and AgentAPI adapters require a command and no service reference");
@@ -77,7 +79,8 @@ function validateProcessEnvironment(spec: Spec, issue: Issue) {
 function validateEnv(spec: Spec, env: Record<string, string>, path: string[], issue: Issue) {
   for (const [key, value] of Object.entries(env)) {
     if (value.startsWith("credentialSlot:")) {
-      if (!spec.credentialSlots[value.slice(15)]) issue([...path, "env", key], "unknown credential slot");
+      if (!Object.hasOwn(spec.credentialSlots, value.slice(15)))
+        issue([...path, "env", key], "unknown credential slot");
     } else if ((SECRET_ENV_PATTERN.test(key) && value !== "") || value.startsWith("secretRef:")) {
       issue([...path, "env", key], "runtime credentials require a credentialSlot: reference");
     }
@@ -89,7 +92,7 @@ function validateEnv(spec: Spec, env: Record<string, string>, path: string[], is
 
 function validateOperations(spec: Spec, issue: Issue) {
   for (const [name, operation] of Object.entries(spec.operations)) {
-    const adapter = spec.adapters[operation.adapter];
+    const adapter = Object.hasOwn(spec.adapters, operation.adapter) ? spec.adapters[operation.adapter] : undefined;
     if (!adapter) issue(["operations", name, "adapter"], "operation must name a pinned adapter");
     if (spec.profile === "cloud-interactive" && adapter?.kind === "process")
       issue(["operations", name], "cloud-interactive requires request-aware adapters");

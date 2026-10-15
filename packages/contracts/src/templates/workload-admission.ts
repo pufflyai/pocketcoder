@@ -64,11 +64,14 @@ export function workloadAdmission(parsed: ReturnType<typeof parseWorkloadTemplat
 function operationSupport(spec: WorkloadTemplate["spec"], installed: InstalledWorkload) {
   const reasons: string[] = [];
   for (const [name, operation] of Object.entries(spec.operations)) {
-    const declared = spec.adapters[operation.adapter];
-    const producer = installed.adapters[operation.adapter];
+    const declared = Object.hasOwn(spec.adapters, operation.adapter) ? spec.adapters[operation.adapter] : undefined;
+    const producer = Object.hasOwn(installed.adapters, operation.adapter)
+      ? installed.adapters[operation.adapter]
+      : undefined;
     if (
+      !declared ||
       !producer ||
-      producer.digest !== declared?.digest ||
+      producer.digest !== declared.digest ||
       producer.protocol !== declared.protocol ||
       producer.kind !== declared.kind
     ) {
