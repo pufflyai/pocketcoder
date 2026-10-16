@@ -640,9 +640,11 @@ acknowledged. A lost acknowledgment is retried from the durable terminal record.
 
 Cancel accepts `{execution, cancelId, scope: "operation"}`. An undispatched
 operation settles without spawn. A dispatched finite process receives TERM at its
-owned process group, followed by KILL after the template's existing terminate
-grace. Repeating cancel preserves its identity and target. A terminal operation
-wins over a late cancel. Workspace cancellation still stops the workspace and its
+owned process group, followed by KILL within the canonical template's
+`limits.finalizationSeconds` bound, measured from accepted cancellation. Repeating cancel preserves its identity and target. A terminal operation
+wins over a late cancel. The terminal process receipt waits until group writers
+stop, including after ordinary leader exit, while preserving the exact leader
+exit result. Workspace cancellation still stops the workspace and its
 services; operation cancel does not stop workspace-lived infrastructure or certify
 revocation of an external service call.
 

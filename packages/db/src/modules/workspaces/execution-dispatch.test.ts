@@ -22,6 +22,7 @@ test.each([1, 5, 20])(
       ).rejects.toThrow("fingerprint");
       const cancel = { execution: input.execution, cancelId: randomUUID(), scope: "operation" as const };
       expect((await f.store.executions.cancel(cancel, new Date())).phase).toBe("canceled");
+      expect((await f.store.inputs.getManifest(input.execution.requestId))?.finalizedAt).toBeInstanceOf(Date);
       expect(await f.store.executions.claim(input.execution, new Date())).toBeNull();
     } finally {
       await f.dispose();
@@ -45,7 +46,7 @@ test("dispatch claim persists before send and loss never replays to another inca
   }
 });
 
-test("accepted and canceled intent and input pins survive controller restart", async () => {
+test("accepted and canceled intent and finalized input receipts survive controller restart", async () => {
   const f = await executionFixture(undefined, { mode: "disk" });
   try {
     const input = f.acceptance();

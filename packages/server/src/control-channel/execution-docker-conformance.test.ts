@@ -137,3 +137,48 @@ async function cancelDuringPublication(f: Awaited<ReturnType<typeof dockerExecut
     f.driver.publishInputs = original;
   }
 }
+
+test.skipIf(!available)(
+  "Docker cancellation stops descendants after their leader exits",
+  async () => {
+    const f = await dockerExecutionFixture(
+      [
+        "/bin/sh",
+        "-c",
+        "(trap '' TERM; touch /tmp/child-ready; while :; do sleep 1; done) >/dev/null 2>&1 & echo $! > /tmp/child-pid; wait",
+      ],
+      1,
+    );
+    try {
+      const a = await f.prepare(false);
+      await f.store.executions.accept(a.acceptance, new Date());
+      await f.executionDispatcher.tick();
+      await f.waitFor(
+        async () =>
+          Bun.spawnSync(["docker", "exec", a.ref.id, "test", "-f", "/tmp/child-ready"], {
+            stdout: "ignore",
+            stderr: "ignore",
+          }).exitCode === 0,
+      );
+      const child = Bun.spawnSync(["docker", "exec", a.ref.id, "cat", "/tmp/child-pid"]).stdout.toString().trim();
+      await f.store.executions.cancel(
+        { execution: a.acceptance.execution, cancelId: randomUUID(), scope: "operation" },
+        new Date(),
+      );
+      await f.executionDispatcher.tick();
+      await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "terminal");
+      const stopped = Bun.spawnSync(["docker", "exec", a.ref.id, "cat", `/proc/${child}/stat`], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (stopped.exitCode === 0) {
+        const stat = stopped.stdout.toString();
+        expect(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]).toBe("Z");
+      } else expect(stopped.stderr.toString()).toContain("No such file or directory");
+      expect((await f.store.getWorkspace(a.workspace.id))?.finiteProcess?.signal).toBe("SIGTERM");
+    } finally {
+      await f.dispose();
+    }
+  },
+  30_000,
+);

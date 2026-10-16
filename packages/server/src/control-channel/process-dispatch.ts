@@ -3,7 +3,6 @@ import {
   EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION,
   type ExecutionRecord,
   executionSettled,
-  parseDurationMs,
 } from "@pstdio/pocketcoder-contracts";
 import type { ExecutionTransport, Store, WorkspaceDriver, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { InputStorage } from "../attachments/input-storage";
@@ -59,14 +58,17 @@ export function processTransport(deps: {
   };
   async function sendCancel(record: ExecutionRecord, workspace: WorkspaceRow) {
     if (!record.cancel) throw new Error("Cancel intent missing");
+    const template = workspace.runtimeRegistration?.template;
+    if (!template) throw new Error("Accepted execution template missing");
+    const graceMs = Math.max(
+      0,
+      template.manifest.spec.limits.finalizationSeconds * 1000 - (Date.now() - Date.parse(record.cancel.requestedAt)),
+    );
     deps.hub.send(connection(workspace), "process_cancel", {
       execution: record.acceptance.execution,
       cancelId: record.cancel.cancelId,
-      signal:
-        Date.now() - Date.parse(record.cancel.requestedAt) >=
-        parseDurationMs(workspace.templateSnapshot.spec.timeouts.terminateGrace)
-          ? "SIGKILL"
-          : "SIGTERM",
+      signal: graceMs === 0 ? "SIGKILL" : "SIGTERM",
+      graceMs,
     });
   }
 }

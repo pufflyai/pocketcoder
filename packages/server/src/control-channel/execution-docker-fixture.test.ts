@@ -24,12 +24,12 @@ import { execSpecOf } from "./ws-auth";
 import { handleConnectedFrame } from "./ws-frame-handler";
 
 export const executionDockerImage = "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895";
-export async function dockerExecutionFixture(command?: string[]) {
+export async function dockerExecutionFixture(command?: string[], finalizationSeconds?: number) {
   const f = await createPGliteFixture("execution-docker", "disk");
   const root = await realpath(await mkdtemp(join(tmpdir(), "pc129-installed-")));
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "pc129-private-")));
   await chmod(root, 0o755);
-  const { digest, source, snapshot } = await installedFixture(root, command);
+  const { digest, source, snapshot } = await installedFixture(root, command, finalizationSeconds);
   const storage = new FilesystemInputStorage(join(privateRoot, "canonical"), []);
   const driver = new DockerDriver({
     inputDir: join(privateRoot, "launch"),
@@ -41,8 +41,7 @@ export async function dockerExecutionFixture(command?: string[]) {
       capacity: { bytes: 16_777_216, files: 256 },
     },
   });
-  const built = buildServer({
-    store: f.store,
+  const serverOptions = {
     driver,
     pepper: "fixture-pepper",
     limits: { ...DEFAULT_LIMITS, globalActiveWorkspaces: 20 },
@@ -64,7 +63,8 @@ export async function dockerExecutionFixture(command?: string[]) {
         freeDisk: { bytes: 1_073_741_824, files: 4096, headroomBytes: 0, headroomFiles: 0 },
       }),
     },
-  });
+  };
+  const built = buildServer({ ...serverOptions, store: f.store });
   const refs: ProviderRef[] = [];
   const { server, drain } = runtimeServer(f, built);
   const waitFor = async (predicate: () => Promise<boolean>) => {
@@ -215,6 +215,7 @@ export async function dockerExecutionFixture(command?: string[]) {
     ...built,
     driver,
     prepare,
+    serverOptions,
     waitFor,
     producerDigest: digest,
     async dispose() {
@@ -296,7 +297,7 @@ function runtimeServer(f: Awaited<ReturnType<typeof createPGliteFixture>>, built
   return { server, drain: () => pipeline };
 }
 
-async function installedFixture(root: string, command?: string[]) {
+async function installedFixture(root: string, command?: string[], finalizationSeconds?: number) {
   const compiled = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "../../../supervisor/src/index.ts")],
     outdir: root,
@@ -316,6 +317,7 @@ async function installedFixture(root: string, command?: string[]) {
     `const dir=process.env.POCKETCODER_INPUT_DIRECTORY;if(dir){const manifest=await Bun.file(dir+'/manifest.json').json();if(manifest.objects.length!==1)process.exit(8);const id=manifest.objects[0].fileId;if(await Bun.file(dir+'/'+id).text()!=='pinned-input')process.exit(9);}process.exit(7);`,
   ];
   if (command) source.spec.adapters.main.command = command;
+  if (finalizationSeconds !== undefined) source.spec.limits.finalizationSeconds = finalizationSeconds;
   const snapshot = workloadSnapshotOf(parseWorkloadTemplate(source));
   return { digest, source, snapshot };
 }

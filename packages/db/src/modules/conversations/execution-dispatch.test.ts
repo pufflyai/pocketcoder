@@ -38,6 +38,7 @@ test("conversation dispatch preserves request identities and fences late cancel 
     await expect(f.store.executions.accept(b, new Date(), bIdentity)).rejects.toThrow("finalization");
     await f.store.executions.acknowledge(a.execution, a.fingerprint, new Date());
     await f.store.executions.finalize(a.execution, new Date());
+    expect((await f.store.inputs.getManifest(a.execution.requestId))?.finalizedAt).toBeInstanceOf(Date);
     await f.store.executions.accept(b, new Date(), bIdentity);
     expect(
       (
@@ -110,7 +111,8 @@ test("purge clears execution input and outcome data while preserving conversatio
     await f.store.executions.observe(input.execution, input.fingerprint, "terminal", 1, new Date(), {
       privateResult: "delete-me",
     });
-    await f.store.inputs.finalize(input.execution.requestId, new Date());
+    await f.store.executions.acknowledge(input.execution, input.fingerprint, new Date());
+    await f.store.executions.finalize(input.execution, new Date());
     await f.context.db
       .update(f.context.tables.workspaces)
       .set({ purgeRequestedAt: new Date() })

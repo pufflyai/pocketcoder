@@ -182,7 +182,11 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     inspect: (workspace) => driver.inspect({ kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef }),
   });
   const persistence = new PersistenceService({
-    purgeInputs: (id) => inputs?.purge(id) ?? assertNoStoredInputs(store, id),
+    purgeInputs: async (id) => {
+      // Persistence purge has fenced admission and proved provider termination.
+      await store.inputs.finalizeForPurge(id, new Date());
+      await (inputs?.purge(id) ?? assertNoStoredInputs(store, id));
+    },
     store,
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
     scheduler,

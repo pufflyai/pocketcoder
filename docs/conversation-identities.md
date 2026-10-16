@@ -164,3 +164,8 @@ A late cancel returns the terminal record. The next conversation request waits f
 acknowledgment and the separate finalization barrier. Unknown or lost operations
 keep that barrier closed. Legacy `/agent/interrupt` remains a workspace-scoped
 operator action; it is never used to cancel an identified execution.
+
+Input pins release when an undispatched request is canceled or when execution
+finalization follows terminal acknowledgment. Unknown or lost work keeps its pins
+until workspace purge verifies provider termination. Failed termination and a
+controller restart before pin release leave purge retryable.

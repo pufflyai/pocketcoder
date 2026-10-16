@@ -51,6 +51,8 @@ export interface InputStore {
   ): Promise<InputManifestRow>;
   getManifest(id: string): Promise<InputManifestRow | null>;
   finalize(id: string, at: Date): Promise<void>;
+  // Purge calls this only after proving all workspace providers stopped.
+  finalizeForPurge(workspaceId: string, at: Date): Promise<void>;
   beginRelease(workspaceId: string, fileId: string, reservationId: string, at: Date): Promise<boolean>;
   release(workspaceId: string, fileId: string, reservationId: string): Promise<void>;
 }

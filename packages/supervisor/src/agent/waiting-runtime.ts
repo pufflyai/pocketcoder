@@ -1,4 +1,11 @@
-import type { AgentFrame, ExecSpec, ProcessReference, ProviderInput, ServerFrame } from "@pstdio/pocketcoder-contracts";
+import {
+  type AgentFrame,
+  type ExecSpec,
+  type ProcessReference,
+  type ProviderInput,
+  parseDurationMs,
+  type ServerFrame,
+} from "@pstdio/pocketcoder-contracts";
 import { enforcedEnvironment } from "../bootstrap/supervisor-utils";
 import type { SupervisorLogs } from "../observability/supervisor-logs";
 import { FiniteProcess } from "./finite-process";
@@ -27,6 +34,7 @@ export class WaitingRuntime {
         send("finite_process", fact);
       },
       logs.pump.bind(logs),
+      parseDurationMs(exec.timeouts.terminateGrace),
     );
     this.resend = setInterval(() => {
       if (this.pending) this.process.replay();
@@ -83,7 +91,12 @@ export class WaitingRuntime {
         this.send("process_cancel_result", {
           execution: frame.payload.execution,
           cancelId: frame.payload.cancelId,
-          status: this.process.cancelOperation(frame.payload.execution, frame.payload.cancelId, frame.payload.signal),
+          status: this.process.cancelOperation(
+            frame.payload.execution,
+            frame.payload.cancelId,
+            frame.payload.signal,
+            frame.payload.graceMs,
+          ),
         });
         this.process.replay();
         return true;

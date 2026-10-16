@@ -12,6 +12,8 @@ import {
 import { eq, isNotNull } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { finalizeInputManifest } from "../persistence/inputs/finalize";
+import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { acceptExecution } from "./execution-acceptance";
 import { requireExecutionPrincipal } from "./execution-authority";
 import { requireExecutionInputs } from "./execution-inputs";
@@ -28,6 +30,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
     task: (tx: Transaction, workspace: typeof workspaces.$inferSelect, record: ExecutionRecord) => Promise<T>,
   ) {
     return db.transaction(async (tx) => {
+      await lockStorageCapacity(context, tx);
       const [workspace] = await tx
         .select()
         .from(workspaces)
@@ -95,6 +98,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
           ...(record.dispatchClaimedAt ? {} : { phase: "canceled", settledAt: at.toISOString() }),
         };
         await writeExecution(context, tx, next);
+        if (!record.dispatchClaimedAt) await finalizeInputManifest(context, tx, input.execution.requestId, at);
         return next;
       });
     },
@@ -133,6 +137,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
       return withOwner(execution, async (tx, _workspace, record) => {
         if (!executionSettled(record) || ["unknown", "lost"].includes(record.phase) || needsAcknowledgment(record))
           executionConflict("Unsettled execution cannot pass finalization.");
+        await finalizeInputManifest(context, tx, execution.requestId, at);
         await writeExecution(context, tx, { ...record, finalizedAt: record.finalizedAt ?? at.toISOString() });
       });
     },

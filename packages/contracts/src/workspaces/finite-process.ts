@@ -49,6 +49,7 @@ export const ProcessTargetPayload = z.strictObject({ execution: ProcessReference
 export const ProcessCancelPayload = ProcessTargetPayload.extend({
   cancelId: z.uuid(),
   signal: z.enum(["SIGTERM", "SIGKILL"]),
+  graceMs: z.number().int().nonnegative(),
 });
 
 export const ProcessCancelResultPayload = ProcessTargetPayload.extend({
