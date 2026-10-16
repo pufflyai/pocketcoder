@@ -4,6 +4,7 @@ import { createPurgeAuthority, type PurgeAuthority, type PurgeAuthorityConfig } 
 import { guardedStore } from "../purge/guarded-store";
 import type { PurgeIntent } from "../purge/intent";
 import { purgeReconciliation } from "../purge/reconciliation";
+import { requireExistingSource } from "../recovery/source-transfer";
 import { assertManagerInstallation } from "../recovery/writer";
 import { upgradeRepository } from "../upgrade/repository";
 import { usageRepository } from "../usage/repository";
@@ -28,6 +29,7 @@ export function managerRepositories(context: ManagerContext) {
 }
 export const ManagerStore = {
   async create(dataDir?: string, purgeConfig?: PurgeAuthorityConfig) {
+    if (dataDir && purgeConfig?.source?.migrationFile) requireExistingSource(dataDir);
     if (dataDir && existsSync(join(dataDir, "RECOVERY.json")))
       throw new Error("Manager recovery must complete before admission.");
     const context = await managerContext(dataDir);
