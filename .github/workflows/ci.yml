@@ -110,6 +110,10 @@ jobs:
         id: setup
         with:
           cache: unit-${{ matrix.shard }}
+      - name: Prepare runner storage before embedded database tests
+        run: |
+          time sync
+          cat packages/db/assets/pglite.wasm.zst packages/db/assets/pglite.data.zst packages/db/assets/core-seed.tar.zst > /dev/null
       - name: Prepare and verify the Kubernetes client
         if: contains(fromJSON(needs.plan.outputs.projects), '@pstdio/pocketcoder-manager')
         run: |
