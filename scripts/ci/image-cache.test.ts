@@ -5,6 +5,10 @@ test("local builds keep the normal Docker command", () => {
   expect(imageBuildCommand("server", "amd64", false, false)).toEqual(["docker", "build"]);
 });
 
+test.each(["desktop", "browser"])("%s uses the Docker builder that can see its host-loaded workspace base", (role) => {
+  expect(imageBuildCommand(role, "arm64", true, false)).toEqual(["docker", "build", "--builder", "default"]);
+});
+
 test("queue builds can restore layers without publishing shared cache results", () => {
   const args = imageBuildCommand("server", "arm64", true, false);
   expect(args).toContain("--load");
