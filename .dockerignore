@@ -4,6 +4,7 @@ node_modules
 deploy/image/dist
 O-37
 .git
+.nx
 .pstdio
 out
 **/.env

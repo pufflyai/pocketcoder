@@ -41,22 +41,7 @@ export {
 } from "./common/errors";
 export { CursorPageSchema, CursorQuerySchema, CursorSchema } from "./common/pagination";
 export { hasScope, isScope, SCOPES, type Scope } from "./common/scopes";
-export {
-  CONVERSATION_RESUME_REASONS,
-  CONVERSATION_ROLES,
-  ConversationListQuerySchema,
-  type ConversationMessageInput,
-  ConversationMessageInputSchema,
-  type ConversationMessageResource,
-  ConversationMessageResourceSchema,
-  ConversationMetadataSchema,
-  ConversationPageSchema,
-  ConversationResumeOutcomeSchema,
-  type ConversationResumeReason,
-  type ConversationRole,
-} from "./conversations/conversation";
-export { type ConversationFact, ConversationFactSchema } from "./conversations/facts";
-export * from "./conversations/identity";
+export * from "./conversations";
 export { BROWSER_IMAGE_BYTES, BrowserFrames, browserFrameChunks } from "./displays/browser-frames";
 export {
   BROWSER_HEIGHT,
@@ -209,6 +194,7 @@ export {
   SourceResolvedPayload,
   SUPPORTED_PROTOCOL_VERSIONS,
   TerminationAckPayload,
+  WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol";
 export {
   CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
@@ -240,6 +226,7 @@ export {
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
+export { waitingExecSpec } from "./protocol/waiting-exec";
 export {
   type AccountPurgeCompletion,
   AccountPurgeCompletionSchema,
@@ -291,6 +278,7 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/finite-process";
 export * from "./workspaces/workload-operation";
 export {
   ADMISSION_REASONS,

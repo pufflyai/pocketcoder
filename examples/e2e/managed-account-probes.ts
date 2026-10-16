@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { createHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
+import { fetchForwarded } from "./forwarded-fetch";
 import type { createKubernetesCluster } from "./kubernetes-cluster";
 import { waitFor } from "./local-process";
 
 type Owner = { token: string; namespace: string; accountId: string; baseUrl: string };
-const request = (owner: Owner, path: string, options: RequestInit = {}) =>
-  fetch(`${owner.baseUrl}${path}`, {
+export const requestManagedAccount = (owner: Owner, path: string, options: RequestInit = {}) =>
+  fetchForwarded(`${owner.baseUrl}${path}`, {
     ...options,
     headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json", ...options.headers },
   });
@@ -16,7 +17,10 @@ function reachability(reach: string[], deny: string[]) {
   return `const{lookup}=await import('node:dns/promises');const reached=async(url)=>{try{await fetch(url,{signal:AbortSignal.timeout(3000),tls:{rejectUnauthorized:false}});return true}catch(error){return error.name!=='TimeoutError'}};for(const url of ${JSON.stringify(reach)})if(!(await reached(url)))throw new Error('Expected access: '+url);for(const url of ${JSON.stringify(deny)}){await lookup(new URL(url).hostname);if(await reached(url))throw new Error('Network access allowed: '+url)}console.log('${reach.length} reached; ${deny.length} denied by policy timeout')`;
 }
 export async function runManagedEcho(owner: Owner, manifest: unknown) {
-  const imported = await request(owner, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
+  const imported = await requestManagedAccount(owner, "/v1/templates", {
+    method: "POST",
+    body: JSON.stringify({ manifest }),
+  });
   if (!imported.ok) throw new Error(`Managed template refused: ${await imported.text()}`);
   const workspace = await createHarnessWorkspace({
     baseUrl: owner.baseUrl,
@@ -24,7 +28,7 @@ export async function runManagedEcho(owner: Owner, manifest: unknown) {
     template: "echo-harness",
   });
   const prompt = `managed ${randomUUID()}`;
-  const sent = await request(owner, `/v1/workspaces/${workspace.workspaceId}/agent/message`, {
+  const sent = await requestManagedAccount(owner, `/v1/workspaces/${workspace.workspaceId}/agent/message`, {
     method: "POST",
     body: JSON.stringify({ type: "user", content: prompt }),
   });
@@ -32,7 +36,9 @@ export async function runManagedEcho(owner: Owner, manifest: unknown) {
   await waitFor(
     async () =>
       responseText(
-        messageList(await (await request(owner, `/v1/workspaces/${workspace.workspaceId}/agent/messages`)).json()),
+        messageList(
+          await (await requestManagedAccount(owner, `/v1/workspaces/${workspace.workspaceId}/agent/messages`)).json(),
+        ),
         0,
       ) === `echo: ${prompt}`,
     30_000,
@@ -51,7 +57,7 @@ export async function assertManagedIsolation(
     (await fetch(`${two.baseUrl}/v1/templates`, { headers: { authorization: `Bearer ${one.token}` } })).status !== 401
   )
     throw new Error("Owner key crossed accounts");
-  if ((await request(two, `/v1/workspaces/${workspaceId}`)).status !== 404)
+  if ((await requestManagedAccount(two, `/v1/workspaces/${workspaceId}`)).status !== 404)
     throw new Error("Workspace crossed account boundary");
   const list = JSON.parse(
     await cluster.kube([
@@ -132,10 +138,11 @@ export async function assertManagedIsolation(
     if (pvc.status.phase !== "Bound" || pvc.spec.accessModes.join() !== "ReadWriteOnce")
       throw new Error("Private controller volume not bound");
   }
-  await request(one, `/v1/workspaces/${workspaceId}/cancel`, { method: "POST", body: "{}" });
+  await requestManagedAccount(one, `/v1/workspaces/${workspaceId}/cancel`, { method: "POST", body: "{}" });
   await waitFor(
     async () =>
-      ((await (await request(one, `/v1/workspaces/${workspaceId}`)).json()) as { state: string }).state === "canceled",
+      ((await (await requestManagedAccount(one, `/v1/workspaces/${workspaceId}`)).json()) as { state: string })
+        .state === "canceled",
     30_000,
     "managed workspace cleanup",
   );

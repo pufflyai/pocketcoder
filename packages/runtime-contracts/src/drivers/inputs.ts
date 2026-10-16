@@ -11,6 +11,15 @@ export interface InputProjectionRef {
   manifest: AcceptedInputManifest;
   objects: { reference: InputObjectReference; backing: InputBackingRef }[];
 }
+export interface PublishedInputProjection {
+  manifestId: string;
+  digest: string;
+  directory: string;
+}
+export interface InputProjectionStorage {
+  profile: "controller-readonly/v1" | "shared-writer-readonly/v1";
+  identity: string;
+}
 export interface InputByteWriter {
   write(bytes: Uint8Array): Promise<void>;
   publish(): Promise<void>;

@@ -6,6 +6,7 @@ import {
   type WorkspaceProviderState,
 } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
+import { instanceKind } from "./resources";
 
 export interface Machine {
   id: string;
@@ -89,6 +90,9 @@ export function createMachineProvider(getInstances = instancesFor) {
       const { instance, template, templateVersion } = input.params;
       if (typeof instance !== "string" || typeof template !== "string" || !template.trim())
         throw new Error("Choose an instance and agent template.");
+      await ctx.workspaces.addAnchors(input.workspaceId, [
+        { type: instanceKind.id, extensionId: ctx.extensionId, id: instance, role: "context" },
+      ]);
       const machine = await getInstances(ctx.projectId).request<Machine>(instance, "/v1/workspaces", {
         method: "POST",
         headers: { "Idempotency-Key": input.operationId },

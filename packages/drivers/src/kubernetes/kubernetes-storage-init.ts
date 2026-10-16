@@ -7,7 +7,10 @@ export function storageInitializer(
   mounts: RuntimeMountRef[],
   imagePullPolicy: "Always" | "IfNotPresent" | "Never",
 ) {
-  if (!mounts.length) return [];
+  const disposable = mounts
+    .map((mount, index) => ({ mount, index }))
+    .filter(({ mount }) => mount.source.kind === "empty-dir" && !mount.readOnly);
+  if (!disposable.length) return [];
   return [
     {
       name: "pocketcoder-storage",
@@ -19,7 +22,7 @@ export function storageInitializer(
         JSON.stringify({
           uid: spec.security.uid,
           gid: spec.security.gid,
-          targets: mounts.map((mount) => mount.target),
+          targets: disposable.map(({ mount }) => mount.target),
         }),
       ],
       resources: resourceRequirements({ cpu: "100m", memory: "64Mi", ephemeralStorage: "64Mi" }),
@@ -31,7 +34,7 @@ export function storageInitializer(
         readOnlyRootFilesystem: true,
         capabilities: { drop: ["ALL"], add: ["CHOWN", "FOWNER"] },
       },
-      volumeMounts: mounts.map((mount, index) => ({ name: `persistent-${index}`, mountPath: mount.target })),
+      volumeMounts: disposable.map(({ mount, index }) => ({ name: `persistent-${index}`, mountPath: mount.target })),
     },
   ];
 }

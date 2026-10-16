@@ -9,7 +9,12 @@ export function inputStorageOptions(config: ServerConfig): InputStorageOptions |
   if (!input) return;
   mkdirSync(input.root, { recursive: true, mode: 0o700 });
   const root = realpathSync(input.root);
-  const workloadRoots = [config.workspaceDataDir, config.inputDir]
+  const workloadRoots = [
+    config.workspaceDataDir,
+    config.inputDir,
+    input.projection?.root,
+    config.kubernetesSharedStorage?.root,
+  ]
     .filter((p): p is string => !!p)
     .map((path) => {
       mkdirSync(path, { recursive: true });
@@ -34,4 +39,14 @@ export function inputStorageOptions(config: ServerConfig): InputStorageOptions |
       };
     },
   };
+}
+
+export function dockerInputProjectionOptions(config: ServerConfig) {
+  const input = config.inputStorage;
+  if (!input?.projection) return;
+  const storage = new FilesystemInputStorage(input.root, [
+    input.projection.root,
+    ...[config.workspaceDataDir, config.inputDir].filter((path): path is string => !!path),
+  ]);
+  return { ...input.projection, storage, privateRoots: [input.root] };
 }

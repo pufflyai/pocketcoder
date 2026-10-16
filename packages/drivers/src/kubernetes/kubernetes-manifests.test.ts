@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import type { WarmRuntimeLaunch, WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 import { warmJobManifest, workspaceJobManifest } from "./kubernetes-manifests";
 
 function templateSpec(ephemeralStorage?: string) {
-  return {
-    image: "registry.example/workspace@sha256:fixture",
+  const spec = {
+    version: "1.0.0",
+    image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
+    harness: { command: ["/bin/sleep", "3600"] },
     command: ["/bin/sleep", "3600"],
     env: {},
     resources: {
@@ -23,6 +26,12 @@ function templateSpec(ephemeralStorage?: string) {
     },
     network: { mode: "unrestricted" },
   };
+  return parseTemplateManifest({
+    apiVersion: "pocketcoder.dev/v1alpha1",
+    kind: "Template",
+    metadata: { name: "manifest-fixture" },
+    spec,
+  }).manifest.spec;
 }
 
 function workspaceLaunch(ephemeralStorage?: string) {

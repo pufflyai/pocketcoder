@@ -14,6 +14,7 @@ export {
   WORKSPACE_LABEL,
 } from "./docker/docker";
 export { FilesystemInputStorage } from "./filesystem/filesystem-inputs";
+export { FilesystemInputPublisher } from "./filesystem/filesystem-projections";
 export {
   FilesystemStorageDriver,
   type FilesystemStorageDriverOptions,
@@ -45,5 +46,7 @@ export {
   KubernetesSecretResolver,
   type KubernetesSecretResolverOptions,
 } from "./kubernetes/kubernetes-secrets";
+export type { KubernetesSharedStorageOptions } from "./kubernetes/kubernetes-shared-profile";
+export { KubernetesSharedStorage } from "./kubernetes/kubernetes-shared-storage";
 export type { RegistryResolver } from "./registry/registry";
 export { FileSecretResolver, type FileSecretResolverOptions } from "./secrets/file-secrets";

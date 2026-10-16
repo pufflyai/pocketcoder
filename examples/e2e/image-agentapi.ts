@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { createHarnessWorkspace } from "./contract";
+import { fetchForwarded } from "./forwarded-fetch";
 import { waitFor } from "./local-process";
 
 const fixture =
   "process.stdout.write('Ready\\n> ');for await(const line of console){process.stdout.write('\\nEcho: '+line+'\\n> ')}";
 
 export async function probeImageAgentApi(baseUrl: string, key: string, image: string) {
-  const client = new PocketCoderClient({ baseUrl, apiKey: key });
+  const client = new PocketCoderClient({ baseUrl, apiKey: key, fetch: fetchForwarded });
   await client.raw("/v1/templates", {
     method: "POST",
     body: JSON.stringify({

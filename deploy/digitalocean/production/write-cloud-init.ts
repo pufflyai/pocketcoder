@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, sep } from "node:path";
 import { ObjectStorageConfigSchema, readPrivateFile } from "@pstdio/pocketcoder-db/off-node";
+import { SourceMigrationSchema } from "@pstdio/pocketcoder-manager/recovery";
 import { z } from "zod";
 import { operatorCloudInit } from "./cloud-init";
 
@@ -20,6 +21,7 @@ const Config = z.strictObject({
   storageConfigFile: path,
   encryptionKeyFile: path,
   cloudCredentialFile: path,
+  source: z.strictObject({ volumeId: z.uuid(), migration: SourceMigrationSchema.optional() }),
 });
 async function privatePath(input: string) {
   const resolved = await realpath(input);

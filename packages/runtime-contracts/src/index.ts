@@ -20,7 +20,14 @@ export type {
   WorkspaceStorageDriver,
   WorkspaceTransferRuntime,
 } from "./drivers/driver";
-export type { InputBackingRef, InputByteWriter, InputProjectionRef, InputStorageDriver } from "./drivers/inputs";
+export type {
+  InputBackingRef,
+  InputByteWriter,
+  InputProjectionRef,
+  InputProjectionStorage,
+  InputStorageDriver,
+  PublishedInputProjection,
+} from "./drivers/inputs";
 export { buildEventEnvelope } from "./events/events";
 export * from "./stores/binary-outputs";
 export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
@@ -29,6 +36,7 @@ export type { InputClaim, InputLimits, InputManifestRow, InputStore, StoredInput
 export * from "./stores/leases";
 export * from "./stores/secrets";
 export * from "./stores/storage-reservations";
+export type { WorkspaceRuntimeRegistration } from "./stores/workspaces";
 export {
   type ActiveCounts,
   type AuthStore,

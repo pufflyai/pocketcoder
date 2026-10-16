@@ -1,4 +1,5 @@
 import type {
+  StorageRef,
   Store,
   WorkspaceDriver,
   WorkspaceStorageDriver,
@@ -26,11 +27,14 @@ export function composeCheckpointRuntime(
   }
   const checkpointTransfers = createCheckpointTransferService({ ...options, store, hub });
   const transferRuntime: WorkspaceTransferRuntime = {
-    prepareStorage: (workspace) => prepareDisposableRuntimeStorage(store, driver.kind, workspace, new Date()),
+    prepareStorage: (workspace) =>
+      prepareDisposableRuntimeStorage(store, driver.kind, workspace, new Date(), storageDriver),
     cleanupWorkspace: async (workspace) => {
       await checkpointTransfers.cleanup(workspace.id);
       const storage = await store.getWorkspaceStorage(workspace.id);
       if (storage && storage.state !== "deleted") {
+        if (storageDriver?.kind === "kubernetes-shared")
+          await storageDriver.deleteStorage(storage.providerRef as StorageRef);
         const at = new Date();
         await store.updateWorkspaceStorage(storage.id, { state: "deleted", deletedAt: at, retainedUntil: null }, at);
       }

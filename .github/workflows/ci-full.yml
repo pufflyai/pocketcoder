@@ -1,0 +1,203 @@
+name: Full merge qualification
+on:
+  workflow_call: null
+permissions:
+  contents: read
+env:
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: integration
+      - run: docker pull postgres:16-alpine
+      - name: Prepare real Chromium
+        run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
+      - env:
+          POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
+        run: bun --no-env-file scripts/ci/run.ts integration
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: contracts
+      - name: Install desktop regression tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends xvfb x11-utils
+      - run: bun --no-env-file scripts/ci/run.ts contracts
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: performance
+      - run: bun --no-env-file scripts/ci/run.ts performance
+  service-fixtures:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role:
+          - workspace
+          - server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: fixture-${{ matrix.role }}
+      - run: bun --no-env-file scripts/ci/fixtures.ts build "$RUNNER_TEMP/fixture" "${{ matrix.role }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-fixture-${{ matrix.role }}-${{ github.sha }}
+          path: ${{ runner.temp }}/fixture
+          if-no-files-found: error
+  harness-fixtures:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role:
+          - pi
+          - oss
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: fixture-${{ matrix.role }}
+      - run: bun --no-env-file scripts/ci/fixtures.ts build "$RUNNER_TEMP/fixture" "${{ matrix.role }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-fixture-${{ matrix.role }}-${{ github.sha }}
+          path: ${{ runner.temp }}/fixture
+          if-no-files-found: error
+  packages:
+    uses: ./.github/workflows/ci-packages.yml
+  platform:
+    uses: ./.github/workflows/ci-platform.yml
+  installation:
+    needs:
+      - packages
+      - platform
+    uses: ./.github/workflows/candidate-installation.yml
+  services:
+    needs: service-fixtures
+    uses: ./.github/workflows/ci-services.yml
+  monitoring:
+    needs: service-fixtures
+    uses: ./.github/workflows/managed-monitoring.yml
+  images:
+    uses: ./.github/workflows/ci-images.yml
+  harnesses:
+    needs:
+      - service-fixtures
+      - harness-fixtures
+      - packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Pi and doctor
+            fixture: pi
+            command: bun run example:e2e:pi
+          - name: Pi resume
+            fixture: pi
+            command: bun run example:pi:resume:check
+          - name: Codex and OpenCode
+            fixture: oss
+            command: bun run example:e2e:oss
+          - name: Private images
+            fixture: workspace
+            command: bun run example:e2e:private-image
+          - name: Checkpoints
+            fixture: workspace
+            command: |
+              bun run example:e2e:docker-checkpoint
+              bun run example:e2e:docker-checkpoint-failures
+              bun run example:e2e:docker-checkpoint-repeat
+          - name: Private egress admission
+            fixture: workspace
+            command: |
+              docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
+              bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-build-${{ github.sha }}
+          path: .
+      - run: bun --no-env-file scripts/ci/task-cache.ts import
+      - uses: ./.github/actions/load-fixtures
+        with:
+          fixture: ${{ matrix.fixture }}
+      - name: ${{ matrix.name }}
+        env:
+          POCKETCODER_EGRESS_CONFORMANCE_IMAGE: ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
+        run: ${{ matrix.command }}
+  kubernetes-shared-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: kubernetes-shared-storage
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Qualify isolated shared storage on two Kubernetes nodes
+        run: bun run example:e2e:kubernetes-shared-storage
+
+  extensions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: extensions
+      - run: bun --no-env-file scripts/ci/run.ts extensions
+  checks:
+    name: Full qualification
+    if: always()
+    needs:
+      - integration
+      - extensions
+      - kubernetes-shared-storage
+      - contracts
+      - performance
+      - service-fixtures
+      - harness-fixtures
+      - packages
+      - platform
+      - installation
+      - services
+      - monitoring
+      - images
+      - harnesses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - env:
+          CI_REQUIRED: '["integration","extensions","kubernetes-shared-storage","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: bun --no-env-file scripts/ci/gate.ts

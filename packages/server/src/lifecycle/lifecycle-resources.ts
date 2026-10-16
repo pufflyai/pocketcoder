@@ -15,6 +15,7 @@ import {
   FilesystemStorageDriver,
   KubernetesDriver,
   KubernetesSecretResolver,
+  KubernetesSharedStorage,
   type RegistryResolver,
 } from "@pstdio/pocketcoder-drivers";
 import {
@@ -32,6 +33,7 @@ import { AccountPurgeRequiredError } from "../maintenance/account-purge";
 import { loadPurgeState } from "../maintenance/purge-state";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import { createIssuerClient } from "../secrets/issuer-client";
+import { dockerInputProjectionOptions } from "./input-storage-config";
 import type { ServerLog } from "./lifecycle";
 
 async function initializeStore(
@@ -73,14 +75,22 @@ export async function requireEgressImageForRestrictedTemplates(store: Store, con
   }
 }
 
-export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: RegistryResolver) {
+export function createWorkspaceDriver(
+  config: ServerConfig,
+  resolveRegistry?: RegistryResolver,
+  sharedStorage?: KubernetesSharedStorage,
+) {
   const egress = {
     ...(resolveRegistry ? { resolveRegistry } : {}),
     ...(config.egressImage ? { egressImage: config.egressImage } : {}),
     egressSigningKey: config.eventSigningKey,
   };
   if (config.driverKind === "kubernetes") {
+    if (config.inputStorage?.projection) throw new Error("Daemon-host input projection is supported by Docker only.");
     return new KubernetesDriver({
+      ...(config.kubernetesSharedStorage
+        ? { sharedStorage: sharedStorage ?? new KubernetesSharedStorage(config.kubernetesSharedStorage) }
+        : {}),
       ...egress,
       namespace: config.kubernetesNamespace,
       captureTerminationEvidence: true,
@@ -90,10 +100,15 @@ export function createWorkspaceDriver(config: ServerConfig, resolveRegistry?: Re
       ...(config.kubernetesServiceAccount ? { serviceAccountName: config.kubernetesServiceAccount } : {}),
     });
   }
-  return new DockerDriver({ ...(config.inputDir ? { inputDir: config.inputDir } : {}), ...egress });
+  return new DockerDriver({
+    ...(config.inputDir ? { inputDir: config.inputDir } : {}),
+    inputProjection: dockerInputProjectionOptions(config),
+    ...egress,
+  });
 }
 
 export function createStorageDriver(config: ServerConfig) {
+  if (config.kubernetesSharedStorage) return new KubernetesSharedStorage(config.kubernetesSharedStorage);
   if (config.storageBackend === "filesystem") {
     return new FilesystemStorageDriver({
       workspaceRoot: config.workspaceDataDir as string,

@@ -10,7 +10,7 @@ export interface Thresholds {
   credentialSeconds: number;
   capacityFraction: number;
 }
-const defaults: Thresholds = {
+export const monitoringDefaults: Thresholds = {
   diskFraction: 0.15,
   diskBytes: 1024 ** 3,
   queueSeconds: 120,
@@ -24,7 +24,7 @@ const defaults: Thresholds = {
 };
 
 export function monitoringRules(operator: string, runbookUrl: string, input: Partial<Thresholds> = {}, hold = "2m") {
-  const limits = { ...defaults, ...input };
+  const limits = { ...monitoringDefaults, ...input };
   for (const value of Object.values(limits))
     if (!Number.isFinite(value) || value < 0) throw new Error("Alert thresholds must be finite and nonnegative.");
   const rule = (name: string, family: string, expr: string, response: string) => ({

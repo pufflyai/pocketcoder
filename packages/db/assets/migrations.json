@@ -277,5 +277,15 @@
     "folderMillis": 1792083952000,
     "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd",
     "name": "20261015170552_swift_sleeper"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspaces\" ADD COLUMN \"runtime_registration\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"finite_process\" jsonb;"
+    ],
+    "bps": true,
+    "folderMillis": 1792134090000,
+    "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7",
+    "name": "20261016070130_blue_robbie_robertson"
   }
 ]

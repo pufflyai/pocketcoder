@@ -8,6 +8,7 @@ export type OperatorBootstrap = {
   storage: unknown;
   encryptionKey: Buffer;
   cloudCredential: { token: string; expiresAt: string; clusterId: string };
+  source: { volumeId: string; migration?: unknown };
 };
 
 export function operatorCloudInit(input: OperatorBootstrap) {
@@ -109,9 +110,29 @@ systemctl is-active pocketcoder-manager.service
       ),
       file(
         "/etc/pocketcoder-private/purge.json",
-        json({ directory: "/mnt/pc103-journal/authority", storage: input.storage }),
+        json({
+          directory: "/mnt/pc103-journal/authority",
+          storage: input.storage,
+          source: {
+            credentialFile: "/etc/pocketcoder-private/cloud-credential.json",
+            blockDevice: "/etc/pocketcoder-private/source-block-device",
+            volumeId: input.source.volumeId,
+            volumeName: "pocketcoder-pc103-manager",
+            ...(input.source.migration ? { migrationFile: "/etc/pocketcoder-private/source-migration.json" } : {}),
+          },
+        }),
         "pocketcoder-operator:pocketcoder-operator",
       ),
+      file("/etc/pocketcoder-private/source-block-device", ""),
+      ...(input.source.migration
+        ? [
+            file(
+              "/etc/pocketcoder-private/source-migration.json",
+              json(input.source.migration),
+              "pocketcoder-operator:pocketcoder-operator",
+            ),
+          ]
+        : []),
       file(
         "/etc/pocketcoder-private/account-backups.json",
         json({ managerUrl: "http://127.0.0.1:8092", tokenFile: "/etc/pocketcoder-private/schedule-operator-token" }),

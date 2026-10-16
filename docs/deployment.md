@@ -78,6 +78,16 @@ docker build -t pocketcoder-workspace:dev deploy/image
 
 ## Docker compose
 
+Immutable inputs require the optional daemon-host publisher in
+[input storage](input-storage.md#docker-projection). Set its private root and
+explicit copy limits in `POCKETCODER_INPUT_STORAGE.projection`. Mount the root
+into the controller at its identical host path. Workspaces receive only their
+fresh directory at `/run/pocketcoder/inputs`, read-only from creation. Keep writable
+work/output roots separate. The driver rejects aliases, parent/nested mounts and
+unavailable daemon-host access. A schema declaration alone does not enable the
+capability. The pinned trusted helper and Docker PID namespace support are required;
+this setting does not enable Kubernetes projections or warm-pool projections.
+
 [`deploy/compose/docker-compose.yaml`](../deploy/compose/docker-compose.yaml)
 runs RustFS for local S3-compatible object storage. The `full` profile also runs
 the server with an embedded PGlite database. For a full containerized control
@@ -344,6 +354,11 @@ export POCKETCODER_WARM_POOLS='[{"template":"fixture-echo","version":"1.0.0","mi
 Unbound providers contain only template identity and a single-use pool enrollment credential. Workspace identity, registration authority, source, and launch input arrive in memory after an atomic lease. Assigned providers are destroyed after one workspace and are never recycled. Use `pcd pools list` or `GET /v1/warm-pools` with an admin key to inspect inventory and counters.
 
 ## Operational notes
+
+Kubernetes shared input projections and retained output allocations require an
+explicit qualified deployment. See [shared Kubernetes storage](kubernetes-shared-storage.md)
+for the PVC, network boundary, publisher and cleanup contract. The default
+`controller-archive` backend continues to use disposable workspace storage.
 
 - **One server replica** is the supported topology: workspaces survive server
   restarts, reconnect within their `disconnectGrace`, and state is reconciled

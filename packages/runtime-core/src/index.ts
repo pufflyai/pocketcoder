@@ -5,8 +5,10 @@ export type {
   InputLimits,
   InputManifestRow,
   InputProjectionRef,
+  InputProjectionStorage,
   InputStorageDriver,
   InputStore,
+  PublishedInputProjection,
   ReadStorageCapacity,
   StoredInput,
   WorkspaceLeasePurpose,
@@ -123,6 +125,7 @@ export {
   type SchedulerDeps,
   type SecretFactory,
 } from "./scheduler/scheduler";
+export { prepareWaitingRuntime } from "./scheduler/waiting-runtime";
 export {
   type ResolvedWarmPool,
   resolveWarmPools,

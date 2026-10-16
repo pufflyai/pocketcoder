@@ -5,6 +5,7 @@ import type { managedLifecycleFixture } from "./managed-lifecycle-fixture";
 import { prepareManagedWarm } from "./managed-warm";
 import { monitoringContainerSignal } from "./monitoring-container-signal";
 import type { monitoringFixture } from "./monitoring-fixture";
+import { healthyHeartbeatBaseline } from "./monitoring-heartbeat";
 
 export async function monitoringFaults(input: {
   f: Awaited<ReturnType<typeof managedLifecycleFixture>>;
@@ -22,6 +23,19 @@ export async function monitoringFaults(input: {
   const { f, m, account, request } = input;
   if (!input.workspace) throw new Error("Heartbeat fixture has no real workspace");
   const signal = await monitoringContainerSignal(f, account.namespace, `pocketcoder.workspace=${input.workspace}`);
+  // Queue admission can briefly report a missing first heartbeat. Clear that episode before injecting this fault.
+  await waitFor(
+    async () => {
+      const [missing, oldest, alert] = await Promise.all([
+        m.query(`pocketcoder_account_heartbeat_missing{account="${account.id}"}`),
+        m.query(`pocketcoder_account_heartbeat_oldest_seconds{account="${account.id}"}`),
+        m.query(`ALERTS{family="heartbeat",account="${account.id}"}`),
+      ]);
+      return healthyHeartbeatBaseline({ missing, oldest, alert });
+    },
+    30_000,
+    "healthy account heartbeat before the injected fault",
+  );
   try {
     m.startFault("heartbeat");
     await signal("SIGSTOP");

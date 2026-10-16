@@ -1,0 +1,31 @@
+name: Publish caches from protected branch validation
+description: Untrusted PR and merge-group code cannot publish shared task results.
+inputs:
+  cache:
+    description: Task cache group
+    required: true
+  nx-hit:
+    description: Existing exact task cache
+    default: "false"
+  bun-hit:
+    description: Existing exact dependency cache
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - run: bun --no-env-file scripts/ci/task-cache.ts export
+      shell: bash
+    - uses: actions/cache/save@v4
+      if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/pocketcoder-1-0') && inputs.bun-hit !=
+        'true'
+      with:
+        path: ~/.bun/install/cache
+        key: bun-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}
+    - uses: actions/cache/save@v4
+      if: (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+        (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/pocketcoder-1-0') && inputs.nx-hit !=
+        'true'
+      with:
+        path: .nx/cache
+        key: nx-v4-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-${{ github.sha }}

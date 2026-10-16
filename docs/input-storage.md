@@ -64,8 +64,8 @@ the operation owner (PC-129).
 
 The provider-neutral projection reference contains workspace/file/version IDs and
 the frozen manifest. It contains no host or PVC path. A trusted driver can read
-verified canonical bytes to rebuild a lost projection. Docker and Kubernetes mount
-enforcement are separate tickets, PC-128 and PC-130. Legacy AgentAPI attachment
+verified canonical bytes to rebuild a lost projection. Docker uses the optional
+daemon-host projection below. Kubernetes enforcement remains PC-130. Legacy AgentAPI attachment
 messages fail with `attachment.unsupported` until a qualified projection and
 operation owner are installed. Text-only messages keep working.
 
@@ -74,3 +74,65 @@ the input unavailable and prevents dispatch. Uploads cannot repair accepted IDs.
 Restore must stage new workspace-scoped references; it never migrates old references
 or treats a checkpoint of workload home files as canonical storage. This is a
 bounded staging store, not a dataset store or an archive.
+
+## Docker projection
+
+Add `projection` to `POCKETCODER_INPUT_STORAGE` to enable the Docker publisher:
+
+```json
+{
+  "root": "/srv/pocketcoder/projections",
+  "probeImage": "your-trusted-helper@sha256:<64-lowercase-hex-digits>",
+  "capacity": { "bytes": 16777216, "files": 256 }
+}
+```
+
+This is the value of the nested `projection` field. The capacity values are fixture
+examples, not production defaults. They bound all copied bytes, manifests and
+receipts in one runtime incarnation, separately from canonical storage. Publication
+reserves space before copying. It fails when the ceiling is reached. Finalization
+may release an execution directory, but its small receipt remains until workspace
+cleanup to prevent reusing the execution ID with different content. Set finite
+ceilings for the deployment's expected number of operations and mount the root on
+storage with enough capacity. Failed private copies are removed; restart removes
+orphaned copies before another publication.
+
+The root must be a private controller-owned directory on the **Docker daemon host**.
+This first profile also requires the private canonical root to be available at its
+same absolute path on that host, so the probe can identify and reject backing
+aliases. When the controller runs in a container, bind both roots at their same
+absolute paths. Keep the projection root
+separate from canonical, writable work, output and launch-input storage. Public
+requests and templates cannot choose host paths. The helper must be a trusted,
+pinned Linux image containing `/bin/sh` and `cat`. The controller probes a
+fresh marker through the daemon and reads the actual mount table with a short-lived
+helper in the workspace PID namespace. The separate host probe receives
+`DAC_READ_SEARCH` to read its markers in the private roots. The live namespace
+helper receives `SYS_PTRACE` to inspect the workload process root. These short-lived
+trusted helpers have no network. The workload drops **all** capabilities and has a read-only root.
+No storage credential or publisher endpoint enters the workspace.
+
+Creation mounts a fresh stable directory at `/run/pocketcoder/inputs` read-only,
+with private propagation and recursive mounts disabled. Aliases of backing roots,
+parent mounts, nested mounts, image target symlinks and extra capabilities are
+rejected. A fresh challenge read through the actual container view detects a
+replaced mount directory. Missing daemon-host access fails creation; absent
+configuration advertises no input storage profile. Warm pools and Kubernetes do
+not support this Docker setting.
+
+The execution owner first freezes and pins its ordered selection, then awaits
+`WorkspaceDriver.publishInputs(ref, selection)` before dispatch. The returned
+directory contains `manifest.json` and one regular file per file UUID. Logical
+names never become paths. The driver verifies canonical bytes and the complete
+copy, syncs it privately, and atomically adds the directory. Later publication
+appears through the same mount and cannot replace earlier entries. Lost execution
+directories rebuild from the same pinned objects and receipt. Loss of the stable
+mount root fails closed and needs a fresh runtime; it cannot be rebound in place.
+
+PC-129 owns acceptance/dispatch fencing and finalization. After its finalization
+barrier it may call `releaseInputProjection`, then release canonical pins through
+`InputStorage.finalize`. Provider removal deletes only that incarnation's copies;
+workspace purge waits for container removal. Neither operation deletes canonical
+objects or releases their pins. Full installed workload capability evidence still
+requires the producer and operation owners; this driver reports only its observed
+`inputStorage` profile. Attachment-bearing legacy relay remains rejected.

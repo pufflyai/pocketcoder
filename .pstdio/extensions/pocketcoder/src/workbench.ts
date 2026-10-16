@@ -11,7 +11,6 @@ import {
   connectMachine,
   deleteMachine,
   importTemplates,
-  launchInstance,
   launchMachine,
   refresh,
   startInstance,
@@ -19,32 +18,33 @@ import {
 } from "./commands";
 import { instancesFor } from "./instances";
 import { changed, instanceKind } from "./resources";
+import { templatesView } from "./templates-view";
 
 const refreshAction = { id: "refresh", label: "Refresh", icon: "refresh-cw", command: refresh.ref };
 export const instancesView = defineView({
   id: "instances",
-  title: "PocketCoder instances",
+  title: "Local service connection",
   icon: "server",
   body: {
     kind: "dataTable",
     refreshEvents: [changed],
-    emptyTitle: "Launch a PocketCoder instance",
-    emptyDescription:
-      "An instance is a local PocketCoder 1.0 server. Launch one, import agent templates, then launch machines.",
-    toolbarActions: [
-      {
-        id: "launch",
-        label: "Launch instance",
-        icon: "plus",
-        presentation: "primary",
-        command: launchInstance.ref,
-        input: launchInstance.params,
-        submitLabel: "Launch instance",
-      },
-      refreshAction,
-    ],
+    emptyTitle: "Local service disconnected",
+    emptyDescription: "No local instance is configured. Choose a template above and launch an instance to connect.",
+    toolbarActions: [refreshAction],
     columns: [
       { id: "name", label: "Instance" },
+      {
+        id: "connection",
+        label: "Connection",
+        renderer: {
+          type: "categorical-color",
+          categories: [
+            { value: "Connected", color: { light: "#dcfce7", dark: "#14532d" } },
+            { value: "Unreachable", color: { light: "#fee2e2", dark: "#7f1d1d" } },
+            { value: "Key expired", color: { light: "#fef3c7", dark: "#78350f" } },
+          ],
+        },
+      },
       { id: "state", label: "State" },
       { id: "url", label: "Operator API" },
       { id: "id", label: "Instance ID" },
@@ -54,12 +54,21 @@ export const instancesView = defineView({
       { id: "stop", label: "Stop instance", icon: "square", command: stopInstance.ref },
     ],
     async query(ctx) {
+      const instances = instancesFor(ctx.projectId);
       return {
-        rows: (await instancesFor(ctx.projectId).list()).map((instance) => ({
-          id: instance.id,
-          resource: { type: instanceKind.id, id: instance.id, label: instance.name },
-          values: { name: instance.name, state: instance.state, url: instance.url, id: instance.id },
-        })),
+        rows: await Promise.all(
+          (await instances.list()).map(async (instance) => ({
+            id: instance.id,
+            resource: { type: instanceKind.id, id: instance.id, label: instance.name },
+            values: {
+              name: instance.name,
+              state: instance.state,
+              url: instance.url,
+              id: instance.id,
+              connection: await instances.connection(instance.id),
+            },
+          })),
+        ),
       };
     },
     onRowActivate(ctx, { row }) {
@@ -145,13 +154,23 @@ export const machinesView = defineView({
 
 export const instancesPage = definePage({
   id: "instances",
-  title: "PocketCoder",
+  title: "PocketCoder Lab",
   icon: "server",
   path: "pocketcoder",
   mode: workbenchModes.project,
   parent: workbenchPages.start,
-  main: { kind: "view", view: instancesView.ref, cardinality: "one" },
-  slots: [],
+  main: { kind: "view", view: templatesView.ref, cardinality: "one" },
+  slots: [
+    {
+      id: "connections",
+      region: "secondary",
+      item: {
+        kind: "view",
+        view: instancesView.ref,
+        presence: "fixed",
+      },
+    },
+  ],
 });
 export const instancePage = definePage({
   id: "instance",
@@ -166,7 +185,7 @@ export const instancePage = definePage({
 });
 export const navigation = defineNavigationItem({
   id: "pocketcoder",
-  label: "PocketCoder",
+  label: "PocketCoder Lab",
   icon: "server",
   owner: workbenchModes.project,
   slot: "content",
