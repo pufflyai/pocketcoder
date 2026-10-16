@@ -13,7 +13,8 @@ if (target === "unit" || target === "typecheck") {
     "run-many",
     `--target=${target === "unit" ? "test" : target}`,
     `--projects=${projects.join(",")}`,
-    "--parallel=2",
+    // Four runners shard the tests; each keeps the original single-package CPU and disk budget.
+    `--parallel=${target === "unit" ? 1 : 2}`,
     "--outputStyle=stream",
   ];
   if (target === "unit") {
