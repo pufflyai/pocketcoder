@@ -1,0 +1,28 @@
+name: PR feedback timing
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Report the latest twenty completed PR updates
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun --no-env-file scripts/ci/timing.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-timings-${{ github.event.workflow_run.id }}
+          path: ci-timings.json
+          if-no-files-found: error

@@ -4,7 +4,12 @@
     "tags": [
       "scope:auth",
       "type:library"
-    ]
+    ],
+    "targets": {
+      "test": {
+        "cache": true
+      }
+    }
   },
   "version": "0.1.0",
   "private": true,

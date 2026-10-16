@@ -4,4 +4,5 @@ node_modules
 deploy/image/dist
 O-37
 .git
+.nx
 *.log

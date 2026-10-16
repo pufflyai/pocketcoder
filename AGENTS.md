@@ -60,6 +60,13 @@ Readability and structure matter most — we're happy to make bigger changes to 
 - **Commits**: `<category>(<PC-XXX>): <statement>` (`feat`, `fix`, `refactor`, `chore`)
 - **PRs**: draft against `main`, named like commits. Write the body from `.github/pull_request_template.md`: keep its headings and fill in every section. `gh pr create --body` skips the template, so write the filled-in body to a file and pass it with `--body-file`.
 
+## CI and Merges
+
+- PR updates run affected checks. The merge queue runs full qualification against the merge result. Both require the **CI** check.
+- Merge through the queue. Never bypass required checks or push directly to a protected branch.
+- Keep live integration, recovery, browser, provider, and timing checks uncached. Shared caches are published only by protected-branch runs.
+- Keep every root test command assigned to full CI. See `docs/ci.md` for stages, cache rules, and timing reports.
+
 ## CI Timeouts
 
 A timeout that trips means something got slower — that's the bug. Never widen `timeout-minutes` without explicit approval.

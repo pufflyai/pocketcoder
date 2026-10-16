@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { canonicalJson, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { readCiImage } from "./ci-images";
 
 export interface LocalCommandResult {
   stdout: string;
@@ -69,6 +70,7 @@ export async function runLocalCommand(
 
 export async function buildLocalImage(options: BuildLocalImageOptions): Promise<{ imageId: string; image: string }> {
   const command = options.command ?? runLocalCommand;
+  const fixture = await readCiImage(options.context, options.dockerfile);
   const build = [
     "docker",
     "build",
@@ -77,7 +79,8 @@ export async function buildLocalImage(options: BuildLocalImageOptions): Promise<
     options.imageTag,
     options.context,
   ];
-  await command(build, { cwd: options.root });
+  if (fixture) await command(["docker", "tag", fixture.tag, options.imageTag], { cwd: options.root });
+  else await command(build, { cwd: options.root });
   const imageId = (
     await command(["docker", "image", "inspect", options.imageTag, "--format", "{{.Id}}"], {
       cwd: options.root,
@@ -87,6 +90,7 @@ export async function buildLocalImage(options: BuildLocalImageOptions): Promise<
   if (!/^sha256:[0-9a-f]{64}$/.test(imageId)) {
     throw new Error(`docker returned an invalid local image ID: ${imageId}`);
   }
+  if (fixture && fixture.imageId !== imageId) throw new Error("Loaded CI image differs from its recorded image ID");
   return { imageId, image: `${options.imageTag}@${imageId}` };
 }
 

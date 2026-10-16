@@ -1,20 +1,126 @@
 name: ci
-
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+  merge_group: null
+  push:
+    branches:
+      - main
+      - feature/pocketcoder-1-0
+  schedule:
+    - cron: 23 3 * * *
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run complete qualification on this revision
+        type: boolean
+        default: true
   workflow_call:
-
-permissions: {}
-
+    inputs:
+      full:
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
-  BUN_VERSION: 1.4.2
-
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"
 jobs:
-  test:
+  plan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    services:
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      projects: ${{ steps.plan.outputs.projects }}
+      hasProjects: ${{ steps.plan.outputs.hasProjects }}
+      smoke: ${{ steps.plan.outputs.smoke }}
+      postmerge: ${{ steps.plan.outputs.postmerge }}
+      required: ${{ steps.plan.outputs.required }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          cache: plan
+      - id: plan
+        env:
+          CI_FULL: ${{ inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || false }}
+        run: bun --no-env-file scripts/ci/plan.ts
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        id: setup
+        with:
+          cache: quality
+      - run: bun run check
+      - run: bun run check-licenses
+      - run: bun run ci:test
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: quality
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+  types:
+    needs: plan
+    if: needs.plan.outputs.hasProjects == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        id: setup
+        with:
+          cache: types
+      - env:
+          CI_PROJECTS: ${{ needs.plan.outputs.projects }}
+        run: bun --no-env-file scripts/ci/run.ts typecheck
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: types
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+  units:
+    needs: plan
+    if: needs.plan.outputs.hasProjects == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        id: setup
+        with:
+          cache: unit-${{ matrix.shard }}
+      - name: Run affected unit and route tests
+        env:
+          CI_PROJECTS: ${{ needs.plan.outputs.projects }}
+          CI_SHARD: ${{ matrix.shard }}
+        run: bun --no-env-file scripts/ci/run.ts unit
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: unit-${{ matrix.shard }}
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+    services: &a1
       postgres:
         image: postgres:16-alpine
         env:
@@ -23,52 +129,60 @@ jobs:
           POSTGRES_DB: pocketcoder
         ports:
           - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U pocketcoder"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+        options: --health-cmd "pg_isready -U pocketcoder" --health-interval 5s --health-timeout 3s --health-retries 10
+    env: &a2
+      POCKETCODER_TEST_DATABASE_URL: postgres://pocketcoder:pocketcoder@127.0.0.1:5432/pocketcoder
+  smoke:
+    needs: plan
+    if: needs.plan.outputs.smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: smoke
+      - name: Run a real local echo workspace
+        run: bun run example:e2e:local
+    services: *a1
+    env: *a2
+  full:
+    needs: plan
+    if: needs.plan.outputs.mode == 'full'
+    uses: ./.github/workflows/ci-full.yml
+  build:
+    needs:
+      - plan
+      - quality
+      - types
+      - units
+      - smoke
+    if: always() && needs.plan.outputs.postmerge == 'true' && needs.quality.result == 'success' && (needs.types.result ==
+      'success' || needs.types.result == 'skipped') && (needs.units.result == 'success' || needs.units.result ==
+      'skipped') && (needs.smoke.result == 'success' || needs.smoke.result == 'skipped')
+    uses: ./.github/workflows/ci-packages.yml
+  checks:
+    name: CI
+    if: always()
+    needs:
+      - plan
+      - quality
+      - types
+      - units
+      - smoke
+      - full
+      - build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Lint, format-check, and detect unused code
-        run: bun run check
-      - run: bun run typecheck
-      - name: Test reusable harness E2E contract
-        run: bun run example:test
-      - name: Validate the Pi and AgentAPI E2E fixture
-        working-directory: examples/harnesses/pi
-        run: |
-          bun run typecheck
-          bun test
-      - name: Run Pi through AgentAPI full-stack E2E and pcd doctor
-        run: bun run example:e2e:pi
-      - name: Run Pi automatic resume full-stack E2E
-        run: bun run example:pi:resume:check
-      - name: Validate the Codex and OpenCode AgentAPI fixtures
-        working-directory: examples/harnesses/oss
-        run: |
-          bun run typecheck
-          bun test
-      - name: Run Codex and OpenCode through AgentAPI full-stack E2E
-        run: bun run example:e2e:oss
-      - name: Verify private Docker egress config admission
+          bun-version: 1.4.2
+      - name: Require every selected validation job to pass
         env:
-          POCKETCODER_EGRESS_CONFORMANCE_IMAGE: ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
-        run: |
-          docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
-          bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
-      - name: Unit, route, e2e, and PostgreSQL integration tests
-        run: bun run test
-        env:
-          POCKETCODER_TEST_DATABASE_URL: postgres://pocketcoder:pocketcoder@127.0.0.1:5432/pocketcoder
-      - name: Build all entrypoints
-        run: bun run build
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-      - name: Validate publishable packages
-        run: bun run pack:check
+          CI_REQUIRED: ${{ needs.plan.outputs.required }}
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: bun --no-env-file scripts/ci/gate.ts
+run-name: "CI ${{ (inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || github.event_name ==
+  'merge_group' || github.event_name == 'schedule') && 'full' || 'fast' }}: ${{ github.event.pull_request.title ||
+  github.ref_name }}"
