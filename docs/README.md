@@ -7,6 +7,7 @@ API drives the whole lifecycle.
 
 | Guide | What it covers |
 |-------|----------------|
+| [Continuous integration](ci.md) | Fast PR checks, full merge qualification, caches, branch rules, and timing |
 | [Getting started](getting-started.md) | Run the server, create a principal and key, launch your first workspace |
 | [CLI reference](cli.md) | Every `pcd` command with examples |
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
