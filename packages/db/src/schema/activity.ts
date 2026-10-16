@@ -38,7 +38,7 @@ export function createActivityTables(
         .references(() => principals.id),
       conversationId: uuid("conversation_id").notNull(),
       requestId: uuid("request_id").notNull(),
-      identity: structuredJson("identity").$type<ConversationRequestRow["identity"]>().notNull(),
+      identity: jsonb("identity").$type<ConversationRequestRow["identity"]>().notNull(),
       acceptedAt: timestamptz("accepted_at").notNull(),
     },
     (table) => [primaryKey({ columns: [table.principalId, table.conversationId, table.requestId] })],

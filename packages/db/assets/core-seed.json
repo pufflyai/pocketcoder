@@ -2,7 +2,8 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "c07de831ce3362acccef677148a7abcd865ffb4cd6724c935fe7b22f6e68d19e",
+  "checksum": "f45b7e4e80f811449732b894a96d180019161431bce68f60942da35ad897b08f",
+  "sourceChecksum": "2bdcfc185211090b786a8eae53793b276cea2ad6baaf45b2bd3202b7be477988",
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -73,7 +74,10 @@
     {
       "name": "20261010094755_colorful_kabuki",
       "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1"
+    },
+    {
+      "name": "20261013125843_tiny_marvel_zombies",
+      "hash": "396ef381367d4a2842a231f774b3e943006daabefb2f28164e35aa6f8a8c9e6b"
     }
-  ],
-  "sourceChecksum": "271c9cb498a929bfac016b2cb777b187547baa39aaae9f9c21f1087925fcde75"
+  ]
 }

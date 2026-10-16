@@ -42,6 +42,7 @@ export async function prepareStore(harness: StoreContractHarness): Promise<Prepa
     principalId: principal.id,
     secretDigest: new Uint8Array([1]),
     scopes: [],
+    templateNames: null,
     createdAt: new Date(),
     expiresAt: null,
     revokedAt: null,

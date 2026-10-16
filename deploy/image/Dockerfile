@@ -46,13 +46,14 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
   dev.pstdio.pocketcoder.glibc.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
 # Desktop/browser installs fail closed if the signed package indexes change.
 # The indexes pin all package versions, including indirect dependencies.
+# Refreshed together after apk verified both architectures' repository signatures.
 RUN case "$TARGETARCH" in \
       amd64) printf '%s\n' \
-        '51c35337f1d7c1149833854d6e75e45b3279be8d5690951ce1c59ce2b3122d9a' \
-        '6571c980dff490d90f63f6f1f8790fafec8e10534a8b3d41a3b077ea3d52c137' ;; \
+        'c9d417f416062cd03aae7f5e4807034af9dd05ef607e096a499b4cb63ab6bb46' \
+        'e20d61dd6be88e5c4765a127374961eceb65bef7c755fe56224a540e063dbb2b' ;; \
       arm64) printf '%s\n' \
-        '3fde43dc10e3bf4e0900ddee9988c40c02881626050a872815d7c828d2e9308b' \
-        '74ff3e83c634c919bec131fd27aa7abf2ee986046eefc09691b6e7e58d8ed17e' ;; \
+        'a3b72d384ebac5bc978b5391edfac6045cb93ab99d6fef717f8abaed9d8863fc' \
+        '86f96eabfdfa39d996f4a63f521b38a0a25d53dc8df8cf990b4e1bf0ef095c52' ;; \
       *) exit 1 ;; \
     esac | sort > /opt/apk-index-checksums
 # Openbox needs a passwd record for the UID enforced by the workspace driver.

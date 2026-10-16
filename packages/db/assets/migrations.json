@@ -251,5 +251,16 @@
     "folderMillis": 1791625675000,
     "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1",
     "name": "20261010094755_colorful_kabuki"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"conversation_requests\" (\n\t\"principal_id\" uuid,\n\t\"conversation_id\" uuid,\n\t\"request_id\" uuid,\n\t\"identity\" jsonb NOT NULL,\n\t\"accepted_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"conversation_requests_pkey\" PRIMARY KEY(\"principal_id\",\"conversation_id\",\"request_id\")\n);\n",
+      "\nALTER TABLE \"workspace_conversation_messages\" ADD COLUMN \"identity\" jsonb;",
+      "\nALTER TABLE \"conversation_requests\" ADD CONSTRAINT \"conversation_requests_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1791896323000,
+    "hash": "396ef381367d4a2842a231f774b3e943006daabefb2f28164e35aa6f8a8c9e6b",
+    "name": "20261013125843_tiny_marvel_zombies"
   }
 ]
