@@ -26,10 +26,19 @@ export const ExecutionRecordSchema = z.strictObject({
   finalizedAt: z.iso.datetime().nullable(),
 });
 export type ExecutionRecord = z.infer<typeof ExecutionRecordSchema>;
-export const ExecutionStartSchema = z.strictObject({
-  acceptance: WorkloadAcceptanceSchema,
-  conversationIdentity: ConversationRequestIdentitySchema.optional(),
-});
+export const ExecutionStartSchema = z
+  .strictObject({
+    acceptance: WorkloadAcceptanceSchema,
+    conversationIdentity: ConversationRequestIdentitySchema.optional(),
+  })
+  .refine(
+    ({ acceptance, conversationIdentity }) =>
+      acceptance.execution.owner !== "conversation-request" || conversationIdentity !== undefined,
+    {
+      path: ["conversationIdentity"],
+      message: "Conversation execution requires a conversation identity.",
+    },
+  );
 export const ExecutionCancelSchema = WorkloadCancelSchema.refine((cancel) => cancel.scope === "operation", {
   message: "Use workspace release for workspace cancellation",
 });

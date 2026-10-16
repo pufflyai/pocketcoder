@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import type { WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
 import { ProducerCancelSchema, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
+import { executionConversationIdentity, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
 
 test("lost service terminal acknowledgment retries the same acknowledgement after the producer forgets its receipt", async () => {
@@ -57,31 +59,10 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
   }
 });
 
-function serviceFixture(port: number) {
+function serviceFixture(port: number, configure?: (source: WorkloadTemplate) => void) {
   return processDispatchFixture((source) => {
-    source.spec.profile = "service";
-    const adapter = source.spec.adapters.main;
-    if (!adapter) throw new Error("Adapter missing");
-    adapter.kind = "service";
-    adapter.protocol = "pocketcoder.execution/v1";
-    adapter.service = "agent";
-    delete adapter.command;
-    source.spec.services = {
-      agent: {
-        baseUrl: `http://127.0.0.1:${port}`,
-        required: false,
-        healthPath: "/status",
-        routes: ["accept", "lookup", "cancel", "ack"].map((action) => ({
-          method: "POST",
-          path: `/executions/${action}`,
-          query: [],
-          responseMode: "buffered",
-          maxRequestBytes: 65536,
-          maxResponseBytes: 65536,
-          deadlineSeconds: 1,
-        })),
-      },
-    };
+    serviceExecutionTemplate(source, port);
+    configure?.(source);
   });
 }
 
@@ -129,6 +110,42 @@ test("a service can cancel a dispatch that was never accepted using the frozen f
     expect((await f.store.executions.get(input.execution))?.phase).toBe("canceled");
     expect(accepts).toBe(1);
     expect(cancels).toBe(1);
+  } finally {
+    await f.dispose();
+    await producer.stop(true);
+  }
+});
+
+test("an incomplete service descriptor never reaches producer accept", async () => {
+  let accepts = 0;
+  const producer = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });
+      accepts++;
+      const { acceptance } = (await request.json()) as { acceptance: WorkloadAcceptance };
+      return Response.json({
+        execution: acceptance.execution,
+        fingerprint: acceptance.fingerprint,
+        phase: "running",
+        outcome: null,
+      });
+    },
+  });
+  const f = await serviceFixture(Number(producer.url.port), (source) => {
+    const service = source.spec.services.agent;
+    if (!service) throw new Error("Fixture service missing");
+    service.routes = service.routes.filter((route) => route.path !== "/executions/lookup");
+  });
+  try {
+    const input = f.acceptance();
+    await expect(
+      f.store.executions.accept(input, new Date(), executionConversationIdentity(input.execution.requestId)),
+    ).rejects.toThrow("buffered POST /executions/lookup");
+    await f.dispatcher.tick();
+    expect(accepts).toBe(0);
+    expect(await f.store.executions.get(input.execution)).toBeNull();
+    expect(await f.store.inputs.getManifest(input.execution.requestId)).toBeNull();
   } finally {
     await f.dispose();
     await producer.stop(true);

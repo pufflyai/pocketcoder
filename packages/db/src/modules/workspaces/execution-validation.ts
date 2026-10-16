@@ -5,6 +5,7 @@ import {
   WORKLOAD_OPERATION_CAPABILITIES,
   type WorkloadAcceptance,
   type WorkloadInputProperty,
+  type WorkloadTemplate,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 
@@ -40,6 +41,7 @@ export function validateExecution(row: WorkspaceRow, input: WorkloadAcceptance, 
   )
     executionConflict("Installed operation adapter does not match acceptance.");
   validateOwner(input, adapter.kind, adapter.protocol, runtime.profile);
+  if (input.execution.owner === "conversation-request") validateServiceRoutes(spec.services, declared.service);
   for (const capability of new Set([
     ...WORKLOAD_OPERATION_CAPABILITIES[runtime.profile],
     ...operation.requiredCapabilities,
@@ -54,6 +56,15 @@ export function validateExecution(row: WorkspaceRow, input: WorkloadAcceptance, 
   if (input.inputs.objects.length && !installed.capabilities.includes("immutable-inputs"))
     executionConflict("Installed immutable input support is required.");
   validateInputLimits(input, spec.limits);
+}
+
+function validateServiceRoutes(services: WorkloadTemplate["spec"]["services"], name: string | undefined) {
+  const routes = services[name ?? ""]?.routes ?? [];
+  for (const action of ["accept", "lookup", "cancel", "ack"]) {
+    const path = `/executions/${action}`;
+    if (!routes.some((route) => route.method === "POST" && route.path === path && route.responseMode === "buffered"))
+      executionConflict(`Execution service requires a buffered POST ${path} route.`);
+  }
 }
 
 function validateOwner(input: WorkloadAcceptance, kind: string, protocol: string, profile: string) {

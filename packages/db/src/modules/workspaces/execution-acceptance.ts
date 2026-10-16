@@ -32,7 +32,7 @@ export function acceptExecution(context: DatabaseContext) {
       );
       const previous = await readExecution(context, tx, workspace, input.execution);
       if (previous) {
-        await validateExecutionReplay(context, tx, previous, input, identity);
+        validateExecutionReplay(previous, input, identity);
         return { kind: "replayed" as const, record: previous };
       }
       await requireExecutionPrincipal(context, tx, input.callerPrincipalId);

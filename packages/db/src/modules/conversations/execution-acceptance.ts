@@ -62,9 +62,7 @@ export async function insertConversationExecution(
   await tx.update(requests).set({ execution: record }).where(key);
 }
 
-export async function validateExecutionReplay(
-  context: DatabaseContext,
-  tx: Transaction,
+export function validateExecutionReplay(
   record: ExecutionRecord,
   input: WorkloadAcceptance,
   identity?: ConversationRequestIdentity,
@@ -74,11 +72,6 @@ export async function validateExecutionReplay(
     if (identity) executionConflict("A process has no conversation identity.");
     return;
   }
-  const requests = context.tables.conversationRequests;
-  const existing = await tx
-    .select()
-    .from(requests)
-    .where(and(eq(requests.principalId, input.callerPrincipalId), eq(requests.requestId, input.execution.requestId)));
-  if (!existing.some((r) => canonicalJson(r.identity) === canonicalJson(identity)))
+  if (canonicalJson(record.conversationIdentity) !== canonicalJson(identity))
     executionConflict("Conversation identity conflict.");
 }

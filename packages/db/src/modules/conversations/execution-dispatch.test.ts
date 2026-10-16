@@ -1,48 +1,14 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
 import { ExecutionDispatcher } from "@pstdio/pocketcoder-runtime-core";
 import { eq } from "drizzle-orm";
 import { executionFixture } from "../workspaces/execution-fixture.test";
+import { executionConversationIdentity, serviceExecutionTemplate } from "../workspaces/execution-service-fixture.test";
 
 async function conversationFixture(weak = false) {
-  const f = await executionFixture(
-    (source) => {
-      source.spec.profile = "service";
-      const adapter = source.spec.adapters.main;
-      if (!adapter) throw new Error("Adapter missing");
-      adapter.kind = "service";
-      adapter.protocol = "pocketcoder.execution/v1";
-      adapter.service = "agent";
-      delete adapter.command;
-      source.spec.services = {
-        agent: {
-          baseUrl: "http://127.0.0.1:12345",
-          required: true,
-          healthPath: "/status",
-          routes: [
-            {
-              method: "POST",
-              path: "/executions/accept",
-              query: [],
-              responseMode: "buffered",
-              maxRequestBytes: 65536,
-              maxResponseBytes: 65536,
-              deadlineSeconds: 1,
-            },
-          ],
-        },
-      };
-    },
-    weak ? { capabilities: ["unknown-outcome"] } : {},
-  );
-  const identity = (requestId: string) => ({
-    schema: "pocketcoder.conversation/v2" as const,
-    authority: "external" as const,
-    conversation_id: f.id,
-    request_id: requestId,
-    turn_id: randomUUID(),
-    request_fingerprint: "a".repeat(64),
-  });
+  const f = await executionFixture(serviceExecutionTemplate, weak ? { capabilities: ["unknown-outcome"] } : {});
+  const identity = (requestId: string) => executionConversationIdentity(requestId, f.id);
   return { ...f, identity };
 }
 
@@ -162,3 +128,26 @@ test("purge clears execution input and outcome data while preserving conversatio
     await f.dispose();
   }
 });
+
+test.each(["conversation", "turn", "authority", "fingerprint"])(
+  "replay rejects another accepted receipt with changed %s identity",
+  async (changed) => {
+    const f = await conversationFixture();
+    try {
+      const input = f.acceptance();
+      const original = f.identity(input.execution.requestId);
+      await f.store.executions.accept(input, new Date(), original);
+      const other: ConversationRequestIdentity = { ...original, conversation_id: randomUUID() };
+      if (changed === "turn") other.turn_id = randomUUID();
+      if (changed === "authority") other.authority = "generic";
+      if (changed === "fingerprint") other.request_fingerprint = "b".repeat(64);
+      expect((await f.store.acceptConversationRequest(f.id, other, new Date())).kind).toBe("accepted");
+      await expect(f.store.executions.accept(input, new Date(), other)).rejects.toThrow("identity conflict");
+      expect((await f.store.executions.accept(input, new Date(), original)).record.conversationIdentity).toEqual(
+        original,
+      );
+    } finally {
+      await f.dispose();
+    }
+  },
+);

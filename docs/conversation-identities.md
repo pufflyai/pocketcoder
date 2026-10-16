@@ -135,7 +135,9 @@ return `410 conversation.expired`; explicitly deleted transcripts return
 
 Registering a conversation context still does not start a turn. Explicit execution
 uses `POST /v1/workspaces/{id}/executions` with `acceptance` and the same
-`conversationIdentity`. The existing conversation request row owns its execution
+`conversationIdentity`. A retry must match the identity frozen on that exact
+execution. A receipt for another conversation cannot authorize a changed identity,
+even when it shares the request ID. The existing conversation request row owns its execution
 facts. A finite command uses the existing workspace process owner. There is no
 second run ledger.
 

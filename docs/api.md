@@ -612,7 +612,9 @@ snapshot, and installed producer descriptor. It returns no credentials or physic
 storage paths. Missing installed evidence fails closed. Canonical workspace creation
 and complete profile qualification remain separate from this start boundary.
 
-Start accepts `{acceptance, conversationIdentity?}`. Use the exported
+Start accepts `{acceptance, conversationIdentity?}`. `conversationIdentity` is required
+for `conversation-request` work. Omitting it returns HTTP 400 before accepting an
+execution or pinning inputs. Process work does not need this field. Use the exported
 `WorkloadAcceptanceSchema` and `digestOf` to hash every acceptance field except
 `fingerprint`. The fields are `execution` (workspaceId, incarnationId, owner,
 requestId), `callerPrincipalId`, `templateDigest`, `adapterDigest`, `operation`,
@@ -646,7 +648,10 @@ revocation of an external service call.
 
 A service adapter can implement `pocketcoder.execution/v1`. Its pinned template
 must declare buffered POST routes `/executions/accept`, `/executions/lookup`,
-`/executions/cancel`, and `/executions/ack`. Accept receives the start envelope and
+`/executions/cancel`, and `/executions/ack`. All four routes are required even for
+weaker producers. The controller checks them before acceptance and each dispatch
+claim. Missing routes, wrong methods, and streaming responses cause a conflict
+before producer acceptance. Accept receives the start envelope and
 an optional trusted `inputDirectory`. Lookup receives `{execution}`; cancel receives
 the public cancel envelope plus its acceptance `fingerprint`; acknowledgment receives `{execution, fingerprint}`.
 Replies use `ProducerObservationSchema`: either `{execution, phase: "absent"}` or
