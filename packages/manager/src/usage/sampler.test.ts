@@ -8,6 +8,9 @@ import { usageSampler } from "./sampler";
 test("failed real Kubernetes observations are durable gaps; retries and concurrent sampling do not duplicate them", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pc-usage-unavailable-"));
   const prior = process.env.KUBECONFIG;
+  const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const unavailableServer = `https://127.0.0.1:${listener.port}`;
+  listener.stop(true);
   const store = await ManagerStore.create();
   const sampler = usageSampler(store);
   try {
@@ -17,7 +20,7 @@ test("failed real Kubernetes observations are durable gaps; retries and concurre
       JSON.stringify({
         apiVersion: "v1",
         kind: "Config",
-        clusters: [{ name: "unavailable", cluster: { server: "https://127.0.0.1:9" } }],
+        clusters: [{ name: "unavailable", cluster: { server: unavailableServer } }],
         contexts: [{ name: "unavailable", context: { cluster: "unavailable", user: "no-authority" } }],
         "current-context": "unavailable",
         users: [{ name: "no-authority", user: {} }],
