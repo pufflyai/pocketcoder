@@ -31,6 +31,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends xvfb x11-utils
+      # pstdio extensions keep their own dependencies, so the root install does not cover them.
+      - name: Install the PocketCoder pstdio extension
+        working-directory: .pstdio/extensions/pocketcoder
+        run: bun install --frozen-lockfile
       - name: Lint, format-check, and detect unused code
         run: bun run check
       - run: bun run typecheck
