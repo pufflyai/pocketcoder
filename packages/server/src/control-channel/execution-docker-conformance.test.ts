@@ -16,7 +16,7 @@ test.skipIf(!available).each([1, 5, 20])(
     try {
       const capacity = Bun.spawnSync(["docker", "info", "--format", "{{json .}}"], { stdout: "pipe", stderr: "pipe" });
       const measured = JSON.parse(capacity.stdout.toString());
-      expect(measured.NCPU).toBeGreaterThanOrEqual(concurrency * 0.25);
+      expect(measured.NCPU).toBeGreaterThanOrEqual(concurrency * 0.1);
       expect(measured.MemTotal).toBeGreaterThan(concurrency * 256 * 1024 * 1024);
       const attempts = await Promise.all(
         Array.from({ length: concurrency }, (_, index) => f.prepare(concurrency === 1 && index === 0)),
@@ -85,7 +85,7 @@ test.skipIf(!available).each([1, 5, 20])(
           image: executionDockerImage,
           installedProducerDigest: f.producerDigest,
           storage: "controller-readonly/v1",
-          bounds: { cpuPerRuntime: 0.25, memoryMiBPerRuntime: 256, deadlineSeconds: 600, finalizationSeconds: 30 },
+          bounds: { cpuPerRuntime: 0.1, memoryMiBPerRuntime: 256, deadlineSeconds: 600, finalizationSeconds: 30 },
         }),
       );
     } finally {

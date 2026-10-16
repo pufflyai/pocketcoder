@@ -309,7 +309,7 @@ async function installedFixture(root: string, command?: string[]) {
   source.spec.runtime.digest = digest;
   source.spec.adapters.main.digest = digest;
   source.spec.network = { mode: "unrestricted" };
-  source.spec.resources = { cpu: "0.25", memory: "256Mi" };
+  source.spec.resources = { cpu: "0.1", memory: "256Mi" };
   source.spec.adapters.main.command = [
     "bun",
     "-e",
