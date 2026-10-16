@@ -110,8 +110,11 @@ jobs:
         id: setup
         with:
           cache: unit-${{ matrix.shard }}
-      - name: Prepare the Kubernetes client
-        run: timeout 30s cat "$(command -v kubectl)" > /dev/null
+      - name: Prepare and verify the Kubernetes client
+        if: contains(fromJSON(needs.plan.outputs.projects), '@pstdio/pocketcoder-manager')
+        run: |
+          timeout 30s cat "$(command -v kubectl)" > /dev/null
+          timeout 30s kubectl version --client --output=json
       - name: Run affected unit and route tests
         env:
           CI_PROJECTS: ${{ needs.plan.outputs.projects }}
