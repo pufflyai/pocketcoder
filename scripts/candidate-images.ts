@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { imageBuildCommand } from "./ci/image-cache";
 import { imageArchiveConfigDigest } from "./image-config";
 import { imageArchitectures, imageRoles } from "./image-policy";
 import { scanGlibcImage } from "./image-rootfs";
@@ -81,8 +82,7 @@ export async function buildCandidateImages(directory: string, commit: string, ar
     const recipes = { workspace: "deploy/image/Dockerfile", egress: "packages/egress/Dockerfile" };
     const file = role in recipes ? recipes[role as keyof typeof recipes] : `deploy/image/${role}.Dockerfile`;
     await imageCommand([
-      "docker",
-      "build",
+      ...imageBuildCommand(role, arch, process.env.CI_IMAGE_CACHE === "true", process.env.CI_CACHE_WRITE === "true"),
       "--platform",
       `linux/${arch}`,
       "--file",

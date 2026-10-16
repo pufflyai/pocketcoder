@@ -1,345 +1,174 @@
 name: ci
-
 on:
   pull_request:
-  merge_group:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+  merge_group: null
+  push:
+    branches:
+      - main
+      - feature/pocketcoder-1-0
+  schedule:
+    - cron: 23 3 * * *
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run complete qualification on this revision
+        type: boolean
+        default: true
   workflow_call:
-
-permissions: {}
-
+    inputs:
+      full:
+        type: boolean
+        default: true
+permissions:
+  contents: read
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
-  BUN_VERSION: 1.4.2
-
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"
 jobs:
-  test:
+  plan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      projects: ${{ steps.plan.outputs.projects }}
+      hasProjects: ${{ steps.plan.outputs.hasProjects }}
+      smoke: ${{ steps.plan.outputs.smoke }}
+      postmerge: ${{ steps.plan.outputs.postmerge }}
+      required: ${{ steps.plan.outputs.required }}
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install pstdio extension dependencies
-        working-directory: .pstdio/extensions/pocketcoder
-        run: bun install --frozen-lockfile
-      - name: Install workspace extension dependencies
-        working-directory: .pstdio/extensions/pocketcoder-workspaces
-        run: bun install --frozen-lockfile
-      - name: Verify Linux syscall trace prerequisite
-        run: strace --version
-      - name: Install desktop regression tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends xvfb x11-utils
-      # pstdio extensions keep their own dependencies, so the root install does not cover them.
-      - name: Install the PocketCoder pstdio extension
-        working-directory: .pstdio/extensions/pocketcoder
-        run: bun install --frozen-lockfile
-      - name: Lint, format-check, and detect unused code
-        run: bun run check
-      - run: bun run typecheck
-      - name: Prepare Docker conformance image
-        run: docker pull postgres:16-alpine
-      - name: Prepare Chromium runtime
-        # Warm the executable, libraries and browser data before timed interaction checks.
-        run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
-      - name: Unit, route, e2e, and PGlite integration tests
-        env:
-          POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
-        run: bun run test
-      - name: Test reusable harness E2E contract
-        run: bun run example:test
-      - name: Validate the Pi and AgentAPI E2E fixture
-        working-directory: examples/harnesses/pi
-        run: |
-          bun run typecheck
-          bun test
-      - name: Run Pi through AgentAPI full-stack E2E and pcd doctor
-        run: bun run example:e2e:pi
-      - name: Run Pi automatic resume full-stack E2E
-        run: bun run example:pi:resume:check
-      - name: Validate the Codex and OpenCode AgentAPI fixtures
-        working-directory: examples/harnesses/oss
-        run: |
-          bun run typecheck
-          bun test
-      - name: Run Codex and OpenCode through AgentAPI full-stack E2E
-        run: bun run example:e2e:oss
-      - name: Verify private Docker egress config admission
-        env:
-          POCKETCODER_EGRESS_CONFORMANCE_IMAGE: ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
-        run: |
-          docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
-          bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
-      - name: Verify the private-image workspace flow
-        run: bun run example:e2e:private-image
-      - name: Verify Docker checkpoint round trips
-        run: |
-          bun run example:e2e:docker-checkpoint
-          bun run example:e2e:docker-checkpoint-failures
-          bun run example:e2e:docker-checkpoint-repeat
-      - name: Build all entrypoints
-        run: bun run build
-      - uses: actions/setup-node@v4
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22.19.0
-      - name: Validate publishable packages
-        run: bun run pack:check
-
-  kubernetes-shared-storage:
+          cache: plan
+      - id: plan
+        env:
+          CI_FULL: ${{ inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || false }}
+        run: bun --no-env-file scripts/ci/plan.ts
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup
+        id: setup
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/kind"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Qualify isolated shared storage on two Kubernetes nodes
-        run: bun run example:e2e:kubernetes-shared-storage
-
-  embedded-database:
+          cache: quality
+      - run: bun run check
+      - run: bun run check-licenses
+      - run: bun run ci:test
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: quality
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+  types:
+    needs: plan
+    if: needs.plan.outputs.hasProjects == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        id: setup
+        with:
+          cache: types
+      - env:
+          CI_PROJECTS: ${{ needs.plan.outputs.projects }}
+        run: bun --no-env-file scripts/ci/run.ts typecheck
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: types
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+  units:
+    needs: plan
+    if: needs.plan.outputs.hasProjects == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
+        shard:
+          - 1
+          - 2
+          - 3
+          - 4
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup
+        id: setup
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Verify Linux syscall trace prerequisite
-        if: runner.os == 'Linux'
-        run: strace --version
-      - name: Disk locking, durable recovery and compiled assets
-        run: bun test packages/db/src/database/data-folder.test.ts packages/db/src/database/crash.test.ts packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts packages/db/src/migrations/crash.test.ts
-
-  native:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
-          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
-          - { runner: macos-15, platform: darwin, arch: arm64 }
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-    env:
-      NATIVE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-    steps:
-      - uses: actions/checkout@v4
+          cache: unit-${{ matrix.shard }}
+      - name: Run affected unit and route tests
+        env:
+          CI_PROJECTS: ${{ needs.plan.outputs.projects }}
+          CI_SHARD: ${{ matrix.shard }}
+        run: bun --no-env-file scripts/ci/run.ts unit
+      - uses: ./.github/actions/save-cache
         with:
-          ref: ${{ env.NATIVE_COMMIT }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - run: bun run build:native
-      - name: Verify native size
-        run: bun test examples/native/build.test.ts
-      - name: Verify native Docker round trip outside the checkout
-        if: matrix.platform == 'linux'
-        run: |
-          mkdir -p "$RUNNER_TEMP/native-fixture"
-          bun run example:e2e:native -- --binary out/native/pocketcoder --export-fixture "$RUNNER_TEMP/native-fixture" > "$RUNNER_TEMP/native-fixture/validation.json"
-          cat "$RUNNER_TEMP/native-fixture/validation.json"
-      - name: Record binary digest and commit
-        run: bun run example:native:record out/native/pocketcoder "$NATIVE_COMMIT" out/native/native.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pocketcoder-${{ env.NATIVE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
-          path: |
-            out/native/pocketcoder
-            out/native/native.json
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        if: matrix.platform == 'linux'
-        with:
-          name: pocketcoder-fixture-${{ env.NATIVE_COMMIT }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/native-fixture
-          if-no-files-found: error
-
-  candidate-installation:
-    needs: native
-    permissions:
-      contents: read
-    uses: ./.github/workflows/candidate-installation.yml
-
-  managed-accounts:
+          cache: unit-${{ matrix.shard }}
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
+  smoke:
+    needs: plan
+    if: needs.plan.outputs.smoke == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/kind"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Create isolated accounts and run an echo workspace with enforced Calico
-        run: bun run example:e2e:managed-accounts
-
-  managed-accounts-cilium:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/kind"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Install the pinned Helm release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz
-          printf '86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb  %s\n' "$RUNNER_TEMP/helm.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP" linux-amd64/helm
-          echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
-      - name: Create isolated accounts and run an echo workspace with enforced Cilium
-        run: bun run example:e2e:managed-accounts -- --cilium
-
-  kind-private-registry:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo /tmp/kind https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  /tmp/kind\n' | sha256sum --check
-          chmod 0755 /tmp/kind
-      - name: Prepare pinned cluster and registry images
-        run: |
-          docker pull kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
-          docker pull registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
-      - name: Verify real kubelet private pulls and credential cleanup
-        env:
-          POCKETCODER_KIND_BIN: /tmp/kind
-        run: bun run test:kind:registry
-      - name: Verify private Git setup and revocation on both providers
-        env:
-          POCKETCODER_KIND_BIN: /tmp/kind
-        run: bun run test:source:live
-
-      - name: Verify renewable runtime authority on both providers
-        env:
-          POCKETCODER_KIND_BIN: /tmp/kind
-        run: bun run test:runtime:live
-
-  manager-recovery:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/kind"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Verify independent manager journal and encrypted restore failures
-        env:
-          PC102_S3_TEST: "1"
-          PC94_S3_TEST: "1"
-        run: bun test packages/manager/src/recovery packages/manager/src/purge
-      - name: Prepare the workspace fixture
-        run: |
-          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
-          docker build -t pocketcoder-workspace:manager-recovery deploy/image
-      - name: Purge an account and restore the earlier manager backup
-        env:
-          POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:manager-recovery
-        run: bun run example:e2e:manager-recovery
-
-  managed-upgrade:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install the pinned kind release
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
-          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/kind"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - name: Prepare the workspace fixture
-        run: |
-          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
-          docker build -t pocketcoder-workspace:managed-upgrade deploy/image
-      - name: Upgrade accounts and recover faults without losing saved data
-        env:
-          POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-workspace:managed-upgrade
-        run: bun run example:e2e:managed-upgrade
-      - name: Verify identical replies with the installed AgentAPI
-        env:
-          POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: pocketcoder-workspace:managed-upgrade
-        run: bun test deploy/image/agentapi.conformance.test.ts
-
+          cache: smoke
+      - name: Run a real local echo workspace
+        run: bun run example:e2e:local
+  full:
+    needs: plan
+    if: needs.plan.outputs.mode == 'full'
+    uses: ./.github/workflows/ci-full.yml
+  build:
+    needs:
+      - plan
+      - quality
+      - types
+      - units
+      - smoke
+    if: always() && needs.plan.outputs.postmerge == 'true' && needs.quality.result == 'success' && (needs.types.result ==
+      'success' || needs.types.result == 'skipped') && (needs.units.result == 'success' || needs.units.result ==
+      'skipped') && (needs.smoke.result == 'success' || needs.smoke.result == 'skipped')
+    uses: ./.github/workflows/ci-packages.yml
   checks:
     name: CI
     if: always()
     needs:
-      - test
-      - embedded-database
-      - native
-      - candidate-installation
-      - managed-accounts
-      - managed-accounts-cilium
-      - kind-private-registry
-      - manager-recovery
-      - managed-upgrade
+      - plan
+      - quality
+      - types
+      - units
+      - smoke
+      - full
+      - build
     runs-on: ubuntu-latest
     steps:
-      - name: Require every CI job to pass
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Require every selected validation job to pass
         env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: jq --exit-status 'all(.[]; .result == "success")' <<< "$RESULTS"
+          CI_REQUIRED: ${{ needs.plan.outputs.required }}
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: bun --no-env-file scripts/ci/gate.ts
+run-name: "CI ${{ (inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || github.event_name ==
+  'merge_group' || github.event_name == 'schedule') && 'full' || 'fast' }}: ${{ github.event.pull_request.title ||
+  github.ref_name }}"

@@ -1,45 +1,25 @@
 name: candidate installation
-
 on:
-  workflow_call:
-
+  workflow_call: null
 permissions: {}
-
 env:
   BUN_VERSION: 1.4.2
-  CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-
+  CANDIDATE_COMMIT: ${{ github.sha }}
 jobs:
-  packages:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CANDIDATE_COMMIT }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - name: Pack candidate packages from the same source commit
-        run: bun run candidate:packages pack "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
-          path: ${{ runner.temp }}/packages
-          if-no-files-found: error
-
   install:
-    needs: packages
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-24.04, platform: linux, arch: x64 }
-          - { runner: ubuntu-24.04-arm, platform: linux, arch: arm64 }
-          - { runner: macos-15, platform: darwin, arch: arm64 }
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -60,7 +40,6 @@ jobs:
           path: ${{ runner.temp }}/native
       - name: Start a real Docker daemon on macOS
         if: matrix.platform == 'darwin'
-        # Setup normally finishes within 10 minutes; a stalled VM otherwise holds the run for hours.
         timeout-minutes: 20
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
@@ -72,17 +51,24 @@ jobs:
           docker info
       - name: Verify downloaded binary startup, owner, restart and backup recovery
         id: installed-native
-        run: |
+        run: >
           mkdir -p "$RUNNER_TEMP/validation"
+
           # Setup leaves over 1 GB of unsaved writes. Flush them so the unchanged
+
           # startup limits time the controller, not this job's pending writes.
+
           sync
-          bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/native.json"
+
+          bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" >
+          "$RUNNER_TEMP/validation/native.json"
+
           cat "$RUNNER_TEMP/validation/native.json"
       - name: Diagnose a failed Linux startup without changing its result
         if: failure() && matrix.platform == 'linux' && steps.installed-native.outcome == 'failure'
-        run: |
+        run: >
           mkdir -p "$RUNNER_TEMP/validation/diagnostic"
+
           {
             echo 'Diagnostic rerun only. This is not candidate acceptance.'
             uname -a
@@ -92,18 +78,25 @@ jobs:
             stat "$RUNNER_TEMP/native/pocketcoder"
             sha256sum "$RUNNER_TEMP/native/pocketcoder"
           } > "$RUNNER_TEMP/validation/diagnostic/runner.txt"
+
           if ! command -v strace; then
             sudo apt-get update
             sudo apt-get install --yes strace
           fi
+
           strace --version >> "$RUNNER_TEMP/validation/diagnostic/runner.txt"
+
           # Record waits and file-sync metadata, never reads, writes or secret buffers.
+
           set +e
-          strace -ff -tt -T -yy -e trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
+
+          strace -ff -tt -T -yy -e
+          trace=fchmod,fsync,fdatasync,futex,wait4,waitid,epoll_wait,epoll_pwait,poll,ppoll,sched_yield \
             -o "$RUNNER_TEMP/validation/diagnostic/waits" \
             bun run example:native:installed "$RUNNER_TEMP/native" "$CANDIDATE_COMMIT" \
             > "$RUNNER_TEMP/validation/diagnostic/result.log" 2>&1
           result=$?
+
           printf 'Diagnostic rerun exit: %s. Original installation failure remains blocking.\n' "$result" \
             >> "$RUNNER_TEMP/validation/diagnostic/result.log"
       - uses: actions/download-artifact@v4
@@ -113,18 +106,22 @@ jobs:
           path: ${{ runner.temp }}/fixture
       - name: Run downloaded Docker workspace, preserve and resume
         if: matrix.platform == 'linux'
-        run: |
+        run: >
           sync
-          bun run example:e2e:native -- --binary "$RUNNER_TEMP/native/pocketcoder" --fixture "$RUNNER_TEMP/fixture" > "$RUNNER_TEMP/validation/workspace.json"
+
+          bun run example:e2e:native -- --binary "$RUNNER_TEMP/native/pocketcoder" --fixture "$RUNNER_TEMP/fixture" >
+          "$RUNNER_TEMP/validation/workspace.json"
+
           cat "$RUNNER_TEMP/validation/workspace.json"
-      # Native startup does not need the large package tarballs or their disk writes.
       - uses: actions/download-artifact@v4
         with:
           name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
           path: ${{ runner.temp }}/packages
       - name: Install downloaded CLI, SDK and remote packages in a clean consumer
-        run: |
-          bun run candidate:packages check "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT" > "$RUNNER_TEMP/validation/packages.log"
+        run: >
+          bun run candidate:packages check "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT" >
+          "$RUNNER_TEMP/validation/packages.log"
+
           cat "$RUNNER_TEMP/validation/packages.log"
       - uses: actions/upload-artifact@v4
         if: always()
