@@ -110,6 +110,8 @@ jobs:
         id: setup
         with:
           cache: unit-${{ matrix.shard }}
+      - name: Prepare the Kubernetes client
+        run: timeout 30s cat "$(command -v kubectl)" > /dev/null
       - name: Run affected unit and route tests
         env:
           CI_PROJECTS: ${{ needs.plan.outputs.projects }}
