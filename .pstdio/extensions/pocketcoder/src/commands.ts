@@ -145,7 +145,7 @@ export const launchMachine = defineCommand({
         template: input.template.slice(0, separator),
         templateVersion: input.template.slice(separator + 1),
       },
-      anchors: [{ type: instanceKind.id, id: input.instance, role: "context" }],
+      anchors: [{ type: instanceKind.id, extensionId: ctx.extensionId, id: input.instance, role: "context" }],
     });
     await ctx.events.emit(changed, {});
     return { workspaceId: workspace.id };

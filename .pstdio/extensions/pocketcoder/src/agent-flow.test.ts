@@ -3,11 +3,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { HarnessEventSink, JsonPatch } from "@pstdio/sdk/extensions";
+import type { HarnessEventSink, JsonPatch, ResourceAnchor } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createMachineProvider, machinePath, machineRef } from "./machines";
+import { machinesView } from "./workbench";
 
 const repo = resolve(import.meta.dir, "../../../..");
 const command = async (args: string[]) => {
@@ -37,18 +38,33 @@ const buildImage = async () => {
   return { imageTag, image };
 };
 
-test("launches a Docker agent in a selected instance, connects, follows up, and deletes it", async () => {
-  const { imageTag, image } = await buildImage();
-  const root = await mkdtemp(join(tmpdir(), "pocketcoder-agent-flow-"));
-  const instances = createInstances(join(root, "instances"));
-  const provider = createMachineProvider(() => instances);
-  const harness = createMachineHarness(() => instances);
+const machineContext = () => {
   const ctx = makeCommandContext({
     storage: createMemoryStorage(),
     params: {},
     projectId: "test",
     overrides: { extensionId: "pocketcoder.pocketcoder" },
   });
+  const anchors = new Map<string, ResourceAnchor[]>();
+  ctx.workspaces.addAnchors = async (id, added) => {
+    anchors.set(id, [...(anchors.get(id) ?? []), ...added]);
+  };
+  ctx.workspaces.list = async () =>
+    [...anchors].map(([id, anchors_json]) => ({
+      id,
+      provider_id: `${ctx.extensionId}.workspace-type.machine`,
+      anchors_json,
+    }));
+  return { ctx, anchors };
+};
+
+test("launches a Docker agent in a selected instance, connects, follows up, and deletes it", async () => {
+  const { imageTag, image } = await buildImage();
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-agent-flow-"));
+  const instances = createInstances(join(root, "instances"));
+  const provider = createMachineProvider(() => instances);
+  const harness = createMachineHarness(() => instances);
+  const { ctx, anchors } = machineContext();
   const stateValues = createMemoryStorage();
   const harnessCtx = {
     ...ctx,
@@ -85,10 +101,16 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
       workspaceId: randomUUID(),
       params: { instance: instance.id, template: "echo-harness" },
     };
+    anchors.set(input.workspaceId, []);
     const created = await provider.create(ctx, input);
     ref = created.providerRef;
     expect(ref).toBeDefined();
     if (!ref) throw new Error("No machine reference");
+    if (machinesView.body.kind !== "dataTable") throw new Error("No machine table");
+    const rows = await machinesView.body.query(ctx, {
+      renderer: { rendererId: "machine-table", resource: { type: "instance", id: instance.id } },
+    });
+    expect(rows.rows.map((row) => row.id)).toEqual([input.workspaceId]);
     const again = await provider.create(ctx, input);
     expect(again.providerRef).toEqual(ref);
     let resolved = await provider.resolve(ctx, { ...input, providerRef: ref });

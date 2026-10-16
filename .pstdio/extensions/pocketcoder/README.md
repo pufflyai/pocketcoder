@@ -62,4 +62,4 @@ pst extensions check
 
 The extension tests use the real compiled controller and a real Docker echo agent. They check instance isolation, key expiry, readiness, idempotent machine creation, agent turns, follow-up, cancellation, and saved history. The full repository check, typecheck, and test commands include this extension.
 
-The project's Notes extension contains **PocketCoder 1.0 — pstdio workbench gaps** (note `8b044b06-b688-4229-94a3-f267a5bdb7fc`). It records the unsupported dynamic workspace-provider form, the installed CLI's smoke-test setup failure, remote file/terminal contracts, unsupported session controls, and native workspace capability handling needed for later work.
+The project's Notes extension contains **PocketCoder 1.0 — pstdio workbench gaps** (note `0e1602e9-eb97-4d8f-a4ee-cd9a44229684`). It records the text-only workspace-provider form, remote file/terminal contracts, session controls, and native workspace capability handling needed for later work. The installed extension smoke test passes on pstdio 0.43.0; it covers the initial instances page. The Docker tests cover the agent transport and machine lifecycle.
