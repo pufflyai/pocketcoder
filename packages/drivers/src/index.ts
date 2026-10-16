@@ -13,6 +13,7 @@ export {
   resolveDockerImage,
   WORKSPACE_LABEL,
 } from "./docker/docker";
+export { FilesystemInputStorage } from "./filesystem/filesystem-inputs";
 export {
   FilesystemStorageDriver,
   type FilesystemStorageDriverOptions,

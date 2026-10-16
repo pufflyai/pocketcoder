@@ -430,67 +430,51 @@ Terminal content is never persisted. Matching `workspace.terminal_opened` and
 PUT /v1/workspaces/{id}/attachments/{attachment_id}   scope attachments:write
 ```
 
-Streams a caller-selected file into supervisor-owned storage at
-`$HOME/.pcd/attachments/{attachment_id}/{name}` inside the workspace. The
-attachment ID is a caller-generated UUID and the idempotency key: a retry
-with identical bytes returns `200` with the existing descriptor, different
-bytes return `409 attachment.conflict`, and a new upload returns `201`.
+Streams into private controller storage. `Content-Disposition` supplies a logical
+filename, `Content-Length` supplies the exact size, and `X-Content-SHA256` supplies
+64 lowercase hex characters. `Content-Type` defaults to `application/octet-stream`.
+Zero-byte inputs are valid. Limits are explicit deployment settings; see
+[immutable input storage](input-storage.md).
 
-- Body: the raw file bytes, streamed in bounded acknowledged chunks over the
-  supervisor connection — never through a declared service route.
-- `Content-Disposition` (required): `attachment; filename="report.pdf"`; the
-  RFC 5987 `filename*=UTF-8''…` form is supported for non-ASCII names.
-- `Content-Length` (required): the exact byte count, at most 25 MiB
-  (zero-byte files are valid).
-- `Content-Type` (optional): the stored media type, defaulting to
-  `application/octet-stream`.
+A new input returns `201` with an `InputObjectReference`:
 
 ```json
 {
-  "id": "c459d3dd-a9fb-439b-a090-ab849b089bca",
+  "workspaceId": "e372d962-5cb5-4df3-bfc7-4957ce123205",
+  "fileId": "c459d3dd-a9fb-439b-a090-ab849b089bca",
+  "objectVersion": "sha256:<descriptor digest>",
   "name": "report.pdf",
-  "path": "/home/pocketcoder/.pcd/attachments/c459d3dd-…/report.pdf",
-  "media_type": "application/pdf",
-  "size_bytes": 42137,
-  "sha256": "…64 hex characters…"
+  "mediaType": "application/pdf",
+  "sizeBytes": 42137,
+  "digest": "sha256:<content digest>",
+  "visibility": "ready"
 }
 ```
 
-The supervisor sanitizes the filename, writes through a same-directory
-temporary file, verifies length and digest, and atomically exposes the
-completed file with `0700`/`0600` modes. The control plane persists neither
-bytes nor attachment metadata; the workspace filesystem is the only store,
-so attachments follow the workspace lifecycle and survive checkpoints only
-when a declared persistence mount contains `$HOME/.pcd`.
+References contain no physical path. A same-ID/same-descriptor retry returns `200`
+without consuming the body. Changed descriptors return `409 attachment.conflict`.
+An in-flight owner returns `409 operation.conflict`; retry after it settles.
+Capacity is reserved before body reads. Size or digest mismatch returns
+`400 attachment.invalid`; per-file excess returns `413 attachment.too_large`.
+Aggregate, file count or transfer exhaustion returns `507 storage.capacity_exhausted`.
+Interrupted uploads return `503 attachment.interrupted`. Missing or corrupt canonical
+bytes return `404 attachment.not_found` and require a new staging ID.
 
-Both AgentAPI message aliases accept an optional `attachment_ids` array
-(1–10 unique UUIDs, at most 100 MiB of resolved content):
+The workspace must be ready, owned by the caller and not being purged. A live
+supervisor connection is not required. Upload activity updates the idle clock.
+`attachments:write` is an explicit scope. Without configured trusted storage the
+route returns `409 attachment.unsupported`.
 
-```json
-{ "type": "user", "content": "Summarize this.", "attachment_ids": ["…"] }
-```
+The SDK hashes buffered bodies and sends the digest. Stream callers must supply
+`sha256` before body consumption. Upload progress still reports consumed bytes.
+`attachments.upload` now returns an immutable reference with `fileId`, replacing
+the old workload path descriptor. CLI and remote uploads send the same digest.
 
-The server resolves every ID through the connected supervisor, removes
-`attachment_ids`, and appends a generated `<pocketcoder-attachments>` JSON
-block to the content carrying each file's `name`, `path`, `media_type`,
-`size_bytes`, and `sha256`. Any resolution failure rejects the whole message
-and AgentAPI receives nothing; messages without `attachment_ids` are relayed
-byte-identical. Generic custom services never resolve IDs — pass the
-descriptor's `path` through the service's own documented request format.
-
-| Status | Code | Meaning |
-|--------|------|---------|
-| 400 | `attachment.invalid` | Bad UUID, headers, filename, media type, length, or id list |
-| 404 | `attachment.not_found` | An ID cannot be resolved in this workspace |
-| 409 | `attachment.conflict` | The ID exists with different bytes or metadata |
-| 409 | `attachment.unsupported` | The connected supervisor predates workspace protocol v3 |
-| 413 | `attachment.too_large` | File over 25 MiB, or a message referencing over 100 MiB |
-| 503 | `attachment.interrupted` | The transfer aborted before atomic completion |
-
-Workspace gates match the relay (`workspace.not_ready`, `workspace.terminal`,
-`workspace.disconnected`), and attachment activity counts as workspace
-activity for the idle timeout. Existing machine keys do not gain
-`attachments:write` automatically; operators grant it explicitly.
+AgentAPI messages with `attachment_ids` fail closed with
+`409 attachment.unsupported` until a qualified immutable projection and operation
+owner are installed. Messages without attachment IDs remain byte-identical.
+Docker/Kubernetes projection enforcement belongs to PC-128/PC-130; staged bytes
+alone do not advertise installed immutable-input execution support.
 
 ## Screenshots
 

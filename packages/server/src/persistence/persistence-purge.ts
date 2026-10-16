@@ -123,6 +123,7 @@ export class PersistencePurgeService {
       reason = "purge_storage_unavailable";
       await driver.purgeInput(workspaceId);
       await purgeStorage(this.context, workspace);
+      await this.context.deps.purgeInputs?.(workspaceId);
       await store.purgeWorkspaceContent(workspaceId, this.context.now());
       const done = this.context.now();
       await store.updateOperation(operation.id, { state: "succeeded", reasonCode: null, completedAt: done }, done);

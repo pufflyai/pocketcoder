@@ -353,7 +353,7 @@ Unbound providers contain only template identity and a single-use pool enrollmen
 - **Protocol upgrades are server-first**: the server accepts workspace
   protocol v1–v5, so deploy it before rolling new workspace images.
   Connected older supervisors keep the capabilities of their version:
-  attachment requests below v3 return `attachment.unsupported`. Terminal opens
+  attachment staging requires explicit [trusted storage](input-storage.md). Terminal opens
   below v4 return `terminal.protocol_unsupported`, and streamed relay routes
   below v5 return `relay.streaming_unsupported` until the workspace image
   carries a newer supervisor.

@@ -1,8 +1,7 @@
 import { z } from "zod";
 
-// Workspace-native attachments: callers stream files into supervisor-owned
-// storage and reference them by opaque ID. The control plane never persists
-// attachment bytes or metadata; the workspace filesystem is the only store.
+// Legacy attachment frames and transcript descriptors. Canonical uploads now use
+// controller-owned storage and InputObjectReference; these frames cannot publish inputs.
 
 export const ATTACHMENT_MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const ATTACHMENT_MAX_MESSAGE_IDS = 10;

@@ -1,6 +1,6 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import { and, eq, notInArray } from "drizzle-orm";
-import type { DatabaseContext, QueryContext } from "../../database/context";
+import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
 import { purgeBinaryOutputs } from "../outputs/binary-output-delete";
 import { lockStorageCapacity } from "./reservation-capacity";
 
@@ -37,6 +37,7 @@ export function createContentPurge(context: DatabaseContext) {
           .for("update");
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
         await purgeBinaryOutputs(context, tx, workspaceId, at);
+        await purgeInputMetadata(context, tx, workspaceId);
         const [pending] = await tx
           .select({ id: tables.workspaceLeases.id })
           .from(tables.workspaceLeases)
@@ -89,4 +90,17 @@ export function createContentPurge(context: DatabaseContext) {
       });
     },
   };
+}
+
+async function purgeInputMetadata(context: DatabaseContext, tx: Transaction, workspaceId: string) {
+  const { tables } = context;
+  const inputs = await tx.select().from(tables.inputObjects).where(eq(tables.inputObjects.workspaceId, workspaceId));
+  if (inputs.some((row) => row.state !== "expired")) throw new Error("Canonical input deletion is pending.");
+  const manifests = await tx.select().from(tables.inputManifests);
+  for (const row of manifests)
+    if (row.manifest.workspaceId === workspaceId) {
+      if (!row.finalizedAt) throw new Error("Input finalization is pending.");
+      await tx.delete(tables.inputManifests).where(eq(tables.inputManifests.id, row.id));
+    }
+  await tx.delete(tables.inputObjects).where(eq(tables.inputObjects.workspaceId, workspaceId));
 }

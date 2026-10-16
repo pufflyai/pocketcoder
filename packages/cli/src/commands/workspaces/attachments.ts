@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
 import type { ApiRequest } from "./chat-session";
@@ -59,6 +59,7 @@ export async function uploadAttachments(
         "content-type": mediaTypeOf(path),
         "content-disposition": contentDisposition(name),
         "content-length": String(bytes.byteLength),
+        "x-content-sha256": createHash("sha256").update(bytes).digest("hex"),
       },
       body: bytes,
     });
