@@ -1,9 +1,18 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ManagerStore } from "../database/store";
 import { usageSampler } from "./sampler";
+
+// CI can page the large client binary in slowly; prepare it before timing sampling.
+beforeAll(async () => {
+  const executable = Bun.which("kubectl");
+  if (!executable) throw new Error("The Kubernetes sampling fixture requires kubectl.");
+  let bytes = 0;
+  for await (const chunk of Bun.file(executable).stream()) bytes += chunk.byteLength;
+  console.log(`Prepared ${bytes} Kubernetes client bytes.`);
+}, 30_000);
 
 test("failed real Kubernetes observations are durable gaps; retries and concurrent sampling do not duplicate them", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pc-usage-unavailable-"));
