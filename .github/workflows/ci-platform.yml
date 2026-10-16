@@ -1,0 +1,105 @@
+name: Platform qualification
+on:
+  workflow_call: {}
+permissions:
+  contents: read
+env:
+  BUN_VERSION: 1.4.2
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"
+jobs:
+  embedded-database:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Verify Linux syscall trace prerequisite
+        if: runner.os == 'Linux'
+        run: strace --version
+      - name: Disk locking, durable recovery and compiled assets
+        run: bun test packages/db/src/database/data-folder.test.ts packages/db/src/database/crash.test.ts
+          packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts
+          packages/db/src/migrations/crash.test.ts
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - runner: macos-15
+            platform: darwin
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    env:
+      NATIVE_COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.NATIVE_COMMIT }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build:native
+      - name: Verify native size
+        run: bun test examples/native/build.test.ts
+      - name: Verify native Docker round trip outside the checkout
+        if: matrix.platform == 'linux'
+        run: >
+          mkdir -p "$RUNNER_TEMP/native-fixture"
+
+          bun run example:e2e:native -- --binary out/native/pocketcoder --export-fixture "$RUNNER_TEMP/native-fixture" >
+          "$RUNNER_TEMP/native-fixture/validation.json"
+
+          cat "$RUNNER_TEMP/native-fixture/validation.json"
+      - name: Record binary digest and commit
+        run: bun run example:native:record out/native/pocketcoder "$NATIVE_COMMIT" out/native/native.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-${{ env.NATIVE_COMMIT }}-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            out/native/pocketcoder
+            out/native/native.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'linux'
+        with:
+          name: pocketcoder-fixture-${{ env.NATIVE_COMMIT }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/native-fixture
+          if-no-files-found: error
+  checks:
+    name: Qualification result
+    if: always()
+    needs:
+      - embedded-database
+      - native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - env:
+          CI_REQUIRED: '["embedded-database","native"]'
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: bun --no-env-file scripts/ci/gate.ts

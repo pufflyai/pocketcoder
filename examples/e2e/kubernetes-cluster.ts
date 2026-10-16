@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { dockerImageConfigDigest } from "../../scripts/image-config";
+import { readKubernetesCiImage } from "../local/ci-images";
 import { installCalico } from "./kubernetes-calico";
 import { installCilium } from "./kubernetes-cilium";
 import { command } from "./local-process";
@@ -147,6 +148,13 @@ export async function createKubernetesCluster(
       const tag = `pocketcoder-${role}:${name}`;
       const base = `pocketcoder-workspace:${name}`;
       images.push(tag);
+      const fixture = await readKubernetesCiImage(role, options.hostBundled);
+      if (fixture) {
+        await command(["docker", "tag", fixture.tag, tag], { quiet: true });
+        const loaded = await loadImage(tag);
+        if (loaded.imageId !== fixture.imageId) throw new Error("Loaded Kubernetes fixture image ID differs");
+        return loaded;
+      }
       if (role === "server" && options.hostBundled) {
         await buildManagedController(ROOT, directory, tag);
       } else if (role === "server") {

@@ -64,6 +64,13 @@ Readability and structure matter most — we're happy to make bigger changes to 
 - After creating or updating a PR, read its saved body with `gh pr view --json body` and check that every template section is present and filled in.
 - When a branch requires a merge queue, use the queue and let its required checks pass. Do not bypass it with `--admin`.
 
+## CI and Merges
+
+- PR updates run affected checks. The merge queue runs full qualification against the merge result. Both require the **CI** check.
+- Merge through the queue. Never bypass required checks or push directly to a protected branch.
+- Keep live integration, recovery, browser, provider, and timing checks uncached. Shared caches are published only by protected-branch runs.
+- Keep every root test command assigned to full CI. See `docs/ci.md` for stages, cache rules, and timing reports.
+
 ## CI Timeouts
 
 A timeout that trips means something got slower — that's the bug. Never widen `timeout-minutes` without explicit approval.
