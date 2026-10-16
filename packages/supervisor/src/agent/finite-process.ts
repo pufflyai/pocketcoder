@@ -6,7 +6,9 @@ export class FiniteProcess {
   private groupStopped = false;
   private child: ReturnType<typeof Bun.spawn> | null = null;
   private readonly cancellations = new Map<string, string>();
-  private cancellation: Promise<void> | null = null;
+  private groupStop: Promise<void> | null = null;
+  private killDeadline: number | null = null;
+  private killTimer: ReturnType<typeof setTimeout> | undefined;
   drained = Promise.resolve();
 
   constructor(
@@ -81,8 +83,7 @@ export class FiniteProcess {
           signal: child.signalCode,
           endedAt: new Date().toISOString(),
         };
-        this.cancellation ??= this.cancelGroup("SIGTERM", this.finalizationGraceMs);
-        await this.cancellation;
+        await this.stopGroup("SIGTERM", this.finalizationGraceMs);
         this.replay();
         await Promise.all(pumps);
       });
@@ -109,11 +110,10 @@ export class FiniteProcess {
     const previous = this.cancellations.get(execution.requestId);
     if (previous && previous !== cancelId) throw new Error("Cancel identity conflict");
     const fact = this.lookup(execution);
-    if (!previous && (fact?.phase === "exited" || fact?.phase === "lost")) return "terminal" as const;
+    if (fact?.phase === "lost" || (fact?.phase === "exited" && this.groupStopped)) return "terminal" as const;
     this.cancellations.set(execution.requestId, cancelId);
     if (!fact) return "canceled" as const;
-    if (!this.cancellation && graceMs !== undefined) this.cancellation = this.cancelGroup(signal, graceMs);
-    else this.signalGroup(signal);
+    this.stopGroup(signal, graceMs ?? this.finalizationGraceMs);
     return "requested" as const;
   }
 
@@ -145,7 +145,10 @@ export class FiniteProcess {
     try {
       process.kill(-this.fact.processGroupId, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      // macOS can deny a group signal while its final members are exiting.
+      if (code === "EPERM") return;
+      if (code !== "ESRCH") throw error;
       this.groupStopped = true;
     }
   }
@@ -155,19 +158,22 @@ export class FiniteProcess {
     this.replay();
   }
 
-  private async cancelGroup(signal: "SIGTERM" | "SIGKILL", graceMs: number) {
+  private stopGroup(signal: "SIGTERM" | "SIGKILL", graceMs: number) {
     this.signalGroup(signal);
-    // This timer survives leader exit, lost acknowledgements and reconnects.
-    const kill = setTimeout(() => this.signalGroup("SIGKILL"), graceMs);
-    try {
-      await this.waitForGroupStop();
-    } finally {
-      clearTimeout(kill);
+    const deadline = performance.now() + graceMs;
+    // A delayed cancel can shorten ordinary cleanup, but retries cannot extend it.
+    if (!this.groupStopped && (this.killDeadline === null || deadline < this.killDeadline)) {
+      clearTimeout(this.killTimer);
+      this.killDeadline = deadline;
+      this.killTimer = setTimeout(() => this.signalGroup("SIGKILL"), graceMs);
     }
+    this.groupStop ??= this.waitForGroupStop().finally(() => clearTimeout(this.killTimer));
+    return this.groupStop;
   }
 
   private async waitForGroupStop() {
     while (!this.groupStopped && this.fact?.processGroupId) {
+      if (this.killDeadline !== null && performance.now() >= this.killDeadline) this.signalGroup("SIGKILL");
       this.groupStopped = !groupHasWriters(this.fact.processGroupId);
       if (!this.groupStopped) await Bun.sleep(10);
     }

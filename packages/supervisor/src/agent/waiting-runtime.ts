@@ -87,19 +87,27 @@ export class WaitingRuntime {
         if (this.process.lookup(frame.payload.execution)) this.process.replay();
         else this.send("process_absent", frame.payload);
         return true;
-      case "process_cancel":
+      case "process_cancel": {
+        const graceMs = Math.max(
+          0,
+          Math.min(
+            parseDurationMs(this.exec.timeouts.terminateGrace),
+            Date.parse(frame.payload.deadlineAt) - Date.now(),
+          ),
+        );
         this.send("process_cancel_result", {
           execution: frame.payload.execution,
           cancelId: frame.payload.cancelId,
           status: this.process.cancelOperation(
             frame.payload.execution,
             frame.payload.cancelId,
-            frame.payload.signal,
-            frame.payload.graceMs,
+            graceMs === 0 ? "SIGKILL" : frame.payload.signal,
+            graceMs,
           ),
         });
         this.process.replay();
         return true;
+      }
       case "process_ack":
         if (this.pending && this.process.lookup(frame.payload.execution)) this.pending = null;
         return true;

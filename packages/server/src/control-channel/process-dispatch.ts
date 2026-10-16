@@ -60,15 +60,12 @@ export function processTransport(deps: {
     if (!record.cancel) throw new Error("Cancel intent missing");
     const template = workspace.runtimeRegistration?.template;
     if (!template) throw new Error("Accepted execution template missing");
-    const graceMs = Math.max(
-      0,
-      template.manifest.spec.limits.finalizationSeconds * 1000 - (Date.now() - Date.parse(record.cancel.requestedAt)),
-    );
+    const deadline = Date.parse(record.cancel.requestedAt) + template.manifest.spec.limits.finalizationSeconds * 1000;
     deps.hub.send(connection(workspace), "process_cancel", {
       execution: record.acceptance.execution,
       cancelId: record.cancel.cancelId,
-      signal: graceMs === 0 ? "SIGKILL" : "SIGTERM",
-      graceMs,
+      signal: Date.now() >= deadline ? "SIGKILL" : "SIGTERM",
+      deadlineAt: new Date(deadline).toISOString(),
     });
   }
 }

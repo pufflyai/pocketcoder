@@ -20,10 +20,58 @@ test.each(["fork", "exit"])("a %s during enumeration cannot prove the group stop
       return before;
     },
     stat: (pid: string) => readFileSync(join(root, pid), "utf8"),
+    tasks: (pid: string) => [pid],
+    taskStat: (_pid: string, tid: string) => readFileSync(join(root, tid), "utf8"),
   };
   try {
     expect(scanGroupWriters(100, proc)).toBe(true);
     writeFileSync(join(root, "101"), "101 (child) Z 1 100");
+    expect(scanGroupWriters(100, proc)).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a zombie main thread does not prove its live worker threads stopped", () => {
+  const root = mkdtempSync(join(tmpdir(), "pc-thread-scan-"));
+  writeFileSync(join(root, "100"), "100 (main) Z 1 100");
+  writeFileSync(join(root, "101"), "101 (worker) S 1 100");
+  const proc = {
+    pids: () => ["100"],
+    stat: (pid: string) => readFileSync(join(root, pid), "utf8"),
+    tasks: () => readdirSync(root),
+    taskStat: (_pid: string, tid: string) => readFileSync(join(root, tid), "utf8"),
+  };
+  try {
+    expect(scanGroupWriters(100, proc)).toBe(true);
+    writeFileSync(join(root, "101"), "101 (worker) Z 1 100");
+    expect(scanGroupWriters(100, proc)).toBe(false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a thread created during enumeration cannot escape the writer barrier", () => {
+  const root = mkdtempSync(join(tmpdir(), "pc-thread-churn-"));
+  writeFileSync(join(root, "100"), "100 (main) Z 1 100");
+  writeFileSync(join(root, "101"), "101 (worker) S 1 100");
+  let inventories = 0;
+  const proc = {
+    pids: () => ["100"],
+    stat: (pid: string) => readFileSync(join(root, pid), "utf8"),
+    tasks() {
+      const before = readdirSync(root);
+      if (inventories++ === 0) {
+        writeFileSync(join(root, "102"), "102 (new worker) S 1 100");
+        writeFileSync(join(root, "101"), "101 (old worker) Z 1 100");
+      }
+      return before;
+    },
+    taskStat: (_pid: string, tid: string) => readFileSync(join(root, tid), "utf8"),
+  };
+  try {
+    expect(scanGroupWriters(100, proc)).toBe(true);
+    writeFileSync(join(root, "102"), "102 (new worker) Z 1 100");
     expect(scanGroupWriters(100, proc)).toBe(false);
   } finally {
     rmSync(root, { recursive: true, force: true });

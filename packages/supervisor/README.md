@@ -52,8 +52,10 @@ observes the same request; `process_cancel` signals only its owned process group
 Task exit keeps the supervisor and infrastructure alive. Before reporting a terminal
 fact, the supervisor stops remaining group writers with TERM and then KILL within
 the canonical template’s `limits.finalizationSeconds` bound. It preserves the
-leader’s exact exit code and signal. A Linux orphan zombie cannot write and does
-not hold this barrier open. Output collection and workspace release remain separate.
+leader’s exact exit code and signal. On Linux, a zombie leader can still have live
+worker threads. The stop proof checks those threads and retries process or thread
+inventory changes. A process with only dead zombie tasks does not hold the barrier
+open. Output collection and workspace release remain separate.
 Workspace TERM/KILL closes the finite process group and infrastructure. Detached
 children have no survival guarantee. Explicit workspace services have their own
 groups and are not canceled with a finite command.
@@ -85,3 +87,12 @@ Only a stopped group can publish its terminal receipt. Undispatched cancellation
 releases input pins immediately. Execution finalization releases pins after the
 terminal acknowledgment. Workspace purge releases remaining pins only after
 provider termination is verified; a failed stop keeps them pinned.
+
+Ordinary-exit cleanup and accepted cancellation share one escalation timer. A
+delayed cancel shortens that timer when its remaining budget is earlier. Repeated
+delivery cannot extend either deadline, including after the leader exits.
+
+The cancel frame carries the original UTC deadline. Delayed delivery cannot start
+a fresh grace period. This requires aligned controller and runtime clocks; the
+qualified Docker fixture shares its host clock. Other providers must qualify that
+clock assumption along with their runtime profile.

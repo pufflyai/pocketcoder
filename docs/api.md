@@ -646,7 +646,10 @@ wins over a late cancel. The terminal process receipt waits until group writers
 stop, including after ordinary leader exit, while preserving the exact leader
 exit result. Workspace cancellation still stops the workspace and its
 services; operation cancel does not stop workspace-lived infrastructure or certify
-revocation of an external service call.
+revocation of an external service call. The producer receives the original UTC
+cancellation deadline, so queued delivery cannot restart the grace. This assumes
+aligned controller/runtime clocks; the qualified Docker fixture shares its host
+clock. Other providers must qualify this assumption with their runtime profile.
 
 A service adapter can implement `pocketcoder.execution/v1`. Its pinned template
 must declare buffered POST routes `/executions/accept`, `/executions/lookup`,
