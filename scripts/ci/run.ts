@@ -13,7 +13,8 @@ if (target === "unit" || target === "typecheck") {
     "run-many",
     `--target=${target === "unit" ? "test" : target}`,
     `--projects=${projects.join(",")}`,
-    "--parallel=2",
+    // Embedded databases need the runner's CPU and memory without a competing package.
+    `--parallel=${target === "unit" ? 1 : 2}`,
     "--outputStyle=stream",
   ];
   if (target === "unit") {
