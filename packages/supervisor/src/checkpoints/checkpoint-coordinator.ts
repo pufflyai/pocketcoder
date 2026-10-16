@@ -36,7 +36,7 @@ export async function prepareCheckpoint(
   callbacks.setQuiescing(true);
   try {
     const proc = Bun.spawn(hook.command, {
-      cwd: hook.cwd ?? exec.harness.cwd ?? "/",
+      cwd: hook.cwd ?? exec.harness?.cwd ?? "/",
       env: enforcedEnvironment(exec, {
         ...hook.env,
         POCKETCODER_CHECKPOINT_OPERATION: operationId,

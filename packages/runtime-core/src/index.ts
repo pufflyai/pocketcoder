@@ -123,6 +123,7 @@ export {
   type SchedulerDeps,
   type SecretFactory,
 } from "./scheduler/scheduler";
+export { prepareWaitingRuntime } from "./scheduler/waiting-runtime";
 export {
   type ResolvedWarmPool,
   resolveWarmPools,

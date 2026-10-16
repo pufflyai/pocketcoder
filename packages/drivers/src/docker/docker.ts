@@ -236,16 +236,20 @@ export class DockerDriver implements WorkspaceDriver {
       const out = await runDocker(this.opts.dockerBin, [
         "inspect",
         "--format",
-        "{{.State.Running}} {{.State.ExitCode}}",
+        "{{.State.Running}} {{.State.ExitCode}} {{.Id}} {{.State.StartedAt}}",
         ref.id,
       ]);
-      const [running, exitCode] = out.split(" ");
+      const [running, exitCode, containerId, startedAt] = out.split(" ");
       return {
         exists: true,
+        // A manual restart keeps the container ID and can keep RestartCount at zero.
+        containerIdentity: `${containerId}@${startedAt}`,
         running: running === "true",
         exitCode: running === "true" ? null : Number(exitCode),
       };
-    } catch {
+    } catch (error) {
+      // A daemon outage is not evidence that the runtime disappeared.
+      if (!(error instanceof Error) || !/No such (object|container)/i.test(error.message)) throw error;
       return { exists: false, running: false, exitCode: null };
     }
   }

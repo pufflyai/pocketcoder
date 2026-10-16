@@ -8,7 +8,7 @@ caller (machine key)
   → one isolated runtime per workspace
   → storage driver (host data roots or a Kubernetes PVC)
   → pocketcoder-supervisor (PID 1)
-  → PocketCoder-owned AgentAPI → template-declared coding agent
+  → waiting workload runtime or the alpha template harness
 ```
 
 There is exactly one execution path. Capacity pressure queues workspaces; it
@@ -20,7 +20,7 @@ neither callers nor templates can select them.
 | Component | Package | Responsibility |
 |-----------|---------|----------------|
 | pocketcoder-server | `packages/server` | One Hono app: REST + OpenAPI, machine auth, agent WSS, relay; scheduler, outbox, reconciliation loops |
-| pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, AgentAPI launch, accepted-input capture, health, relay, checkpoint quiescing, TERM/KILL |
+| pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, waiting runtime/process ownership, accepted-input capture, health, relay, checkpoint quiescing, TERM/KILL |
 | pocketcoder-egress | `packages/egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
 | pcd | `packages/cli` | Published bundled operator CLI: principals/keys, template validation, workspace inspection, chat, doctor |
 | remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
@@ -32,6 +32,38 @@ neither callers nor templates can select them.
 | auth | `packages/auth` | Machine-key digests, registration secrets, event signing |
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
 | testkit | `packages/testkit` | Store contracts, fake driver, fake AgentAPI, template fixtures |
+
+## Waiting runtime and finite process owner
+
+The canonical runtime waits after setup. Infrastructure services can start at
+creation. Task commands start through explicit process control. Runtime readiness,
+required infrastructure health and agent readiness are separate facts. Alpha
+snapshots keep their original automatic harness lifecycle.
+
+The existing workspace row holds `runtimeRegistration` and `finiteProcess`.
+The driver supplies container identity; a WebSocket connection epoch is transport
+state. Docker combines its immutable container ID with its observed start time
+to identify one execution lifetime. Even a manual restart changes that token.
+A lost, stopped, restarted or replaced container ends the old registration. An
+inspection outage is retried and does not prove container loss. Kubernetes does
+not yet supply this identity and cannot prepare a waiting profile.
+
+The finite owner claims one request before spawning its process group. It records
+the observed exit code or signal, group ID and timestamps. A missing outcome is
+`lost`, with no invented exit code. Terminal frames are replayed until persistence
+is acknowledged. Connection epochs fence stale writers. Restore uses a new
+workspace ID, so old references cannot target it.
+
+A command's exit leaves the supervisor ready for finalization. It does not close
+the control channel, stop workspace infrastructure or turn its result into a
+workspace reason. The later finalization owner must stop remaining writers,
+export within its budget, then release compute. Waiting profiles use their hard
+deadline and explicit release; the alpha agent idle sweep does not apply.
+
+`prepareWaitingRuntime` and `waitingExecSpec` are internal composition points for
+the admission/dispatch owners. They do not add a second public job API. Canonical
+publication remains fail-closed until input, dispatch and finalization gates can
+qualify the full profile. See the [supervisor contract](../packages/supervisor/README.md).
 
 ## Durable database schema
 
