@@ -1,4 +1,4 @@
-import { canonicalJson, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
+import { canonicalJson, executionInputManifestId, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { readInput } from "../persistence/inputs/objects";
@@ -24,16 +24,24 @@ export async function pinExecutionInputs(
       executionConflict("Exact input object has expired.");
   }
   const manifests = context.tables.inputManifests;
-  const [manifest] = await tx.select().from(manifests).where(eq(manifests.id, input.execution.requestId));
+  const [manifest] = await tx
+    .select()
+    .from(manifests)
+    .where(eq(manifests.id, executionInputManifestId(input)));
   if (manifest && (manifest.finalizedAt || canonicalJson(manifest.manifest) !== canonicalJson(input.inputs)))
     executionConflict("Input manifest conflict.");
   if (!manifest)
-    await tx.insert(manifests).values({ id: input.execution.requestId, manifest: input.inputs, finalizedAt: null });
+    await tx
+      .insert(manifests)
+      .values({ id: executionInputManifestId(input), manifest: input.inputs, finalizedAt: null });
 }
 
 export async function requireExecutionInputs(context: DatabaseContext, tx: Transaction, input: WorkloadAcceptance) {
   const manifests = context.tables.inputManifests;
-  const [manifest] = await tx.select().from(manifests).where(eq(manifests.id, input.execution.requestId));
+  const [manifest] = await tx
+    .select()
+    .from(manifests)
+    .where(eq(manifests.id, executionInputManifestId(input)));
   if (!manifest || manifest.finalizedAt || canonicalJson(manifest.manifest) !== canonicalJson(input.inputs))
     executionConflict("Accepted input pin is no longer available.");
   for (const reference of input.inputs.objects) {

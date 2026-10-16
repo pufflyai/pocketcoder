@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { ExecutionDispatcher } from "@pstdio/pocketcoder-runtime-core";
 import { eq } from "drizzle-orm";
 import { executionFixture } from "../workspaces/execution-fixture.test";
@@ -38,7 +39,7 @@ test("conversation dispatch preserves request identities and fences late cancel 
     await expect(f.store.executions.accept(b, new Date(), bIdentity)).rejects.toThrow("finalization");
     await f.store.executions.acknowledge(a.execution, a.fingerprint, new Date());
     await f.store.executions.finalize(a.execution, new Date());
-    expect((await f.store.inputs.getManifest(a.execution.requestId))?.finalizedAt).toBeInstanceOf(Date);
+    expect((await f.store.inputs.getManifest(executionInputManifestId(a)))?.finalizedAt).toBeInstanceOf(Date);
     await f.store.executions.accept(b, new Date(), bIdentity);
     expect(
       (
@@ -90,8 +91,11 @@ test("weak producer lost response becomes unknown without another request or an 
       },
     });
     await dispatcher.tick();
+    await dispatcher.drain();
     await dispatcher.tick();
+    await dispatcher.drain();
     await dispatcher.tick();
+    await dispatcher.drain();
     expect(calls).toBe(1);
     expect((await f.store.executions.get(input.execution))?.phase).toBe("unknown");
     await expect(f.store.executions.finalize(input.execution, new Date())).rejects.toThrow("Unsettled");

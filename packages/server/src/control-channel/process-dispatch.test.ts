@@ -13,10 +13,12 @@ test.each(["before-send", "after-spawn", "terminal-ack"])(
       f.dropReplies = cut === "after-spawn";
       f.dropAck = cut === "terminal-ack";
       await f.dispatcher.tick();
+      await f.dispatcher.drain();
       if (cut === "after-spawn") await f.waitFor(async () => f.spawned > 0);
       f.dropAccept = false;
       f.dropReplies = false;
       await f.dispatcher.tick();
+      await f.dispatcher.drain();
       await f.waitFor(async () => (await f.store.executions.get(acceptance.execution))?.phase === "terminal");
       expect((await f.store.getWorkspace(f.id))?.finiteProcess).toMatchObject({
         execution: acceptance.execution,
@@ -24,6 +26,7 @@ test.each(["before-send", "after-spawn", "terminal-ack"])(
       });
       f.dropAck = false;
       await f.dispatcher.tick();
+      await f.dispatcher.drain();
       expect((await f.store.executions.accept(acceptance, new Date())).kind).toBe("replayed");
       expect(f.spawned).toBe(1);
       expect(
@@ -47,14 +50,17 @@ test("cancel after claim but before producer accept records a tombstone and does
     await f.store.executions.accept(acceptance, new Date());
     f.dropAccept = true;
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.store.executions.cancel(
       { execution: acceptance.execution, cancelId: randomUUID(), scope: "operation" },
       new Date(),
     );
     f.dropAccept = false;
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await f.store.executions.get(acceptance.execution))?.phase === "canceled");
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     expect(f.spawned).toBe(0);
     expect((await f.store.getWorkspace(f.id))?.finiteProcess).toBeNull();
   } finally {
@@ -69,6 +75,7 @@ test("transport reconnect replays the same result and clears a lost terminal ack
     await f.store.executions.accept(acceptance, new Date());
     f.dropAck = true;
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await f.store.executions.get(acceptance.execution))?.phase === "terminal");
     const before = f.received;
     f.dropAck = false;

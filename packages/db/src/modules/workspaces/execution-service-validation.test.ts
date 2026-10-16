@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { executionFixture } from "./execution-fixture.test";
 import { executionConversationIdentity, serviceExecutionTemplate } from "./execution-service-fixture.test";
 
@@ -23,7 +24,7 @@ test.each(invalidRoutes)("service acceptance rejects %s route with %s", async (a
       f.store.executions.accept(input, new Date(), executionConversationIdentity(input.execution.requestId)),
     ).rejects.toThrow(`buffered POST /executions/${action}`);
     expect(await f.store.executions.get(input.execution)).toBeNull();
-    expect(await f.store.inputs.getManifest(input.execution.requestId)).toBeNull();
+    expect(await f.store.inputs.getManifest(executionInputManifestId(input))).toBeNull();
   } finally {
     await f.dispose();
   }
@@ -61,7 +62,7 @@ test("dispatch refuses a previously accepted service intent without an acknowled
       },
     });
     await f.context.db.insert(f.context.tables.inputManifests).values({
-      id: input.execution.requestId,
+      id: executionInputManifestId(input),
       manifest: input.inputs,
       finalizedAt: null,
     });

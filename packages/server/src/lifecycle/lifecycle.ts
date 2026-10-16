@@ -147,6 +147,7 @@ export async function startPocketCoderServer(
     // A backup waits for admitted background work as well as admitted requests.
     // Scheduler finalizers can start preserves, so the scheduler settles first.
     maintenance.settleWith(() => scheduler.drain());
+    maintenance.settleWith(() => built.executionDispatcher.drain());
     maintenance.settleWith(() => persistence.drain());
     maintenance.settleWith(() => screenshots?.drain() ?? Promise.resolve());
     await store.binaryOutputs.prune(new Date());

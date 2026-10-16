@@ -12,6 +12,8 @@ import { handleConnectedFrame } from "./ws-frame-handler";
 
 export async function processDispatchFixture(
   configure?: (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => void,
+  shared?: Awaited<ReturnType<typeof executionFixture>> & { hub: Hub },
+  options: { concurrency?: number; canDispatch?: () => boolean } = {},
 ) {
   let root = "";
   const f = await executionFixture(
@@ -26,16 +28,22 @@ export async function processDispatchFixture(
       ];
       configure?.(source);
     },
-    { mode: "disk" },
+    { mode: "disk", base: shared },
   );
   root = f.directory ?? "";
-  const hub = new Hub();
+  const hub = shared?.hub ?? new Hub();
   const transport = executionTransport(
     processTransport({ store: f.store, hub, driver: {} }),
     conversationTransport({ store: f.store, hub, driver: {} }),
   );
+  let dispatchFailed = false;
   const dispatcher = new ExecutionDispatcher({
+    onHealth: (failed) => {
+      dispatchFailed = failed;
+    },
     store: f.store,
+    concurrency: options.concurrency ?? 20,
+    canDispatch: options.canDispatch,
     transport,
     inspect: async () => ({ exists: true, running: true, containerIdentity: f.runtime.incarnationId }),
   });
@@ -112,7 +120,7 @@ export async function processDispatchFixture(
       },
     },
   });
-  const input = join(root, "supervisor-input.json");
+  const input = join(root, `supervisor-input-${f.id}.json`);
   await Bun.write(
     input,
     JSON.stringify({
@@ -148,6 +156,10 @@ export async function processDispatchFixture(
     ...f,
     hub,
     dispatcher,
+    get dispatchFailed() {
+      return dispatchFailed;
+    },
+    scheduler,
     waitFor,
     get dropReplies() {
       return dropReplies;
@@ -177,11 +189,12 @@ export async function processDispatchFixture(
       hub.get(f.id)?.ws.close();
     },
     async dispose() {
+      await dispatcher.stop();
       child.kill("SIGKILL");
       await child.exited;
       await pipeline;
       await server.stop(true);
-      await f.dispose();
+      if (!shared) await f.dispose();
     },
   };
 }

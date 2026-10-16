@@ -22,6 +22,7 @@ export interface LiveConnection {
 }
 
 export interface PendingRelay {
+  control?: boolean;
   resolve: (res: ProxyResponse) => void;
   timer: ReturnType<typeof setTimeout>;
 }

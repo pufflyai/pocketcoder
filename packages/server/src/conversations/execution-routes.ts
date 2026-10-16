@@ -8,14 +8,19 @@ import {
   WorkloadExecutionReferenceSchema,
   WorkloadInputPropertySchema,
 } from "@pstdio/pocketcoder-contracts";
-import type { Store } from "@pstdio/pocketcoder-runtime-core";
+import type { ExecutionDispatcher, Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 import type { WorkspaceService } from "../workspaces/service";
 
 import { registerExecutionRuntimeRoute } from "./execution-runtime-route";
 
-export function registerExecutionRoutes(deps: { app: OpenAPIHono<AppEnv>; store: Store; service: WorkspaceService }) {
+export function registerExecutionRoutes(deps: {
+  app: OpenAPIHono<AppEnv>;
+  store: Store;
+  service: WorkspaceService;
+  executionDispatcher: ExecutionDispatcher;
+}) {
   const { app, store, service } = deps;
   // Contracts can load before Hono extends Zod. Apply its public extension to
   // the existing lazy schemas so recursive references share the registered names.
@@ -90,7 +95,9 @@ export function registerExecutionRoutes(deps: { app: OpenAPIHono<AppEnv>; store:
       const cancel = c.req.valid("json");
       if (cancel.execution.workspaceId !== id || cancel.execution.requestId !== requestId)
         throw new ApiError("operation.conflict", "Cancel target mismatch.");
-      return c.json(await store.executions.cancel(cancel, new Date()), 200);
+      const record = await store.executions.cancel(cancel, new Date());
+      deps.executionDispatcher.cancel(record);
+      return c.json(record, 200);
     },
   );
 }

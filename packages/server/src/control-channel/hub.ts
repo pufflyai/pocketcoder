@@ -21,6 +21,7 @@ import type { WSContext } from "hono/ws";
 import { PreviewSocketBridge } from "../previews/socket-bridge";
 import { RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "../terminals/terminal-bridge";
+import { bufferedRelay, MAX_INFLIGHT_RELAY } from "./buffered-relay";
 import type { LiveConnection } from "./hub-connection";
 
 export type { LiveConnection } from "./hub-connection";
@@ -32,7 +33,7 @@ import { CheckpointRegistry } from "./hub-checkpoints";
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
 // durable; PGlite only records epoch metadata.
 
-export const MAX_INFLIGHT_RELAY = 16;
+export { MAX_INFLIGHT_RELAY } from "./buffered-relay";
 
 export class Hub implements ConnectionHub {
   readonly previewSockets = new PreviewSocketBridge((conn, payload) => this.send(conn, "preview_socket", payload));
@@ -189,22 +190,18 @@ export class Hub implements ConnectionHub {
   }
 
   relay(workspaceId: string, request: Omit<ProxyRequest, "request_id">): Promise<ProxyResponse> {
-    const conn = this.byWorkspace.get(workspaceId);
-    if (!conn?.registered) {
-      return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "unreachable" });
-    }
-    if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
-      return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "deadline" });
-    }
-    const requestId = randomUUID();
-    return new Promise<ProxyResponse>((resolve) => {
-      const timer = setTimeout(() => {
-        conn.inflight.delete(requestId);
-        resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
-      }, request.deadline_ms);
-      conn.inflight.set(requestId, { resolve, timer });
-      this.send(conn, "proxy_request", { ...request, request_id: requestId });
-    });
+    return bufferedRelay(this.byWorkspace.get(workspaceId), request, (conn, type, payload) =>
+      this.send(conn, type, payload),
+    );
+  }
+
+  relayExecutionCancel(workspaceId: string, request: Omit<ProxyRequest, "request_id">) {
+    return bufferedRelay(
+      this.byWorkspace.get(workspaceId),
+      request,
+      (conn, type, payload) => this.send(conn, type, payload),
+      true,
+    );
   }
 
   relayStream(

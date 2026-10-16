@@ -23,6 +23,7 @@ export function conversationTransport(deps: {
     workspace: WorkspaceRow,
     action: "accept" | "lookup" | "cancel" | "ack",
     body: unknown,
+    control = false,
   ) {
     const spec = workspace.runtimeRegistration?.template?.manifest.spec;
     const operation = spec?.operations[record.acceptance.operation];
@@ -38,7 +39,8 @@ export function conversationTransport(deps: {
     const payload = JSON.stringify(body);
     if (Buffer.byteLength(payload) > route.maxRequestBytes)
       throw new ApiError("relay.body_too_large", "Execution envelope exceeds the route limit.");
-    const reply = await deps.hub.relay(workspace.id, {
+    const method = control ? "relayExecutionCancel" : "relay";
+    const reply = await deps.hub[method](workspace.id, {
       service,
       method: "POST",
       path,
@@ -54,7 +56,7 @@ export function conversationTransport(deps: {
       throw new ApiError("relay.body_too_large", "Execution response exceeds the route limit.");
     return bytes;
   }
-  async function observe(record: ExecutionRecord, workspace: WorkspaceRow, bytes: Buffer) {
+  async function observe(record: ExecutionRecord, workspace: WorkspaceRow, bytes: Buffer, control = false) {
     const fact = ProducerObservationSchema.parse(JSON.parse(bytes.toString()));
     if (canonicalJson(fact.execution) !== canonicalJson(record.acceptance.execution))
       throw new ApiError("operation.conflict", "Producer observation target mismatch.");
@@ -71,7 +73,7 @@ export function conversationTransport(deps: {
       fact.outcome,
     );
     if (recorded && ["terminal", "canceled"].includes(fact.phase)) {
-      await call(record, workspace, "ack", { execution: fact.execution, fingerprint: fact.fingerprint });
+      await call(record, workspace, "ack", { execution: fact.execution, fingerprint: fact.fingerprint }, control);
       await deps.store.executions.acknowledge(fact.execution, fact.fingerprint, new Date());
     }
   }
@@ -101,10 +103,16 @@ export function conversationTransport(deps: {
       );
     },
     async acknowledge(record, workspace) {
-      await call(record, workspace, "ack", {
-        execution: record.acceptance.execution,
-        fingerprint: record.acceptance.fingerprint,
-      });
+      await call(
+        record,
+        workspace,
+        "ack",
+        {
+          execution: record.acceptance.execution,
+          fingerprint: record.acceptance.fingerprint,
+        },
+        Boolean(record.cancel),
+      );
       await deps.store.executions.acknowledge(record.acceptance.execution, record.acceptance.fingerprint, new Date());
     },
     async cancel(record, workspace) {
@@ -112,12 +120,19 @@ export function conversationTransport(deps: {
       await observe(
         record,
         workspace,
-        await call(record, workspace, "cancel", {
-          execution: record.acceptance.execution,
-          cancelId: record.cancel.cancelId,
-          fingerprint: record.acceptance.fingerprint,
-          scope: "operation",
-        }),
+        await call(
+          record,
+          workspace,
+          "cancel",
+          {
+            execution: record.acceptance.execution,
+            cancelId: record.cancel.cancelId,
+            fingerprint: record.acceptance.fingerprint,
+            scope: "operation",
+          },
+          true,
+        ),
+        true,
       );
     },
   };

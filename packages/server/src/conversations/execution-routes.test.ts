@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
+import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { executionFixture, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
@@ -37,7 +38,7 @@ test.each(["process", "conversation-request"])("start without conversation ident
     if (owner === "conversation-request") {
       expect(response.status).toBe(400);
       expect(await f.store.executions.get(input.execution)).toBeNull();
-      expect(await f.store.inputs.getManifest(input.execution.requestId)).toBeNull();
+      expect(await f.store.inputs.getManifest(executionInputManifestId(input))).toBeNull();
     } else {
       expect(response.status).toBe(201);
       expect((await f.store.executions.get(input.execution))?.phase).toBe("accepted");

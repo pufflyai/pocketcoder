@@ -130,7 +130,11 @@ function composeScreenshots(deps: BuildDeps, hub: Hub, service: WorkspaceService
     return createScreenshots({ store: deps.store, hub, service, options: deps.screenshotOptions });
 }
 
-export function buildServer(deps: BuildDeps): BuiltServer {
+export function buildServer(input: BuildDeps): BuiltServer {
+  return composeServer({ ...input, readiness: input.readiness ?? new Readiness() });
+}
+
+function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer {
   const { store, driver, pepper, limits } = deps;
   const logger = deps.logger ?? createStructuredLogger(() => {});
   const metrics = deps.metrics ?? new RuntimeMetrics();
@@ -172,9 +176,13 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const service = new WorkspaceService({ store, scheduler, limits });
   const screenshots = composeScreenshots(deps, hub, service);
   const inputs = composeInputs(deps);
+  const readiness = deps.readiness;
   const executionDispatcher = new ExecutionDispatcher({
     store,
     concurrency: Math.max(1, limits.globalActiveWorkspaces),
+    canDispatch: () => !deps.maintenance?.active,
+    onError: (error) => log(`execution dispatch failed: ${String(error)}`),
+    onHealth: (failed) => readiness.set("execution-dispatch", failed ? "failed" : "ok"),
     transport: executionTransport(
       processTransport({ store, hub, driver, inputs }),
       conversationTransport({ store, hub, driver, inputs }),
@@ -182,6 +190,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
     inspect: (workspace) => driver.inspect({ kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef }),
   });
   const persistence = new PersistenceService({
+    drainExecutions: (id) => executionDispatcher.drain(id),
     purgeInputs: async (id) => {
       // Persistence purge has fenced admission and proved provider termination.
       await store.inputs.finalizeForPurge(id, new Date());
@@ -228,7 +237,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   app.use("*", requestId);
   app.use("*", requestLogging(logger));
 
-  registerHealthRoutes(app, deps);
+  registerHealthRoutes(app, { ...deps, readiness });
 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
@@ -286,7 +295,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
   registerConversationRoutes({ app, store, service });
-  registerExecutionRoutes({ app, store, service });
+  registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
   displays.register(app);

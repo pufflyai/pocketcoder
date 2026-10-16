@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
-import { ProducerCancelSchema, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
+import { executionInputManifestId, ProducerCancelSchema, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
 import { executionConversationIdentity, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
 
@@ -45,10 +45,15 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
       request_fingerprint: "a".repeat(64),
     };
     await f.store.executions.accept(input, new Date(), identity);
-    await expect(f.dispatcher.tick()).rejects.toThrow("reconciliation");
+    await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    expect(f.dispatchFailed).toBe(true);
     expect((await f.store.executions.get(input.execution))?.phase).toBe("terminal");
     expect((await f.store.executions.get(input.execution))?.acknowledgedAt).toBeNull();
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    await f.dispatcher.tick();
+    expect(f.dispatchFailed).toBe(false);
     expect(acknowledgments).toBe(2);
     expect(accepts).toBe(1);
     expect((await f.store.executions.get(input.execution))?.acknowledgedAt).toBeString();
@@ -101,12 +106,17 @@ test("a service can cancel a dispatch that was never accepted using the frozen f
       request_fingerprint: "a".repeat(64),
     };
     await f.store.executions.accept(input, new Date(), identity);
-    await expect(f.dispatcher.tick()).rejects.toThrow("reconciliation");
+    await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    expect(f.dispatchFailed).toBe(true);
     await f.store.executions.cancel(
       { execution: input.execution, cancelId: randomUUID(), scope: "operation" },
       new Date(),
     );
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    await f.dispatcher.tick();
+    expect(f.dispatchFailed).toBe(false);
     expect((await f.store.executions.get(input.execution))?.phase).toBe("canceled");
     expect(accepts).toBe(1);
     expect(cancels).toBe(1);
@@ -145,7 +155,35 @@ test("an incomplete service descriptor never reaches producer accept", async () 
     await f.dispatcher.tick();
     expect(accepts).toBe(0);
     expect(await f.store.executions.get(input.execution)).toBeNull();
-    expect(await f.store.inputs.getManifest(input.execution.requestId)).toBeNull();
+    expect(await f.store.inputs.getManifest(executionInputManifestId(input))).toBeNull();
+  } finally {
+    await f.dispose();
+    await producer.stop(true);
+  }
+});
+
+test("dispatch failure remains visible until the durable execution becomes lost", async () => {
+  const producer = Bun.serve({
+    port: 0,
+    fetch(request) {
+      if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });
+      return new Response(null, { status: 503 });
+    },
+  });
+  const f = await serviceFixture(Number(producer.url.port));
+  try {
+    const a = f.acceptance();
+    await f.store.executions.accept(a, new Date(), executionConversationIdentity(a.execution.requestId));
+    await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    expect(f.dispatchFailed).toBe(true);
+    await f.dispatcher.tick();
+    expect(f.dispatchFailed).toBe(true);
+    await f.dispatcher.drain();
+    await f.store.endWorkspaceRuntime(f.id, a.execution.incarnationId, new Date());
+    expect((await f.store.executions.get(a.execution))?.phase).toBe("lost");
+    await f.dispatcher.tick();
+    expect(f.dispatchFailed).toBe(false);
   } finally {
     await f.dispose();
     await producer.stop(true);

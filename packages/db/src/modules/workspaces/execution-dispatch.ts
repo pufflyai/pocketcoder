@@ -4,6 +4,7 @@ import {
   type ExecutionPhase,
   type ExecutionRecord,
   ExecutionRecordSchema,
+  executionInputManifestId,
   executionSettled,
   type WorkloadCancel,
   WorkloadCancelSchema,
@@ -98,7 +99,8 @@ export function createExecutionDispatch(context: DatabaseContext) {
           ...(record.dispatchClaimedAt ? {} : { phase: "canceled", settledAt: at.toISOString() }),
         };
         await writeExecution(context, tx, next);
-        if (!record.dispatchClaimedAt) await finalizeInputManifest(context, tx, input.execution.requestId, at);
+        if (!record.dispatchClaimedAt)
+          await finalizeInputManifest(context, tx, executionInputManifestId(record.acceptance), at);
         return next;
       });
     },
@@ -137,7 +139,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
       return withOwner(execution, async (tx, _workspace, record) => {
         if (!executionSettled(record) || ["unknown", "lost"].includes(record.phase) || needsAcknowledgment(record))
           executionConflict("Unsettled execution cannot pass finalization.");
-        await finalizeInputManifest(context, tx, execution.requestId, at);
+        await finalizeInputManifest(context, tx, executionInputManifestId(record.acceptance), at);
         await writeExecution(context, tx, { ...record, finalizedAt: record.finalizedAt ?? at.toISOString() });
       });
     },

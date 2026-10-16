@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { digestOf } from "../common/canonical";
 import { JsonValueSchema } from "../common/json-value";
 import { ConversationRequestIdentitySchema } from "../conversations/identity";
-import { WorkloadAcceptanceSchema, WorkloadCancelSchema } from "./workload-operation";
+import { type WorkloadAcceptance, WorkloadAcceptanceSchema, WorkloadCancelSchema } from "./workload-operation";
 
 export const ExecutionPhaseSchema = z.enum([
   "accepted",
@@ -44,4 +45,13 @@ export const ExecutionCancelSchema = WorkloadCancelSchema.refine((cancel) => can
 });
 export function executionSettled(record: ExecutionRecord) {
   return ["terminal", "canceled", "unknown", "lost"].includes(record.phase);
+}
+
+export function executionInputManifestId(input: Pick<WorkloadAcceptance, "callerPrincipalId" | "execution">) {
+  const hash = digestOf({
+    domain: "execution-input-manifest/v1",
+    callerPrincipalId: input.callerPrincipalId,
+    execution: input.execution,
+  }).slice(7);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
 }

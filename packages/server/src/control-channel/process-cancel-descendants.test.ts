@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { processDispatchFixture } from "./process-dispatch-fixture.test";
 
 function alive(pid: number) {
@@ -60,6 +61,7 @@ test("cancel settles only after a TERM-ignoring descendant stops and leaves infr
     const acceptance = f.acceptance();
     await f.store.executions.accept(acceptance, new Date());
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await Bun.file(ready).exists()) && (await Bun.file(servicePid).exists()));
     group = (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
     if (!group) throw new Error("Process group missing");
@@ -78,6 +80,7 @@ test("cancel settles only after a TERM-ignoring descendant stops and leaves infr
       new Date(),
     );
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await f.store.executions.get(acceptance.execution))?.phase === "terminal");
     expect(alive(child)).toBe(false);
     expect(alive(service)).toBe(true);
@@ -118,15 +121,17 @@ test("ordinary leader exit cannot release pins while a descendant still writes",
     const a = f.acceptance();
     await f.store.executions.accept(a, new Date());
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => await Bun.file(ready).exists());
     group = (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
-    expect((await f.store.inputs.getManifest(a.execution.requestId))?.finalizedAt).toBeNull();
+    expect((await f.store.inputs.getManifest(executionInputManifestId(a)))?.finalizedAt).toBeNull();
     await expect(f.store.executions.finalize(a.execution, new Date())).rejects.toThrow("Unsettled");
     await f.waitFor(async () => (await f.store.executions.get(a.execution))?.phase === "terminal");
     expect(alive(Number(await Bun.file(childPid).text()))).toBe(false);
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.store.executions.finalize(a.execution, new Date());
-    expect((await f.store.inputs.getManifest(a.execution.requestId))?.finalizedAt).toBeInstanceOf(Date);
+    expect((await f.store.inputs.getManifest(executionInputManifestId(a)))?.finalizedAt).toBeInstanceOf(Date);
     expect((await f.store.getWorkspace(f.id))?.finiteProcess).toMatchObject({ exitCode: 7, signal: null });
   } finally {
     if (group) {

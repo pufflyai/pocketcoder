@@ -18,8 +18,9 @@ test.skipIf(!available).each([1, 5, 20])(
       const measured = JSON.parse(capacity.stdout.toString());
       expect(measured.NCPU).toBeGreaterThanOrEqual(concurrency * 0.1);
       expect(measured.MemTotal).toBeGreaterThan(concurrency * 256 * 1024 * 1024);
+      const requestId = randomUUID();
       const attempts = await Promise.all(
-        Array.from({ length: concurrency }, (_, index) => f.prepare(concurrency === 1 && index === 0)),
+        Array.from({ length: concurrency }, (_, index) => f.prepare(index < 2 && concurrency <= 5, requestId)),
       );
       const responses = await Promise.all(
         attempts.map(async (a) => {
@@ -127,13 +128,16 @@ async function cancelDuringPublication(f: Awaited<ReturnType<typeof dockerExecut
       }),
     );
     expect(response.status).toBe(200);
+    await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "canceled");
     resume?.();
     await dispatch;
+    await f.executionDispatcher.drain();
     await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "canceled");
     expect((await f.store.getWorkspace(a.workspace.id))?.finiteProcess).toBeNull();
   } finally {
     resume?.();
     await dispatch;
+    await f.executionDispatcher.drain();
     f.driver.publishInputs = original;
   }
 }

@@ -637,6 +637,14 @@ Capable producers reconcile lost replies with the same ID; proven absence permit
 repeating deduplicating accept. A replaced runtime or a weak producer's ambiguous
 reply never causes automatic replay. Terminal facts are persisted before they are
 acknowledged. A lost acknowledgment is retried from the durable terminal record.
+Request IDs can repeat in different workspaces. Input pins use the caller and the
+full execution reference, so finalizing one execution does not release another.
+
+Dispatch transport runs outside coordinator safety sweeps. Ordinary work has a
+bounded queue; cancellation and its terminal acknowledgement use a separate lane.
+Service cancellation has one reserved relay slot even when ordinary relay slots
+are full. Maintenance waits for admitted dispatch work. Purge fences its workspace
+and drains that workspace before deleting input storage.
 
 Cancel accepts `{execution, cancelId, scope: "operation"}`. An undispatched
 operation settles without spawn. A dispatched finite process receives TERM at its

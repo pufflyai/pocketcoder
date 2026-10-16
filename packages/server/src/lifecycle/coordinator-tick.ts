@@ -21,7 +21,9 @@ export function createCoordinatorTick(deps: Coordinator) {
         checkpointTransfers,
       );
       const preserves = await persistence.retryPreserves();
-      const purges = await persistence.retryPurges();
+      // Purge owns tracked work, including slow input publication. Safety sweeps
+      // must keep running while that work drains.
+      const purges = await persistence.retryPurges(false);
       readiness.set("cleanup", purges + leases + preserves + transfers > 0 ? "pending" : "ok");
       metrics.observe("purge.pending", purges);
       await deps.executionDispatcher?.tick();

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf } from "@pstdio/pocketcoder-contracts";
+import { digestOf, executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { ExecutionDispatcher } from "@pstdio/pocketcoder-runtime-core";
 import { PGliteStore } from "../../store";
 import { executionFixture } from "./execution-fixture.test";
@@ -22,7 +22,7 @@ test.each([1, 5, 20])(
       ).rejects.toThrow("fingerprint");
       const cancel = { execution: input.execution, cancelId: randomUUID(), scope: "operation" as const };
       expect((await f.store.executions.cancel(cancel, new Date())).phase).toBe("canceled");
-      expect((await f.store.inputs.getManifest(input.execution.requestId))?.finalizedAt).toBeInstanceOf(Date);
+      expect((await f.store.inputs.getManifest(executionInputManifestId(input)))?.finalizedAt).toBeInstanceOf(Date);
       expect(await f.store.executions.claim(input.execution, new Date())).toBeNull();
     } finally {
       await f.dispose();
@@ -59,7 +59,7 @@ test("accepted and canceled intent and finalized input receipts survive controll
     const reopened = await PGliteStore.create(f.directory);
     try {
       expect((await reopened.executions.get(input.execution))?.phase).toBe("canceled");
-      expect((await reopened.inputs.getManifest(input.execution.requestId))?.manifest).toEqual(input.inputs);
+      expect((await reopened.inputs.getManifest(executionInputManifestId(input)))?.manifest).toEqual(input.inputs);
     } finally {
       await reopened.close();
     }
@@ -83,7 +83,11 @@ test("an unavailable producer cannot starve another accepted workspace", async (
   try {
     await f.store.executions.accept(first, new Date());
     await f.store.executions.accept(second, new Date());
+    let failed = false;
     const dispatcher = new ExecutionDispatcher({
+      onHealth: (value) => {
+        failed = value;
+      },
       store: f.store,
       concurrency: 1,
       inspect: async () => ({ exists: true, running: true, containerIdentity: f.runtime.incarnationId }),
@@ -115,7 +119,9 @@ test("an unavailable producer cannot starve another accepted workspace", async (
         },
       },
     });
-    await expect(dispatcher.tick()).rejects.toThrow("reconciliation");
+    await dispatcher.tick();
+    await dispatcher.drain();
+    expect(failed).toBe(true);
     expect((await f.store.executions.get(first.execution))?.phase).toBe("dispatching");
     expect((await f.store.executions.get(second.execution))?.phase).toBe("terminal");
   } finally {

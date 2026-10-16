@@ -75,7 +75,7 @@ export async function dockerExecutionFixture(command?: string[], finalizationSec
     }
     await drain();
   };
-  const prepare = async (withFile: boolean) => {
+  const prepare = async (withFile: boolean, requestId = randomUUID()) => {
     const { workspace } = await seedWaitingWorkspace(f.store, snapshot);
     const spec = {
       ...workspace.templateSnapshot.spec,
@@ -197,7 +197,7 @@ export async function dockerExecutionFixture(command?: string[], finalizationSec
         workspaceId: workspace.id,
         incarnationId: descriptor.incarnationId,
         owner: "process" as const,
-        requestId: randomUUID(),
+        requestId,
       },
       callerPrincipalId: descriptor.callerPrincipalId,
       templateDigest: descriptor.template.digest,
@@ -219,6 +219,7 @@ export async function dockerExecutionFixture(command?: string[], finalizationSec
     waitFor,
     producerDigest: digest,
     async dispose() {
+      await built.executionDispatcher.stop();
       await Promise.all(
         refs.map(async (ref) => {
           built.hub.close(String(ref.workspaceId));

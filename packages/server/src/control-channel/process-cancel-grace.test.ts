@@ -67,6 +67,7 @@ test.each([
     const a = f.acceptance();
     await f.store.executions.accept(a, new Date());
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await Bun.file(ready).exists()) && (await Bun.file(servicePid).exists()));
     group = (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
     const serviceId = Number(await Bun.file(servicePid).text());
@@ -74,6 +75,7 @@ test.each([
     const canceledAt = performance.now();
     await f.store.executions.cancel({ execution: a.execution, cancelId: randomUUID(), scope: "operation" }, new Date());
     await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await Bun.sleep(delayMs);
     await Bun.write(exit, "exit");
     await f.waitFor(async () => await Bun.file(exited).exists());
@@ -83,6 +85,7 @@ test.each([
       if (!deliverHeld) throw new Error("Cancel frame missing");
       deliverHeld();
     } else await f.dispatcher.tick();
+    await f.dispatcher.drain();
     await f.waitFor(async () => (await f.store.executions.get(a.execution))?.phase === "terminal");
     expect(performance.now() - canceledAt).toBeLessThan(1400);
     expect((await f.store.getWorkspace(f.id))?.finiteProcess).toMatchObject({ exitCode: 7, signal: null });
