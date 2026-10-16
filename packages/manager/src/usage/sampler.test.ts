@@ -23,7 +23,8 @@ test("failed real Kubernetes observations are durable gaps; retries and concurre
         clusters: [{ name: "unavailable", cluster: { server: unavailableServer } }],
         contexts: [{ name: "unavailable", context: { cluster: "unavailable", user: "no-authority" } }],
         "current-context": "unavailable",
-        users: [{ name: "no-authority", user: {} }],
+        // An invalid fixture token prevents an interactive credential prompt.
+        users: [{ name: "no-authority", user: { token: "invalid-fixture-token" } }],
       }),
       { mode: 0o600 },
     );
