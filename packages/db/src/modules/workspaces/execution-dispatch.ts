@@ -10,6 +10,7 @@ import {
   WorkloadCancelSchema,
   type WorkloadExecutionReference,
 } from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq, isNotNull } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
@@ -62,8 +63,13 @@ export function createExecutionDispatch(context: DatabaseContext) {
         .map((r) => requiredRow(r.record))
         .filter((r) => !executionSettled(r) || needsAcknowledgment(r));
     },
+    reconcile(execution: WorkloadExecutionReference) {
+      return withOwner(execution, async (_tx, workspace, record) => reconcileExecution(workspace, record));
+    },
     claim(execution: WorkloadExecutionReference, at: Date) {
       return withOwner(execution, async (tx, workspace, record) => {
+        // An admitted cancel controls an existing claim; it cannot launch work.
+        if (record.cancel) return reconcileExecution(workspace, record);
         if (executionSettled(record)) return null;
         try {
           await requireExecutionPrincipal(context, tx, record.acceptance.callerPrincipalId);
@@ -148,4 +154,19 @@ export function createExecutionDispatch(context: DatabaseContext) {
 
 function needsAcknowledgment(record: ExecutionRecord) {
   return record.dispatchClaimedAt !== null && ["terminal", "canceled"].includes(record.phase) && !record.acknowledgedAt;
+}
+
+function reconcileExecution(workspace: WorkspaceRow, record: ExecutionRecord) {
+  const runtime = workspace.runtimeRegistration;
+  if (
+    !record.dispatchClaimedAt ||
+    executionSettled(record) ||
+    workspace.principalId !== record.acceptance.callerPrincipalId ||
+    workspace.purgeRequestedAt ||
+    !runtime?.readyAt ||
+    runtime.endedAt ||
+    runtime.incarnationId !== record.acceptance.execution.incarnationId
+  )
+    return null;
+  return { first: false as const, record };
 }

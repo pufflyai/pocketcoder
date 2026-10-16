@@ -16,6 +16,7 @@ export interface ExecutionStore {
   ): Promise<{ kind: "accepted" | "replayed"; record: ExecutionRecord }>;
   get(execution: WorkloadExecutionReference): Promise<ExecutionRecord | null>;
   pending(): Promise<ExecutionRecord[]>;
+  reconcile(execution: WorkloadExecutionReference): Promise<{ first: false; record: ExecutionRecord } | null>;
   claim(execution: WorkloadExecutionReference, at: Date): Promise<{ first: boolean; record: ExecutionRecord } | null>;
   cancel(input: WorkloadCancel, at: Date): Promise<ExecutionRecord>;
   observe(

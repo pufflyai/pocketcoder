@@ -637,6 +637,10 @@ Capable producers reconcile lost replies with the same ID; proven absence permit
 repeating deduplicating accept. A replaced runtime or a weak producer's ambiguous
 reply never causes automatic replay. Terminal facts are persisted before they are
 acknowledged. A lost acknowledgment is retried from the durable terminal record.
+Launch and proven-absence replay require valid authority, deadline and input pins.
+Once work is claimed, lookup and targeted cancellation keep their authority over
+that exact live incarnation even if canonical input bytes become unavailable.
+Input loss alone does not replace a live producer result with `lost`.
 Request IDs can repeat in different workspaces. Input pins use the caller and the
 full execution reference, so finalizing one execution does not release another.
 

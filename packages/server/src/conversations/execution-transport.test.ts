@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
 import { executionInputManifestId, ProducerCancelSchema, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
 import { executionConversationIdentity, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
+import { eq } from "drizzle-orm";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
 
 test("lost service terminal acknowledgment retries the same acknowledgement after the producer forgets its receipt", async () => {
@@ -184,6 +185,54 @@ test("dispatch failure remains visible until the durable execution becomes lost"
     expect((await f.store.executions.get(a.execution))?.phase).toBe("lost");
     await f.dispatcher.tick();
     expect(f.dispatchFailed).toBe(false);
+  } finally {
+    await f.dispose();
+    await producer.stop(true);
+  }
+});
+
+test.each(["terminal", "absent"])("input pin loss keeps service %s lookup safe", async (phase) => {
+  let acceptance: WorkloadAcceptance | undefined;
+  let accepts = 0,
+    acknowledgments = 0;
+  const producer = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/status") return Response.json({ status: "stable" });
+      if (path === "/executions/ack") {
+        acknowledgments++;
+        return new Response(null, { status: 200 });
+      }
+      if (path === "/executions/accept") {
+        accepts++;
+        acceptance = ((await request.json()) as { acceptance: WorkloadAcceptance }).acceptance;
+      }
+      if (!acceptance) throw new Error("Acceptance missing");
+      if (path === "/executions/lookup" && phase === "absent")
+        return Response.json({ execution: acceptance.execution, phase: "absent" });
+      return Response.json({
+        execution: acceptance.execution,
+        fingerprint: acceptance.fingerprint,
+        phase: path === "/executions/accept" ? "running" : "terminal",
+        outcome: null,
+      });
+    },
+  });
+  const f = await serviceFixture(Number(producer.url.port));
+  try {
+    const a = f.acceptance();
+    await f.store.executions.accept(a, new Date(), executionConversationIdentity(a.execution.requestId));
+    await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    await f.context.db
+      .delete(f.context.tables.inputManifests)
+      .where(eq(f.context.tables.inputManifests.id, executionInputManifestId(a)));
+    await f.dispatcher.tick();
+    await f.dispatcher.drain();
+    expect(accepts).toBe(1);
+    expect(acknowledgments).toBe(phase === "terminal" ? 1 : 0);
+    expect((await f.store.executions.get(a.execution))?.phase).toBe(phase === "terminal" ? "terminal" : "lost");
   } finally {
     await f.dispose();
     await producer.stop(true);

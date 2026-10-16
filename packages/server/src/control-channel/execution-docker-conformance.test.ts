@@ -186,3 +186,55 @@ test.skipIf(!available)(
   },
   30_000,
 );
+
+test.skipIf(!available).each([false, true])(
+  "canonical input loss after spawn keeps cancellation available after lookup=%s",
+  async (lookup) => {
+    const f = await dockerExecutionFixture(["bun", "-e", "setInterval(()=>{},1000)"], 1);
+    try {
+      const a = await f.prepare(true);
+      await f.store.executions.accept(a.acceptance, new Date());
+      await f.executionDispatcher.tick();
+      await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "running");
+      const pid = (await f.store.getWorkspace(a.workspace.id))?.finiteProcess?.processGroupId;
+      const input = a.acceptance.inputs.objects[0];
+      if (!input || !pid || !f.inputs) throw new Error("Running process and immutable input required");
+      const stored = await f.store.inputs.get(a.workspace.id, input.fileId);
+      if (!stored) throw new Error("Canonical input missing");
+      await f.serverOptions.inputStorageOptions.driver.remove({
+        workspaceId: a.workspace.id,
+        fileId: input.fileId,
+        versionId: stored.reservationId,
+      });
+      await f.inputs.reconcile();
+      if (lookup) {
+        await f.executionDispatcher.tick();
+        await f.executionDispatcher.drain();
+        expect((await f.store.executions.get(a.acceptance.execution))?.phase).toBe("running");
+      }
+      const canceledAt = performance.now();
+      const response = await f.app.request(
+        `/v1/workspaces/${a.workspace.id}/executions/${a.acceptance.execution.requestId}/cancel`,
+        authed(a.token, {
+          method: "POST",
+          body: JSON.stringify({ execution: a.acceptance.execution, cancelId: randomUUID(), scope: "operation" }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "terminal");
+      expect(performance.now() - canceledAt).toBeLessThan(1400);
+      expect((await f.store.executions.get(a.acceptance.execution))?.outcome).toMatchObject({
+        exitCode: null,
+        signal: "SIGTERM",
+      });
+      const live = Bun.spawnSync(["docker", "exec", a.ref.id, "sh", "-c", `kill -0 ${pid}`], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(live.exitCode).not.toBe(0);
+    } finally {
+      await f.dispose();
+    }
+  },
+  30000,
+);

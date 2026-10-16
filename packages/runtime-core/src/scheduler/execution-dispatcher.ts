@@ -206,7 +206,10 @@ export class ExecutionDispatcher {
       await transport.acknowledge(record, workspace);
       return true;
     }
-    const claim = await store.executions.claim(execution, now);
+    const claim =
+      record.dispatchClaimedAt && absentEpoch === undefined
+        ? await store.executions.reconcile(execution)
+        : await store.executions.claim(execution, now);
     if (!claim) return;
     const current = claim.record;
     if (current.cancel) {

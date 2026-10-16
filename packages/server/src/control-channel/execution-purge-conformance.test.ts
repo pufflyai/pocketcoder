@@ -220,8 +220,7 @@ test.skipIf(!available)(
     let publishing = false;
     let tick: Promise<void> | undefined;
     try {
-      const a = await f.prepare(true),
-        b = await f.prepare(false);
+      const a = await f.prepare(true);
       f.driver.publishInputs = async (ref, input) => {
         publishing = true;
         await gate;
@@ -252,6 +251,7 @@ test.skipIf(!available)(
         }),
       );
       expect(readiness.snapshot().checks.cleanup).toBe("pending");
+      const b = await f.prepare(false);
       await f.context.db
         .update(f.context.tables.workspaces)
         .set({ deadlineAt: new Date(Date.now() - 1) })
