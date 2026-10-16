@@ -32,12 +32,16 @@ if (target === "unit" || target === "typecheck") {
     for (const path of [
       "examples/resume/tsconfig.json",
       "examples/native/tsconfig.json",
+      "examples/e2e/tsconfig.shared.json",
       "scripts/tsconfig.images.json",
       "scripts/tsconfig.monitoring.json",
       "scripts/tsconfig.recovery.json",
       "scripts/tsconfig.ci.json",
     ]) {
       if (existsSync(path)) await command(["bun", "x", "tsc", "--project", path]);
+    }
+    for (const extension of ["pocketcoder", "pocketcoder-workspaces"]) {
+      await command(["bun", "run", "--cwd", `.pstdio/extensions/${extension}`, "typecheck"]);
     }
   }
 } else {

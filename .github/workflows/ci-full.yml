@@ -17,7 +17,7 @@ jobs:
           cache: integration
       - run: docker pull postgres:16-alpine
       - name: Prepare real Chromium
-        run: timeout 30s cat /opt/google/chrome/chrome > /dev/null
+        run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
       - env:
           POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
         run: bun --no-env-file scripts/ci/run.ts integration
@@ -146,11 +146,40 @@ jobs:
         env:
           POCKETCODER_EGRESS_CONFORMANCE_IMAGE: ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
         run: ${{ matrix.command }}
+  kubernetes-shared-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: kubernetes-shared-storage
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Qualify isolated shared storage on two Kubernetes nodes
+        run: bun run example:e2e:kubernetes-shared-storage
+
+  extensions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: extensions
+      - run: bun --no-env-file scripts/ci/run.ts extensions
   checks:
     name: Full qualification
     if: always()
     needs:
       - integration
+      - extensions
+      - kubernetes-shared-storage
       - contracts
       - performance
       - service-fixtures
@@ -169,6 +198,6 @@ jobs:
         with:
           bun-version: 1.4.2
       - env:
-          CI_REQUIRED: '["integration","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
+          CI_REQUIRED: '["integration","extensions","kubernetes-shared-storage","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
           CI_RESULTS: ${{ toJSON(needs) }}
         run: bun --no-env-file scripts/ci/gate.ts
