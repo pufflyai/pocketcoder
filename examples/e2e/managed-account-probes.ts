@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { createHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
+import { fetchForwarded } from "./forwarded-fetch";
 import type { createKubernetesCluster } from "./kubernetes-cluster";
 import { waitFor } from "./local-process";
 
 type Owner = { token: string; namespace: string; accountId: string; baseUrl: string };
 export const requestManagedAccount = (owner: Owner, path: string, options: RequestInit = {}) =>
-  fetch(`${owner.baseUrl}${path}`, {
+  fetchForwarded(`${owner.baseUrl}${path}`, {
     ...options,
-    // kubectl probes can outlive the forwarded connection's idle lifetime.
-    keepalive: false,
     headers: { authorization: `Bearer ${owner.token}`, "content-type": "application/json", ...options.headers },
   });
 // Policy drops show up as timeouts. Any other failure (refused, TLS, HTTP) means the

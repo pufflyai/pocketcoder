@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
+import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { fetchForwarded } from "./forwarded-fetch";
 import { requestManagedAccount } from "./managed-account-probes";
 
 test("account probes use a fresh connection after a forwarded socket is retired", async () => {
@@ -34,7 +36,14 @@ test("account probes use a fresh connection after a forwarded socket is retired"
       signal: AbortSignal.timeout(1000),
     });
     expect(await result.text()).toBe("ok");
+    const client = new PocketCoderClient({ baseUrl: owner.baseUrl, apiKey: owner.token, fetch: fetchForwarded });
+    expect(await (await client.raw("/readyz")).text()).toBe("ok");
+    expect(
+      await (await client.raw("/cancel", { method: "POST", body: "{}", signal: AbortSignal.timeout(1000) })).text(),
+    ).toBe("ok");
     expect(accepted).toEqual([
+      { method: "GET", authorization: "Bearer workspace-test-key" },
+      { method: "POST", authorization: "Bearer workspace-test-key" },
       { method: "GET", authorization: "Bearer workspace-test-key" },
       { method: "POST", authorization: "Bearer workspace-test-key" },
     ]);
