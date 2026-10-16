@@ -572,3 +572,42 @@ input returns 409. History includes nullable message identities and explicit fac
 See [conversation identities](conversation-identities.md) for the request fields,
 producer contract and the distinction between final text and terminal outcome.
 `agent_state: stable` reports input readiness, not completed model work.
+
+## Canonical workload contracts (G0)
+
+The `pocketcoder.dev/v1` workload schemas are available from
+`@pstdio/pocketcoder-contracts`. The SDK exports their public TypeScript types:
+`WorkloadTemplate`, `WorkloadTemplateSnapshot`, `InstalledWorkload`,
+`WorkloadCapability`, `WorkloadLimits`, `WorkloadDeployment`, `WorkloadOperation`,
+`WorkloadExecutionReference`, `WorkloadAcceptance`, `WorkloadCancel`,
+`InputObjectReference`, `AcceptedInputManifest`, `ExportObjectReference`,
+`WorkloadExportReference` and `CredentialSlot`.
+
+These are contracts for the later runtime gates, not new HTTP endpoints in G0.
+`POST /v1/templates` and startup import currently reject canonical workloads.
+The offline validate/render commands accept them. See the
+[owner map and complete example](templates.md#canonical-workload-templates).
+
+An execution reference identifies workspace, runtime incarnation, owning process
+or conversation request, and stable request ID. Acceptance freezes the caller,
+template and adapter digests, operation, structured input, ordered input manifest,
+and binding-set digest into one fingerprint. Transport reconnect does not change
+that identity. Cancellation names the exact execution and a stable cancel ID;
+workspace-wide cancellation is a separate advertised scope.
+
+Input references identify immutable versions, logical names, media types, bytes,
+digests and availability. Accepted manifests permit only unique ready objects from
+the execution's workspace and incarnation. Their digest covers their exact ordered
+contents. Public references carry no host or PVC paths. Export references identify
+the execution and immutable objects, manifest digest, completeness/errors,
+publication time and finite expiry. Collection reads retained objects; it does not
+turn a live output path into evidence or control compute teardown.
+An export's digest freezes its execution, ordered objects, completeness and errors.
+Publication availability (`published`, `unavailable`, `expired`) is separate from
+completeness (`complete`, `partial`, `lost`) and does not change that digest.
+
+`InstalledWorkload` is trusted driver/registration evidence, never caller input.
+`workloadAdmission` checks it against template requirements and deployment ceilings.
+Format support from `inspectTemplateSnapshot` alone does not establish installed
+capabilities. Existing process/request, transfer/output, lease and preview owners
+remain responsible for enforcing these contracts; no parallel scheduler is added.

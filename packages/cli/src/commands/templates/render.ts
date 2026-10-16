@@ -1,6 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { renderTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import {
+  isWorkloadTemplate,
+  renderTemplateManifest,
+  renderWorkloadTemplateManifest,
+} from "@pstdio/pocketcoder-contracts";
 import { loadTemplateSource } from "@pstdio/pocketcoder-runtime-core";
 import type { Argv } from "yargs";
 import { type Flags, need } from "../../command/cli-context";
@@ -41,7 +45,9 @@ async function renderTemplateFile(flags: Flags) {
   const outputDirectory = resolve(need(flags, "out"));
   const singleValue = typeof flags.set === "string" ? [flags.set] : [];
   const set = Array.isArray(flags.set) ? flags.set.map(String) : singleValue;
-  const rendered = renderTemplateManifest(await loadTemplateSource(sourcePath), {
+  const source = await loadTemplateSource(sourcePath);
+  const render = isWorkloadTemplate(source) ? renderWorkloadTemplateManifest : renderTemplateManifest;
+  const rendered = render(source, {
     ...(typeof flags.image === "string" ? { image: flags.image } : {}),
     set,
   });

@@ -39,3 +39,35 @@ existing PostgreSQL install in place. Keep the stopped source database, original
 auth pepper, event-signing identity and required checkpoint bytes intact until
 the offline export/import flow is available and verified. A fresh `pc_data`
 folder is a new install, not a migration of existing state.
+
+## Alpha templates to canonical workloads
+
+`pocketcoder.dev/v1` replaces the alpha `agent` versus `harness` split with pinned
+adapters and operations. This is a new immutable format. There is no automatic
+conversion, runtime inheritance, or compatibility wrapper. Author and build a new
+manifest with a new version, explicit limits, actual image/runtime/adapter pins,
+and reviewed credential slots. Validate and render it offline; publish it only
+when the deployment has installed and qualified the required runtime profile.
+The current alpha controller rejects the new format at publication/startup import.
+
+The canonical schema rejects alpha fields such as `agent`, `harness` and
+`checkpointHook`. Changing only `apiVersion` cannot migrate an alpha manifest.
+Generic commands become process adapters; plain HTTP transport can use a service
+profile without an agent. Pi and AgentAPI are optional adapters in the same schema.
+Build-time configuration becomes immutable image/template content. Never convert a
+standing secret into an environment literal; bind a versioned trusted credential
+policy and deliver only workspace-scoped credentials that expire with the runtime.
+
+Saved alpha snapshots without a format discriminator remain identified as
+`pocketcoder.dev/v1alpha1`. `inspectTemplateSnapshot(snapshot, supportedFormats)`
+returns an explicit supported/unsupported result without changing their content
+or digest. Canonical snapshots store their format and full manifest and verify
+that name, version and digest match. Unknown, invalid and unsupported snapshots
+are rejected. A format result is not permission to run a profile: installed
+producer/storage identities, capability checks and limits still apply.
+
+Do not rewrite historical snapshots, retarget accepted file or execution references,
+or reinterpret an old digest as the new format. Existing alpha runtimes continue
+using their original contract. A restored runtime has a new workspace identity
+and needs fresh inputs and authority under the later runtime gates. This ticket
+introduces no database migration, production cutover or deployment qualification.
