@@ -55,7 +55,7 @@ RUN case "$TARGETARCH" in \
         'c9d417f416062cd03aae7f5e4807034af9dd05ef607e096a499b4cb63ab6bb46' \
         'e20d61dd6be88e5c4765a127374961eceb65bef7c755fe56224a540e063dbb2b' ;; \
       arm64) printf '%s\n' \
-        'a3b72d384ebac5bc978b5391edfac6045cb93ab99d6fef717f8abaed9d8863fc' \
+        'b4c7bb124c0acbc60d7d49cb7dfd69d4ca70e65981b3d64be3fa720b8b94fa95' \
         '86f96eabfdfa39d996f4a63f521b38a0a25d53dc8df8cf990b4e1bf0ef095c52' ;; \
       *) exit 1 ;; \
     esac | sort > /opt/apk-index-checksums

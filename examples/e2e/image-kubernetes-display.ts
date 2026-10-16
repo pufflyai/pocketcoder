@@ -3,6 +3,7 @@ import type { TemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { connectBrowser } from "./browser-client";
 import { connectDesktop } from "./desktop-client";
+import { fetchForwarded } from "./forwarded-fetch";
 
 export async function probeKubernetesImageDisplay(
   baseUrl: string,
@@ -19,7 +20,7 @@ export async function probeKubernetesImageDisplay(
       "await import('/opt/pocketcoder/echo-harness.ts');Bun.serve({hostname:'127.0.0.1',port:3000,fetch(){return new Response('<h1>Candidate browser on Kubernetes</h1>',{headers:{'content-type':'text/html'}})}})";
     template.spec.harness = { command: ["bun", "/opt/pocketcoder/browser-harness.ts", "bun", "-e", fixture], env: {} };
   }
-  const client = new PocketCoderClient({ baseUrl, apiKey: key });
+  const client = new PocketCoderClient({ baseUrl, apiKey: key, fetch: fetchForwarded });
   await client.raw("/v1/templates", { method: "POST", body: JSON.stringify({ manifest: template }) });
   const workspace = await client.workspaces.create({ templateName: mode, externalId: `candidate-${randomUUID()}` });
   let socket: WebSocket | undefined;

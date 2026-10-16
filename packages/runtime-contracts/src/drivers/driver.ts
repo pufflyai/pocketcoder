@@ -7,6 +7,7 @@ import type {
   TemplateSnapshot,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "../types";
+import type { InputProjectionRef, InputProjectionStorage, PublishedInputProjection } from "./inputs";
 
 // The single workspace-driver contract. Docker (development) and Kubernetes
 // (production) implement the same interface; deployment configuration selects
@@ -35,6 +36,7 @@ export interface ProviderState {
   // Observed producer and qualified storage for this exact incarnation. An
   // omitted descriptor advertises no canonical workload capabilities.
   workload?: InstalledWorkload;
+  inputStorage?: InputProjectionStorage;
 }
 
 export interface DiscoveredProvider {
@@ -63,6 +65,11 @@ export interface WorkspaceDriver {
   uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
   uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
   inspect(ref: ProviderRef): Promise<ProviderState>;
+  // Resolves only after the selected pinned objects and ordered manifest are published and verified.
+  // Dispatch owners must await this before sending an execution to the producer.
+  publishInputs?(ref: ProviderRef, input: InputProjectionRef): Promise<PublishedInputProjection>;
+  // Called by finalization after the execution can no longer read its inputs. Canonical pins have a separate owner.
+  releaseInputProjection?(ref: ProviderRef, manifestId: string): Promise<void>;
   // Runtime stop and object deletion are separate so persistence workflows
   // can snapshot a quiesced workload before deleting the provider object.
   stop(ref: ProviderRef, graceSeconds: number): Promise<void>;
