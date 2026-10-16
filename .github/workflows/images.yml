@@ -1,7 +1,5 @@
 name: candidate images
-
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       operator-release:
@@ -20,20 +18,19 @@ on:
         description: Diagnose original Linux artifacts with version prelude and one start without publication
         type: boolean
         default: false
-
 permissions: {}
-
 env:
   BUN_VERSION: 1.4.2
-  CANDIDATE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-
+  CANDIDATE_COMMIT: ${{ github.sha }}
 jobs:
   test:
-    if: github.event_name != 'pull_request' && !inputs.operator-release && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
+    if: github.event_name != 'pull_request' && !inputs.operator-release && !inputs.native-diagnostics &&
+      !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
-
+    with:
+      full: true
   diagnostics:
     if: (inputs.native-diagnostics || inputs.affected-startup-diagnostics) && !inputs.normal-startup-diagnostics
     permissions:
@@ -41,97 +38,16 @@ jobs:
     uses: ./.github/workflows/native-startup-diagnostic.yml
     with:
       affected-only: ${{ inputs.affected-startup-diagnostics || false }}
-
   normal-startup-diagnostics:
     if: github.event_name == 'workflow_dispatch' && inputs.normal-startup-diagnostics
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/native-normal-startup-diagnostic.yml
-
-  validate:
-    needs: test
-    if: always() && !inputs.operator-release && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics && (github.event_name == 'pull_request' || needs.test.result == 'success')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            arch: amd64
-            trivy-archive: Linux-64bit
-            trivy-sha: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
-            kind-sha: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
-            kubectl-sha: 3cfeaf80be482b435b0aa214aff6e0b2c312ee23c0ff20810c75517b6004c6eb
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-            trivy-archive: Linux-ARM64
-            trivy-sha: b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47aad5
-            kind-sha: 20022bee6cfcd5086cb7234d218e3454e6090022f2a8f55d1fa7fcf42c3867a2
-            kubectl-sha: 39c98bca82875d9a9ddfb6f3c5ab17c3f78ea0801230683e538a67d5c053308d
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CANDIDATE_COMMIT }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Install checksum-pinned scanner, kind and supported host kubectl
-        env:
-          TRIVY_ARCHIVE: ${{ matrix.trivy-archive }}
-          TRIVY_SHA: ${{ matrix.trivy-sha }}
-          KIND_ARCH: ${{ matrix.arch }}
-          KIND_SHA: ${{ matrix.kind-sha }}
-          KUBECTL_SHA: ${{ matrix.kubectl-sha }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/tools"
-          curl -fsSLo "$RUNNER_TEMP/trivy.tar.gz" "https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_${TRIVY_ARCHIVE}.tar.gz"
-          printf '%s  %s\n' "$TRIVY_SHA" "$RUNNER_TEMP/trivy.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP/tools" trivy
-          curl -fsSLo "$RUNNER_TEMP/tools/kind" "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-${KIND_ARCH}"
-          printf '%s  %s\n' "$KIND_SHA" "$RUNNER_TEMP/tools/kind" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/tools/kind"
-          curl -fsSLo "$RUNNER_TEMP/tools/kubectl" "https://dl.k8s.io/release/v1.35.9/bin/linux/${KIND_ARCH}/kubectl"
-          printf '%s  %s\n' "$KUBECTL_SHA" "$RUNNER_TEMP/tools/kubectl" | sha256sum --check
-          chmod 0755 "$RUNNER_TEMP/tools/kubectl"
-          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
-      - name: Build all roles and scan before any publication
-        env:
-          IMAGE_ARCH: ${{ matrix.arch }}
-          TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy
-        run: bun run images:candidate "$RUNNER_TEMP/images" "$CANDIDATE_COMMIT" "$IMAGE_ARCH"
-      - name: Free this dedicated runner's unused build cache before Kind
-        run: docker builder prune --force
-      - name: Run exact candidate roles through Docker and Kubernetes
-        env:
-          IMAGE_ARCH: ${{ matrix.arch }}
-        # Flush the image archives so the unchanged startup limits time the controllers.
-        run: |
-          sync
-          bun run images:smoke "$RUNNER_TEMP/images" "$CANDIDATE_COMMIT" "$IMAGE_ARCH"
-      - name: Retain scans, SBOMs, scanner database metadata and role evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pocketcoder-image-evidence-${{ env.CANDIDATE_COMMIT }}-${{ matrix.arch }}
-          path: |
-            ${{ runner.temp }}/images/*.json
-            ${{ runner.temp }}/images/*.log
-          if-no-files-found: error
-      - name: Retain exact tested image archives for candidate publication
-        uses: actions/upload-artifact@v4
-        with:
-          name: pocketcoder-image-archives-${{ env.CANDIDATE_COMMIT }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/images/*.tar
-          compression-level: 0
-          if-no-files-found: error
-
   publish:
-    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
-    needs: [test, validate]
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics &&
+      !inputs.normal-startup-diagnostics
+    needs: test
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -163,7 +79,6 @@ jobs:
           name: pocketcoder-candidate-image-digests-${{ env.CANDIDATE_COMMIT }}
           path: ${{ runner.temp }}/images/published.json
           if-no-files-found: error
-
   operator-release:
     if: github.event_name == 'workflow_dispatch' && inputs.operator-release
     permissions:
@@ -187,8 +102,9 @@ jobs:
       - name: Publish the checksum-pinned synthetic operator candidate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
+        run: >
           tag="operator-candidate-$GITHUB_SHA"
+
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release download "$tag" --pattern operator.json --dir "$RUNNER_TEMP/previous"
             bun -e 'const a=await Bun.file(process.argv[1]).json(); const b=await Bun.file(process.argv[2]).json(); if(a.commit!==b.commit || a.sha256!==b.sha256) throw new Error("Existing candidate differs; refuse overwrite.");' "$RUNNER_TEMP/previous/operator.json" "$RUNNER_TEMP/operator/operator.json"
@@ -197,3 +113,6 @@ jobs:
               --target "$GITHUB_SHA" --prerelease --title "Operator candidate $GITHUB_SHA" \
               --notes "Checksum-pinned operator bundle for synthetic deployment and recovery validation."
           fi
+concurrency:
+  group: candidate-images-${{ github.ref }}
+  cancel-in-progress: true

@@ -1,0 +1,37 @@
+name: Install Bun dependencies and restore trusted task caches
+description: PR jobs read caches; protected branch jobs publish them after validation.
+inputs:
+  cache:
+    description: Task cache group
+    required: true
+outputs:
+  nx-hit:
+    value: ${{ steps.nx.outputs.cache-hit }}
+  bun-hit:
+    value: ${{ steps.bun.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.2
+    - uses: actions/cache/restore@v4
+      id: bun
+      with:
+        path: ~/.bun/install/cache
+        key: bun-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}
+    - run: bun install --frozen-lockfile
+      shell: bash
+    - name: Install the isolated pstdio extension dependencies
+      if: hashFiles('.pstdio/extensions/pocketcoder/bun.lock') != ''
+      run: bun install --frozen-lockfile
+      working-directory: .pstdio/extensions/pocketcoder
+      shell: bash
+    - uses: actions/cache/restore@v4
+      id: nx
+      with:
+        path: .nx/cache
+        key: nx-v4-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-${{ github.sha }}
+        restore-keys: nx-v4-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-
+    - run: bun --no-env-file scripts/ci/task-cache.ts import
+      shell: bash

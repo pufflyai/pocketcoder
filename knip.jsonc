@@ -4,6 +4,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "scripts/ci/*.ts",
         "deploy/image/echo-harness.ts",
         "deploy/image/desktop-harness.ts",
         "deploy/image/browser-harness.ts",
@@ -15,9 +16,7 @@
         "examples/e2e/managed-purge-bootstrap-child.ts",
         "examples/e2e/kind-purge-rbac.ts",
         "examples/**/*.test.ts"
-      ],
-      // Lerna invokes Nx internally for task hashing and caching.
-      "ignoreDependencies": ["nx"]
+      ]
     },
     ".pstdio/extensions/*": {
       "entry": ["**/*.test.ts"]

@@ -1,0 +1,52 @@
+name: Build and package once
+on:
+  workflow_call: {}
+permissions:
+  contents: read
+env:
+  BUN_VERSION: 1.4.2
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"
+  CANDIDATE_COMMIT: ${{ github.sha }}
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_COMMIT }}
+      - uses: ./.github/actions/setup
+        with:
+          cache: build
+        id: setup
+      - run: bun run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Verify publishable package contents
+        run: bun run pack:check
+      - name: Pack candidate packages from the same source commit
+        run: bun run candidate:packages pack "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
+      - name: Export portable task results for this run
+        run: bun --no-env-file scripts/ci/task-cache.ts export
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-build-${{ github.sha }}
+          path: |
+            packages/*/dist
+            .nx/cache
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: ./.github/actions/save-cache
+        with:
+          cache: build
+          nx-hit: ${{ steps.setup.outputs.nx-hit }}
+          bun-hit: ${{ steps.setup.outputs.bun-hit }}
