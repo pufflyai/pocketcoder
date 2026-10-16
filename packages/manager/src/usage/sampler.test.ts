@@ -1,11 +1,39 @@
 import { expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ManagerStore } from "../database/store";
 import { usageSampler } from "./sampler";
 
+function childProcesses() {
+  const read = (path: string) => {
+    try {
+      return readFileSync(path, "utf8").trim();
+    } catch {
+      return "unavailable";
+    }
+  };
+  const root = `/proc/${process.pid}/task`;
+  const children = new Set(
+    readdirSync(root).flatMap((id) => read(`${root}/${id}/children`).split(/\s+/).filter(Boolean)),
+  );
+  return [...children].map((id) => ({
+    id,
+    command: read(`/proc/${id}/cmdline`).replaceAll("\0", " "),
+    state: read(`/proc/${id}/status`)
+      .split("\n")
+      .find((line) => line.startsWith("State:")),
+    wait: read(`/proc/${id}/wchan`),
+  }));
+}
+
 test("failed real Kubernetes observations are durable gaps; retries and concurrent sampling do not duplicate them", async () => {
+  let phase = "setup";
+  const diagnostic =
+    process.platform === "linux"
+      ? setTimeout(() => console.log("Pending Kubernetes usage sample", { phase, children: childProcesses() }), 3000)
+      : undefined;
   const directory = await mkdtemp(join(tmpdir(), "pc-usage-unavailable-"));
   const prior = process.env.KUBECONFIG;
   const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
@@ -44,7 +72,9 @@ test("failed real Kubernetes observations are durable gaps; retries and concurre
     );
     await store.finishAccount(account.id, operation.id);
     const at = new Date();
+    phase = "concurrent sample";
     await Promise.all([sampler.sample(at), sampler.sample(at)]);
+    phase = "repeated sample";
     await sampler.sample(at);
     expect(await store.getUsage(account.id, new Date(+at + 1))).toMatchObject({
       estimated_workspace_seconds: null,
@@ -55,6 +85,7 @@ test("failed real Kubernetes observations are durable gaps; retries and concurre
     });
     expect((await store.getUsage(provisioning.account.id)).coverage.recorded_samples).toBe(0);
   } finally {
+    clearTimeout(diagnostic);
     await sampler.close();
     await store.close();
     if (prior === undefined) delete process.env.KUBECONFIG;
