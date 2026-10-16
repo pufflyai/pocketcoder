@@ -33,6 +33,8 @@ import {
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes-scheduling";
+import { requireSharedVolume } from "./kubernetes-shared-profile";
+import type { KubernetesSharedStorage } from "./kubernetes-shared-storage";
 import { stopKubernetesJob } from "./kubernetes-stop";
 import {
   claimLaunchPhase,
@@ -40,6 +42,7 @@ import {
   type LaunchMetadata,
   uncommittedKubernetesProvider,
 } from "./kubernetes-uncommitted";
+import { resolveSharedMounts } from "./kubernetes-volumes";
 import { createKubernetesWarm } from "./kubernetes-warm";
 
 export {
@@ -55,6 +58,7 @@ export interface KubernetesDriverOptions extends EgressDriverOptions, Kubernetes
   imagePullPolicy?: "Always" | "IfNotPresent" | "Never";
   captureTerminationEvidence?: boolean;
   resolveRegistry?: RegistryResolver;
+  sharedStorage?: KubernetesSharedStorage;
 }
 
 export class KubernetesDriver implements WorkspaceDriver {
@@ -70,9 +74,11 @@ export class KubernetesDriver implements WorkspaceDriver {
   private sidecarsSupported = false;
   private readonly captureEvidence: boolean;
   private readonly resolveRegistry?: RegistryResolver;
+  private readonly sharedStorage?: KubernetesSharedStorage;
 
   constructor(options: KubernetesDriverOptions = {}) {
     this.resolveRegistry = options.resolveRegistry;
+    this.sharedStorage = options.sharedStorage;
     this.captureEvidence = options.captureTerminationEvidence ?? false;
     this.namespace = options.namespace ?? "default";
     if (!isKubernetesName(this.namespace)) {
@@ -110,6 +116,14 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
+    let storageIdentity: { claimUid: string; volumeUid: string } | undefined;
+    if (this.sharedStorage) {
+      storageIdentity = await requireSharedVolume(this.sharedStorage.options, this.namespace, (args) =>
+        kubectl(this.kubectlBin, this.namespace, args),
+      );
+      launch = { ...launch, mounts: [...launch.mounts, await this.sharedStorage.inputMount(launch.workspace.id)] };
+    }
+    const sharedMounts = await resolveSharedMounts(launch, this.sharedStorage);
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
     const name = resourceName(workspace.id);
@@ -169,6 +183,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       }
 
       const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
+        sharedMounts,
         serviceAccountName: this.serviceAccountName,
         runtimeClassName: this.runtimeClassName,
         nodeSelector: this.nodeSelector,
@@ -191,6 +206,7 @@ export class KubernetesDriver implements WorkspaceDriver {
         kind: this.kind,
         id: name,
         jobUid: jobUidOf(job),
+        ...(storageIdentity ? { storageIdentity } : {}),
         name,
         inputSecret,
         ...(spec.imagePullSecret ? { registrySecret } : {}),
@@ -218,6 +234,7 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
+    if (this.sharedStorage) throw new Error("Shared storage requires a cold workspace allocation");
     if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
     return createKubernetesWarm(launch, {
       namespace: this.namespace,
@@ -295,6 +312,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       "--ignore-not-found",
       "--wait=true",
     ]);
+    if (this.sharedStorage) await this.sharedStorage.purgeInputs(workspaceId);
   }
 
   async cleanupInput(workspaceId: string): Promise<void> {

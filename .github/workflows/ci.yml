@@ -92,6 +92,26 @@ jobs:
       - name: Validate publishable packages
         run: bun run pack:check
 
+  kubernetes-shared-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Qualify isolated shared storage on two Kubernetes nodes
+        run: bun run example:e2e:kubernetes-shared-storage
+
   embedded-database:
     strategy:
       fail-fast: false

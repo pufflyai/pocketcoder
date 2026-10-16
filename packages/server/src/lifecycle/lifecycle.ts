@@ -109,9 +109,10 @@ export async function startPocketCoderServer(
     const resolveRegistry = config.secretKey
       ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
       : undefined;
-    const driver = createWorkspaceDriver(config, resolveRegistry);
-    const { warmPools, warmPoolContinuously } = await startupWarmPools(store, config, driver);
     const storageDriver = createStorageDriver(config);
+    const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
+    const driver = createWorkspaceDriver(config, resolveRegistry, sharedStorage);
+    const { warmPools, warmPoolContinuously } = await startupWarmPools(store, config, driver);
     const secretResolver = createSecretResolver(config);
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);

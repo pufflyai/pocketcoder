@@ -6,11 +6,13 @@ import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persisten
 import { parseHttpAddress } from "./http-address";
 import { type InputStorageConfig, inputStorageConfig } from "./input-storage-config";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
+import { kubernetesSharedConfig } from "./kubernetes-shared-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
 
 type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig {
+  kubernetesSharedStorage?: ReturnType<typeof kubernetesSharedConfig>;
   inputStorage?: InputStorageConfig;
   offNodeConfigFile?: string;
   purgeConfigFile?: string;
@@ -36,7 +38,7 @@ export interface ServerConfig {
   // host path mounted into the server at the same absolute path so the
   // daemon can resolve the bind mounts.
   inputDir: string | null;
-  storageBackend: "disabled" | "filesystem" | "controller-archive";
+  storageBackend: "disabled" | "filesystem" | "controller-archive" | "kubernetes-shared";
   workspaceDataDir: string | null;
   checkpointDir: string | null;
   secretProvider: "disabled" | "file" | "kubernetes";
@@ -170,7 +172,7 @@ function resolveStorage(env: Environment): Pick<ServerConfig, "storageBackend" |
   const storageBackend = enumEnv(
     env,
     "POCKETCODER_STORAGE_BACKEND",
-    ["disabled", "filesystem", "controller-archive"] as const,
+    ["disabled", "filesystem", "controller-archive", "kubernetes-shared"] as const,
     "disabled",
   );
   const workspaceDataDir = env.POCKETCODER_WORKSPACE_DATA_DIR ?? null;
@@ -180,7 +182,7 @@ function resolveStorage(env: Environment): Pick<ServerConfig, "storageBackend" |
       "POCKETCODER_WORKSPACE_DATA_DIR and POCKETCODER_CHECKPOINT_DIR are required when persistent storage is enabled",
     );
   }
-  if (storageBackend === "controller-archive" && !checkpointDir) {
+  if ((storageBackend === "controller-archive" || storageBackend === "kubernetes-shared") && !checkpointDir) {
     throw new Error("POCKETCODER_CHECKPOINT_DIR is required for controller-archive storage");
   }
   return {
@@ -244,7 +246,7 @@ function assertCompatibleBackends(
   storage: ReturnType<typeof resolveStorage>,
   secrets: ReturnType<typeof resolveSecrets>,
 ): void {
-  if (driverKind === "docker" && storage.storageBackend === "controller-archive") {
+  if (driverKind === "docker" && ["controller-archive", "kubernetes-shared"].includes(storage.storageBackend)) {
     throw new Error("POCKETCODER_DRIVER=docker cannot use controller-archive storage");
   }
   if (driverKind === "kubernetes" && storage.storageBackend === "filesystem") {
@@ -288,6 +290,11 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
   const kubernetesNamespace = env.POCKETCODER_KUBERNETES_NAMESPACE ?? "default";
   const scheduling = resolveKubernetesScheduling(env);
   const storage = resolveStorage(env);
+  const shared = kubernetesSharedConfig(
+    env.POCKETCODER_KUBERNETES_SHARED_STORAGE,
+    storage.checkpointDir,
+    storage.storageBackend,
+  );
   const secrets = resolveSecrets(env);
   assertCompatibleBackends(driverKind, storage, secrets);
   const egressImage = env.POCKETCODER_EGRESS_IMAGE ?? null;
@@ -296,6 +303,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
   }
   return {
     inputStorage: inputStorageConfig(env.POCKETCODER_INPUT_STORAGE),
+    kubernetesSharedStorage: shared,
     publicViews: publicViewConfig(env.POCKETCODER_PUBLIC_VIEWS),
     ...(env.POCKETCODER_PURGE_CONFIG ? { purgeConfigFile: env.POCKETCODER_PURGE_CONFIG } : {}),
     ...(env.POCKETCODER_OFF_NODE_CONFIG ? { offNodeConfigFile: env.POCKETCODER_OFF_NODE_CONFIG } : {}),

@@ -355,6 +355,11 @@ Unbound providers contain only template identity and a single-use pool enrollmen
 
 ## Operational notes
 
+Kubernetes shared input projections and retained output allocations require an
+explicit qualified deployment. See [shared Kubernetes storage](kubernetes-shared-storage.md)
+for the PVC, network boundary, publisher and cleanup contract. The default
+`controller-archive` backend continues to use disposable workspace storage.
+
 - **One server replica** is the supported topology: workspaces survive server
   restarts, reconnect within their `disconnectGrace`, and state is reconciled
   against provider objects at startup.

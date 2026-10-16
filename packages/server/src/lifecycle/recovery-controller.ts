@@ -33,8 +33,9 @@ export async function startRecoveryController(config: ServerConfig, options: { l
     const recovery = await store.recovery.recoveryState();
     if (!recovery) throw new Error("This data folder is not in recovery.");
     const vault = config.secretKey ? createSecretVault(store, Buffer.from(config.secretKey, "base64url")) : undefined;
-    const driver = createWorkspaceDriver(config, vault ? createRegistryResolver(vault) : undefined);
     const storageDriver = createStorageDriver(config);
+    const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
+    const driver = createWorkspaceDriver(config, vault ? createRegistryResolver(vault) : undefined, sharedStorage);
     const secretResolver = createSecretResolver(config);
     const runtime = buildServer({
       issuerClient: configuredIssuer(config),
