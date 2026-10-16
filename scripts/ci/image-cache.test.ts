@@ -17,3 +17,12 @@ test("trusted cache writers retain separate image role and architecture scopes",
     "type=gha,scope=candidate-workspace-amd64,mode=max",
   );
 });
+
+test("derived roles use the daemon image store that holds their same-run workspace parent", () => {
+  for (const role of ["desktop", "browser"]) {
+    const args = imageBuildCommand(role, "arm64", true, true);
+    expect(args.slice(0, 2)).toEqual(["docker", "build"]);
+    expect(args).not.toContain("--cache-from");
+    expect(args).not.toContain("--cache-to");
+  }
+});
