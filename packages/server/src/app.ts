@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
+  ExecutionDispatcher,
   type MetricSink,
   type ResolvedWarmPool,
   RuntimeMetrics,
@@ -24,8 +25,11 @@ import { type ControlActivity, controlActivity } from "./control-channel/activit
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
+import { processTransport } from "./control-channel/process-dispatch";
 import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
+import { registerExecutionRoutes } from "./conversations/execution-routes";
+import { conversationTransport, executionTransport } from "./conversations/execution-transport";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
@@ -84,6 +88,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  executionDispatcher: ExecutionDispatcher;
   inputs?: InputStorage;
   controlActivity: ControlActivity;
   screenshots?: Screenshots;
@@ -167,6 +172,15 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const service = new WorkspaceService({ store, scheduler, limits });
   const screenshots = composeScreenshots(deps, hub, service);
   const inputs = composeInputs(deps);
+  const executionDispatcher = new ExecutionDispatcher({
+    store,
+    concurrency: Math.max(1, limits.globalActiveWorkspaces),
+    transport: executionTransport(
+      processTransport({ store, hub, driver, inputs }),
+      conversationTransport({ store, hub, driver, inputs }),
+    ),
+    inspect: (workspace) => driver.inspect({ kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef }),
+  });
   const persistence = new PersistenceService({
     purgeInputs: (id) => inputs?.purge(id) ?? assertNoStoredInputs(store, id),
     store,
@@ -217,6 +231,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const activity = controlActivity(() => poolHub.fence());
   const wsDeps = {
     activity,
+    executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
     ...(workspaceLeases ? { workspaceLeases } : {}),
     store: controlStore(store, deps.assertAccountAllowed),
@@ -267,6 +282,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
   registerConversationRoutes({ app, store, service });
+  registerExecutionRoutes({ app, store, service });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
   displays.register(app);
@@ -283,6 +299,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerRelayRoutes(app, { store, hub, service, inputs });
 
   return {
+    executionDispatcher,
     inputs,
     controlActivity: activity,
     app,

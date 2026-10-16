@@ -31,12 +31,14 @@ import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
 import { createAdmission } from "./modules/workspaces/admission";
 import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
+import { createExecutionDispatch } from "./modules/workspaces/execution-dispatch";
 import { createFiniteProcesses } from "./modules/workspaces/finite-process";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
 
 export class PGliteStore implements Store {
+  readonly executions: Store["executions"];
   readonly inputs: Store["inputs"];
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
   readonly binaryOutputs: ReturnType<typeof createBinaryOutputs>;
@@ -56,6 +58,7 @@ export class PGliteStore implements Store {
       if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
       return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
     };
+    this.executions = createExecutionDispatch(context);
     this.inputs = { ...createInputObjects(context), ...createInputManifests(context) };
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.binaryOutputs = createBinaryOutputs(context);

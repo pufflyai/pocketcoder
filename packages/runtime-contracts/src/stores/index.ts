@@ -30,6 +30,7 @@ export interface Store
     ConversationStore,
     TerminalAuditStore,
     OutboxStore {
+  executions: import("./executions").ExecutionStore;
   inputs: import("./inputs").InputStore;
   checkpointTransfers: import("./checkpoint-transfers").CheckpointTransferStore;
   binaryOutputs: import("./binary-outputs").BinaryOutputStore;

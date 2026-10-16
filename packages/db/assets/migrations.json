@@ -287,5 +287,15 @@
     "folderMillis": 1792134090000,
     "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7",
     "name": "20261016070130_blue_robbie_robertson"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"conversation_requests\" ADD COLUMN \"execution\" jsonb;",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"process_execution\" jsonb;"
+    ],
+    "bps": true,
+    "folderMillis": 1792157189000,
+    "hash": "d3119fcc6bc4a35b5760adcfcf2dd0290af1f39590de5367827018c57f853f40",
+    "name": "20261016132629_friendly_killmonger"
   }
 ]

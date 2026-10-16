@@ -71,7 +71,11 @@ describe.skipIf(!available)("pinned canonical inputs through the Docker publishe
   test("awaits verified pinned publication before consumption and preserves pins through provider cleanup", async () => {
     const uploaded = await f.upload();
     const manifestId = randomUUID();
-    const selected = await f.service.freeze(manifestId, f.workspace.id, ref.id, [uploaded.reference.fileId]);
+    const observed = await driver.inspect(ref);
+    if (!observed.containerIdentity) throw new Error("Runtime identity missing");
+    const selected = await f.service.freeze(manifestId, f.workspace.id, observed.containerIdentity, [
+      uploaded.reference.fileId,
+    ]);
     const object = selected.objects[0];
     if (!object) throw new Error("Missing selected input.");
     const published = await driver.publishInputs(ref, selected);

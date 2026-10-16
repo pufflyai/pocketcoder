@@ -595,3 +595,63 @@ completeness (`complete`, `partial`, `lost`) and does not change that digest.
 Format support from `inspectTemplateSnapshot` alone does not establish installed
 capabilities. Existing process/request, transfer/output, lease and preview owners
 remain responsible for enforcing these contracts; no parallel scheduler is added.
+
+## Durable execution boundary
+
+These routes require workspace ownership and `services:relay`:
+
+```text
+GET  /v1/workspaces/{id}/execution-runtime
+POST /v1/workspaces/{id}/executions
+GET  /v1/workspaces/{id}/executions/{requestId}?owner=process&incarnationId=...
+POST /v1/workspaces/{id}/executions/{requestId}/cancel
+```
+
+Read `execution-runtime` to obtain the observed incarnation, pinned canonical
+snapshot, and installed producer descriptor. It returns no credentials or physical
+storage paths. Missing installed evidence fails closed. Canonical workspace creation
+and complete profile qualification remain separate from this start boundary.
+
+Start accepts `{acceptance, conversationIdentity?}`. Use the exported
+`WorkloadAcceptanceSchema` and `digestOf` to hash every acceptance field except
+`fingerprint`. The fields are `execution` (workspaceId, incarnationId, owner,
+requestId), `callerPrincipalId`, `templateDigest`, `adapterDigest`, `operation`,
+`input`, `inputs`, and `bindingSetDigest`. The manifest digest covers workspaceId,
+incarnationId, and the ordered objects. Select exact published file references;
+empty inputs still have an explicit manifest. This boundary accepts an explicit
+empty binding set and rejects templates with credential slots until binding
+verification is installed. Never put credentials in operation input.
+
+Start returns `201` for new intent and `200` for a retry. Changed fingerprints
+conflict with `409 operation.conflict`. Acceptance does not prove dispatch.
+Observation returns the persisted phase and timestamps. For a finite process,
+`outcome` contains the exact process fact: exit code or signal, process-group ID,
+claim/start/end times, and its execution reference. `unknown` and `lost` are not
+successful empty results. Collection and retained exports have separate owners.
+
+Only the controller dispatcher claims accepted work. Input projection publication
+finishes before the envelope is sent. The supervisor claims locally before spawn.
+Capable producers reconcile lost replies with the same ID; proven absence permits
+repeating deduplicating accept. A replaced runtime or a weak producer's ambiguous
+reply never causes automatic replay. Terminal facts are persisted before they are
+acknowledged. A lost acknowledgment is retried from the durable terminal record.
+
+Cancel accepts `{execution, cancelId, scope: "operation"}`. An undispatched
+operation settles without spawn. A dispatched finite process receives TERM at its
+owned process group, followed by KILL after the template's existing terminate
+grace. Repeating cancel preserves its identity and target. A terminal operation
+wins over a late cancel. Workspace cancellation still stops the workspace and its
+services; operation cancel does not stop workspace-lived infrastructure or certify
+revocation of an external service call.
+
+A service adapter can implement `pocketcoder.execution/v1`. Its pinned template
+must declare buffered POST routes `/executions/accept`, `/executions/lookup`,
+`/executions/cancel`, and `/executions/ack`. Accept receives the start envelope and
+an optional trusted `inputDirectory`. Lookup receives `{execution}`; cancel receives
+the public cancel envelope plus its acceptance `fingerprint`; acknowledgment receives `{execution, fingerprint}`.
+Replies use `ProducerObservationSchema`: either `{execution, phase: "absent"}` or
+`{execution, fingerprint, phase, outcome}` with accepted/running/terminal/canceled.
+Keep terminal facts until acknowledgment, retain deduplication receipts for the
+incarnation, and make acknowledgment idempotent. Installed capabilities govern
+safe redispatch and target-aware cancellation. Plain HTTP or a declared package
+version does not establish those capabilities.

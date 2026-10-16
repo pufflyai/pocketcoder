@@ -130,3 +130,35 @@ replaying a message id is idempotent. Adapters must redact secrets and
 provider-private tool/attachment data before emission. Expired transcripts
 return `410 conversation.expired`; explicitly deleted transcripts return
 `410 conversation.deleted` and cannot be appended again.
+
+## Execution acceptance and dispatch
+
+Registering a conversation context still does not start a turn. Explicit execution
+uses `POST /v1/workspaces/{id}/executions` with `acceptance` and the same
+`conversationIdentity`. The existing conversation request row owns its execution
+facts. A finite command uses the existing workspace process owner. There is no
+second run ledger.
+
+Acceptance freezes caller, workspace/incarnation, template and adapter digests,
+operation input, the exact ordered input manifest, and the binding-set digest.
+Credential-free execution requires `digestOf([])`. Credential slots remain closed
+at this boundary until their binding authority is installed. Identical retries
+return the original acceptance; changed facts conflict. Restore needs a new
+workspace reference. Reconnecting the same supervisor changes only its connection
+epoch.
+
+The controller records dispatch intent before sending. A capable producer accepts,
+looks up, observes, and acknowledges the same request ID. Its installed descriptor
+must advertise lookup and deduplicated acceptance before redispatch is allowed.
+Only an explicit absent reply in the same live incarnation permits another accept
+of that ID and fingerprint. A weak producer's unsettled dispatch becomes `unknown`.
+Runtime loss becomes `lost`; neither outcome automatically starts another attempt.
+A durable terminal fact survives a lost acknowledgment response. Acknowledgment
+retries use that terminal reference without submitting another operation.
+
+Cancel names the execution, incarnation and caller-stable cancel ID. Before claim,
+it settles as canceled without spawning. After claim it targets that operation.
+A late cancel returns the terminal record. The next conversation request waits for
+acknowledgment and the separate finalization barrier. Unknown or lost operations
+keep that barrier closed. Legacy `/agent/interrupt` remains a workspace-scoped
+operator action; it is never used to cancel an identified execution.

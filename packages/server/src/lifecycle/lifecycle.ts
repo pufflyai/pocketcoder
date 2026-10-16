@@ -203,6 +203,7 @@ export async function startPocketCoderServer(
       workspaceLeases,
       checkpointTransfers: built.checkpointTransfers,
       inputs: built.inputs,
+      executionDispatcher: built.executionDispatcher,
       readiness,
       metrics,
     });

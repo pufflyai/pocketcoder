@@ -124,7 +124,8 @@ export class DockerInputs {
   }
   async publish(ref: ProviderRef, input: InputProjectionRef) {
     await this.inspect(ref);
-    return this.publisher.publish(this.scope(ref), ref.id, input);
+    const incarnationId = await runDocker(this.bin, ["inspect", "--format", "{{.Id}}@{{.State.StartedAt}}", ref.id]);
+    return this.publisher.publish(this.scope(ref), incarnationId, input);
   }
   async release(ref: ProviderRef, manifestId: string) {
     const scope = this.scope(ref);

@@ -66,16 +66,25 @@ export class WaitingRuntime {
         const previous = this.process.lookup(frame.payload.execution);
         this.process.start(frame.payload.execution, frame.payload.fingerprint, {
           ...command,
-          env: enforcedEnvironment(this.exec, command.env),
+          env: {
+            ...enforcedEnvironment(this.exec, command.env),
+            POCKETCODER_OPERATION_INPUT: JSON.stringify(frame.payload.input),
+            ...(frame.payload.inputDirectory ? { POCKETCODER_INPUT_DIRECTORY: frame.payload.inputDirectory } : {}),
+          },
         });
         if (previous) this.process.replay();
         return true;
       }
       case "process_lookup":
         if (this.process.lookup(frame.payload.execution)) this.process.replay();
+        else this.send("process_absent", frame.payload);
         return true;
       case "process_cancel":
-        this.process.cancel(frame.payload.execution, frame.payload.signal);
+        this.send("process_cancel_result", {
+          execution: frame.payload.execution,
+          cancelId: frame.payload.cancelId,
+          status: this.process.cancelOperation(frame.payload.execution, frame.payload.cancelId, frame.payload.signal),
+        });
         this.process.replay();
         return true;
       case "process_ack":

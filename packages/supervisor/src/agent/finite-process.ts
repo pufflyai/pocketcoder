@@ -2,7 +2,9 @@ import type { FiniteProcessFact, Harness, ProcessReference } from "@pstdio/pocke
 
 export class FiniteProcess {
   private fact: FiniteProcessFact | null = null;
+  private groupStopped = false;
   private child: ReturnType<typeof Bun.spawn> | null = null;
+  private readonly cancellations = new Map<string, string>();
   drained = Promise.resolve();
 
   constructor(
@@ -30,6 +32,7 @@ export class FiniteProcess {
     command: Omit<Harness, "env"> & { env: Record<string, string | undefined> },
   ) {
     this.assertRuntime(execution);
+    if (this.cancellations.has(execution.requestId) && !this.fact) return null;
     if (this.fact) {
       if (this.fact.execution.requestId !== execution.requestId) throw new Error("Finite process already claimed");
       if (this.fact.fingerprint !== fingerprint) throw new Error("Process fingerprint conflict");
@@ -90,6 +93,18 @@ export class FiniteProcess {
     return fact;
   }
 
+  cancelOperation(execution: ProcessReference, cancelId: string, signal: "SIGTERM" | "SIGKILL" = "SIGTERM") {
+    this.assertRuntime(execution);
+    const previous = this.cancellations.get(execution.requestId);
+    if (previous && previous !== cancelId) throw new Error("Cancel identity conflict");
+    const fact = this.lookup(execution);
+    if (fact?.phase === "exited" || fact?.phase === "lost") return "terminal" as const;
+    this.cancellations.set(execution.requestId, cancelId);
+    if (!fact) return "canceled" as const;
+    this.cancel(execution, signal);
+    return "requested" as const;
+  }
+
   exited() {
     return this.child?.exited ?? Promise.resolve(0);
   }
@@ -113,11 +128,13 @@ export class FiniteProcess {
   }
 
   private signalGroup(signal: "SIGTERM" | "SIGKILL") {
-    if (!this.fact?.processGroupId) return;
+    if (this.groupStopped || !this.fact?.processGroupId) return;
     try {
       process.kill(-this.fact.processGroupId, signal);
+      if (signal === "SIGKILL") this.groupStopped = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      this.groupStopped = true;
     }
   }
 

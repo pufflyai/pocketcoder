@@ -150,3 +150,5 @@ export function createTestStoreFactory() {
     return fixtures[index].store;
   };
 }
+
+export { executionFixture } from "./modules/workspaces/execution-fixture.test";

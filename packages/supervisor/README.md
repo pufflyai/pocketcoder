@@ -68,3 +68,11 @@ crash. Test bounds are 1 MiB/input, 8 MiB staged input, 16 inputs, 2 transfers,
 4 MiB/16 exports, 600s input retention, 900s export retention, a 600s deadline and
 30s finalization. They are fixture settings, not production defaults. File/export
 qualification is outside this process proof.
+
+
+Protocol 13 adds explicit producer absence and stable operation cancellation
+receipts. Cancellation keeps the same ID through TERM and KILL escalation.
+The controller records acceptance and dispatch intent before `process_start`.
+Unclaimed process facts cannot create controller execution records. See
+[the execution API](../../docs/api.md#durable-execution-boundary) for public
+runtime discovery, start, observation, and cancellation.

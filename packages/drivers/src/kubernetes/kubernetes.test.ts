@@ -78,6 +78,7 @@ function fixtureWorkspace(): WorkspaceRow {
   return {
     runtimeRegistration: null,
     finiteProcess: null,
+    processExecution: null,
     id,
     principalId: randomUUID(),
     externalId: "kubernetes-fixture",
