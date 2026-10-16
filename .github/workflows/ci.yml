@@ -2,6 +2,7 @@ name: ci
 
 on:
   pull_request:
+  merge_group:
   workflow_call:
 
 permissions: {}
@@ -292,3 +293,23 @@ jobs:
         env:
           POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: pocketcoder-workspace:managed-upgrade
         run: bun test deploy/image/agentapi.conformance.test.ts
+
+  checks:
+    name: CI
+    if: always()
+    needs:
+      - test
+      - embedded-database
+      - native
+      - candidate-installation
+      - managed-accounts
+      - managed-accounts-cilium
+      - kind-private-registry
+      - manager-recovery
+      - managed-upgrade
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq --exit-status 'all(.[]; .result == "success")' <<< "$RESULTS"
