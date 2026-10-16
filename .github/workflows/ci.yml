@@ -36,9 +36,9 @@ jobs:
       - run: bun run typecheck
       - name: Prepare Docker conformance image
         run: docker pull postgres:16-alpine
-      - name: Prepare Chromium executable
-        # Cold executable I/O is a bounded prerequisite to the real browser checks.
-        run: timeout 30s cat /opt/google/chrome/chrome > /dev/null
+      - name: Prepare Chromium runtime
+        # Warm the executable, libraries and browser data before timed interaction checks.
+        run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
       - name: Unit, route, e2e, and PGlite integration tests
         env:
           POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
