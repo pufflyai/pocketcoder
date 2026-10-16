@@ -85,6 +85,10 @@ test.skipIf(!available).each([1, 5, 20])(
           image: executionDockerImage,
           installedProducerDigest: f.producerDigest,
           storage: "controller-readonly/v1",
+          runtimes: responses.map(({ acceptance, installed }) => ({
+            execution: acceptance.execution,
+            storage: installed.storage,
+          })),
           bounds: { cpuPerRuntime: 0.1, memoryMiBPerRuntime: 256, deadlineSeconds: 600, finalizationSeconds: 30 },
         }),
       );

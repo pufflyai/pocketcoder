@@ -208,7 +208,7 @@ export async function dockerExecutionFixture(command?: string[]) {
       bindingSetDigest: digestOf([]),
     };
     const acceptance: WorkloadAcceptance = { ...facts, fingerprint: digestOf(facts) };
-    return { workspace, ref, token: key.token, acceptance };
+    return { workspace, ref, token: key.token, acceptance, installed: producer };
   };
   return {
     ...f,
