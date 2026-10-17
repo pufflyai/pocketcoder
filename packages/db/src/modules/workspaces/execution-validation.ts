@@ -1,7 +1,12 @@
 import {
   ApiError,
+  type ConversationRequestIdentity,
   canonicalJson,
   digestOf,
+  executionAcceptEnvelope,
+  executionAckEnvelope,
+  executionCancelEnvelope,
+  executionLookupEnvelope,
   WORKLOAD_OPERATION_CAPABILITIES,
   type WorkloadAcceptance,
   type WorkloadInputProperty,
@@ -13,7 +18,12 @@ export function executionConflict(message: string): never {
   throw new ApiError("operation.conflict", message);
 }
 
-export function validateExecution(row: WorkspaceRow, input: WorkloadAcceptance, at: Date) {
+export function validateExecution(
+  row: WorkspaceRow,
+  input: WorkloadAcceptance,
+  at: Date,
+  identity: ConversationRequestIdentity | null = null,
+) {
   const runtime = row.runtimeRegistration;
   if (row.principalId !== input.callerPrincipalId) executionConflict("Execution caller does not own the workspace.");
   if (
@@ -41,7 +51,8 @@ export function validateExecution(row: WorkspaceRow, input: WorkloadAcceptance, 
   )
     executionConflict("Installed operation adapter does not match acceptance.");
   validateOwner(input, adapter.kind, adapter.protocol, runtime.profile);
-  if (input.execution.owner === "conversation-request") validateServiceRoutes(spec.services, declared.service);
+  if (input.execution.owner === "conversation-request")
+    validateServiceRoutes(spec.services, declared.service, input, identity);
   for (const capability of new Set([
     ...WORKLOAD_OPERATION_CAPABILITIES[runtime.profile],
     ...operation.requiredCapabilities,
@@ -58,12 +69,26 @@ export function validateExecution(row: WorkspaceRow, input: WorkloadAcceptance, 
   validateInputLimits(input, spec.limits);
 }
 
-function validateServiceRoutes(services: WorkloadTemplate["spec"]["services"], name: string | undefined) {
+function validateServiceRoutes(
+  services: WorkloadTemplate["spec"]["services"],
+  name: string | undefined,
+  input: WorkloadAcceptance,
+  identity: ConversationRequestIdentity | null,
+) {
   const routes = services[name ?? ""]?.routes ?? [];
-  for (const action of ["accept", "lookup", "cancel", "ack"]) {
+  const envelopes = {
+    accept: executionAcceptEnvelope(input, identity),
+    lookup: executionLookupEnvelope(input.execution),
+    ack: executionAckEnvelope(input),
+    // Cancel identities are UUIDs, so the accepted request ID has the same encoded size.
+    cancel: executionCancelEnvelope(input, input.execution.requestId),
+  };
+  for (const [action, envelope] of Object.entries(envelopes)) {
     const path = `/executions/${action}`;
-    if (!routes.some((route) => route.method === "POST" && route.path === path && route.responseMode === "buffered"))
-      executionConflict(`Execution service requires a buffered POST ${path} route.`);
+    const route = routes.find((r) => r.method === "POST" && r.path === path && r.responseMode === "buffered");
+    if (!route) executionConflict(`Execution service requires a buffered POST ${path} route.`);
+    if (Buffer.byteLength(JSON.stringify(envelope)) > route.maxRequestBytes)
+      throw new ApiError("relay.body_too_large", "Execution envelope exceeds the route limit.");
   }
 }
 

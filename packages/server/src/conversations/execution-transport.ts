@@ -2,6 +2,10 @@ import {
   ApiError,
   canonicalJson,
   type ExecutionRecord,
+  executionAcceptEnvelope,
+  executionAckEnvelope,
+  executionCancelEnvelope,
+  executionLookupEnvelope,
   executionSettled,
   ProducerObservationSchema,
 } from "@pstdio/pocketcoder-contracts";
@@ -73,7 +77,7 @@ export function conversationTransport(deps: {
       fact.outcome,
     );
     if (recorded && ["terminal", "canceled"].includes(fact.phase)) {
-      await call(record, workspace, "ack", { execution: fact.execution, fingerprint: fact.fingerprint }, control);
+      await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), control);
       await deps.store.executions.acknowledge(fact.execution, fact.fingerprint, new Date());
     }
   }
@@ -87,11 +91,12 @@ export function conversationTransport(deps: {
         await this.cancel(latest.record, workspace);
         return;
       }
-      const reply = await call(record, workspace, "accept", {
-        acceptance: record.acceptance,
-        conversationIdentity: record.conversationIdentity,
-        ...(inputDirectory ? { inputDirectory } : {}),
-      });
+      const reply = await call(
+        record,
+        workspace,
+        "accept",
+        executionAcceptEnvelope(record.acceptance, record.conversationIdentity, inputDirectory),
+      );
       if ((await observe(record, workspace, reply)) === "absent")
         throw new ApiError("relay.upstream_error", "Producer did not accept the operation.");
     },
@@ -99,20 +104,11 @@ export function conversationTransport(deps: {
       return observe(
         record,
         workspace,
-        await call(record, workspace, "lookup", { execution: record.acceptance.execution }),
+        await call(record, workspace, "lookup", executionLookupEnvelope(record.acceptance.execution)),
       );
     },
     async acknowledge(record, workspace) {
-      await call(
-        record,
-        workspace,
-        "ack",
-        {
-          execution: record.acceptance.execution,
-          fingerprint: record.acceptance.fingerprint,
-        },
-        Boolean(record.cancel),
-      );
+      await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), Boolean(record.cancel));
       await deps.store.executions.acknowledge(record.acceptance.execution, record.acceptance.fingerprint, new Date());
     },
     async cancel(record, workspace) {
@@ -124,12 +120,7 @@ export function conversationTransport(deps: {
           record,
           workspace,
           "cancel",
-          {
-            execution: record.acceptance.execution,
-            cancelId: record.cancel.cancelId,
-            fingerprint: record.acceptance.fingerprint,
-            scope: "operation",
-          },
+          executionCancelEnvelope(record.acceptance, record.cancel.cancelId),
           true,
         ),
         true,

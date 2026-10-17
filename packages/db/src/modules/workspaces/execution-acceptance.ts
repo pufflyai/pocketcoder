@@ -36,7 +36,7 @@ export function acceptExecution(context: DatabaseContext) {
         return { kind: "replayed" as const, record: previous };
       }
       await requireExecutionPrincipal(context, tx, input.callerPrincipalId);
-      validateExecution(workspace, input, at);
+      validateExecution(workspace, input, at, identity);
       if (input.execution.owner === "process" && (workspace.processExecution || workspace.finiteProcess || identity))
         executionConflict("Finite process already accepted or conversation identity supplied.");
       if (input.execution.owner === "conversation-request")

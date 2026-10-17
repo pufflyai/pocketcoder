@@ -668,7 +668,11 @@ must declare buffered POST routes `/executions/accept`, `/executions/lookup`,
 `/executions/cancel`, and `/executions/ack`. All four routes are required even for
 weaker producers. The controller checks them before acceptance and each dispatch
 claim. Missing routes, wrong methods, and streaming responses cause a conflict
-before producer acceptance. Accept receives the start envelope and
+before producer acceptance. Admission checks the full UTF-8 encoded envelopes
+against each route's request byte limit, including conversation identity and the
+trusted input-directory field when files are present. An oversized envelope returns
+HTTP 413 before intent or input pins are stored; a later smaller request can still
+be accepted. Transport retains the same limit as a final guard. Accept receives the start envelope and
 an optional trusted `inputDirectory`. Lookup receives `{execution}`; cancel receives
 the public cancel envelope plus its acceptance `fingerprint`; acknowledgment receives `{execution, fingerprint}`.
 Replies use `ProducerObservationSchema`: either `{execution, phase: "absent"}` or

@@ -73,7 +73,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
         if (executionSettled(record)) return null;
         try {
           await requireExecutionPrincipal(context, tx, record.acceptance.callerPrincipalId);
-          validateExecution(workspace, record.acceptance, at);
+          validateExecution(workspace, record.acceptance, at, record.conversationIdentity);
           await requireExecutionInputs(context, tx, record.acceptance);
         } catch (error) {
           if (!(error instanceof ApiError)) throw error;

@@ -1,17 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
-import { credentialMemoryPaths, WorkloadImageSchema } from "@pstdio/pocketcoder-contracts";
+import { credentialMemoryPaths, INPUT_PROJECTION_TARGET, WorkloadImageSchema } from "@pstdio/pocketcoder-contracts";
 import type {
   InputProjectionRef,
   InputStorageDriver,
   ProviderRef,
   WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
-import {
-  FilesystemInputProjection,
-  INPUT_PROJECTION_TARGET,
-  type ProjectionScope,
-} from "../filesystem/input-projection";
+import { FilesystemInputProjection, type ProjectionScope } from "../filesystem/input-projection";
 import { inputId, overlaps, privateRoot } from "../filesystem/projection-paths";
 import { resolveDockerImage, runDocker } from "./docker-command";
 

@@ -281,6 +281,7 @@ export {
   TerminalSessionSchema,
 } from "./terminals/terminal";
 export * from "./workspaces/execution-dispatch";
+export * from "./workspaces/execution-envelope";
 export * from "./workspaces/execution-runtime";
 export * from "./workspaces/finite-process";
 export * from "./workspaces/producer-observation";
