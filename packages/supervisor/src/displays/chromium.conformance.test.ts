@@ -23,11 +23,16 @@ async function until<T>(read: () => Promise<T>, ready: (value: T) => boolean) {
 
 async function connect(profile: string, child: Bun.Subprocess) {
   const port = await browserPort(profile, child, executable);
-  const targets = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())) as {
-    type: string;
-    webSocketDebuggerUrl: string;
-  }[];
-  const target = targets.find((entry) => entry.type === "page");
+  const target = await until(
+    async () => {
+      const targets = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())) as {
+        type: string;
+        webSocketDebuggerUrl: string;
+      }[];
+      return targets.find((entry) => entry.type === "page");
+    },
+    (target) => Boolean(target),
+  );
   if (!target) throw new Error("Chromium page is missing.");
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   const client = new Chromium(

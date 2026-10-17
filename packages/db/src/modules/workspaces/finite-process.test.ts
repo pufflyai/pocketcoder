@@ -2,36 +2,16 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { FiniteProcessFact } from "@pstdio/pocketcoder-contracts";
 import { PGliteStore } from "../../store";
-import { createPGliteFixture, insertTestWorkspace } from "../../test-fixtures";
+import { insertTestWorkspace } from "../../test-fixtures";
+import { executionFixture } from "./execution-fixture.test";
 
-// Real durable workspace rows, including reconnect fencing and terminal replay.
-test("runtime identity and process facts survive reconnect and cannot retarget restore", async () => {
-  const f = await createPGliteFixture("process-facts", "disk");
+test("runtime identity and accepted process facts survive reconnect and cannot retarget restore", async () => {
+  const f = await executionFixture(undefined, { mode: "disk" });
   try {
-    const row = await insertTestWorkspace(f, randomUUID());
-    const ref = { kind: "docker", id: "observed-container" };
-    await f.store.transition(row.id, {
-      from: ["queued"],
-      to: "provisioning",
-      at: new Date(),
-      patch: { providerKind: "docker", providerRef: ref },
-    });
-    const runtime = {
-      incarnationId: "observed-container",
-      containerIdentity: "observed-container",
-      profile: "finite-process" as const,
-      producer: null,
-    };
-    expect(await f.store.bindWorkspaceRuntime(row.id, runtime, ref)).toBe(true);
-    const execution = {
-      workspaceId: row.id,
-      incarnationId: runtime.incarnationId,
-      owner: "process" as const,
-      requestId: randomUUID(),
-    };
+    const input = f.acceptance();
     const claimed: FiniteProcessFact = {
-      execution,
-      fingerprint: `sha256:${"a".repeat(64)}`,
+      execution: { ...input.execution, owner: "process" },
+      fingerprint: input.fingerprint,
       phase: "claimed",
       claimedAt: new Date().toISOString(),
       startedAt: null,
@@ -40,42 +20,39 @@ test("runtime identity and process facts survive reconnect and cannot retarget r
       exitCode: null,
       signal: null,
     };
-    await f.store.transition(row.id, {
-      from: ["provisioning"],
-      to: "connected",
-      at: new Date(),
-      patch: { connectionEpoch: 1 },
-    });
-    expect(await f.store.recordFiniteProcess(row.id, 1, claimed)).toBe(true);
-    await f.store.updateWorkspace(row.id, { connectionEpoch: 2 }, new Date());
-    const exited = {
+    expect(await f.store.recordFiniteProcess(f.id, 1, claimed)).toBe(false);
+    await f.store.executions.accept(input, new Date());
+    expect(await f.store.recordFiniteProcess(f.id, 1, claimed)).toBe(false);
+    await f.store.executions.claim(input.execution, new Date());
+    expect(await f.store.recordFiniteProcess(f.id, 1, claimed)).toBe(true);
+    await f.store.updateWorkspace(f.id, { connectionEpoch: 2 }, new Date());
+    const exited: FiniteProcessFact = {
       ...claimed,
-      phase: "exited" as const,
+      phase: "exited",
       startedAt: claimed.claimedAt,
       endedAt: new Date().toISOString(),
       processGroupId: 123,
       exitCode: 7,
     };
-    expect(await f.store.recordFiniteProcess(row.id, 1, exited)).toBe(false);
-    expect(await f.store.recordFiniteProcess(row.id, 2, exited)).toBe(true);
-    expect(await f.store.recordFiniteProcess(row.id, 2, claimed)).toBe(false);
-    expect(await f.store.recordFiniteProcess(row.id, 2, exited)).toBe(true);
+    expect(await f.store.recordFiniteProcess(f.id, 1, exited)).toBe(false);
+    expect(await f.store.recordFiniteProcess(f.id, 2, exited)).toBe(true);
+    expect(await f.store.recordFiniteProcess(f.id, 2, claimed)).toBe(false);
+    expect(await f.store.recordFiniteProcess(f.id, 2, exited)).toBe(true);
     expect(
       await f.store.bindWorkspaceRuntime(
-        row.id,
-        { ...runtime, incarnationId: "replacement", containerIdentity: "replacement" },
-        ref,
+        f.id,
+        { ...f.runtime, producer: null, incarnationId: "replacement", containerIdentity: "replacement" },
+        { kind: "docker", id: f.runtime.incarnationId },
       ),
     ).toBe(false);
     const restored = await insertTestWorkspace(f, randomUUID());
     expect(await f.store.recordFiniteProcess(restored.id, 2, exited)).toBe(false);
-    expect((await f.store.getWorkspace(row.id))?.finiteProcess).toEqual(exited);
     expect((await f.store.getWorkspace(restored.id))?.finiteProcess).toBeNull();
     await f.store.close();
     const reopened = await PGliteStore.create(f.directory);
     try {
-      expect((await reopened.getWorkspace(row.id))?.finiteProcess).toEqual(exited);
-      expect((await reopened.getWorkspace(row.id))?.runtimeRegistration?.incarnationId).toBe(runtime.incarnationId);
+      expect((await reopened.getWorkspace(f.id))?.finiteProcess).toEqual(exited);
+      expect((await reopened.executions.get(input.execution))?.outcome).toEqual(exited);
     } finally {
       await reopened.close();
     }
@@ -84,31 +61,15 @@ test("runtime identity and process facts survive reconnect and cannot retarget r
   }
 });
 
-test("runtime loss ends uncertain work without inventing an exit code", async () => {
-  const f = await createPGliteFixture("lost-process");
+test("runtime loss ends accepted uncertain work without inventing an exit code", async () => {
+  const f = await executionFixture();
   try {
-    const row = await insertTestWorkspace(f, randomUUID());
-    const ref = { kind: "docker", id: "container" };
-    await f.store.transition(row.id, {
-      from: ["queued"],
-      to: "provisioning",
-      at: new Date(),
-      patch: { providerKind: "docker", providerRef: ref },
-    });
-    await f.store.bindWorkspaceRuntime(
-      row.id,
-      { incarnationId: "container", containerIdentity: "container", profile: "finite-process", producer: null },
-      ref,
-    );
-    await f.store.transition(row.id, {
-      from: ["provisioning"],
-      to: "connected",
-      at: new Date(),
-      patch: { connectionEpoch: 1 },
-    });
-    await f.store.recordFiniteProcess(row.id, 1, {
-      execution: { workspaceId: row.id, incarnationId: "container", owner: "process", requestId: randomUUID() },
-      fingerprint: `sha256:${"a".repeat(64)}`,
+    const input = f.acceptance();
+    await f.store.executions.accept(input, new Date());
+    await f.store.executions.claim(input.execution, new Date());
+    await f.store.recordFiniteProcess(f.id, 1, {
+      execution: { ...input.execution, owner: "process" },
+      fingerprint: input.fingerprint,
       phase: "claimed",
       claimedAt: new Date().toISOString(),
       startedAt: null,
@@ -117,12 +78,47 @@ test("runtime loss ends uncertain work without inventing an exit code", async ()
       exitCode: null,
       signal: null,
     });
-    await f.store.endWorkspaceRuntime(row.id, "container", new Date());
-    expect((await f.store.getWorkspace(row.id))?.finiteProcess).toMatchObject({
+    await f.store.endWorkspaceRuntime(f.id, input.execution.incarnationId, new Date());
+    expect((await f.store.getWorkspace(f.id))?.finiteProcess).toMatchObject({
       phase: "lost",
       exitCode: null,
       signal: null,
     });
+    expect((await f.store.executions.get(input.execution))?.phase).toBe("lost");
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("controller loss is final even when claimed producer facts arrive later", async () => {
+  const f = await executionFixture();
+  try {
+    const input = f.acceptance();
+    await f.store.executions.accept(input, new Date());
+    await f.store.executions.claim(input.execution, new Date());
+    expect(await f.store.executions.claim(input.execution, new Date(Date.now() + 600_001))).toBeNull();
+    const running: FiniteProcessFact = {
+      execution: { ...input.execution, owner: "process" },
+      fingerprint: input.fingerprint,
+      phase: "running",
+      claimedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      processGroupId: 123,
+      exitCode: null,
+      signal: null,
+    };
+    expect(await f.store.recordFiniteProcess(f.id, 1, running)).toBe(false);
+    expect(
+      await f.store.recordFiniteProcess(f.id, 1, {
+        ...running,
+        phase: "exited",
+        exitCode: 0,
+        endedAt: new Date().toISOString(),
+      }),
+    ).toBe(false);
+    expect((await f.store.executions.get(input.execution))?.phase).toBe("lost");
+    expect((await f.store.getWorkspace(f.id))?.finiteProcess).toBeNull();
   } finally {
     await f.dispose();
   }

@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { lstat, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AcceptedInputManifestSchema, canonicalJson, digestOf } from "@pstdio/pocketcoder-contracts";
+import {
+  AcceptedInputManifestSchema,
+  canonicalJson,
+  digestOf,
+  inputProjectionDirectory,
+} from "@pstdio/pocketcoder-contracts";
 import type { InputProjectionRef, InputStorageDriver } from "@pstdio/pocketcoder-runtime-core";
 import { type ProjectionCapacity, requireProjectionCapacity } from "./projection-capacity";
 import { verifyProjectionFile, writeProjectionFile } from "./projection-files";
@@ -19,7 +24,6 @@ export interface ProjectionScope {
   workspaceId: string;
   projectionId: string;
 }
-export const INPUT_PROJECTION_TARGET = "/run/pocketcoder/inputs";
 
 // Only the controller calls this publisher. Canonical objects and receipts never enter a mount.
 export class FilesystemInputProjection {
@@ -76,7 +80,7 @@ export class FilesystemInputProjection {
     const published = {
       manifestId: input.manifestId,
       digest: manifest.digest,
-      directory: `${INPUT_PROJECTION_TARGET}/${input.manifestId}`,
+      directory: inputProjectionDirectory(input.manifestId),
     };
     try {
       await lstat(destination);

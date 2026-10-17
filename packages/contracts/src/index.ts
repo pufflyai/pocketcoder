@@ -39,6 +39,7 @@ export {
   ErrorEnvelopeSchema,
   errorEnvelope,
 } from "./common/errors";
+export { JsonValueSchema } from "./common/json-value";
 export { CursorPageSchema, CursorQuerySchema, CursorSchema } from "./common/pagination";
 export { hasScope, isScope, SCOPES, type Scope } from "./common/scopes";
 export * from "./conversations";
@@ -146,6 +147,7 @@ export {
   ATTACHMENTS_MIN_PROTOCOL_VERSION,
   CheckpointStatusPayload,
   ConversationMessagePayload,
+  EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION,
   type ExecSpec,
   ExecSpecSchema,
   HEADER_POOL_ENROLLMENT,
@@ -278,7 +280,11 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/execution-dispatch";
+export * from "./workspaces/execution-envelope";
+export * from "./workspaces/execution-runtime";
 export * from "./workspaces/finite-process";
+export * from "./workspaces/producer-observation";
 export * from "./workspaces/workload-operation";
 export {
   ADMISSION_REASONS,

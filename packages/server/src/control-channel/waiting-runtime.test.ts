@@ -10,45 +10,24 @@ import {
   snapshotOf,
   workloadSnapshotOf,
 } from "@pstdio/pocketcoder-contracts";
-import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
+import { createTestStoreFactory, executionFixture } from "@pstdio/pocketcoder-db/testing";
 import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import type { WSContext } from "hono/ws";
-import { authed, createTestBody, createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
+import { createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
 import { seedWaitingWorkspace } from "./waiting-workspace-fixture.test";
 import { handleConnectedFrame } from "./ws-frame-handler";
 
 const createStore = createTestStoreFactory();
 
 test("waiting readiness is separate from process completion and terminal facts are acknowledged after persistence", async () => {
-  const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
-  const response = await server.app.request(
-    "/v1/workspaces",
-    authed(server.token, { method: "POST", headers: { "idempotency-key": randomUUID() }, body: createTestBody() }),
-  );
-  const { id } = (await response.json()) as { id: string };
-  const ref = { kind: "fake", id: "driver-observed" };
-  await server.store.transition(id, {
-    from: ["queued"],
-    to: "provisioning",
-    at: new Date(),
-    patch: { providerKind: "fake", providerRef: ref },
-  });
-  await server.store.bindWorkspaceRuntime(
-    id,
-    {
-      incarnationId: "driver-observed",
-      containerIdentity: "driver-observed",
-      profile: "finite-process",
-      producer: null,
+  const f = await executionFixture(
+    (source) => {
+      source.spec.network = { mode: "unrestricted" };
     },
-    ref,
+    { ready: false },
   );
-  await server.store.transition(id, {
-    from: ["provisioning"],
-    to: "connected",
-    at: new Date(),
-    patch: { connectionEpoch: 1 },
-  });
+  const server = await createTestServer(f.store, { globalActiveWorkspaces: 0 });
+  const id = f.id;
   const sent: { type: string; payload: unknown }[] = [];
   const socket = {
     send(raw: string) {
@@ -73,11 +52,14 @@ test("waiting readiness is separate from process completion and terminal facts a
   expect((await server.store.getWorkspace(id))?.state).toBe("connected");
   await receive("runtime_ready", { incarnationId: "wrong" });
   expect((await server.store.getWorkspace(id))?.state).toBe("connected");
-  await receive("runtime_ready", { incarnationId: "driver-observed" });
+  await receive("runtime_ready", { incarnationId: f.runtime.incarnationId });
   expect((await server.store.getWorkspace(id))?.state).toBe("ready");
+  const accepted = f.acceptance();
+  await f.store.executions.accept(accepted, new Date());
+  await f.store.executions.claim(accepted.execution, new Date());
   const fact: FiniteProcessFact = {
-    execution: { workspaceId: id, incarnationId: "driver-observed", requestId: randomUUID(), owner: "process" },
-    fingerprint: `sha256:${"a".repeat(64)}`,
+    execution: { ...accepted.execution, owner: "process" },
+    fingerprint: accepted.fingerprint,
     phase: "exited",
     processGroupId: 123,
     claimedAt: new Date().toISOString(),
@@ -104,6 +86,7 @@ test("waiting readiness is separate from process completion and terminal facts a
   await receive("finite_process", { ...fact, exitCode: 0 });
   expect((await server.store.getWorkspace(id))?.finiteProcess).toEqual(fact);
   server.hub.close(id);
+  await f.dispose();
 });
 
 test("canonical network readiness stays required when the lifecycle policy is unrestricted", async () => {

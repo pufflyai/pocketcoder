@@ -1,17 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
-import { credentialMemoryPaths, WorkloadImageSchema } from "@pstdio/pocketcoder-contracts";
+import { credentialMemoryPaths, INPUT_PROJECTION_TARGET, WorkloadImageSchema } from "@pstdio/pocketcoder-contracts";
 import type {
   InputProjectionRef,
   InputStorageDriver,
   ProviderRef,
   WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
-import {
-  FilesystemInputProjection,
-  INPUT_PROJECTION_TARGET,
-  type ProjectionScope,
-} from "../filesystem/input-projection";
+import { FilesystemInputProjection, type ProjectionScope } from "../filesystem/input-projection";
 import { inputId, overlaps, privateRoot } from "../filesystem/projection-paths";
 import { resolveDockerImage, runDocker } from "./docker-command";
 
@@ -124,7 +120,8 @@ export class DockerInputs {
   }
   async publish(ref: ProviderRef, input: InputProjectionRef) {
     await this.inspect(ref);
-    return this.publisher.publish(this.scope(ref), ref.id, input);
+    const incarnationId = await runDocker(this.bin, ["inspect", "--format", "{{.Id}}@{{.State.StartedAt}}", ref.id]);
+    return this.publisher.publish(this.scope(ref), incarnationId, input);
   }
   async release(ref: ProviderRef, manifestId: string) {
     const scope = this.scope(ref);

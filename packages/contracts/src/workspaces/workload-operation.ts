@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AcceptedInputManifestSchema } from "../attachments/input-reference";
 import { digestOf } from "../common/canonical";
+import { JsonValueSchema } from "../common/json-value";
 import { WorkloadDigestSchema, WorkloadNameSchema } from "../templates/workload-capabilities";
 
 // These references compose the process and conversation owners. They do not
@@ -20,7 +21,7 @@ export const WorkloadAcceptanceSchema = z
     templateDigest: WorkloadDigestSchema,
     adapterDigest: WorkloadDigestSchema,
     operation: WorkloadNameSchema,
-    input: z.record(z.string(), z.json()),
+    input: z.record(z.string(), JsonValueSchema),
     inputs: AcceptedInputManifestSchema,
     bindingSetDigest: WorkloadDigestSchema,
     fingerprint: WorkloadDigestSchema,

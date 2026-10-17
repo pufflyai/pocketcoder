@@ -7,6 +7,7 @@ import type { ControlActivity } from "./activity";
 import type { Hub, LiveConnection } from "./hub";
 
 export interface WsDeps {
+  executionDispatcher?: import("@pstdio/pocketcoder-runtime-core").ExecutionDispatcher;
   assertAccountAllowed?: () => Promise<void>;
   activity?: ControlActivity;
   store: Store;

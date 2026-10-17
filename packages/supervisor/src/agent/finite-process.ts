@@ -1,8 +1,14 @@
 import type { FiniteProcessFact, Harness, ProcessReference } from "@pstdio/pocketcoder-contracts";
+import { groupHasWriters } from "./process-group";
 
 export class FiniteProcess {
   private fact: FiniteProcessFact | null = null;
+  private groupStopped = false;
   private child: ReturnType<typeof Bun.spawn> | null = null;
+  private readonly cancellations = new Map<string, string>();
+  private groupStop: Promise<void> | null = null;
+  private killDeadline: number | null = null;
+  private killTimer: ReturnType<typeof setTimeout> | undefined;
   drained = Promise.resolve();
 
   constructor(
@@ -16,6 +22,7 @@ export class FiniteProcess {
         /* Drain without retaining workload output. */
       }
     },
+    private readonly finalizationGraceMs = 15_000,
   ) {}
 
   lookup(execution: ProcessReference) {
@@ -30,6 +37,7 @@ export class FiniteProcess {
     command: Omit<Harness, "env"> & { env: Record<string, string | undefined> },
   ) {
     this.assertRuntime(execution);
+    if (this.cancellations.has(execution.requestId) && !this.fact) return null;
     if (this.fact) {
       if (this.fact.execution.requestId !== execution.requestId) throw new Error("Finite process already claimed");
       if (this.fact.fingerprint !== fingerprint) throw new Error("Process fingerprint conflict");
@@ -67,14 +75,16 @@ export class FiniteProcess {
       this.publish(running);
       const pumps = [this.pump(child.stdout, "stdout"), this.pump(child.stderr, "stderr")];
       this.drained = child.exited.then(async (code) => {
-        // The leader's exit does not prove descendants stopped. Finalization calls stopWriters.
-        this.publish({
+        // Keep the exact leader receipt private until all group writers stop.
+        this.fact = {
           ...running,
           phase: "exited",
           exitCode: child.signalCode ? null : code,
           signal: child.signalCode,
           endedAt: new Date().toISOString(),
-        });
+        };
+        await this.stopGroup("SIGTERM", this.finalizationGraceMs);
+        this.replay();
         await Promise.all(pumps);
       });
     } catch {
@@ -90,6 +100,23 @@ export class FiniteProcess {
     return fact;
   }
 
+  cancelOperation(
+    execution: ProcessReference,
+    cancelId: string,
+    signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
+    graceMs?: number,
+  ) {
+    this.assertRuntime(execution);
+    const previous = this.cancellations.get(execution.requestId);
+    if (previous && previous !== cancelId) throw new Error("Cancel identity conflict");
+    const fact = this.lookup(execution);
+    if (fact?.phase === "lost" || (fact?.phase === "exited" && this.groupStopped)) return "terminal" as const;
+    this.cancellations.set(execution.requestId, cancelId);
+    if (!fact) return "canceled" as const;
+    this.stopGroup(signal, graceMs ?? this.finalizationGraceMs);
+    return "requested" as const;
+  }
+
   exited() {
     return this.child?.exited ?? Promise.resolve(0);
   }
@@ -97,10 +124,11 @@ export class FiniteProcess {
   async stopWriters(signal: "SIGTERM" | "SIGKILL") {
     this.signalGroup(signal);
     await this.child?.exited;
+    await this.waitForGroupStop();
   }
 
   replay() {
-    if (this.fact) this.observe(this.fact);
+    if (this.fact && !(this.fact.phase === "exited" && !this.groupStopped)) this.observe(this.fact);
   }
 
   private assertRuntime(execution: ProcessReference) {
@@ -113,16 +141,41 @@ export class FiniteProcess {
   }
 
   private signalGroup(signal: "SIGTERM" | "SIGKILL") {
-    if (!this.fact?.processGroupId) return;
+    if (this.groupStopped || !this.fact?.processGroupId) return;
     try {
       process.kill(-this.fact.processGroupId, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      // macOS can deny a group signal while its final members are exiting.
+      if (code === "EPERM") return;
+      if (code !== "ESRCH") throw error;
+      this.groupStopped = true;
     }
   }
 
   private publish(fact: FiniteProcessFact) {
     this.fact = fact;
-    this.observe(fact);
+    this.replay();
+  }
+
+  private stopGroup(signal: "SIGTERM" | "SIGKILL", graceMs: number) {
+    this.signalGroup(signal);
+    const deadline = performance.now() + graceMs;
+    // A delayed cancel can shorten ordinary cleanup, but retries cannot extend it.
+    if (!this.groupStopped && (this.killDeadline === null || deadline < this.killDeadline)) {
+      clearTimeout(this.killTimer);
+      this.killDeadline = deadline;
+      this.killTimer = setTimeout(() => this.signalGroup("SIGKILL"), graceMs);
+    }
+    this.groupStop ??= this.waitForGroupStop().finally(() => clearTimeout(this.killTimer));
+    return this.groupStop;
+  }
+
+  private async waitForGroupStop() {
+    while (!this.groupStopped && this.fact?.processGroupId) {
+      if (this.killDeadline !== null && performance.now() >= this.killDeadline) this.signalGroup("SIGKILL");
+      this.groupStopped = !groupHasWriters(this.fact.processGroupId);
+      if (!this.groupStopped) await Bun.sleep(10);
+    }
   }
 }

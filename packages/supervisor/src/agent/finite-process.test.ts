@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,7 +62,7 @@ test("targets a long command's process group and records the observed signal", a
   }
 });
 
-test("finalization can stop descendant writers after the command leader exits", async () => {
+test("ordinary exit stops descendant writers before finalization", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc-writers-"));
   const marker = join(root, "stopped");
   const ready = join(root, "writer-ready");
@@ -73,7 +74,7 @@ test("finalization can stop descendant writers after the command leader exits", 
       command: [
         process.execPath,
         "-e",
-        `Bun.spawn([${JSON.stringify(process.execPath)},'-e',${JSON.stringify(descendant)}],{stdin:'ignore',stdout:'ignore',stderr:'ignore'}).unref();`,
+        `Bun.spawn([${JSON.stringify(process.execPath)},'-e',${JSON.stringify(descendant)}],{stdin:'ignore',stdout:'ignore',stderr:'ignore'}).unref();while(!Bun.file(${JSON.stringify(ready)}).size){await Bun.sleep(10)}`,
       ],
       env: {},
     });
@@ -84,12 +85,54 @@ test("finalization can stop descendant writers after the command leader exits", 
       await Bun.sleep(10);
     }
     expect(owner.lookup(ref)?.phase).toBe("exited");
-    await owner.stopWriters("SIGTERM");
+    await owner.drained;
     while (!(await Bun.file(marker).exists())) {
       if (Date.now() > deadline) throw new Error("Descendant did not receive the group signal");
       await Bun.sleep(10);
     }
     expect(await Bun.file(marker).text()).toBe("stopped");
+  } finally {
+    await owner.stopWriters("SIGKILL");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("terminal notification waits for ordinary exit's descendant writers to stop", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-exit-writers-"));
+  const ready = join(root, "ready");
+  const pidPath = join(root, "child");
+  const ref = reference();
+  let terminalWhileWriting = false;
+  let terminal = false;
+  const owner = new FiniteProcess(
+    ref.workspaceId,
+    ref.incarnationId,
+    (fact) => {
+      if (fact.phase !== "exited") return;
+      terminal = true;
+      const pid = Number(readFileSync(pidPath, "utf8"));
+      try {
+        process.kill(pid, 0);
+        terminalWhileWriting =
+          process.platform !== "linux" || !/\) [ZX] /.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+      } catch {}
+    },
+    undefined,
+    100,
+  );
+  try {
+    owner.start(ref, fingerprint, {
+      command: [
+        "/bin/sh",
+        "-c",
+        `(trap '' TERM; echo ready > '${ready}'; while :; do sleep 1; done) >/dev/null 2>&1 & echo $! > '${pidPath}'; while [ ! -f '${ready}' ]; do sleep 0.01; done; exit 7`,
+      ],
+      env: {},
+    });
+    await owner.drained;
+    expect(terminal).toBe(true);
+    expect(terminalWhileWriting).toBe(false);
+    expect(owner.lookup(ref)).toMatchObject({ phase: "exited", exitCode: 7, signal: null });
   } finally {
     await owner.stopWriters("SIGKILL");
     await rm(root, { recursive: true, force: true });

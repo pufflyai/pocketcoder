@@ -34,6 +34,10 @@ describe("openapi", () => {
     };
     expect(Object.keys(doc.paths)).toContain("/v1/workspaces");
     expect(Object.keys(doc.paths)).toContain("/v1/templates");
+    expect(doc.paths["/v1/workspaces/{id}/execution-runtime"]?.get?.operationId).toBe("getExecutionRuntime");
+    expect(doc.paths["/v1/workspaces/{id}/executions"]?.post?.operationId).toBe("startExecution");
+    expect(doc.paths["/v1/workspaces/{id}/executions/{requestId}"]?.get?.operationId).toBe("observeExecution");
+    expect(doc.paths["/v1/workspaces/{id}/executions/{requestId}/cancel"]?.post?.operationId).toBe("cancelExecution");
     expect(doc.paths["/v1/workspaces"]?.post?.parameters).toContainEqual(
       expect.objectContaining({
         name: "Idempotency-Key",

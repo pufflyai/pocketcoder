@@ -12,6 +12,7 @@ import {
 } from "./docker-inputs-fixture.test";
 
 describe.skipIf(!available)("Docker immutable input boundary", () => {
+  let incarnationId: string;
   let f: Awaited<ReturnType<typeof fixture>>;
   let ref: ProviderRef;
   let object: Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["input"]>>;
@@ -20,6 +21,9 @@ describe.skipIf(!available)("Docker immutable input boundary", () => {
   beforeAll(async () => {
     f = await fixture();
     ref = await f.create();
+    const observed = await f.driver.inspect(ref);
+    if (!observed.containerIdentity) throw new Error("Runtime identity missing");
+    incarnationId = observed.containerIdentity;
     object = await f.input();
     selected = selection([object]);
     published = await f.driver.publishInputs(ref, selected);
@@ -29,10 +33,10 @@ describe.skipIf(!available)("Docker immutable input boundary", () => {
   }, 30_000);
   function selection(objects: typeof selected.objects) {
     const input = f.selection(objects);
-    input.manifest.incarnationId = ref.id;
+    input.manifest.incarnationId = incarnationId;
     input.manifest.digest = digestOf({
       workspaceId: f.scope.workspaceId,
-      incarnationId: ref.id,
+      incarnationId,
       objects: input.manifest.objects,
     });
     return input;
