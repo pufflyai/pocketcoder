@@ -52,11 +52,11 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
 # Refreshed together after apk verified both architectures' repository signatures.
 RUN case "$TARGETARCH" in \
       amd64) printf '%s\n' \
-        '35edd8eb8fd4c562cfecbb835ab55843cf5db40e0749275f8cbfb057b07d01f1' \
+        '250aeeb7e4650b05068a8f132fed1de56a60d60039a8e580a8a2107f294475e7' \
         'eb6c0da93e400396a06b0da09d9587eede7471830b0897e16dd69e1a9e2729e6' ;; \
       arm64) printf '%s\n' \
         '53da63e31fab5f7b233144fcbfbd58b717a5d465ff622046e3ce4235f293aaab' \
-        '8838b9ab7944f8f9f3c61559eb6b97d621d6c6d34fde4360ae0470d87ec069cd' ;; \
+        'de4cffac2c3d67660fc114d6156794e9403240e687c0c53962f8d619cd7ff97c' ;; \
       *) exit 1 ;; \
     esac | sort > /opt/apk-index-checksums
 # Openbox needs a passwd record for the UID enforced by the workspace driver.
