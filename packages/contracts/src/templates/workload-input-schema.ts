@@ -13,10 +13,10 @@ export interface WorkloadInputObject {
   additionalProperties: false;
 }
 
-const InputPropertySchema: z.ZodType<WorkloadInputProperty> = z.lazy(() =>
+export const WorkloadInputPropertySchema: z.ZodType<WorkloadInputProperty> = z.lazy(() =>
   z.discriminatedUnion("type", [
     z.strictObject({ type: z.enum(["string", "number", "integer", "boolean", "null"]) }),
-    z.strictObject({ type: z.literal("array"), items: InputPropertySchema }),
+    z.strictObject({ type: z.literal("array"), items: WorkloadInputPropertySchema }),
     WorkloadInputSchema,
   ]),
 );
@@ -24,7 +24,7 @@ const InputPropertySchema: z.ZodType<WorkloadInputProperty> = z.lazy(() =>
 export const WorkloadInputSchema = z
   .strictObject({
     type: z.literal("object"),
-    properties: z.record(z.string(), InputPropertySchema),
+    properties: z.record(z.string(), WorkloadInputPropertySchema),
     required: z.array(z.string()).default([]),
     additionalProperties: z.literal(false),
   })

@@ -1,4 +1,11 @@
-import type { AgentFrame, ExecSpec, ProcessReference, ProviderInput, ServerFrame } from "@pstdio/pocketcoder-contracts";
+import {
+  type AgentFrame,
+  type ExecSpec,
+  type ProcessReference,
+  type ProviderInput,
+  parseDurationMs,
+  type ServerFrame,
+} from "@pstdio/pocketcoder-contracts";
 import { enforcedEnvironment } from "../bootstrap/supervisor-utils";
 import type { SupervisorLogs } from "../observability/supervisor-logs";
 import { FiniteProcess } from "./finite-process";
@@ -27,6 +34,7 @@ export class WaitingRuntime {
         send("finite_process", fact);
       },
       logs.pump.bind(logs),
+      parseDurationMs(exec.timeouts.terminateGrace),
     );
     this.resend = setInterval(() => {
       if (this.pending) this.process.replay();
@@ -66,18 +74,40 @@ export class WaitingRuntime {
         const previous = this.process.lookup(frame.payload.execution);
         this.process.start(frame.payload.execution, frame.payload.fingerprint, {
           ...command,
-          env: enforcedEnvironment(this.exec, command.env),
+          env: {
+            ...enforcedEnvironment(this.exec, command.env),
+            POCKETCODER_OPERATION_INPUT: JSON.stringify(frame.payload.input),
+            ...(frame.payload.inputDirectory ? { POCKETCODER_INPUT_DIRECTORY: frame.payload.inputDirectory } : {}),
+          },
         });
         if (previous) this.process.replay();
         return true;
       }
       case "process_lookup":
         if (this.process.lookup(frame.payload.execution)) this.process.replay();
+        else this.send("process_absent", frame.payload);
         return true;
-      case "process_cancel":
-        this.process.cancel(frame.payload.execution, frame.payload.signal);
+      case "process_cancel": {
+        const graceMs = Math.max(
+          0,
+          Math.min(
+            parseDurationMs(this.exec.timeouts.terminateGrace),
+            Date.parse(frame.payload.deadlineAt) - Date.now(),
+          ),
+        );
+        this.send("process_cancel_result", {
+          execution: frame.payload.execution,
+          cancelId: frame.payload.cancelId,
+          status: this.process.cancelOperation(
+            frame.payload.execution,
+            frame.payload.cancelId,
+            graceMs === 0 ? "SIGKILL" : frame.payload.signal,
+            graceMs,
+          ),
+        });
         this.process.replay();
         return true;
+      }
       case "process_ack":
         if (this.pending && this.process.lookup(frame.payload.execution)) this.pending = null;
         return true;

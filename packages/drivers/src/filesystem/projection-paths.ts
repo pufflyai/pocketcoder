@@ -35,7 +35,11 @@ export async function directory(path: string, mode = 0o700) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   await directory(dirname(path));
-  await mkdir(path, { mode });
+  try {
+    await mkdir(path, { mode });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
   await assertDirectory(path);
   await syncDirectory(dirname(path));
 }

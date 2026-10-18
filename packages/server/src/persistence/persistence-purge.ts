@@ -42,11 +42,11 @@ export class PersistencePurgeService {
     return result.operation;
   }
 
-  async retry() {
+  async retry(waitForCompletion = true) {
     const operations = await this.context.deps.store.listIncompleteOperations();
-    await Promise.all(
-      operations.filter((operation) => operation.kind === "purge").map((operation) => this.run(operation)),
-    );
+    const tasks = operations.filter((operation) => operation.kind === "purge").map((operation) => this.run(operation));
+    if (waitForCompletion) await Promise.all(tasks);
+    else for (const task of tasks) void task.catch(() => {});
     return (await this.context.deps.store.listIncompleteOperations()).filter((operation) => operation.kind === "purge")
       .length;
   }
@@ -77,6 +77,7 @@ export class PersistencePurgeService {
       // Drain a launch already admitted by this single controller before
       // inspecting its provider and storage references.
       await scheduler.drain();
+      await this.context.deps.drainExecutions?.(workspaceId);
       // Transfer cleanup fails only while owned files remain.
       reason = "purge_storage_unavailable";
       await this.cancelCopies(operation.principalId, workspaceId);

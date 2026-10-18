@@ -16,6 +16,8 @@ jobs:
         with:
           cache: integration
       - run: docker pull postgres:16-alpine
+      - name: Prepare the execution producer fixture
+        run: docker pull oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
       - name: Prepare real Chromium
         run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
       - env:

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { JsonValueSchema } from "../common/json-value";
 import { HarnessSchema } from "../templates/template-alpha-schema";
 import { WorkloadDigestSchema, WorkloadProfileSchema } from "../templates/workload-capabilities";
 import { WorkloadExecutionReferenceSchema } from "./workload-operation";
@@ -40,7 +41,18 @@ export type WaitingRuntimeSpec = z.infer<typeof WaitingRuntimeSpecSchema>;
 export const ProcessStartPayload = z.strictObject({
   execution: ProcessReferenceSchema,
   fingerprint: WorkloadDigestSchema,
+  input: z.record(z.string(), JsonValueSchema).default({}),
+  inputDirectory: z.string().min(1).optional(),
   operation: z.string().min(1).max(64),
 });
 export const ProcessTargetPayload = z.strictObject({ execution: ProcessReferenceSchema });
-export const ProcessCancelPayload = ProcessTargetPayload.extend({ signal: z.enum(["SIGTERM", "SIGKILL"]) });
+export const ProcessCancelPayload = ProcessTargetPayload.extend({
+  cancelId: z.uuid(),
+  signal: z.enum(["SIGTERM", "SIGKILL"]),
+  deadlineAt: z.iso.datetime(),
+});
+
+export const ProcessCancelResultPayload = ProcessTargetPayload.extend({
+  cancelId: z.uuid(),
+  status: z.enum(["canceled", "requested", "terminal"]),
+});

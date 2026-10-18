@@ -1,12 +1,15 @@
 import {
   canonicalJson,
+  executionSettled,
   type FiniteProcessFact,
   FiniteProcessFactSchema,
   isTerminal,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRuntimeRegistration } from "@pstdio/pocketcoder-runtime-contracts";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
+
+import { acceptsProcessFact, observedProcessExecution } from "./process-execution-facts";
 
 function canRecord(previous: FiniteProcessFact | null, next: FiniteProcessFact) {
   if (!previous) return true;
@@ -92,9 +95,16 @@ export function createFiniteProcesses(context: DatabaseContext) {
           !canRecord(row.finiteProcess, fact)
         )
           return false;
+        if (!acceptsProcessFact(row.processExecution, fact)) return false;
+        const processExecution = observedProcessExecution(row.processExecution, fact);
         await tx
           .update(workspaces)
-          .set({ finiteProcess: fact, changeSeq: sql`${workspaces.changeSeq}+1`, updatedAt: new Date() })
+          .set({
+            processExecution,
+            finiteProcess: fact,
+            changeSeq: sql`${workspaces.changeSeq}+1`,
+            updatedAt: new Date(),
+          })
           .where(eq(workspaces.id, id));
         return true;
       });
@@ -105,23 +115,41 @@ export function createFiniteProcesses(context: DatabaseContext) {
       await db.transaction(async (tx) => {
         const [row] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
         if (!row || row.runtimeRegistration?.incarnationId !== incarnationId || row.runtimeRegistration.endedAt) return;
+        const requests = context.tables.conversationRequests;
+        const owned = await tx.select().from(requests).where(eq(requests.principalId, row.principalId));
+        for (const request of owned) {
+          const record = request.execution;
+          if (
+            record &&
+            record.acceptance.execution.workspaceId === id &&
+            record.acceptance.execution.incarnationId === incarnationId &&
+            !executionSettled(record)
+          )
+            await tx
+              .update(requests)
+              .set({ execution: { ...record, phase: "lost", settledAt: at.toISOString() } })
+              .where(
+                and(
+                  eq(requests.principalId, request.principalId),
+                  eq(requests.conversationId, request.conversationId),
+                  eq(requests.requestId, request.requestId),
+                ),
+              );
+        }
         const fact = row.finiteProcess;
         const uncertain = fact && fact.phase !== "exited" && fact.phase !== "lost";
+        const endedFact: FiniteProcessFact | null = uncertain
+          ? { ...fact, phase: "lost", endedAt: at.toISOString(), exitCode: null, signal: null }
+          : fact;
         await tx
           .update(workspaces)
           .set({
             runtimeRegistration: { ...row.runtimeRegistration, endedAt: at.toISOString() },
-            ...(uncertain
-              ? {
-                  finiteProcess: {
-                    ...fact,
-                    phase: "lost",
-                    endedAt: at.toISOString(),
-                    exitCode: null,
-                    signal: null,
-                  } as FiniteProcessFact,
-                }
-              : {}),
+            processExecution:
+              row.processExecution && !executionSettled(row.processExecution)
+                ? { ...row.processExecution, phase: "lost", settledAt: at.toISOString(), outcome: endedFact }
+                : row.processExecution,
+            finiteProcess: endedFact,
             changeSeq: sql`${workspaces.changeSeq}+1`,
             updatedAt: at,
           })

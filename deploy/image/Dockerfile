@@ -28,7 +28,7 @@ COPY --from=agentapi-chat /src/ /src/
 COPY agentapi-identical-replies.patch /tmp/agentapi-identical-replies.patch
 RUN apk add --no-cache patch \
   && patch -p1 < /tmp/agentapi-identical-replies.patch \
-  && go get golang.org/x/text@v0.39.0 \
+  && go get golang.org/x/text@v0.41.0 \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
@@ -43,22 +43,10 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
   io.pstdio.pocketcoder.agentapi.version="0.12.2" \
   io.pstdio.pocketcoder.agentapi.revision="9ff117e231822f670305254ef24f6389f75953f4" \
   io.pstdio.pocketcoder.agentapi.go.version="1.27.2" \
-  io.pstdio.pocketcoder.agentapi.x-text.version="0.39.0" \
+  io.pstdio.pocketcoder.agentapi.x-text.version="0.41.0" \
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.glibc.root="/opt/glibc" \
   dev.pstdio.pocketcoder.glibc.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
-# Desktop/browser installs fail closed if the signed package indexes change.
-# The indexes pin all package versions, including indirect dependencies.
-# Refreshed together after apk verified both architectures' repository signatures.
-RUN case "$TARGETARCH" in \
-      amd64) printf '%s\n' \
-        'c9d417f416062cd03aae7f5e4807034af9dd05ef607e096a499b4cb63ab6bb46' \
-        'e20d61dd6be88e5c4765a127374961eceb65bef7c755fe56224a540e063dbb2b' ;; \
-      arm64) printf '%s\n' \
-        '3655f6a38249f7e1f05b34321fc6384a9d3addfea61b6debfe8be290b47adaaf' \
-        '86f96eabfdfa39d996f4a63f521b38a0a25d53dc8df8cf990b4e1bf0ef095c52' ;; \
-      *) exit 1 ;; \
-    esac | sort > /opt/apk-index-checksums
 # Openbox needs a passwd record for the UID enforced by the workspace driver.
 RUN addgroup -g 10001 pocketcoder \
   && adduser -D -H -u 10001 -G pocketcoder -h /tmp pocketcoder

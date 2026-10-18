@@ -9,23 +9,16 @@ import {
   openSync,
   realpathSync,
   unlinkSync,
-  write as writeCallback,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
 import { syncDirectory } from "../database/data-folder";
+import { bufferedOutput } from "./buffered-output";
 import type { BackupMember } from "./manifest";
 import { BLOCK, tarHeader, tarPadding } from "./tar";
 
 function inside(root: string, path: string) {
   const rest = relative(realpathSync(root), path);
   return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
-}
-
-const write = promisify(writeCallback);
-
-async function writeAll(file: number, bytes: Uint8Array) {
-  for (let done = 0; done < bytes.length; ) done += (await write(file, bytes, done, bytes.length - done)).bytesWritten;
 }
 
 // Writes one archive into a private ".partial" file next to the output and links it
@@ -48,6 +41,7 @@ export function createArchiveOutput(
     0o600,
   );
   const owned = fstatSync(file);
+  const writer = bufferedOutput(file);
   const archive = createHash("sha256");
   const members: BackupMember[] = [];
   let size = 0;
@@ -56,7 +50,7 @@ export function createArchiveOutput(
   async function append(bytes: Uint8Array) {
     check();
     if (limit && size + bytes.length > limit.bytes) throw new Error("Backup archive exceeds its admitted capacity.");
-    await writeAll(file, bytes);
+    await writer.append(bytes);
     archive.update(bytes);
     size += bytes.length;
   }
@@ -91,6 +85,7 @@ export function createArchiveOutput(
     },
     async publish() {
       await append(new Uint8Array(BLOCK * 2));
+      await writer.flush();
       fsyncSync(file);
       closeSync(file);
       state = "closed";

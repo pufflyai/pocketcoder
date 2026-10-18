@@ -66,6 +66,7 @@ export function createWorkspaceTables(
       terminalIntent: text("terminal_intent").$type<NonNullable<WorkspaceRow["terminalIntent"]>>(),
       launchInput: jsonb("launch_input").$type<NonNullable<WorkspaceRow["launchInput"]>>(),
       runtimeRegistration: jsonb("runtime_registration").$type<NonNullable<WorkspaceRow["runtimeRegistration"]>>(),
+      processExecution: jsonb("process_execution").$type<NonNullable<WorkspaceRow["processExecution"]>>(),
       finiteProcess: jsonb("finite_process").$type<NonNullable<WorkspaceRow["finiteProcess"]>>(),
       providerKind: text("provider_kind"),
       providerRef: jsonb("provider_ref").$type<NonNullable<WorkspaceRow["providerRef"]>>(),

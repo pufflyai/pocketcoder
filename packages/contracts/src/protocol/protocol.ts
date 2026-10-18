@@ -16,6 +16,7 @@ import { PreviewSocketPayload } from "../previews/preview";
 import {
   FiniteProcessFactSchema,
   ProcessCancelPayload,
+  ProcessCancelResultPayload,
   ProcessStartPayload,
   ProcessTargetPayload,
 } from "../workspaces/finite-process";
@@ -86,7 +87,8 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
+export const EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION = 13;
 export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 12;
 export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
@@ -103,6 +105,7 @@ export const SUPPORTED_PROTOCOL_VERSIONS = [
   9,
   10,
   11,
+  12,
   PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -130,6 +133,7 @@ const EnvelopeBase = z.object({
     z.literal(9),
     z.literal(10),
     z.literal(11),
+    z.literal(12),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -225,6 +229,8 @@ export const ConversationMessagePayload = ConversationMessageInputSchema;
 export const AgentFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("runtime_ready"), payload: z.object({ incarnationId: z.string().min(1) }) }),
   EnvelopeBase.extend({ type: z.literal("finite_process"), payload: FiniteProcessFactSchema }),
+  EnvelopeBase.extend({ type: z.literal("process_absent"), payload: ProcessTargetPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_cancel_result"), payload: ProcessCancelResultPayload }),
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),

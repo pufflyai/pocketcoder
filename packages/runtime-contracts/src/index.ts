@@ -32,6 +32,7 @@ export { buildEventEnvelope } from "./events/events";
 export * from "./stores/binary-outputs";
 export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
 export * from "./stores/checkpoint-transfers";
+export * from "./stores/executions";
 export type { InputClaim, InputLimits, InputManifestRow, InputStore, StoredInput } from "./stores/inputs";
 export * from "./stores/leases";
 export * from "./stores/secrets";

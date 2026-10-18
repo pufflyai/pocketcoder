@@ -28,6 +28,7 @@ export interface WorkspaceRuntimeRegistration {
 export interface WorkspaceRow {
   runtimeRegistration: WorkspaceRuntimeRegistration | null;
   finiteProcess: FiniteProcessFact | null;
+  processExecution: import("@pstdio/pocketcoder-contracts").ExecutionRecord | null;
   id: string;
   principalId: string;
   externalId: string;
@@ -218,6 +219,8 @@ export interface WorkspaceStore {
 export function purgedContentPatch() {
   return {
     launchInput: null,
+    processExecution: null,
+    finiteProcess: null,
     health: {},
     outputs: {},
     failureLogTail: null,

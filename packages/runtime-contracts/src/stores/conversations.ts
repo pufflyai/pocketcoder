@@ -8,6 +8,7 @@ export interface ConversationRequestRow {
   principalId: string;
   identity: ConversationRequestIdentity;
   acceptedAt: Date;
+  execution: import("@pstdio/pocketcoder-contracts").ExecutionRecord | null;
 }
 
 export type ConversationRequestResult = {

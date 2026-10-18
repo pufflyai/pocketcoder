@@ -150,3 +150,10 @@ export function createTestStoreFactory() {
     return fixtures[index].store;
   };
 }
+
+export { executionFixture } from "./modules/workspaces/execution-fixture.test";
+
+export {
+  executionConversationIdentity,
+  serviceExecutionTemplate,
+} from "./modules/workspaces/execution-service-fixture.test";

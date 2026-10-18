@@ -57,6 +57,7 @@ export function startBackgroundTimers(
     async stop() {
       for (const timer of timers) clearInterval(timer);
       await policyReconciliation?.drain();
+      await deps.executionDispatcher?.stop();
     },
   };
 }

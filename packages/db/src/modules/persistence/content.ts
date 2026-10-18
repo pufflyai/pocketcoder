@@ -38,6 +38,7 @@ export function createContentPurge(context: DatabaseContext) {
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
         await purgeBinaryOutputs(context, tx, workspaceId, at);
         await purgeInputMetadata(context, tx, workspaceId);
+        await purgeExecutionMetadata(context, tx, workspaceId, workspace.principalId);
         const [pending] = await tx
           .select({ id: tables.workspaceLeases.id })
           .from(tables.workspaceLeases)
@@ -74,6 +75,8 @@ export function createContentPurge(context: DatabaseContext) {
           .update(tables.workspaces)
           .set({
             launchInput: null,
+            processExecution: null,
+            finiteProcess: null,
             outputs: {},
             metadata: {},
             health: {},
@@ -103,4 +106,27 @@ async function purgeInputMetadata(context: DatabaseContext, tx: Transaction, wor
       await tx.delete(tables.inputManifests).where(eq(tables.inputManifests.id, row.id));
     }
   await tx.delete(tables.inputObjects).where(eq(tables.inputObjects.workspaceId, workspaceId));
+}
+
+async function purgeExecutionMetadata(
+  context: DatabaseContext,
+  tx: Transaction,
+  workspaceId: string,
+  principalId: string,
+) {
+  const requests = context.tables.conversationRequests;
+  const rows = await tx.select().from(requests).where(eq(requests.principalId, principalId));
+  for (const row of rows) {
+    if (row.execution?.acceptance.execution.workspaceId !== workspaceId) continue;
+    await tx
+      .update(requests)
+      .set({ execution: null })
+      .where(
+        and(
+          eq(requests.principalId, principalId),
+          eq(requests.conversationId, row.conversationId),
+          eq(requests.requestId, row.requestId),
+        ),
+      );
+  }
 }

@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
+  ExecutionDispatcher,
   type MetricSink,
   type ResolvedWarmPool,
   RuntimeMetrics,
@@ -24,8 +25,11 @@ import { type ControlActivity, controlActivity } from "./control-channel/activit
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
+import { processTransport } from "./control-channel/process-dispatch";
 import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
+import { registerExecutionRoutes } from "./conversations/execution-routes";
+import { conversationTransport, executionTransport } from "./conversations/execution-transport";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
@@ -84,6 +88,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  executionDispatcher: ExecutionDispatcher;
   inputs?: InputStorage;
   controlActivity: ControlActivity;
   screenshots?: Screenshots;
@@ -125,7 +130,11 @@ function composeScreenshots(deps: BuildDeps, hub: Hub, service: WorkspaceService
     return createScreenshots({ store: deps.store, hub, service, options: deps.screenshotOptions });
 }
 
-export function buildServer(deps: BuildDeps): BuiltServer {
+export function buildServer(input: BuildDeps): BuiltServer {
+  return composeServer({ ...input, readiness: input.readiness ?? new Readiness() });
+}
+
+function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer {
   const { store, driver, pepper, limits } = deps;
   const logger = deps.logger ?? createStructuredLogger(() => {});
   const metrics = deps.metrics ?? new RuntimeMetrics();
@@ -167,8 +176,26 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   const service = new WorkspaceService({ store, scheduler, limits });
   const screenshots = composeScreenshots(deps, hub, service);
   const inputs = composeInputs(deps);
+  const readiness = deps.readiness;
+  const executionDispatcher = new ExecutionDispatcher({
+    store,
+    concurrency: Math.max(1, limits.globalActiveWorkspaces),
+    canDispatch: () => !deps.maintenance?.active,
+    onError: (error) => log(`execution dispatch failed: ${String(error)}`),
+    onHealth: (failed) => readiness.set("execution-dispatch", failed ? "failed" : "ok"),
+    transport: executionTransport(
+      processTransport({ store, hub, driver, inputs }),
+      conversationTransport({ store, hub, driver, inputs }),
+    ),
+    inspect: (workspace) => driver.inspect({ kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef }),
+  });
   const persistence = new PersistenceService({
-    purgeInputs: (id) => inputs?.purge(id) ?? assertNoStoredInputs(store, id),
+    drainExecutions: (id) => executionDispatcher.drain(id),
+    purgeInputs: async (id) => {
+      // Persistence purge has fenced admission and proved provider termination.
+      await store.inputs.finalizeForPurge(id, new Date());
+      await (inputs?.purge(id) ?? assertNoStoredInputs(store, id));
+    },
     store,
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
     scheduler,
@@ -210,13 +237,14 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   app.use("*", requestId);
   app.use("*", requestLogging(logger));
 
-  registerHealthRoutes(app, deps);
+  registerHealthRoutes(app, { ...deps, readiness });
 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
   const activity = controlActivity(() => poolHub.fence());
   const wsDeps = {
     activity,
+    executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
     ...(workspaceLeases ? { workspaceLeases } : {}),
     store: controlStore(store, deps.assertAccountAllowed),
@@ -267,6 +295,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
   registerConversationRoutes({ app, store, service });
+  registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
   displays.register(app);
@@ -283,6 +312,7 @@ export function buildServer(deps: BuildDeps): BuiltServer {
   registerRelayRoutes(app, { store, hub, service, inputs });
 
   return {
+    executionDispatcher,
     inputs,
     controlActivity: activity,
     app,

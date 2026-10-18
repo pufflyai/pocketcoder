@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../../database/context";
 import { requiredRow } from "../../../database/required-row";
 import { lockStorageCapacity } from "../reservation-capacity";
+import { finalizeInputManifest } from "./finalize";
 import { inputKey, readInput } from "./objects";
 import { inputIsPinned } from "./pins";
 
@@ -44,16 +45,18 @@ export function createInputManifests(context: DatabaseContext) {
     async finalize(id: string, at: Date) {
       await db.transaction(async (tx) => {
         await lockStorageCapacity(context, tx);
-        const [row] = await tx.select().from(manifests).where(eq(manifests.id, id));
-        if (!row || row.finalizedAt) return;
-        for (const object of row.manifest.objects) {
-          const stored = requiredRow(await readInput(context, tx, object.workspaceId, object.fileId));
-          await tx
-            .update(objects)
-            .set({ retainedUntil: new Date(at.getTime() + stored.retentionMs) })
-            .where(inputKey(context, object.workspaceId, object.fileId));
+        await finalizeInputManifest(context, tx, id, at);
+      });
+    },
+    async finalizeForPurge(workspaceId: string, at: Date) {
+      await db.transaction(async (tx) => {
+        await lockStorageCapacity(context, tx);
+        const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, workspaceId)).for("update");
+        if (!workspace?.purgeRequestedAt || !workspace.terminalAt)
+          throw new Error("Input purge requires a fenced, terminated workspace.");
+        for (const row of await tx.select().from(manifests)) {
+          if (row.manifest.workspaceId === workspaceId) await finalizeInputManifest(context, tx, row.id, at);
         }
-        await tx.update(manifests).set({ finalizedAt: at }).where(eq(manifests.id, id));
       });
     },
     beginRelease(workspaceId: string, fileId: string, reservationId: string, at: Date) {

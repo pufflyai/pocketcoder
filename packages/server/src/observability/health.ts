@@ -2,6 +2,7 @@ export type ReadinessCheck =
   | "database"
   | "schema"
   | "reconciliation"
+  | "execution-dispatch"
   | "coordinator"
   | "policy-reconciliation"
   | "cleanup";
@@ -17,6 +18,7 @@ const HEALTHY_CHECKS: Record<ReadinessCheck, ReadinessStatus> = {
   schema: "ok",
   reconciliation: "ok",
   coordinator: "ok",
+  "execution-dispatch": "ok",
   "policy-reconciliation": "disabled",
   cleanup: "ok",
 };

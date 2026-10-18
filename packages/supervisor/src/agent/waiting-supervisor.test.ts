@@ -155,7 +155,12 @@ test("supervisor cancels the exact long-running process without exiting", async 
     await f.waitFor(() => f.frames.some((frame) => frame.type === "runtime_ready"));
     f.send("process_start", { execution: f.execution, fingerprint: `sha256:${"a".repeat(64)}`, operation: "run" });
     await f.waitFor(() => facts(f.frames).some((fact) => fact.phase === "running"));
-    f.send("process_cancel", { execution: f.execution, signal: "SIGTERM" });
+    f.send("process_cancel", {
+      execution: f.execution,
+      signal: "SIGTERM",
+      cancelId: randomUUID(),
+      deadlineAt: new Date(Date.now() + 1000).toISOString(),
+    });
     await f.waitFor(() => facts(f.frames).some((fact) => fact.phase === "exited"));
     expect(facts(f.frames).at(-1)).toMatchObject({ exitCode: null, signal: "SIGTERM" });
     expect(f.child.exitCode).toBeNull();
