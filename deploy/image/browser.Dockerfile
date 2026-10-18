@@ -1,8 +1,12 @@
 ARG BASE_IMAGE=pocketcoder-workspace:dev
 FROM ${BASE_IMAGE}
 USER root
-RUN apk update \
-  && sha256sum /var/cache/apk/APKINDEX.*.tar.gz | cut -d ' ' -f 1 | sort | diff - /opt/apk-index-checksums \
+ARG TARGETARCH
+COPY apk-indexes/$TARGETARCH/ /var/cache/apk/
+# apk must use the reviewed indexes even when their source timestamps are old.
+RUN cd /var/cache/apk \
+  && sha256sum -c SHA256SUMS \
+  && touch APKINDEX.*.tar.gz \
   && apk add chromium=155.0.8059.39-r0 font-dejavu=2.37-r6 \
   && rm -rf /var/cache/apk/*
 COPY browser-harness.ts /opt/pocketcoder/browser-harness.ts

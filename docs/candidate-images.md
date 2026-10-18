@@ -102,10 +102,16 @@ are in the recipes. AgentAPI is rebuilt from the signed v0.12.2 source with
 the patched Go and x/text versions, including its embedded chat UI. The workspace,
 Pi and OSS recipes pin x/text v0.41.0 to fix
 [CVE-2026-56851](https://pkg.go.dev/vuln/GO-2026-6629). kubectl is rebuilt from
-the pinned 1.35.9 source with patched Go and x/net. Signed
-Alpine package index hashes prevent desktop or browser dependencies from
-silently changing between builds. A changed repository index requires a
-reviewed pin update and fresh scans.
+the pinned 1.35.9 source with patched Go and x/net.
+
+Desktop and browser recipes copy signed Alpine indexes from
+[`deploy/image/apk-indexes`](../deploy/image/apk-indexes/README.md). They check
+their SHA-256 hashes before installation. Refreshing only their cache timestamps
+keeps apk from replacing the reviewed bytes with a newer live index. apk still
+checks index signatures and package hashes against the pinned base's trusted
+keys. An unrelated repository update cannot change the build's dependency set.
+If an indexed package is removed upstream, installation fails and requires a
+reviewed index update and fresh scans.
 
 LibVNCServer 0.9.15 scans up to its process file-descriptor limit before accepting
 a viewer. Kind can supply a limit above one billion. The desktop harness bounds
