@@ -17,7 +17,7 @@ COPY deploy/image/agentapi-identical-replies.patch /tmp/agentapi-identical-repli
 RUN apk add --no-cache patch \
   && tar -xzf /tmp/agentapi.tar.gz --strip-components=1 \
   && patch -p1 < /tmp/agentapi-identical-replies.patch \
-  && go get golang.org/x/text@v0.39.0 \
+  && go get golang.org/x/text@v0.41.0 \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 

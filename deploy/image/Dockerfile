@@ -28,7 +28,7 @@ COPY --from=agentapi-chat /src/ /src/
 COPY agentapi-identical-replies.patch /tmp/agentapi-identical-replies.patch
 RUN apk add --no-cache patch \
   && patch -p1 < /tmp/agentapi-identical-replies.patch \
-  && go get golang.org/x/text@v0.39.0 \
+  && go get golang.org/x/text@v0.41.0 \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
@@ -43,7 +43,7 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
   io.pstdio.pocketcoder.agentapi.version="0.12.2" \
   io.pstdio.pocketcoder.agentapi.revision="9ff117e231822f670305254ef24f6389f75953f4" \
   io.pstdio.pocketcoder.agentapi.go.version="1.27.2" \
-  io.pstdio.pocketcoder.agentapi.x-text.version="0.39.0" \
+  io.pstdio.pocketcoder.agentapi.x-text.version="0.41.0" \
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.glibc.root="/opt/glibc" \
   dev.pstdio.pocketcoder.glibc.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"

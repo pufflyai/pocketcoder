@@ -99,8 +99,10 @@ and hashes each command log. A role is `scanned` after a passing scan and
 
 Pinned Bun, Go, AgentAPI source, base-image and Kubernetes source references
 are in the recipes. AgentAPI is rebuilt from the signed v0.12.2 source with
-the patched Go and x/text versions, including its embedded chat UI. kubectl
-is rebuilt from the pinned 1.35.9 source with patched Go and x/net. Signed
+the patched Go and x/text versions, including its embedded chat UI. The workspace,
+Pi and OSS recipes pin x/text v0.41.0 to fix
+[CVE-2026-56851](https://pkg.go.dev/vuln/GO-2026-6629). kubectl is rebuilt from
+the pinned 1.35.9 source with patched Go and x/net. Signed
 Alpine package index hashes prevent desktop or browser dependencies from
 silently changing between builds. A changed repository index requires a
 reviewed pin update and fresh scans.
