@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { restoreBackup, verifyBackup } from "@pstdio/pocketcoder-db/backup";
 import type { Argv } from "yargs";
-import { need } from "../command/cli-context";
+import { need, requireEmbeddedStore } from "../command/cli-context";
 import { requestLocalAdministration } from "../command/local-admin";
 import { addAction, addResource } from "./command";
 import { addOffNodeBackupCommands } from "./off-node-backup";
@@ -27,6 +27,7 @@ export function addBackupCommands(parser: Argv) {
             description: "Seconds to wait for writes to settle and the database to be copied",
           }),
       async (flags) => {
+        requireEmbeddedStore("pcd backup");
         const timeout = Number(flags.timeout);
         if (!Number.isFinite(timeout) || timeout <= 0)
           throw new Error("--timeout must be a positive number of seconds.");
@@ -52,6 +53,7 @@ export function addBackupCommands(parser: Argv) {
             description: "Empty folder for restored checkpoint archives (default: POCKETCODER_CHECKPOINT_DIR)",
           }),
       async (flags) => {
+        requireEmbeddedStore("pcd backup");
         const checkpointDir = flags["checkpoint-dir"] ?? process.env.POCKETCODER_CHECKPOINT_DIR;
         const restored = await restoreBackup({
           archive: resolve(need(flags, "file")),
@@ -80,6 +82,7 @@ export function addBackupCommands(parser: Argv) {
       "Check a backup archive without the data folder or a running server",
       (command) => command.positional("file", { type: "string", demandOption: true }),
       async (flags) => {
+        requireEmbeddedStore("pcd backup");
         const { manifest, bytes } = await verifyBackup(resolve(need(flags, "file")));
         console.log(
           JSON.stringify(

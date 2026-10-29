@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rename, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { managerContext } from "./context";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -18,7 +18,7 @@ test("core refuses manager data before adding a core schema", async () => {
   const path = await directory();
   const manager = await managerContext(path);
   await manager.close();
-  await expect(PGliteStore.create(path)).rejects.toThrow("format");
+  await expect(DatabaseStore.openPGlite(path)).rejects.toThrow("format");
   const reopened = await managerContext(path);
   cleanups.push(() => reopened.close());
   expect(
@@ -28,10 +28,10 @@ test("core refuses manager data before adding a core schema", async () => {
 });
 test("manager refuses core data without changing it", async () => {
   const path = await directory();
-  const core = await PGliteStore.create(path);
+  const core = await DatabaseStore.openPGlite(path);
   await core.close();
   await expect(managerContext(path)).rejects.toThrow("not manager data");
-  const reopened = await PGliteStore.create(path);
+  const reopened = await DatabaseStore.openPGlite(path);
   cleanups.push(() => reopened.close());
 });
 test("manager rejects a redirected database and an empty folder argument", async () => {

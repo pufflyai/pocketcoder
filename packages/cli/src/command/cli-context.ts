@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { databaseLocation, storeKind } from "@pstdio/pocketcoder-server/store-config";
 import { parse as parseDotenv } from "dotenv";
 
 export interface Flags {
@@ -75,9 +76,24 @@ export async function api(path: string, init: RequestInit = {}) {
   return await controlPlaneClient().raw(path, init);
 }
 
+// Folder backups, off-node backups and folder recovery copy the embedded data folder.
+export function requireEmbeddedStore(command: string) {
+  if (storeKind(process.env) === "postgres")
+    fail(`${command} is not available with PostgreSQL. Use your database's backups instead.`);
+}
+
+// Opens the configured store while the server is stopped; both hold the same writer locks.
 export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
   const journalDir = process.env.POCKETCODER_JOURNAL_DIR;
-  const store = await DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  const store =
+    storeKind(process.env) === "postgres"
+      ? await DatabaseStore.openPostgres({
+          url: databaseLocation(process.env).databaseUrl,
+          schema: databaseLocation(process.env).databaseSchema,
+          ...(journalDir ? { journalDir } : {}),
+          max: 1,
+        })
+      : await DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
   try {
     return await fn(store);
   } finally {

@@ -1,4 +1,5 @@
 export type { DatabaseOpenOptions } from "./database/context";
+export { postgresSqlClient, type SqlClient } from "./database/sql-client";
 export {
   advisoryLockKey,
   assertValidSchema,

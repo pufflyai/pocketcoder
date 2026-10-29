@@ -25,13 +25,20 @@ export async function assertMigrated(client: SQL, schema: string) {
     );
 }
 
-async function bindPostgresJournal(context: PostgresContext, directory: string) {
-  const { db, tables } = context;
+// Databases from 0.8.x and fresh schemas have no controller row yet; checkpoint and
+// recovery checks read it.
+async function controllerState({ db, tables }: PostgresContext) {
   const [state] = await db
     .insert(tables.controllerState)
     .values({ id: "controller", sourceWriter: null, recovery: null })
     .onConflictDoUpdate({ target: tables.controllerState.id, set: { id: "controller" } })
     .returning();
+  return state;
+}
+
+async function bindPostgresJournal(context: PostgresContext, directory: string) {
+  const { db, tables } = context;
+  const state = await controllerState(context);
   const bound = state?.journal ?? null;
   const journal = openJournal(directory, undefined, !bound);
   try {
@@ -99,6 +106,7 @@ export async function createPostgresContext(options: PostgresOptions): Promise<P
       },
     };
     if (options.journalDir) context.journal = await bindPostgresJournal(context, options.journalDir);
+    else await controllerState(context);
     return context;
   } catch (error) {
     await client.end();

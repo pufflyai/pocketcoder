@@ -13,7 +13,7 @@ import { createPostgresTestDatabase, TEST_STORE_DRIVER } from "./postgres-test-s
 import { DatabaseStore } from "./store";
 
 export { objectStorageFixture } from "./off-node/object-storage-fixture";
-export { TEST_DATABASE_URL, TEST_STORE_DRIVER } from "./postgres-test-schema";
+export { createPostgresTestDatabase, TEST_DATABASE_URL, TEST_STORE_DRIVER } from "./postgres-test-schema";
 
 // PGlite reports the SQLSTATE as `code`; Bun's PostgreSQL client reports it as `errno`.
 export function sqlStateOf(error: unknown) {

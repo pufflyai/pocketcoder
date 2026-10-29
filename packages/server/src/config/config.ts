@@ -8,6 +8,7 @@ import { type InputStorageConfig, inputStorageConfig } from "./input-storage-con
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { kubernetesSharedConfig } from "./kubernetes-shared-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
+import { type StoreConfig, storeConfig } from "./store-config";
 
 type Environment = Record<string, string | undefined>;
 
@@ -22,6 +23,8 @@ export interface ServerConfig {
   listenPort: number;
   agentHost: string;
   agentPort: number;
+  store: StoreConfig;
+  // Private controller folder: keys, account state and, with PGlite, the database.
   dataDir: string;
   // Deletion journal outside the data folder; null uses the folder the database records.
   journalDir: string | null;
@@ -263,6 +266,7 @@ function assertCompatibleBackends(
 export function configSummary(config: ServerConfig) {
   return {
     listen: `${config.listenHost}:${config.listenPort}`,
+    store: config.store.kind,
     dataDir: config.dataDir,
     driver: config.driverKind,
     storage: config.storageBackend,
@@ -312,6 +316,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     agentPort: agent.listenPort,
     launchPolicy: launchPolicyConfig(env),
     listenPort,
+    store: storeConfig(env),
     ...resolveDataFolders(env),
     pepper,
     ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),

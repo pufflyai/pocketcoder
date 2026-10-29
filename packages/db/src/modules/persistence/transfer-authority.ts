@@ -107,6 +107,8 @@ export async function checkpointControllerAuthority(
   const state = states[0];
   if (states.length !== 1 || state?.id !== "controller" || state.recovery !== null)
     throw new Error("Checkpoint transfers are closed during controller recovery.");
+  // PostgreSQL has no data folder writer; the coordinator lease keeps a second controller out.
+  if (context.driver === "postgres") return;
   if (
     !state.sourceWriter ||
     !context.dataWriter ||

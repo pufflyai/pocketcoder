@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { type DatabaseOpenOptions, DatabaseStore } from "@pstdio/pocketcoder-db";
 import {
@@ -42,6 +42,16 @@ async function initializeStore(
   offNode?: OffNode,
   beforeOpen?: DatabaseOpenOptions["beforeOpen"],
 ) {
+  if (config.store.kind === "postgres") {
+    const { databaseUrl, databaseSchema } = config.store;
+    const store = await DatabaseStore.openPostgres({
+      url: databaseUrl,
+      schema: databaseSchema,
+      journalDir: config.journalDir ?? undefined,
+    });
+    log(`store: postgres (schema ${databaseSchema})`);
+    return store;
+  }
   const store = await DatabaseStore.openPGlite(config.dataDir, {
     ...(config.journalDir ? { journalDir: config.journalDir } : {}),
     ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
@@ -206,7 +216,7 @@ export async function initializePurgingController(config: ServerConfig, log: Ser
   if (!resources.accountPurge || !(await resources.accountPurge()))
     throw new Error("Private cleanup requires permanent purge authority.");
   if (await resources.accountPurge.completed()) throw new Error("Account purge is complete.");
-  if (!(await lstat(join(config.dataDir, "db"))).isDirectory())
+  if (config.store.kind === "pglite" && !(await lstat(join(config.dataDir, "db"))).isDirectory())
     throw new Error("Private cleanup requires existing account data.");
   return openConfiguredController(config, log, resources);
 }
@@ -217,7 +227,9 @@ async function openConfiguredController(
   { offNode, accountPurge }: Awaited<ReturnType<typeof controllerResources>>,
   beforeOpen?: DatabaseOpenOptions["beforeOpen"],
 ) {
-  if (config.pepper)
+  if (config.pepper) {
+    // With PostgreSQL the folder holds only controller state such as account and purge files.
+    if (config.store.kind === "postgres") await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
     return {
       config,
       store: await initializeStore(config, log, offNode, beforeOpen),
@@ -225,6 +237,7 @@ async function openConfiguredController(
       offNode,
       accountPurge,
     };
+  }
   const controller = await openControllerStore(config.dataDir, config.journalDir ?? undefined, {
     ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
     ...(beforeOpen ? { beforeOpen } : {}),

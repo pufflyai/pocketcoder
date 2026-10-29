@@ -10,6 +10,7 @@ import {
   loadDatabaseEngine,
   lockDataFolder,
   migrateDatabase,
+  pgliteSqlClient,
   syncDirectory,
   syncSeed,
 } from "@pstdio/pocketcoder-db/engine";
@@ -92,7 +93,7 @@ export async function managerContext(dataDir?: string) {
         throw new Error("incompatible manager engine format");
       client = await PGlite.create({ ...options, fs: new DurableFilesystem(database) });
     } else client = await PGlite.create({ ...options, loadDataDir: archive });
-    await migrateDatabase(client, migrations, "pocketcoder_manager");
+    await migrateDatabase(pgliteSqlClient(client), migrations, "pocketcoder_manager");
     const db = drizzle({ client });
     let closed = false;
     const database = client;

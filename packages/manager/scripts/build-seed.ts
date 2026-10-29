@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { brotliCompressSync } from "node:zlib";
 import { PGlite } from "@electric-sql/pglite";
-import { migrateDatabase } from "@pstdio/pocketcoder-db/engine";
+import { migrateDatabase, pgliteSqlClient } from "@pstdio/pocketcoder-db/engine";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { dependencies } from "../package.json" with { type: "json" };
 
@@ -74,7 +74,7 @@ if (process.argv.includes("--check")) {
       postgresqlconf: ["shared_buffers = 16MB"],
     });
     try {
-      await migrateDatabase(client, migrations, "pocketcoder_manager");
+      await migrateDatabase(pgliteSqlClient(client), migrations, "pocketcoder_manager");
     } finally {
       await client.close();
     }
