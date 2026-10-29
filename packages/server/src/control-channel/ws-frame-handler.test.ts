@@ -95,6 +95,8 @@ test.each([
     const messages = (await server.store.readWorkspaceConversation(id, 0, 10)).map((row) => row.message);
     if (history === "retained") expect(messages[0]?.identity).toEqual(identified ? identity : null);
     expect((await server.store.getWorkspace(id))?.state).toBe("canceled");
-    expect(messages.map((message) => message.content)).toEqual(history === "retained" ? ["accepted before Stop"] : []);
+    // An identified frame after the workspace ended closes its turn with an explicit outcome.
+    const retained = identified ? ["accepted before Stop", ""] : ["accepted before Stop"];
+    expect(messages.map((message) => message.content)).toEqual(history === "retained" ? retained : []);
   },
 );
