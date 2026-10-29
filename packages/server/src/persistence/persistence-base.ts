@@ -50,6 +50,7 @@ export interface PersistenceServiceDeps {
     cancel(workspaceId: string, checkpointIds: Set<string>): Promise<void>;
     verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
     delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    readFile(checkpoint: WorkspaceCheckpointRow, mount: string, path: string, maxBytes: number): Promise<Buffer | null>;
     inventory(): Promise<{
       backend: string;
       storage_count: number;

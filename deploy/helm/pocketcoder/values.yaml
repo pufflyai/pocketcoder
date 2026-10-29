@@ -1,0 +1,121 @@
+# The controller image, pinned by digest. Release packaging fills both values.
+image:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# One controller per schema. PocketCoder does not run several replicas.
+store:
+  # postgres for servers; pglite keeps the embedded database on the data volume.
+  kind: postgres
+  database:
+    # Secret key holding the PostgreSQL URL. The URL never appears in values.
+    urlSecret:
+      name: ""
+      key: database-url
+    schema: pocketcoder
+    # Optional CA bundle for TLS to the database, from a ConfigMap key.
+    caConfigMap:
+      name: ""
+      key: ca.pem
+  # Runs `pcd db migrate` before the controller starts. Controllers refuse pending migrations.
+  migrate: true
+
+# Secret with the controller keys: auth-pepper (required), event-signing-key and secret-key
+# (optional). Keep the pepper of an upgraded database: machine key digests depend on it.
+keys:
+  secretName: ""
+
+# Private controller volume. With PGlite it holds the database; with PostgreSQL only
+# account state and the local admin socket. Use block storage, never NFS or EFS.
+data:
+  existingClaim: ""
+  size: 10Gi
+  storageClassName: ""
+
+# Deletion journal. A database restore replays it, so it must survive restores of the database.
+journal:
+  existingClaim: ""
+  size: 1Gi
+  storageClassName: ""
+
+checkpoints:
+  # controller-archive keeps checkpoint archives on the data volume; disabled turns preserve off.
+  backend: controller-archive
+
+service:
+  port: 7080
+  agentPort: 7081
+
+# Workspaces run as Jobs in this namespace (default: the release namespace).
+workspace:
+  namespace: ""
+  serviceAccount:
+    create: true
+    name: pocketcoder-workspace
+  runtimeClassName: ""
+  nodeSelector: {}
+  tolerations: []
+  # Defaults to the in-cluster agent Service.
+  serverUrl: ""
+
+serviceAccount:
+  create: true
+  name: pocketcoder-controller
+
+rbac:
+  create: true
+  # Read-only Node, PersistentVolume and RuntimeClass identity for termination evidence.
+  nodeIdentity: true
+
+# Workspace templates, mounted as POCKETCODER_TEMPLATE_DIR.
+templates:
+  # An existing ConfigMap of template manifests.
+  configMap: ""
+  # Or manifests in values: file name -> manifest.
+  files: {}
+
+# Managed principals (POCKETCODER_PRINCIPALS_FILE). The controller issues their keys and
+# writes each token to the declared target, such as a Kubernetes Secret.
+principals:
+  # The principal file, rendered as JSON; see docs/deployment.md#gitops-bootstrap.
+  config: {}
+
+eventSink:
+  url: ""
+
+# External admission hook (POCKETCODER_LAUNCH_POLICY_*).
+launchPolicy:
+  url: ""
+  tokenSecret:
+    name: ""
+    key: token
+
+conversations:
+  # A duration, or until-deleted. Empty keeps the template value.
+  retention: ""
+  maxRetention: ""
+
+# Extension points for consumer additions without forking.
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
+sidecars: []
+initContainers: []
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+networkPolicy:
+  enabled: false
+  # Extra ingress rules for the operator API, appended to the agent rule.
+  ingress: []

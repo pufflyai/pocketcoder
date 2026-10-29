@@ -43,6 +43,7 @@ import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
 import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
+import { registerArtifactRoutes } from "./persistence/artifact-routes";
 import type { CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
@@ -303,6 +304,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
+  registerArtifactRoutes({ app, store, service, persistence });
   registerConversationRoutes({ app, store, service, liveTurns, limits: deps.persistenceLimits });
   registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });

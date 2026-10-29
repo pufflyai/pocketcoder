@@ -87,6 +87,7 @@
     "domains:build": "bun packages/server/scripts/build-domain-assets.ts",
     "example:e2e:screenshots": "bun --no-env-file examples/e2e/screenshots.ts",
     "example:e2e:kubernetes-launch": "bun --no-env-file examples/e2e/kubernetes-launch.ts",
+    "example:e2e:kubernetes-helm": "bun --no-env-file examples/e2e/kubernetes-helm.ts",
     "example:e2e:kubernetes-shared-storage": "bun --no-env-file examples/e2e/kubernetes-shared-storage.ts",
     "example:e2e:kubernetes-checkpoint": "bun --no-env-file examples/e2e/kubernetes-checkpoint.ts",
     "manager:generate": "bun run --cwd packages/manager db:generate && bun run manager:seed",

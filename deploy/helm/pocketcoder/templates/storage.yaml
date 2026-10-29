@@ -1,0 +1,22 @@
+{{- range $name, $volume := dict "data" .Values.data "journal" .Values.journal }}
+{{- if not $volume.existingClaim }}
+---
+# Block storage only. Fence a failed node before moving it: ReadWriteOnce is not a writer lock.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $name }}
+  labels:
+    {{- include "pocketcoder.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with $volume.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $volume.size }}
+{{- end }}
+{{- end }}
