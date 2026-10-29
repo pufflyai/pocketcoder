@@ -75,13 +75,13 @@ describe("historical conversations", () => {
           body: JSON.stringify({
             external_id: id,
             template: { name: "fixture-echo" },
-            metadata: { product: "onefin", tenant: "tenant-7", user },
+            metadata: { product: "acme", tenant: "tenant-7", user },
           }),
         }),
       );
       expect(response.status).toBe(201);
     }
-    const metadata = encodeURIComponent(JSON.stringify({ product: "onefin", tenant: "tenant-7", user: "user-1" }));
+    const metadata = encodeURIComponent(JSON.stringify({ product: "acme", tenant: "tenant-7", user: "user-1" }));
     const response = await server.app.request(`/v1/workspaces?metadata=${metadata}`, authed(server.token));
     expect(response.status).toBe(200);
     const body = (await response.json()) as { items: Array<{ external_id: string }> };

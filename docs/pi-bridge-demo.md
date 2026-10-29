@@ -110,5 +110,5 @@ Issue new workspace gateway authority for each new fixture and record its
 rendered template digest. The demo's operator connection file is not an artifact.
 
 This proves the local Docker Pi path. It does not claim hosted provider,
-Kubernetes, amd64, Kito, Onefin, or Prompt Studio acceptance. PC-109 remains a
+Kubernetes, amd64, Kito, or Prompt Studio acceptance. PC-109 remains a
 separate integration task.

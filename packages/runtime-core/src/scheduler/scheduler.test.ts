@@ -97,9 +97,9 @@ function makeScheduler(store: Store, driver: FakeDriver, overrides = {}, metrics
 describe("failure log summary", () => {
   test("drops partial UTF-8 and line prefixes and redacts credentials", () => {
     const encoded = new TextEncoder().encode(
-      "épartial line\nAuthorization: Bearer secret-value\nPermissionError: /home/onefin/.pi\n",
+      "épartial line\nAuthorization: Bearer secret-value\nPermissionError: /home/worker/.pi\n",
     );
-    expect(decodeFailureLogTail(encoded.subarray(1), true)).toBe("[redacted]\nPermissionError: /home/onefin/.pi\n");
+    expect(decodeFailureLogTail(encoded.subarray(1), true)).toBe("[redacted]\nPermissionError: /home/worker/.pi\n");
   });
 });
 

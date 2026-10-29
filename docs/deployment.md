@@ -238,8 +238,8 @@ Use driver-level scheduling settings to keep all workspace and warm-pool Jobs
 on a labeled, tainted node pool:
 
 ```sh
-export POCKETCODER_KUBERNETES_NODE_SELECTOR='{"onefin.com/workload":"agent-workspace"}'
-export POCKETCODER_KUBERNETES_TOLERATIONS='[{"key":"onefin.com/workload","operator":"Equal","value":"agent-workspace","effect":"NoSchedule"}]'
+export POCKETCODER_KUBERNETES_NODE_SELECTOR='{"example.com/workload":"agent-workspace"}'
+export POCKETCODER_KUBERNETES_TOLERATIONS='[{"key":"example.com/workload","operator":"Equal","value":"agent-workspace","effect":"NoSchedule"}]'
 ```
 
 The selector must be a JSON object with string values. Tolerations must be a
@@ -357,17 +357,17 @@ restarts it. Later failures during renewal are logged and retried.
 {
   "principals": [
     {
-      "name": "onefin-backend",
+      "name": "app-backend",
       "scopes": ["templates:read", "workspaces:create", "workspaces:read"],
-      "templates": ["onefin-agent"],
-      "admission_template": "onefin-standard",
+      "templates": ["app-agent"],
+      "admission_template": "app-standard",
       "key": {
         "lifetime_hours": 720,
         "renew_before_hours": 240,
         "overlap_minutes": 60,
         "target": {
           "kind": "kubernetes-secret",
-          "namespace": "onefin",
+          "namespace": "app",
           "name": "pocketcoder-backend-key",
           "key": "token"
         }
@@ -480,7 +480,7 @@ helm install pocketcoder oci://ghcr.io/pufflyai/charts/pocketcoder --version <re
   `launchPolicy` wires an external admission hook.
 - **Extension points.** `sidecars`, `initContainers`, `extraEnv`, `extraVolumes`,
   `extraVolumeMounts`, `networkPolicy.ingress`, pod labels and annotations. A
-  consumer such as Onefin adds its accounting sidecar with values, without a fork.
+  consumer can add its own accounting sidecar with values, without a fork.
 
 `bun run example:e2e:kubernetes-helm` installs the chart on a local kind cluster
 against an in-cluster PostgreSQL and runs an echo workspace through it.

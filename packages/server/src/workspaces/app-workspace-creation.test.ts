@@ -218,7 +218,7 @@ describe("workspace creation diagnostics", () => {
         stream: "stderr",
         occurredAt: new Date(),
         content: new TextEncoder().encode(
-          "Authorization: Bearer should-not-leak\nTraceback (most recent call last):\nPermissionError: /home/onefin/.pi\n",
+          "Authorization: Bearer should-not-leak\nTraceback (most recent call last):\nPermissionError: /home/worker/.pi\n",
         ),
       },
     ]);
@@ -235,7 +235,7 @@ describe("workspace creation diagnostics", () => {
       };
     };
     expect(body.failure.reason_code).toBe("child_exit_failure");
-    expect(body.failure.log_tail).toContain("PermissionError: /home/onefin/.pi");
+    expect(body.failure.log_tail).toContain("PermissionError: /home/worker/.pi");
     expect(body.failure.log_tail).not.toContain("should-not-leak");
     expect(body.failure.log_tail).toContain("[redacted]");
     expect(body.failure.log_tail_truncated).toBe(true);

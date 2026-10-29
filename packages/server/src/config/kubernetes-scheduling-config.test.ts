@@ -10,11 +10,11 @@ describe("Kubernetes scheduling configuration", () => {
     expect(
       resolveKubernetesScheduling({
         POCKETCODER_KUBERNETES_NODE_SELECTOR: JSON.stringify({
-          "onefin.com/workload": "agent-workspace",
+          "example.com/workload": "agent-workspace",
         }),
         POCKETCODER_KUBERNETES_TOLERATIONS: JSON.stringify([
           {
-            key: "onefin.com/workload",
+            key: "example.com/workload",
             operator: "Equal",
             value: "agent-workspace",
             effect: "NoSchedule",
@@ -22,10 +22,10 @@ describe("Kubernetes scheduling configuration", () => {
         ]),
       }),
     ).toEqual({
-      nodeSelector: { "onefin.com/workload": "agent-workspace" },
+      nodeSelector: { "example.com/workload": "agent-workspace" },
       tolerations: [
         {
-          key: "onefin.com/workload",
+          key: "example.com/workload",
           operator: "Equal",
           value: "agent-workspace",
           effect: "NoSchedule",

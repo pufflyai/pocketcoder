@@ -271,12 +271,12 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
         {
           stream: "stderr",
           occurredAt: new Date(),
-          content: new TextEncoder().encode("\nPermissionError: /home/onefin/.pi\n"),
+          content: new TextEncoder().encode("\nPermissionError: /home/worker/.pi\n"),
         },
       ]);
       expect(new TextDecoder().decode((await store.readLogs(workspace.id, 0, 10))[0]?.content)).toBe("hello");
       const tail = await store.readLogTail(workspace.id, 24);
-      expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/onefin/.pi\n");
+      expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/worker/.pi\n");
       expect(tail).toMatchObject({ truncated: true, lastSeq: 2 });
 
       const sessionId = randomUUID();
