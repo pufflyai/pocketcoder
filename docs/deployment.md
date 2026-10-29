@@ -25,7 +25,9 @@ Publication uses only `ghcr.io/<owner>/<repo>/<role>:candidate-<full-commit>`
 and architecture tags ending in `-amd64` or `-arm64`. The `published.json`
 artifact records immutable architecture and multi-architecture digests. Use
 those recorded digests in deployments; candidate publication does not update
-`stable` or `latest`.
+`stable` or `latest`. Released versions also carry `<role>:<version>` and
+`<role>:latest` tags (see the [release checklist](release.md#after-tagging)), but
+deployments should still pin digests.
 
 Set `POCKETCODER_EGRESS_IMAGE` to the recorded egress digest. Without it,
 restricted templates cannot start. The bundled kubectl 1.35.9 permits Kubernetes

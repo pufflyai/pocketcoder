@@ -135,7 +135,9 @@ scan, SBOM, scanner, archive and smoke evidence.
 It writes only `candidate-<full-source-commit>-<architecture>` and
 `candidate-<full-source-commit>` tags under `ghcr.io/<owner>/<repo>/<role>`.
 It does not write stable, latest or version tags, update release notes, or
-promote a candidate automatically. Tags are discovery handles. Install using
+promote a candidate automatically. The separate `release images` workflow adds
+version and `latest` tags to a released commit's candidates; see the
+[release checklist](release.md#after-tagging). Tags are discovery handles. Install using
 the immutable `repo@sha256:...` values in the workflow's `published.json`
 artifact. That file retains each architecture digest, its tested source image
 ID, and the dual-architecture index digest for every role.
