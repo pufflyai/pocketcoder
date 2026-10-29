@@ -133,7 +133,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.hasProjects == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    # New job: the store, server and upgrade suites on PostgreSQL.
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18-alpine

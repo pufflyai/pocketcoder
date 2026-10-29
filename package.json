@@ -55,7 +55,7 @@
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",
     "test": "bun run test:all",
     "test:all": "bun run test:browser && bun run test:unit && bun run test:performance && bun run test:integration && bun run test:deploy && bun run example:test && bun run check-licenses:test && bun run check-boundaries:test && bun run check-migrations:test && bun run pack:check:test && bun run images:check:test && bun run test:extensions && bun run ci:test",
-    "test:postgres": "POCKETCODER_TEST_STORE=postgres bun test packages/db packages/server/src/lifecycle/postgres-startup.test.ts packages/cli/src/commands/db scripts/upgrade",
+    "test:postgres": "POCKETCODER_TEST_STORE=postgres bun test packages/db packages/cli/src/commands/db packages/cli/src/commands/serve-postgres.test.ts scripts/upgrade && POCKETCODER_TEST_STORE=postgres bun test packages/server --path-ignore-patterns='**/*conformance.test.ts'",
     "test:kind:registry": "bun --no-env-file scripts/test-kind-registry.ts",
     "test:runtime:live": "bun scripts/test-source-live.ts --runtime",
     "test:source:live": "bun --no-env-file scripts/test-source-live.ts",
