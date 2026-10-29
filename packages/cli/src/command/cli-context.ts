@@ -83,17 +83,21 @@ export function requireEmbeddedStore(command: string) {
 }
 
 // Opens the configured store while the server is stopped; both hold the same writer locks.
-export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
+async function openLocalStore() {
   const journalDir = process.env.POCKETCODER_JOURNAL_DIR;
-  const store =
-    storeKind(process.env) === "postgres"
-      ? await DatabaseStore.openPostgres({
-          url: databaseLocation(process.env).databaseUrl,
-          schema: databaseLocation(process.env).databaseSchema,
-          ...(journalDir ? { journalDir } : {}),
-          max: 1,
-        })
-      : await DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  if (storeKind(process.env) === "pglite")
+    return DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  // Revocations made here must reach the journal, or a database restore would undo them.
+  if (!journalDir)
+    fail(
+      "POCKETCODER_JOURNAL_DIR is required for local store commands on PostgreSQL; stop the controller first, or use the API",
+    );
+  const { databaseUrl, databaseSchema } = databaseLocation(process.env);
+  return DatabaseStore.openPostgres({ url: databaseUrl, schema: databaseSchema, journalDir, max: 1 });
+}
+
+export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
+  const store = await openLocalStore();
   try {
     return await fn(store);
   } finally {

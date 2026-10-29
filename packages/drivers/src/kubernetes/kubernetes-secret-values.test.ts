@@ -19,7 +19,7 @@ async function fakeKubectl() {
     `#!/bin/sh
 echo "$@" >> "${directory}/args"
 case "$*" in
-  *" apply -f -") cat > "${directory}/secret.json" ;;
+  *" apply --server-side --field-manager=pocketcoder --force-conflicts -f -") cat > "${directory}/secret.json" ;;
   *" get secret "*)
     if [ ! -f "${directory}/secret.json" ]; then echo 'Error from server (NotFound): secrets "x" not found' >&2; exit 1; fi
     cat "${directory}/secret.json" ;;
@@ -42,6 +42,8 @@ test("a Secret value is written through stdin and read back", async () => {
   await writeFile(join(kubectl.directory, "secret.json"), JSON.stringify(manifest));
   expect(await readSecretValue(kubectl.bin, target)).toBe("pkt_secret-value");
   expect(await readFile(join(kubectl.directory, "args"), "utf8")).not.toContain("pkt_");
+  // Client-side apply would copy the token into the last-applied annotation.
+  expect(await readFile(join(kubectl.directory, "args"), "utf8")).toContain("apply --server-side");
 });
 
 test("a failed write does not echo the value", async () => {

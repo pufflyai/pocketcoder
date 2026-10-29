@@ -92,6 +92,50 @@ test("an open turn is recorded as interrupted when its workspace ends", async ()
   const document = await f.store.getConversation(f.principal.id, request.conversation_id);
   const [record] = await f.store.readConversationRecords(document?.id ?? "");
   expect(record).toMatchObject({ status: "interrupted", document: { reason: "workspace_ended" } });
-  expect(record?.document.messages.map((message) => message.content)).toEqual(["partial"]);
+  expect(record?.document.messages.map((message) => message.content)).toEqual(["partial", ""]);
+  expect(record?.document.messages[1]?.identity?.fact).toEqual({
+    type: "turn_terminal",
+    outcome: "interrupted",
+    reason: "workspace_ended",
+  });
   expect(live.open(workspace.id)).toEqual([]);
+});
+
+test("a turn whose write fails for a passing reason stays open and is written later", async () => {
+  const { f, request, workspace, send } = await setup();
+  let failures = 1;
+  const flaky = new LiveTurns({
+    isAcceptedTurn: (...args) => f.store.isAcceptedTurn(...args),
+    commitConversationTurn: async (turn) => {
+      if (failures-- > 0) throw new Error("connection reset");
+      return f.store.commitConversationTurn(turn);
+    },
+  });
+  const message = (event: string, content: string, fact?: ConversationFact) => ({
+    message_id: event,
+    role: "assistant" as const,
+    content,
+    occurred_at: new Date().toISOString(),
+    metadata: {},
+    identity: { ...request, event_id: event, message_id: event, sequence: 0, revision: 1, ...(fact ? { fact } : {}) },
+  });
+  await flaky.receive(workspace.id, message(randomUUID(), "kept"));
+  await expect(
+    flaky.receive(workspace.id, message(randomUUID(), "", { type: "turn_terminal", outcome: "completed" })),
+  ).rejects.toThrow("connection reset");
+  expect(flaky.open(workspace.id)).toHaveLength(1);
+  await flaky.close(workspace.id, new Date());
+  const document = await f.store.getConversation(f.principal.id, request.conversation_id);
+  const [record] = await f.store.readConversationRecords(document?.id ?? "");
+  // The terminal fact had arrived, so the retry keeps its outcome.
+  expect(record).toMatchObject({ status: "completed" });
+  expect(record?.document.messages.map((item) => item.content)).toEqual(["kept", ""]);
+  void send;
+});
+
+test("an open turn cannot grow past the conversation size limit", async () => {
+  const { live, workspace, send } = await setup();
+  await send(randomUUID(), 1, "x".repeat(30 * 1024 * 1024));
+  await expect(send(randomUUID(), 1, "y".repeat(30 * 1024 * 1024))).rejects.toThrow("conversation.quota_exceeded");
+  expect(live.open(workspace.id)[0]?.messages).toHaveLength(1);
 });

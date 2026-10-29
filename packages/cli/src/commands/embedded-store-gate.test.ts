@@ -15,3 +15,9 @@ test.each([
   expect(result.exitCode).toBe(1);
   expect(result.output).toContain(`${command} is not available with PostgreSQL. Use your database's backups instead.`);
 });
+
+test("a local key revoke on PostgreSQL needs the deletion journal", async () => {
+  const result = await runCli(["keys", "revoke", "--id", crypto.randomUUID()], { env: postgres });
+  expect(result.exitCode).toBe(1);
+  expect(result.output).toContain("POCKETCODER_JOURNAL_DIR");
+});

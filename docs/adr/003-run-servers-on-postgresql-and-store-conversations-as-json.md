@@ -86,6 +86,15 @@ principal APIs answer once the process is live, so bootstrap code waits on
   use (`kubernetes-pvc`). Restore and resume return `409 checkpoint.unsupported`
   with the provider kind instead of failing inside a restore. Old workspaces stay
   readable; their alpha snapshots are still supported by the 1.0 runtime.
+- **Controller-closed turns** (interrupted, or a workspace that ended mid-turn)
+  get a `turn_terminal` fact message in their record, so history shows the
+  outcome. A workspace that survives a controller restart and finishes the turn
+  later cannot replace that record. A failed write of a turn whose terminal fact
+  arrived keeps the turn in memory and retries it when the workspace ends.
+- **Journal records before commit.** Records are written before the change they
+  describe commits. Template retirement now checks the version first. A narrowing
+  or revocation whose transaction fails afterwards is still applied at the next
+  start; that errs on the side of less access.
 - **AgentAPI reads.** AgentAPI 0.12 has no incremental message read. The
   supervisor now reads `/messages` while the agent runs and once after it
   settles, instead of on every health probe of an idle agent. A truly

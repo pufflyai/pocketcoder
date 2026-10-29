@@ -224,3 +224,20 @@ test("interrupted turns between others never cut a page short", async () => {
   }
   expect(view).toHaveLength(7);
 });
+
+test("deleting conversations gives their bytes back to the workspace quota", async () => {
+  const f = await open();
+  const workspace = await insertTestWorkspace(f, "quota");
+  const conversation = randomUUID();
+  await turn(f, workspace.id, conversation, "x");
+  const charged = async () =>
+    (
+      await f.query<{ bytes: number }>(
+        `SELECT bytes::int AS bytes FROM ${f.schema}.workspace_conversations WHERE workspace_id = $1`,
+        [workspace.id],
+      )
+    )[0]?.bytes;
+  expect(await charged()).toBeGreaterThan(0);
+  await f.store.deleteConversationById(f.principal.id, conversation, new Date());
+  expect(await charged()).toBe(0);
+});

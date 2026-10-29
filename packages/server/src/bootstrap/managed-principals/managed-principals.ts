@@ -50,7 +50,7 @@ async function reconcileAdmissionMap({ file, dryRun }: ReconcileDeps) {
   if (!file.admission_map) return null;
   const target = secretTargetStore(file.admission_map);
   const content = `${JSON.stringify(admissionMap(file), null, 2)}\n`;
-  if ((await target.read()) === content.trim()) return "unchanged" as const;
+  if ((await target.read())?.trim() === content.trim()) return "unchanged" as const;
   if (!dryRun) await target.write(content);
   return "write" as const;
 }

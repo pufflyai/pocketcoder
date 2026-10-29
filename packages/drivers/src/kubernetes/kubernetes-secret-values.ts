@@ -18,13 +18,14 @@ export async function readSecretValue(bin: string, ref: SecretValueRef) {
   return encoded ? Buffer.from(encoded, "base64").toString("utf8") : null;
 }
 
-// The value travels on stdin, so it never appears in process arguments.
+// The value travels on stdin, so it never appears in process arguments. Server-side apply keeps
+// it out of the last-applied annotation that client-side apply writes.
 export async function applySecretValue(bin: string, ref: SecretValueRef, value: string) {
   try {
     await kubectl(
       bin,
       ref.namespace,
-      ["apply", "-f", "-"],
+      ["apply", "--server-side", "--field-manager=pocketcoder", "--force-conflicts", "-f", "-"],
       JSON.stringify({
         apiVersion: "v1",
         kind: "Secret",

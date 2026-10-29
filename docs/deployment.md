@@ -302,7 +302,12 @@ With PostgreSQL:
 
 Only one controller runs per schema. It takes a PostgreSQL advisory lock at
 startup, and a second controller fails with "a PocketCoder coordinator is
-already active".
+already active". The lock lives on one database session, so connect directly or
+through a session-mode pooler, never PgBouncer in transaction mode. The
+controller does not yet notice a lost session (for example after a database
+failover); restart it after a failover. Local store commands such as
+`pcd keys revoke --id` need `POCKETCODER_JOURNAL_DIR` and a stopped controller;
+prefer the API while it runs.
 
 Folder backups (`pcd backup`), off-node backups and folder recovery
 (`pcd recovery`) copy the PGlite data folder. With PostgreSQL they refuse with
@@ -331,6 +336,9 @@ To restore:
    empty or different journal.
 4. Run `pcd db migrate` if the restored database is from an older release.
 5. Start the controller. It replays the journal before serving requests.
+
+The replay also clears the rows of workspaces that were purged and marks deleted
+checkpoints deleted again. Their files were already removed by the purge.
 
 Rotating the auth pepper also invalidates every machine key, but it does not
 cover secrets, templates or conversations. Use the journal for those.

@@ -1,4 +1,5 @@
 import {
+  ApiError,
   type ConversationLiveEvent,
   type ConversationMessageIdentity,
   type ConversationMessageInput,
@@ -15,7 +16,13 @@ interface OpenTurn {
   startedAt: Date;
   // The latest revision of each event, in the order events first arrived.
   events: Map<string, IdentifiedMessage>;
+  bytes: number;
+  // Set when the terminal fact arrived but the write failed; a retry keeps this outcome.
+  terminal?: { status: ConversationTurnCommit["status"]; reason: string | null; at: Date };
 }
+
+// The same limit as a stored conversation: an open turn lives in controller memory.
+const MAX_OPEN_TURN_BYTES = 50 * 1024 * 1024;
 
 type Listener = (event: ConversationLiveEvent) => void;
 
@@ -62,7 +69,8 @@ export class LiveTurns {
   // A workspace that ends with a turn still open never sends its terminal fact.
   async close(workspaceId: string, at: Date) {
     for (const [key, turn] of this.turns)
-      if (turn.workspaceId === workspaceId) await this.commit(key, turn, "interrupted", "workspace_ended", at);
+      if (turn.workspaceId === workspaceId)
+        await this.commit(key, turn, turn.terminal ?? { status: "interrupted", reason: "workspace_ended", at });
   }
 
   private async apply(key: string, workspaceId: string, message: IdentifiedMessage) {
@@ -71,42 +79,49 @@ export class LiveTurns {
       const request = ConversationRequestIdentitySchema.parse(message.identity);
       if (!(await this.store.isAcceptedTurn(workspaceId, request)))
         throw new Error("conversation.request_not_accepted");
-      turn = { workspaceId, request, startedAt: new Date(message.occurred_at), events: new Map() };
+      turn = { workspaceId, request, startedAt: new Date(message.occurred_at), events: new Map(), bytes: 0 };
       this.turns.set(key, turn);
     }
     const current = turn.events.get(message.identity.event_id);
     if (current && current.identity.revision >= message.identity.revision) return;
+    const bytes = turn.bytes - (current ? size(current) : 0) + size(message);
+    if (bytes > MAX_OPEN_TURN_BYTES) throw new Error("conversation.quota_exceeded");
+    turn.bytes = bytes;
     turn.events.set(message.identity.event_id, message);
     this.emit(workspaceId, snapshot(turn));
     const fact = message.identity.fact;
     if (fact?.type === "turn_terminal")
-      await this.commit(key, turn, fact.outcome, fact.reason ?? null, new Date(message.occurred_at));
+      await this.commit(key, turn, {
+        status: fact.outcome,
+        reason: fact.reason ?? null,
+        at: new Date(message.occurred_at),
+      });
   }
 
-  private async commit(
-    key: string,
-    turn: OpenTurn,
-    status: ConversationTurnCommit["status"],
-    reason: string | null,
-    at: Date,
-  ) {
+  private async commit(key: string, turn: OpenTurn, terminal: NonNullable<OpenTurn["terminal"]>) {
     this.turns.delete(key);
-    const { record } = await this.store.commitConversationTurn({
-      workspaceId: turn.workspaceId,
-      identity: turn.request,
-      status,
-      reason,
-      messages: ordered(turn).map((message) => ({
-        messageId: message.message_id,
-        role: message.role,
-        content: message.content,
-        occurredAt: new Date(message.occurred_at),
-        metadata: message.metadata,
-        identity: message.identity,
-      })),
-      startedAt: turn.startedAt,
-      endedAt: at,
-    });
+    const { record } = await this.store
+      .commitConversationTurn({
+        workspaceId: turn.workspaceId,
+        identity: turn.request,
+        status: terminal.status,
+        reason: terminal.reason,
+        messages: ordered(turn).map((message) => ({
+          messageId: message.message_id,
+          role: message.role,
+          content: message.content,
+          occurredAt: new Date(message.occurred_at),
+          metadata: message.metadata,
+          identity: message.identity,
+        })),
+        startedAt: turn.startedAt,
+        endedAt: terminal.at,
+      })
+      .catch((error) => {
+        // Refused writes cannot succeed later; anything else is retried when the workspace ends.
+        if (!permanent(error)) this.turns.set(key, { ...turn, terminal });
+        throw error;
+      });
     this.emit(turn.workspaceId, {
       type: "committed",
       conversation_id: turn.request.conversation_id,
@@ -119,6 +134,15 @@ export class LiveTurns {
   private emit(workspaceId: string, event: ConversationLiveEvent) {
     for (const listener of this.listeners.get(workspaceId) ?? []) listener(event);
   }
+}
+
+function size(message: IdentifiedMessage) {
+  return Buffer.byteLength(JSON.stringify(message));
+}
+
+function permanent(error: unknown) {
+  if (error instanceof ApiError) return true;
+  return error instanceof Error && error.message === "conversation.quota_exceeded";
 }
 
 // Producers number events within a turn; arrival order breaks ties.

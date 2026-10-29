@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { DatabaseContext } from "../database/context";
+import type { DatabaseContext, Transaction } from "../database/context";
 import type { JournalEvent } from "../journal/events";
 import { clearConversations, conversationIds } from "../modules/conversations/retention";
 
@@ -32,14 +32,32 @@ export function createRecordReplay(context: DatabaseContext) {
           );
         return clearConversations(context, tx, one, "deleted", at);
       }
-      await clearConversations(context, tx, conversationIds(context, tx, event.workspaceId), "deleted", at);
-      await tx
-        .insert(workspaceConversations)
-        .values({ workspaceId: event.workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
-        .onConflictDoUpdate({
-          target: workspaceConversations.workspaceId,
-          set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
-        });
+      await removeHistory(tx, event.workspaceId, at);
+    });
+  }
+
+  async function removeHistory(tx: Transaction, workspaceId: string, at: Date) {
+    await clearConversations(context, tx, conversationIds(context, tx, workspaceId), "deleted", at);
+    await tx
+      .insert(workspaceConversations)
+      .values({ workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
+      .onConflictDoUpdate({
+        target: workspaceConversations.workspaceId,
+        set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
+      });
+  }
+
+  // The purge itself removed provider data; a restored database only needs its rows cleared again.
+  async function purgeWorkspace(workspaceId: string, at: Date) {
+    await db.transaction(async (tx) => {
+      await removeHistory(tx, workspaceId, at);
+      for (const table of [
+        tables.workspaceLogs,
+        tables.workspaceOutputs,
+        tables.workspaceNetworkEvents,
+        tables.eventOutbox,
+      ])
+        await tx.delete(table).where(eq(table.workspaceId, workspaceId));
     });
   }
 
@@ -77,6 +95,14 @@ export function createRecordReplay(context: DatabaseContext) {
           .update(templates)
           .set({ status: "retired", retiredAt: sql`coalesce(${templates.retiredAt}, ${at})` })
           .where(and(eq(templates.name, event.name), eq(templates.version, event.version)));
+        return;
+      case "workspace_purged":
+        return purgeWorkspace(event.workspaceId, at);
+      case "checkpoint_deleted":
+        await db
+          .update(tables.workspaceCheckpoints)
+          .set({ state: "deleted", deletedAt: sql`coalesce(${tables.workspaceCheckpoints.deletedAt}, ${at})` })
+          .where(eq(tables.workspaceCheckpoints.id, event.checkpointId));
         return;
       case "conversation_deleted":
         return deleteConversation(event, at);
