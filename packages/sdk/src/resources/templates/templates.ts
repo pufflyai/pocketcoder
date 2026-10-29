@@ -3,6 +3,7 @@ import {
   TemplateListItemSchema,
   type TemplateManifest,
   TemplatePageSchema,
+  type WorkloadTemplate,
 } from "@pstdio/pocketcoder-contracts";
 import { type CursorListQuery, page, queryString } from "../../transport/common";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
@@ -32,7 +33,7 @@ export class TemplatesApi {
     return items;
   }
 
-  async publish(manifest: TemplateManifest, options: RequestOptions = {}) {
+  async publish(manifest: TemplateManifest | WorkloadTemplate, options: RequestOptions = {}) {
     return this.transport.request("/v1/templates", TemplateListItemSchema, {
       ...options,
       method: "POST",

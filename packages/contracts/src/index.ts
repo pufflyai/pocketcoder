@@ -251,6 +251,7 @@ export * from "./templates/workload-admission";
 export * from "./templates/workload-capabilities";
 export * from "./templates/workload-format";
 export * from "./templates/workload-input-schema";
+export * from "./templates/workload-policy";
 export * from "./templates/workload-template";
 export {
   type ClientTerminalMessage,

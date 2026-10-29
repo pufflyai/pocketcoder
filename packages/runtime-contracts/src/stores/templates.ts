@@ -1,4 +1,4 @@
-import type { TemplateManifest, TemplateSpec } from "@pstdio/pocketcoder-contracts";
+import type { RuntimeTemplatePolicy, TemplateManifest, WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
 
 export const TEMPLATE_STATUSES = ["active", "available", "retired"] as const;
 
@@ -10,7 +10,8 @@ export interface TemplateRow {
   version: string;
   digest: string;
   description: string | null;
-  spec: TemplateSpec;
+  spec: RuntimeTemplatePolicy;
+  manifest?: WorkloadTemplate | null;
   status: TemplateStatus;
   createdAt: Date;
   retiredAt: Date | null;
@@ -21,7 +22,8 @@ export interface TemplateUpsert {
   version: string;
   digest: string;
   description: string | null;
-  spec: TemplateSpec;
+  spec: RuntimeTemplatePolicy;
+  manifest?: WorkloadTemplate | null;
 }
 
 export interface UpsertResult {
@@ -33,7 +35,10 @@ export interface UpsertResult {
 }
 
 export interface TemplateStore {
-  publishTemplate(actorKeyId: string, manifest: TemplateManifest): Promise<{ row: TemplateRow; created: boolean }>;
+  publishTemplate(
+    actorKeyId: string,
+    manifest: TemplateManifest | WorkloadTemplate,
+  ): Promise<{ row: TemplateRow; created: boolean }>;
   retireTemplate(actorKeyId: string, name: string, version: string): Promise<TemplateRow>;
   upsertTemplate(input: TemplateUpsert): Promise<UpsertResult>;
   listTemplates(names: string[] | null): Promise<TemplateRow[]>;

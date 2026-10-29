@@ -88,6 +88,12 @@ async function loadDeclaredState(config: ServerConfig, store: Store, log: Server
   return startManagedPrincipals({ config: config.principals, store, pepper: config.pepper, logger });
 }
 
+function configuredRegistry(config: ServerConfig, store: Store) {
+  return config.secretKey
+    ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
+    : undefined;
+}
+
 export async function startPocketCoderServer(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
@@ -114,9 +120,7 @@ export async function startPocketCoderServer(
     if (durableAccountState.state.state !== "ready") maintenance.fence();
     await recordInterruptedTurns(store, log, "coordinator lease acquired");
     const managedPrincipals = await loadDeclaredState(config, store, log, logger);
-    const resolveRegistry = config.secretKey
-      ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
-      : undefined;
+    const resolveRegistry = configuredRegistry(config, store);
     const storageDriver = createStorageDriver(config);
     const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
     const driver = createWorkspaceDriver(config, resolveRegistry, sharedStorage);
@@ -141,6 +145,7 @@ export async function startPocketCoderServer(
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
       limits: config.limits,
+      workloadLimits: config.workloadLimits,
       workspaceServerUrl: config.workspaceServerUrl,
       persistenceLimits: config.persistenceLimits,
       checkpointTransferOptions: transferOptions,
@@ -152,8 +157,7 @@ export async function startPocketCoderServer(
       maintenance,
     });
     const { app, agentApp, websocket, scheduler, persistence, warmPool, workspaceLeases, screenshots } = built;
-    // A backup waits for admitted background work as well as admitted requests.
-    // Scheduler finalizers can start preserves, so the scheduler settles first.
+    // Backups settle admitted work; the scheduler settles before preserves it can start.
     maintenance.settleWith(() => scheduler.drain());
     maintenance.settleWith(() => built.executionDispatcher.drain());
     maintenance.settleWith(() => persistence.drain());

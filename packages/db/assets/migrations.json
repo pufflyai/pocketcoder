@@ -318,5 +318,12 @@
     "folderMillis": 1793233733000,
     "hash": "b59b27f020997e6776fb75cc35d1c23c7070a4c8f18350028f56dfdd56d003ed",
     "name": "20261029002853_bumpy_darkstar"
+  },
+  {
+    "sql": ["ALTER TABLE \"templates\" ADD COLUMN \"manifest\" jsonb;"],
+    "bps": true,
+    "folderMillis": 1793256391000,
+    "hash": "2ddc93a716e182d8f7855134ccdbd3b4ae0d53fcc7fd7403cf89728a82ab4d81",
+    "name": "20261029064631_flashy_obadiah_stane"
   }
 ]

@@ -2,8 +2,8 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "cc15daae04f86be8441a6e4b59ee6d968b89e5b063b7b8a0b9f8c3f648fe395a",
-  "sourceChecksum": "c70c0b9c52bbcd2fbc8322283dfeee36be25359bc6af6559e6f76f50bef57c21",
+  "checksum": "e69752964bcc63d98054f31799b69a26bdf430b2bc7d4ab6335f19751513d9e9",
+  "sourceChecksum": "52345b7c0b071a3873c160c4198994d9f5cf45a4e81b065d10f3e0218373c4d7",
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -94,6 +94,10 @@
     {
       "name": "20261029002853_bumpy_darkstar",
       "hash": "b59b27f020997e6776fb75cc35d1c23c7070a4c8f18350028f56dfdd56d003ed"
+    },
+    {
+      "name": "20261029064631_flashy_obadiah_stane",
+      "hash": "2ddc93a716e182d8f7855134ccdbd3b4ae0d53fcc7fd7403cf89728a82ab4d81"
     }
   ]
 }

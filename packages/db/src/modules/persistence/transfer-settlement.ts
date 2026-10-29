@@ -1,4 +1,5 @@
 import { canonicalJson } from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceRuntimeRegistration } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
 import { transitionWorkspace } from "../workspaces/transitions";
@@ -17,6 +18,7 @@ export function createCheckpointRestoreSettlement(context: DatabaseContext) {
       check();
       const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, workspaceId)).for("update");
       if (workspace?.state !== "connected" || workspace.connectionEpoch !== connectionEpoch) return false;
+      if (!runtimeReady(workspace.runtimeRegistration)) return false;
       const [row] = await tx
         .select()
         .from(transfers)
@@ -67,4 +69,8 @@ export function createCheckpointRestoreSettlement(context: DatabaseContext) {
     if (settled) notifyChange(context, workspaceId);
     return settled;
   };
+}
+
+function runtimeReady(runtime: WorkspaceRuntimeRegistration | null) {
+  return !runtime || Boolean(runtime.readyAt && !runtime.endedAt);
 }

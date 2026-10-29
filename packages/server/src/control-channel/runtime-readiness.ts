@@ -20,6 +20,11 @@ function runtimePrepared(row: WorkspaceRow) {
   return !runtime || (runtime.readyAt && !runtime.endedAt);
 }
 
+function restorePrepared(deps: WsDeps, row: WorkspaceRow) {
+  const connection = deps.hub.get(row.id);
+  return connection?.restoreInstalled && (row.runtimeRegistration || connection.harnessRunning);
+}
+
 export async function maybeMarkReady(
   deps: WsDeps,
   row: WorkspaceRow,
@@ -30,7 +35,7 @@ export async function maybeMarkReady(
   if (row.state !== "connected" || !(await setupAuthorityClosed(deps.store, row))) return;
   const connection = deps.hub.get(row.id);
   if (deps.checkpointTransfers && row.launchMode === "restore") {
-    if (!connection?.restoreInstalled || !connection.harnessRunning) return;
+    if (!restorePrepared(deps, row)) return;
   }
   if (!requiredServicesHealthy(row, health)) return;
   const network = row.runtimeRegistration?.template?.manifest.spec.network ?? row.templateSnapshot.spec.network;

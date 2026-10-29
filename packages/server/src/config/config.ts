@@ -1,4 +1,4 @@
-import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import { parseDurationMs, type WorkloadLimits, WorkloadLimitsSchema } from "@pstdio/pocketcoder-contracts";
 import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
 import { managedPrincipalsConfig } from "../bootstrap/managed-principals/startup";
@@ -58,6 +58,7 @@ export interface ServerConfig {
   // developer machine this is typically http://host.docker.internal:<port>.
   workspaceServerUrl: string;
   limits: AdmissionLimits;
+  workloadLimits?: WorkloadLimits;
   schedulerIntervalMs: number;
   outboxIntervalMs: number;
   persistenceLimits: PersistenceLimits;
@@ -280,6 +281,10 @@ export function configSummary(config: ServerConfig) {
   };
 }
 
+function deploymentWorkloadLimits(raw?: string) {
+  return raw ? WorkloadLimitsSchema.parse(JSON.parse(raw)) : undefined;
+}
+
 export function loadConfig(env: Environment = process.env): ServerConfig {
   const pepper = resolvePepper(env);
   const operator = env.POCKETCODER_HTTP
@@ -347,6 +352,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
         : `http://host.docker.internal:${agent.listenPort}`,
     ) as string,
     limits: resolveAdmissionLimits(env),
+    workloadLimits: deploymentWorkloadLimits(env.POCKETCODER_WORKLOAD_LIMITS),
     schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
     outboxIntervalMs: intEnv(env, "POCKETCODER_OUTBOX_INTERVAL_MS", 1000),
     persistenceLimits: resolvePersistenceLimits(env),

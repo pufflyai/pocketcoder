@@ -167,3 +167,24 @@ test("rejects links, corrupt bytes, changed selections and wrong incarnations", 
     await f.close();
   }
 });
+
+test("release durably fences a publisher delayed before entering the filesystem owner", async () => {
+  const f = await projectionFixture();
+  try {
+    await f.publisher.prepare(f.scope);
+    const selected = f.selection([await f.input()]);
+    // The transport can finish cancel while an ordinary publish is still in
+    // driver inspection. Its later filesystem entry must observe this fence.
+    await f.publisher.release(f.scope, selected.manifestId);
+    const restarted = new FilesystemInputProjection({
+      root: f.root,
+      storage: f.storage,
+      privateRoots: [f.canonical],
+      capacity: { bytes: 8388608, files: 64 },
+    });
+    await expect(restarted.publish(f.scope, f.incarnationId, selected)).rejects.toThrow("released");
+    expect(await Bun.file(join(f.publisher.path(f.scope), selected.manifestId, "manifest.json")).exists()).toBe(false);
+  } finally {
+    await f.close();
+  }
+});

@@ -1,11 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { type ProviderInput, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
+import {
+  type ProviderInput,
+  parseWorkloadTemplate,
+  runtimeCredentialReferences,
+  workloadSnapshotOf,
+} from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
 import { capacityReason, recordAdmissionReason, recordCapacityReasons } from "./admission-feedback";
 import { cleanupUncommittedProvider } from "./provider-termination";
 import type { SchedulerContext } from "./scheduler-base";
+import { prepareWaitingRuntime } from "./waiting-runtime";
 
 export class SchedulerAdmission {
   constructor(private readonly context: SchedulerContext) {}
@@ -172,6 +178,7 @@ export class SchedulerAdmission {
         secrets: runtimeSecrets,
       });
       await store.updateWorkspace(row.id, { providerKind: driver.kind, providerRef: ref }, this.context.now());
+      await this.prepareRuntime({ ...claimed, providerKind: driver.kind, providerRef: ref });
       return true;
     } catch (err) {
       this.context.report(`launch.${row.id}`, err);
@@ -203,6 +210,16 @@ export class SchedulerAdmission {
       }
       return false;
     }
+  }
+
+  private async prepareRuntime(workspace: WorkspaceRow) {
+    if (!workspace.templateSnapshot.manifest) return;
+    const { store, driver, workloadLimits } = this.context.deps;
+    await prepareWaitingRuntime(
+      { store, driver, workloadLimits },
+      workspace,
+      workloadSnapshotOf(parseWorkloadTemplate(workspace.templateSnapshot.manifest)),
+    );
   }
 
   private async resolveRuntimeSecrets(row: WorkspaceRow) {

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { checkpointHttpFixture } from "./checkpoint-transfer-fixture.test";
 
-export async function checkpointDownloadFixture() {
+export async function checkpointDownloadFixture(runtime = false) {
   const f = await checkpointHttpFixture();
   const pending = f.service.preserve(f.workspace, f.checkpoint, f.operationId);
   const upload = await f.grant;
@@ -29,6 +29,17 @@ export async function checkpointDownloadFixture() {
   });
   if (inserted.kind !== "created") throw new Error("destination was not created");
   await f.store.transition(id, { from: ["queued"], to: "provisioning", at: now });
+  if (runtime) {
+    const ref = { kind: "docker", id: randomUUID() };
+    await f.store.updateWorkspace(id, { providerRef: ref }, now);
+    expect(
+      await f.store.bindWorkspaceRuntime(
+        id,
+        { incarnationId: ref.id, containerIdentity: ref.id, profile: "service", producer: null },
+        ref,
+      ),
+    ).toBe(true);
+  }
   await f.store.transition(id, { from: ["provisioning"], to: "connected", at: now });
   await f.store.updateWorkspace(id, { connectionEpoch: 5 }, now);
   const destination = (await f.store.getWorkspace(id)) as WorkspaceRow;
@@ -74,35 +85,49 @@ export async function checkpointDownloadFixture() {
   };
 }
 
-test("fresh destination HTTP grant streams source bytes and completes only after verified installed barrier", async () => {
-  const f = await checkpointDownloadFixture();
-  try {
-    const payload = {
-      operation_id: f.operationId,
-      transfer_id: f.grant.transfer_id,
-      checkpoint_id: f.checkpoint.id,
-      archive_digest: f.grant.source.archive_digest,
-      phase: "installed" as const,
-    };
-    expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
-    const response = await fetch(f.grant.url, { headers: f.headers });
-    expect(response.status).toBe(200);
-    expect(Buffer.from(await response.arrayBuffer())).toEqual(f.raw);
-    expect((await f.store.checkpointTransfers.get(f.grant.transfer_id))?.state).toBe("validated");
-    expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
-    expect(await f.service.installed(f.connected.conn, payload)).toBe(true);
-    expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
-    f.connected.conn.restoreInstalled = true;
-    f.connected.conn.harnessRunning = true;
-    expect(await f.service.ready(f.connected.conn)).toBe(true);
-    expect((await f.store.getWorkspace(f.destination.id))?.state).toBe("ready");
-    expect((await f.store.getOperation(f.operationId))?.state).toBe("succeeded");
-    expect((await f.store.checkpointTransfers.get(f.grant.transfer_id))?.state).toBe("complete");
-    expect((await fetch(f.grant.url, { headers: f.headers })).status).toBe(401);
-  } finally {
-    await f.dispose();
-  }
-});
+test.each(["alpha", "runtime", "not-ready", "ended"])(
+  "HTTP archive restore completes only with installed and ready %s evidence",
+  async (mode) => {
+    const f = await checkpointDownloadFixture(mode !== "alpha");
+    try {
+      const payload = {
+        operation_id: f.operationId,
+        transfer_id: f.grant.transfer_id,
+        checkpoint_id: f.checkpoint.id,
+        archive_digest: f.grant.source.archive_digest,
+        phase: "installed" as const,
+      };
+      expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
+      const response = await fetch(f.grant.url, { headers: f.headers });
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(f.raw);
+      expect((await f.store.checkpointTransfers.get(f.grant.transfer_id))?.state).toBe("validated");
+      expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
+      expect(await f.service.installed(f.connected.conn, payload)).toBe(true);
+      expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
+      f.connected.conn.restoreInstalled = true;
+      if (mode === "alpha") f.connected.conn.harnessRunning = true;
+      const runtime = (await f.store.getWorkspace(f.destination.id))?.runtimeRegistration;
+      if (runtime && mode !== "not-ready")
+        await f.store.markWorkspaceRuntimeReady(f.destination.id, runtime.incarnationId, 5, new Date());
+      if (runtime && mode === "ended")
+        await f.store.endWorkspaceRuntime(f.destination.id, runtime.incarnationId, new Date());
+      if (mode === "not-ready" || mode === "ended") {
+        expect(await f.service.ready(f.connected.conn)).toBe(false);
+        expect((await f.store.getWorkspace(f.destination.id))?.state).toBe("connected");
+        expect((await f.store.getOperation(f.operationId))?.state).toBe("running");
+        return;
+      }
+      expect(await f.service.ready(f.connected.conn)).toBe(true);
+      expect((await f.store.getWorkspace(f.destination.id))?.state).toBe("ready");
+      expect((await f.store.getOperation(f.operationId))?.state).toBe("succeeded");
+      expect((await f.store.checkpointTransfers.get(f.grant.transfer_id))?.state).toBe("complete");
+      expect((await fetch(f.grant.url, { headers: f.headers })).status).toBe(401);
+    } finally {
+      await f.dispose();
+    }
+  },
+);
 
 test.each(["owner", "operation", "epoch", "purpose"])(
   "HTTP grant refuses wrong %s without consumption",

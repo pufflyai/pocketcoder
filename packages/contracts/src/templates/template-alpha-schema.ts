@@ -170,77 +170,79 @@ export const CheckpointHookSchema = z.object({
   cwd: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
 });
 
-const TemplateSpecInputSchema = z
-  .object({
-    version: z.string().regex(SEMVER_RE),
-    image: z.string().regex(IMAGE_DIGEST_RE, {
-      message: "image must be digest-pinned (repo@sha256:<64 hex>)",
-    }),
-    imagePullSecret: z
-      .string()
-      .refine(
-        (value) => value.startsWith("secretRef:") && SecretNameSchema.safeParse(value.slice(10)).success,
-        "imagePullSecret must name a stored secret",
-      )
-      .optional(),
-    command: CommandSchema.default([
-      "/usr/local/bin/pocketcoder-supervisor",
-      "supervise",
-      "--launch-input",
-      "/run/pocketcoder/input",
-    ]),
-    setup: z.array(SetupStepSchema).max(32).default([]),
-    agent: AgentSchema.optional(),
-    harness: HarnessSchema.optional(),
-    terminal: TerminalSchema.optional(),
-    previews: PreviewsSchema.optional(),
-    display: DisplaySchema.optional(),
-    env: EnvSchema.default({}),
-    resources: ResourcesSchema,
-    timeouts: TimeoutsSchema.prefault({}),
-    services: z.record(z.string().regex(NAME_RE), ServiceSchema).optional(),
-    security: SecuritySchema.prefault({}),
-    network: NetworkPolicySchema,
-    maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
-    compat: z
-      .object({
-        agent: z.string().optional(),
-        agentapi: z.string().optional(),
-      })
-      .default({}),
-    persistence: PersistenceSpecSchema.prefault({}),
-    source: SourceSpecSchema.nullable().default(null),
-    checkpointHook: CheckpointHookSchema.optional(),
-    outputs: z.record(z.string().regex(NAME_RE), OutputDeclarationSchema).default({}),
-  })
-  .superRefine((spec, ctx) => {
-    if (!spec.agent && !spec.harness) {
+export const RuntimeTemplatePolicySchema = z.object({
+  version: z.string().regex(SEMVER_RE),
+  image: z.string().regex(IMAGE_DIGEST_RE, {
+    message: "image must be digest-pinned (repo@sha256:<64 hex>)",
+  }),
+  imagePullSecret: z
+    .string()
+    .refine(
+      (value) => value.startsWith("secretRef:") && SecretNameSchema.safeParse(value.slice(10)).success,
+      "imagePullSecret must name a stored secret",
+    )
+    .optional(),
+  command: CommandSchema.default([
+    "/usr/local/bin/pocketcoder-supervisor",
+    "supervise",
+    "--launch-input",
+    "/run/pocketcoder/input",
+  ]),
+  setup: z.array(SetupStepSchema).max(32).default([]),
+  agent: AgentSchema.optional(),
+  harness: HarnessSchema.optional(),
+  terminal: TerminalSchema.optional(),
+  previews: PreviewsSchema.optional(),
+  display: DisplaySchema.optional(),
+  env: EnvSchema.default({}),
+  resources: ResourcesSchema,
+  timeouts: TimeoutsSchema.prefault({}),
+  services: z.record(z.string().regex(NAME_RE), ServiceSchema).optional(),
+  security: SecuritySchema.prefault({}),
+  network: NetworkPolicySchema,
+  maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
+  compat: z
+    .object({
+      agent: z.string().optional(),
+      agentapi: z.string().optional(),
+    })
+    .default({}),
+  persistence: PersistenceSpecSchema.prefault({}),
+  source: SourceSpecSchema.nullable().default(null),
+  checkpointHook: CheckpointHookSchema.optional(),
+  outputs: z.record(z.string().regex(NAME_RE), OutputDeclarationSchema).default({}),
+});
+
+export type RuntimeTemplatePolicy = z.infer<typeof RuntimeTemplatePolicySchema>;
+
+const TemplateSpecInputSchema = RuntimeTemplatePolicySchema.superRefine((spec, ctx) => {
+  if (!spec.agent && !spec.harness) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["harness"],
+      message: "either agent or harness is required",
+    });
+  }
+  if (!spec.agent) return;
+  if (spec.agent.transport === "acp") {
+    for (const field of ["termWidth", "stateFile", "interruptKeys"] as const) {
+      if (spec.agent[field] === undefined) continue;
       ctx.addIssue({
         code: "custom",
-        path: ["harness"],
-        message: "either agent or harness is required",
+        path: ["agent", field],
+        message: `${field} is only valid for PTY transport`,
       });
     }
-    if (!spec.agent) return;
-    if (spec.agent.transport === "acp") {
-      for (const field of ["termWidth", "stateFile", "interruptKeys"] as const) {
-        if (spec.agent[field] === undefined) continue;
-        ctx.addIssue({
-          code: "custom",
-          path: ["agent", field],
-          message: `${field} is only valid for PTY transport`,
-        });
-      }
-    }
-    for (const field of ["harness", "services", "checkpointHook"] as const) {
-      if (spec[field] === undefined) continue;
-      ctx.addIssue({
-        code: "custom",
-        path: [field],
-        message: `agent cannot be combined with ${field}`,
-      });
-    }
-  });
+  }
+  for (const field of ["harness", "services", "checkpointHook"] as const) {
+    if (spec[field] === undefined) continue;
+    ctx.addIssue({
+      code: "custom",
+      path: [field],
+      message: `agent cannot be combined with ${field}`,
+    });
+  }
+});
 
 type TemplateSpecCommon = Omit<
   z.infer<typeof TemplateSpecInputSchema>,

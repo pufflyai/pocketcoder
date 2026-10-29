@@ -1,11 +1,17 @@
-import { type WorkloadTemplateSnapshot, WorkloadTemplateSnapshotSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  parseWorkloadTemplate,
+  type WorkloadLimits,
+  type WorkloadTemplateSnapshot,
+  WorkloadTemplateSnapshotSchema,
+  workloadAdmission,
+} from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceDriver } from "../driver";
 import type { WorkspaceRow, WorkspaceStore } from "../types";
 
 // Admission calls this after creation and before registration. It does not
 // advertise the complete profile; input/export qualification remains separate.
 export async function prepareWaitingRuntime(
-  deps: { store: WorkspaceStore; driver: WorkspaceDriver },
+  deps: { store: WorkspaceStore; driver: WorkspaceDriver; workloadLimits?: WorkloadLimits },
   workspace: WorkspaceRow,
   input: WorkloadTemplateSnapshot,
 ) {
@@ -25,6 +31,20 @@ export async function prepareWaitingRuntime(
       producer.templateDigest !== template.digest)
   )
     throw new Error("Installed producer identity mismatch");
+  if (workspace.templateSnapshot.manifest) {
+    if (!deps.workloadLimits) throw new Error("Deployment workload limits are not configured.");
+    const admission = workloadAdmission(parseWorkloadTemplate(template.manifest), {
+      workspaceId: workspace.id,
+      incarnationId,
+      profiles: ["service"],
+      storageProfiles: ["controller-readonly/v1"],
+      ceilings: deps.workloadLimits,
+      now: new Date().toISOString(),
+      expiresAt: workspace.deadlineAt.toISOString(),
+      installed: producer ?? undefined,
+    });
+    if (!admission.supported) throw new Error(`Installed workload is not qualified: ${admission.reasons.join("; ")}`);
+  }
   const bound = await deps.store.bindWorkspaceRuntime(
     workspace.id,
     {

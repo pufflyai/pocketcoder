@@ -61,7 +61,14 @@ export function createExecutionDispatch(context: DatabaseContext) {
         .where(isNotNull(conversationRequests.execution));
       return [...rows, ...requests]
         .map((r) => requiredRow(r.record))
-        .filter((r) => !executionSettled(r) || needsAcknowledgment(r));
+        .filter(
+          (r) =>
+            !executionSettled(r) ||
+            needsAcknowledgment(r) ||
+            (r.acceptance.execution.owner === "conversation-request" &&
+              ["terminal", "canceled"].includes(r.phase) &&
+              !r.finalizedAt),
+        );
     },
     reconcile(execution: WorkloadExecutionReference) {
       return withOwner(execution, async (_tx, workspace, record) => reconcileExecution(workspace, record));
@@ -102,7 +109,9 @@ export function createExecutionDispatch(context: DatabaseContext) {
         const next: ExecutionRecord = {
           ...record,
           cancel: { cancelId: input.cancelId, requestedAt: at.toISOString() },
-          ...(record.dispatchClaimedAt ? {} : { phase: "canceled", settledAt: at.toISOString() }),
+          ...(record.dispatchClaimedAt
+            ? {}
+            : { phase: "canceled", settledAt: at.toISOString(), finalizedAt: at.toISOString() }),
         };
         await writeExecution(context, tx, next);
         if (!record.dispatchClaimedAt)
