@@ -45,18 +45,18 @@ auth pepper. You do not need a fresh controller, new principals or new keys.
    POCKETCODER_DATABASE_URL=... POCKETCODER_DATABASE_SCHEMA=pocketcoder pcd db migrate
    ```
 
-   It applies the 1.0 migrations under an advisory lock. Then it converts the
+   It applies the 0.9 migrations under an advisory lock. Then it converts the
    conversation history into documents, one workspace per transaction, and prints
    its progress. If it stops, run it again: it continues where it stopped, and a
    finished conversion changes nothing.
-4. Start the 1.0 controller with `POCKETCODER_DATABASE_URL`, the same
+4. Start the 0.9 controller with `POCKETCODER_DATABASE_URL`, the same
    `POCKETCODER_AUTH_PEPPER`, and a new private volume for
    `POCKETCODER_JOURNAL_DIR` (see [deployment](deployment.md#store)).
 
 What the upgrade does:
 
 - **0.8.1 history.** 0.8.1 shipped `20261013125843_tiny_marvel_zombies`, which the
-  1.0 chain does not contain. 1.0 has the same statements in
+  0.9 chain does not contain. 0.9 has the same statements in
   `20261014100009_marvelous_praxagora`, plus two reason-code constraints. The
   migrator detects the 0.8.1 migration, applies only the two missing constraints
   and records `marvelous_praxagora` with its real hash. No shipped migration
@@ -81,7 +81,7 @@ What carries over:
 | Conversation history and request receipts | |
 
 **Custom tables.** Some consumers added their own tables to the `pocketcoder`
-schema, for example through an admission migration patch. 1.0 does not read or
+schema, for example through an admission migration patch. 0.9 does not read or
 change them, but they share the schema's name space. Before upgrading, list them:
 
 ```sql
@@ -92,7 +92,7 @@ Compare the list with the tables of a scratch database that `pcd db migrate` jus
 created. Move every extra table to the consumer's own schema, or drop it once its
 data is no longer needed.
 
-PGlite data folders from 1.0 candidates open with the 1.0 release directly; their
+PGlite data folders from 0.9 candidates open with the 0.9 release directly; their
 history converts the first time the store opens. See the
 [release checklist](release.md) for the rule that every release upgrades the
 previous one in place.

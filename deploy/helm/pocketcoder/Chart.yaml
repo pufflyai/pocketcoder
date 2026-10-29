@@ -3,8 +3,8 @@ name: pocketcoder
 description: PocketCoder controller for Kubernetes. PostgreSQL by default, PGlite optional.
 type: application
 # Set from the release tag when the chart is packaged; see docs/deployment.md.
-version: 1.0.0
-appVersion: "1.0.0"
+version: 0.9.0
+appVersion: "0.9.0"
 home: https://github.com/pufflyai/pocketcoder
 sources:
   - https://github.com/pufflyai/pocketcoder

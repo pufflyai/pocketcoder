@@ -25,7 +25,7 @@ need a fresh controller, new principals or new keys to take a release.
 
    - PostgreSQL starts from the last 0.8.x release (and a database first written
      by 0.7.1).
-   - PGlite has no shipped release yet. Add the first 1.0 release to the test as
+   - PGlite has no shipped release yet. Add the first 0.9 release to the test as
      soon as it is tagged.
 3. **Release notes name every manual step.** The default is none. If a release
    needs one, the notes say what it is and which databases it applies to.
@@ -44,7 +44,7 @@ Add the new tag to the upgrade test cases, so the next release upgrades from it.
 
 A migration that shipped on a line that the next release does not continue is
 reconciled by an upgrade step instead of being shipped again. 0.8.1's
-`20261013125843_tiny_marvel_zombies` is the only one: the 1.0 migrator detects
+`20261013125843_tiny_marvel_zombies` is the only one: the 0.9 migrator detects
 it, applies only the constraints from `20261014100009_marvelous_praxagora` that
 it lacks and records that migration with its real hash. See
 [migration](migration.md#upgrade-from-08x-on-postgresql).
