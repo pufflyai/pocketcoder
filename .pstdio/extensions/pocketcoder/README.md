@@ -6,9 +6,9 @@ For normal workspace provisioning, install [PocketCoder Workspaces](../pocketcod
 
 ## Setup
 
-Use pstdio 0.40.0 or later with extension API 0.1.1, Docker Engine, and a PocketCoder 1.0 executable. Stable 0.x binaries do not have the required embedded database and private admin socket.
+Use pstdio 0.40.0 or later with extension API 0.1.1, Docker Engine, and a PocketCoder 0.9 executable. Released 0.8.x binaries do not have the required embedded database and private admin socket.
 
-From the 1.0 integration checkout:
+From the integration checkout:
 
 ```sh
 bun install
@@ -19,12 +19,12 @@ pst extensions dev .pstdio/extensions/pocketcoder
 
 The extension keeps its own dependencies and `bun.lock`, so the root `bun install` does not install them. Install them before you run the root typecheck or tests.
 
-Use the absolute path to `out/native/pocketcoder` in the launch form, or install a tested 1.0 candidate as `pocketcoder` on PATH. The extension does not download or update executables.
+Use the absolute path to `out/native/pocketcoder` in the launch form, or install a tested 0.9 candidate as `pocketcoder` on PATH. The extension does not download or update executables.
 
 ## Dashboard
 
 1. Open **PocketCoder Lab** in project navigation. The main table lists agent templates from `.pstdio/templates/pocketcoder`. Ask an agent to write prepared JSON or YAML manifests there, then click the small **Refresh** button. The table shows name, version, description, file and format issues. It reads project files even before a local service exists.
-2. Click the small **Launch instance** button. Choose a listed template, enter an instance name and the 1.0 executable path. Launch publishes only that selected manifest; the service validates the complete template. A refused publication stops and removes the new instance.
+2. Click the small **Launch instance** button. Choose a listed template, enter an instance name and the 0.9 executable path. Launch publishes only that selected manifest; the service validates the complete template. A refused publication stops and removes the new instance.
 3. The **Local service connection** panel shows each configured instance. **Connected** means an authenticated service request succeeded. **Unreachable** means it failed, including when a controller process exists but its HTTP listener cannot be reached. **Key expired** means its private owner key needs renewal. With no instances, the panel shows **Local service disconnected**. Refresh checks again. Select an instance row to open its machines.
 4. Open the instance row. Click **Import templates** if needed. Templates must use immutable, locally available images. For a coding agent, use your deployment's template and workspace-scoped model gateway. Do not put a provider API key in a template or machine input.
 5. Click **Launch machine** and choose a template version. The command creates a pstdio workspace using the **PocketCoder agent machine** provider. Its state starts as provisioning. The instance table shows its status; refresh while it starts.

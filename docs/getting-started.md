@@ -272,7 +272,7 @@ A runtime that needs provider authority must use credentials scoped to its
 workspace that expire with it; never copy an owner, controller or registry key
 into a template or workspace. The issuer/private-pull matrix and controller restore
 remain separate development work. This command proves the local flow, not the
-full 1.0 release.
+full 0.9 release.
 
 For a persistent local Pi deployment, after configuring the data folder, a principal
 and machine key, run the optional repository convenience:
