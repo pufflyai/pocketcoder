@@ -1,6 +1,6 @@
 # Pi bridge demo result
 
-PC-114 checks the existing Pi bridge as the first PocketCoder 1.0 client path.
+PC-114 checks the existing Pi bridge as the first PocketCoder 0.9 client path.
 The demo uses real Pi coding tools through AgentAPI and a deterministic host
 gateway. No paid model account is needed. See the [user runbook](pi-client-runbook.md).
 

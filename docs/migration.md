@@ -1,7 +1,7 @@
 # Upgrading from coder-lite
 
 This is the complete public rename delta from coder-lite to PocketCoder. The
-table is frozen through PocketCoder 1.0: no additional coder-lite names will be
+table is frozen through PocketCoder 0.9: no additional coder-lite names will be
 renamed or removed before that release.
 
 | coder-lite | PocketCoder |
