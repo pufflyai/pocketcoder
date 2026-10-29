@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { isTerminal } from "@pstdio/pocketcoder-contracts";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import {
   BackupRuntimeProofSchema,
   type OffNode,
@@ -12,7 +12,7 @@ import {
 } from "@pstdio/pocketcoder-db/off-node";
 import { hasMatchingKubernetesTermination } from "@pstdio/pocketcoder-drivers";
 
-export async function runtimeRow(store: PGliteStore, identity: RuntimeIdentity) {
+export async function runtimeRow(store: DatabaseStore, identity: RuntimeIdentity) {
   const row =
     identity.kind === "workspace" ? await store.getWorkspace(identity.id) : await store.getWarmPoolRuntime(identity.id);
   if (!row?.providerRef) throw new Error("Archived runtime source row is missing.");
@@ -31,7 +31,7 @@ export function requireRuntimeTermination(identity: RuntimeIdentity, termination
     throw new Error("Archived runtime termination identity is unproved.");
 }
 
-export async function capturedRuntimeProof(store: PGliteStore, offNode: OffNode, operationId: string) {
+export async function capturedRuntimeProof(store: DatabaseStore, offNode: OffNode, operationId: string) {
   const receipt = OffNodeBackupReceiptSchema.parse(
     JSON.parse(
       (await readPrivateFile(join(offNode.directory, "operations", operationId, "receipt.json"), 65_536)).toString(),

@@ -239,3 +239,28 @@ test.each(["running", "stable"] as const)("forwards identified facts and revisio
   await monitor.syncMessages();
   expect(contents).toEqual(["fact-1", "fact-2", "fact-3", "updated final"]);
 });
+
+test("an idle agent's history is read once after it settles, not on every health probe", async () => {
+  let status = "running";
+  let reads = 0;
+  const { monitor, exec, contents } = fixture((request) => {
+    if (new URL(request.url).pathname === "/status") return Response.json({ status });
+    reads += 1;
+    return Response.json({ messages: [message(1, "user", "prompt"), message(2, "agent", "answer")] });
+  });
+  const probe = async () => {
+    await monitor.probeService(exec, "agent", false);
+    await Bun.sleep(5);
+  };
+  await probe();
+  expect(reads).toBe(1);
+  status = "stable";
+  await probe();
+  await probe();
+  await probe();
+  expect(reads).toBe(2);
+  expect(contents).toEqual(["prompt", "answer"]);
+  status = "running";
+  await probe();
+  expect(reads).toBe(3);
+});

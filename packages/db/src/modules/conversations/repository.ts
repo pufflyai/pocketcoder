@@ -1,129 +1,62 @@
-import { digestOf } from "@pstdio/pocketcoder-contracts";
-import type { ConversationMessageRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, asc, count, eq, gt, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
-import { type DatabaseContext, lock } from "../../database/context";
-import { requiredRow } from "../../database/required-row";
-import { requireContentWritable } from "../persistence/content";
-
+import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import { and, eq } from "drizzle-orm";
+import type { DatabaseContext } from "../../database/context";
+import { createConversationDocuments } from "./documents";
+import { createConversationReads } from "./reads";
 import { createConversationRequests } from "./request-receipts";
+import { clearConversations, conversationIds, createConversationRetention } from "./retention";
 
-const MAX_CONVERSATION_BYTES = 50 * 1024 * 1024;
-const MAX_CONVERSATION_MESSAGES = 100_000;
 export function createConversations(context: DatabaseContext) {
   const requestReceipts = createConversationRequests(context);
+  const documents = createConversationDocuments(context);
   const {
     db,
     journal,
-    tables: { workspaceConversations: conversations, workspaceConversationMessages: messages },
+    tables: { workspaceConversations, conversations },
   } = context;
   return {
     acceptConversationRequest: requestReceipts.acceptConversationRequest,
-    async appendConversationMessage(input: Omit<ConversationMessageRow, "seq">) {
-      return db.transaction(async (tx) => {
-        await requireContentWritable(tx, context.tables, input.workspaceId);
-        await lock(tx, input.workspaceId, 7081);
-        await requestReceipts.requireAccepted(tx, input);
-        const [state] = await tx
-          .select({ status: conversations.status })
-          .from(conversations)
-          .where(eq(conversations.workspaceId, input.workspaceId))
-          .for("update");
-        if (state?.status === "deleted") throw new Error("conversation.deleted");
-        const messageId = input.identity
-          ? digestOf([
-              input.identity.conversation_id,
-              input.identity.turn_id,
-              input.identity.event_id,
-              input.identity.revision,
-            ])
-          : input.messageId;
-        const [existing] = await tx
-          .select()
-          .from(messages)
-          .where(and(eq(messages.workspaceId, input.workspaceId), eq(messages.messageId, messageId)));
-        if (existing) return { message: existing, created: false };
-        await tx
-          .insert(conversations)
-          .values({ workspaceId: input.workspaceId, status: "retained", updatedAt: input.createdAt })
-          .onConflictDoNothing({ target: conversations.workspaceId });
-        const [stats] = await tx
-          .select({
-            seq: sql`coalesce(max(${messages.seq}),0)`.mapWith(Number),
-            count: count(),
-            bytes:
-              sql`coalesce(sum(octet_length(${messages.content})+octet_length(${messages.metadata}::text)+coalesce(octet_length(${messages.identity}::text),0)),0)`.mapWith(
-                Number,
-              ),
-          })
-          .from(messages)
-          .where(eq(messages.workspaceId, input.workspaceId));
-        const inputBytes =
-          Buffer.byteLength(input.content) +
-          Buffer.byteLength(JSON.stringify(input.metadata)) +
-          (input.identity ? Buffer.byteLength(JSON.stringify(input.identity)) : 0);
-        if (
-          requiredRow(stats).count >= MAX_CONVERSATION_MESSAGES ||
-          requiredRow(stats).bytes + inputBytes > MAX_CONVERSATION_BYTES
-        )
-          throw new Error("conversation.quota_exceeded");
-        const [message] = await tx
-          .insert(messages)
-          .values({ ...input, messageId, seq: requiredRow(stats).seq + 1 })
-          .returning();
-        return { message: requiredRow(message), created: true };
-      });
-    },
-    async readConversation(workspaceId: string, afterSeq: number, limit: number) {
-      return db
-        .select()
-        .from(messages)
-        .where(and(eq(messages.workspaceId, workspaceId), gt(messages.seq, afterSeq)))
-        .orderBy(asc(messages.seq))
-        .limit(limit);
-    },
+    isAcceptedTurn: (workspaceId: string, identity: ConversationRequestIdentity) =>
+      requestReceipts.isAccepted(workspaceId, identity),
+    ...documents,
+    ...createConversationReads(context),
+    ...createConversationRetention(context, documents.commitConversationTurn),
     async getConversationState(workspaceId: string) {
-      const [row] = await db.select().from(conversations).where(eq(conversations.workspaceId, workspaceId));
+      const [row] = await db
+        .select()
+        .from(workspaceConversations)
+        .where(eq(workspaceConversations.workspaceId, workspaceId));
       return row ?? null;
     },
-    async setConversationExpiry(workspaceId: string, expiresAt: Date, at: Date) {
-      await db
-        .insert(conversations)
-        .values({ workspaceId, status: "retained", expiresAt, updatedAt: at })
-        .onConflictDoUpdate({
-          target: conversations.workspaceId,
-          set: { expiresAt, updatedAt: at },
-          setWhere: ne(conversations.status, "deleted"),
-        });
-    },
+    // The journal entry is written first, so a restore replays the deletion.
     async deleteConversation(workspaceId: string, at: Date) {
       journal?.append({ kind: "conversation_deleted", workspaceId, at: at.toISOString() });
       await db.transaction(async (tx) => {
-        await tx.delete(messages).where(eq(messages.workspaceId, workspaceId));
+        await clearConversations(context, tx, conversationIds(context, tx, workspaceId), "deleted", at);
         await tx
-          .insert(conversations)
+          .insert(workspaceConversations)
           .values({ workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
           .onConflictDoUpdate({
-            target: conversations.workspaceId,
+            target: workspaceConversations.workspaceId,
             set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
           });
       });
     },
-    async pruneExpiredConversations(at: Date) {
-      const expired = db
-        .select({ workspaceId: conversations.workspaceId })
+    async deleteConversationById(principalId: string, conversationId: string, at: Date) {
+      const [row] = await db
+        .select({ id: conversations.id, workspaceId: conversations.workspaceId })
         .from(conversations)
-        .where(
-          and(
-            eq(conversations.status, "retained"),
-            isNotNull(conversations.expiresAt),
-            lte(conversations.expiresAt, at),
-          ),
-        );
-      const rows = await db
-        .delete(messages)
-        .where(inArray(messages.workspaceId, expired))
-        .returning({ workspaceId: messages.workspaceId });
-      return new Set(rows.map((row) => row.workspaceId)).size;
+        .where(and(eq(conversations.principalId, principalId), eq(conversations.conversationId, conversationId)));
+      if (!row) return false;
+      journal?.append({
+        kind: "conversation_deleted",
+        workspaceId: row.workspaceId,
+        principalId,
+        conversationId,
+        at: at.toISOString(),
+      });
+      await db.transaction((tx) => clearConversations(context, tx, [row.id], "deleted", at));
+      return true;
     },
   };
 }

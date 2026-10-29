@@ -121,7 +121,7 @@ if (args[0] === "image") {
         security: {
           uid: 12_345,
           gid: 23_456,
-          writableMemoryPaths: ["/tmp", "/home/onefin"],
+          writableMemoryPaths: ["/tmp", "/home/worker"],
         },
       },
     });
@@ -175,7 +175,7 @@ if (args[0] === "image") {
     );
     expect(args).not.toContain("MODEL_KEY_FILE=secretRef:model/key");
     expect(args).toContain("/tmp:rw,noexec,nosuid,size=256m,uid=12345,gid=23456,mode=0700");
-    expect(args).toContain("/home/onefin:rw,noexec,nosuid,size=256m,uid=12345,gid=23456,mode=0700");
+    expect(args).toContain("/home/worker:rw,noexec,nosuid,size=256m,uid=12345,gid=23456,mode=0700");
   });
 
   test("shares a restricted network namespace with a capability-limited egress companion", async () => {

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pgliteSqlClient } from "../database/sql-client";
 import { initialMigration, openMigrationDatabase, upgradeMigration } from "./crash-fixture";
 import { migrateDatabase } from "./migrator";
 
@@ -14,7 +15,7 @@ test("SIGKILL during an upgrade rolls back its schema and history, then reapplie
   try {
     const previous = await openMigrationDatabase(database);
     try {
-      expect(await migrateDatabase(previous, [initialMigration])).toEqual(["initial"]);
+      expect(await migrateDatabase(pgliteSqlClient(previous), [initialMigration])).toEqual(["initial"]);
     } finally {
       await previous.close();
     }
@@ -35,7 +36,9 @@ test("SIGKILL during an upgrade rolls back its schema and history, then reapplie
       expect((await recovered.query("SELECT to_regclass('pocketcoder.after_upgrade') AS relation")).rows).toEqual([
         { relation: null },
       ]);
-      expect(await migrateDatabase(recovered, [initialMigration, upgradeMigration()])).toEqual(["upgrade"]);
+      expect(await migrateDatabase(pgliteSqlClient(recovered), [initialMigration, upgradeMigration()])).toEqual([
+        "upgrade",
+      ]);
       expect((await recovered.query("SELECT name FROM pocketcoder.__drizzle_migrations ORDER BY id")).rows).toEqual([
         { name: "initial" },
         { name: "upgrade" },

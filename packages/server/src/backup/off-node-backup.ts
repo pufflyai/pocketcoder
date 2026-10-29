@@ -1,7 +1,7 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { inspectBackup, verifyBackup } from "@pstdio/pocketcoder-db/backup";
 import {
   decryptFile,
@@ -24,7 +24,7 @@ import { admitCapture, releaseCapture } from "./off-node-capacity";
 import { capturedRuntimeProof } from "./runtime-proof";
 
 export function createOffNodeBackup(deps: {
-  store: PGliteStore;
+  store: DatabaseStore;
   offNode: OffNode;
   backup: ControllerBackup;
   staging?: StagingPolicy;

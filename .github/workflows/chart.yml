@@ -1,0 +1,42 @@
+name: helm chart
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch: null
+permissions: {}
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the chart renders
+        run: |
+          helm lint deploy/helm/pocketcoder \
+            --set image.repository=ghcr.io/${{ github.repository }}/server \
+            --set image.digest=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            --set store.database.urlSecret.name=database --set keys.secretName=keys
+      - name: Package the chart at the release version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm package deploy/helm/pocketcoder --version "$version" --app-version "$version" --destination dist
+      - id: push
+        name: Publish the chart to the OCI registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$REGISTRY_TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push dist/pocketcoder-*.tgz "oci://ghcr.io/${{ github.repository_owner }}/charts" 2>&1 | tee push.log
+          echo "digest=$(grep -o 'sha256:[a-f0-9]\{64\}' push.log | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Sign the chart with build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/charts/pocketcoder
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

@@ -1,15 +1,14 @@
 import type { SourceWriter } from "@pstdio/pocketcoder-contracts";
 import { eq } from "drizzle-orm";
-import type { PgliteDatabase } from "drizzle-orm/pglite";
+import type { DatabaseContext } from "../database/context";
 import { sourceWriterIdentity } from "../recovery/source-writer";
-import type { createSchema } from "../schema";
 import { openJournal } from "./journal";
 
 // Binds the data folder to its deletion journal. Outside recovery, only the data folder
 // that last claimed the journal may write; a restore moves that claim to the new folder.
 export async function bindJournal(
-  db: PgliteDatabase,
-  tables: ReturnType<typeof createSchema>,
+  db: DatabaseContext["db"],
+  tables: DatabaseContext["tables"],
   dataDirectory: string,
   writer: SourceWriter,
   override?: string,

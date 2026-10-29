@@ -6,7 +6,7 @@ import {
   restoreOffNodeBackup,
 } from "@pstdio/pocketcoder-db/off-node";
 import type { Argv } from "yargs";
-import { need } from "../command/cli-context";
+import { need, requireEmbeddedStore } from "../command/cli-context";
 import { requestLocalAdministration } from "../command/local-admin";
 import { addAction } from "./command";
 
@@ -18,6 +18,7 @@ export function addOffNodeBackupCommands(commands: Argv) {
     (command) =>
       command.option("dir", { type: "string" }).option("operation-id", { type: "string", demandOption: true }),
     async (flags) => {
+      requireEmbeddedStore("pcd backup");
       const result = await requestLocalAdministration(
         flags,
         "/v1/backup/off-node",
@@ -40,6 +41,7 @@ export function addOffNodeBackupCommands(commands: Argv) {
         .option("off-node-config", { type: "string", demandOption: true })
         .option("operation-id", { type: "string", demandOption: true }),
     async (flags) => {
+      requireEmbeddedStore("pcd backup");
       const dataDir = resolve(need(flags, "dir"));
       const offNode = await loadOffNodeConfig(resolve(need(flags, "off-node-config")), dataDir);
       const receipt = OffNodeBackupReceiptSchema.parse(

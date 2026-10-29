@@ -6,13 +6,26 @@ import type { ServerLog } from "./lifecycle";
 import { startExclusiveTimer } from "./lifecycle-resources";
 import type { loadPolicyReconciliation } from "./policy-reconciliation";
 
+// A workspace that ends during a turn never sends the turn's terminal fact.
+async function closeEndedTurns({
+  store,
+  liveTurns,
+}: Pick<Parameters<typeof startBackgroundTimers>[0], "store" | "liveTurns">) {
+  for (const workspaceId of liveTurns.workspaces()) {
+    const workspace = await store.getWorkspace(workspaceId);
+    if (!workspace || workspace.terminalAt) await liveTurns.close(workspaceId, workspace?.terminalAt ?? new Date());
+  }
+}
+
 // Every background tick pauses during a maintenance window and catches up after it.
 export function startBackgroundTimers(
   deps: Parameters<typeof createCoordinatorTick>[0] & {
     config: ServerConfig;
     inputs?: import("../attachments/input-storage").InputStorage;
+    liveTurns: import("../conversations/live-turns").LiveTurns;
     maintenance: Maintenance;
     log: ServerLog;
+    managedPrincipals?: () => Promise<void>;
     outbox: OutboxDispatcher;
     policyReconciliation: ReturnType<typeof loadPolicyReconciliation>;
     warmPool?: WarmPoolManager;
@@ -24,6 +37,7 @@ export function startBackgroundTimers(
   const timers = [
     start(config.schedulerIntervalMs, createCoordinatorTick(deps), "scheduler tick failed"),
     start(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed"),
+    start(config.schedulerIntervalMs, () => closeEndedTurns(deps), "conversation sweep failed"),
     start(
       60_000,
       async () => {
@@ -51,6 +65,9 @@ export function startBackgroundTimers(
         "policy reconciliation failed",
       ),
     );
+  // Renewal needs only minute precision: keys renew hours before they expire.
+  if (deps.managedPrincipals)
+    timers.push(start(300_000, deps.managedPrincipals, "managed principal reconciliation failed"));
   if (warmPool)
     timers.push(start(config.schedulerIntervalMs, () => warmPool.reconcile(), "warm pool reconciliation failed"));
   return {

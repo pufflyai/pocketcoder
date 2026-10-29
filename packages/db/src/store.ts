@@ -1,15 +1,13 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
 import { type BackupOptions, writeBackup } from "./backup/write-backup";
-import {
-  createDatabaseContext,
-  createLifecycle,
-  type DatabaseContext,
-  type DatabaseOpenOptions,
-} from "./database/context";
+import { createLifecycle, type DatabaseContext, type DatabaseOpenOptions } from "./database/context";
+import { createPGliteContext } from "./database/pglite-context";
+import { createPostgresContext, type PostgresOptions } from "./database/postgres-context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import type { JournalSnapshot } from "./journal/acknowledgement";
 import { createJournalAcknowledgement } from "./journal/acknowledgement";
 import { createAuth } from "./modules/auth/repository";
+import { convertLegacyConversations } from "./modules/conversations/legacy-conversion";
 import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
 import { createNetworkAudit } from "./modules/network-audit/repository";
@@ -36,8 +34,9 @@ import { createFiniteProcesses } from "./modules/workspaces/finite-process";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
+import { createRecordReplay } from "./recovery/replay-records";
 
-export class PGliteStore implements Store {
+export class DatabaseStore implements Store {
   readonly executions: Store["executions"];
   readonly inputs: Store["inputs"];
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
@@ -46,11 +45,39 @@ export class PGliteStore implements Store {
   readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
   readonly recovery: ReturnType<typeof createRecovery>;
 
-  static async create(dataDir?: string, options?: DatabaseOpenOptions) {
-    return new PGliteStore(await createDatabaseContext(dataDir, options));
+  static async openPGlite(dataDir?: string, options?: DatabaseOpenOptions) {
+    const context = await createPGliteContext(dataDir, options);
+    try {
+      await convertLegacyConversations(context);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
   }
 
+  // A database restore can roll back revocations and deletions. Journal records name exact
+  // targets, so replaying all of them on every start keeps those changes in force.
+  static async openPostgres(options: PostgresOptions) {
+    const context = await createPostgresContext(options);
+    try {
+      await convertLegacyConversations(context, { onProgress: options.onConversionProgress });
+      const replay = createRecordReplay(context);
+      for (const record of context.journal?.records() ?? []) await replay(record.event);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
+  }
+
+  readonly driver: DatabaseContext["driver"];
+  // Test fixtures and operator commands reach the raw connection through this.
+  readonly context: DatabaseContext;
+
   constructor(context: DatabaseContext) {
+    this.driver = context.driver;
+    this.context = context;
     const journal = createJournalAcknowledgement(context);
     this.acknowledgeJournal = journal.acknowledge;
     this.journalStatus = journal.status;
@@ -101,6 +128,7 @@ export class PGliteStore implements Store {
     this.createPrincipal = auth.createPrincipal;
     this.createManagedPrincipal = auth.createManagedPrincipal;
     this.updateManagedPrincipal = journal.after(auth.updateManagedPrincipal);
+    this.applyConfiguredPrincipal = journal.after(auth.applyConfiguredPrincipal);
     this.getPrincipalByName = auth.getPrincipalByName;
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
@@ -108,6 +136,7 @@ export class PGliteStore implements Store {
     this.getPrincipal = auth.getPrincipal;
     this.issueMachineKey = auth.issueMachineKey;
     this.listMachineKeys = auth.listMachineKeys;
+    this.listActiveMachineKeys = auth.listActiveMachineKeys;
     this.revokePrincipalKeys = journal.after(auth.revokePrincipalKeys);
     this.insertMachineKey = auth.insertMachineKey;
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
@@ -170,12 +199,19 @@ export class PGliteStore implements Store {
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
     this.acceptConversationRequest = conversations.acceptConversationRequest;
-    this.appendConversationMessage = conversations.appendConversationMessage;
-    this.readConversation = conversations.readConversation;
+    this.isAcceptedTurn = conversations.isAcceptedTurn;
+    this.commitConversationTurn = conversations.commitConversationTurn;
+    this.appendWorkspaceMessage = conversations.appendWorkspaceMessage;
+    this.readWorkspaceConversation = conversations.readWorkspaceConversation;
+    this.listConversations = conversations.listConversations;
+    this.getConversation = conversations.getConversation;
+    this.readConversationMessages = conversations.readConversationMessages;
+    this.readConversationRecords = conversations.readConversationRecords;
     this.getConversationState = conversations.getConversationState;
-    this.setConversationExpiry = conversations.setConversationExpiry;
     this.deleteConversation = journal.after(conversations.deleteConversation);
-    this.pruneExpiredConversations = journal.after(conversations.pruneExpiredConversations);
+    this.deleteConversationById = journal.after(conversations.deleteConversationById);
+    this.recordInterruptedTurns = conversations.recordInterruptedTurns;
+    this.pruneExpiredConversations = conversations.pruneExpiredConversations;
     const terminals = createTerminals(context);
     this.openTerminalSession = terminals.openTerminalSession;
     this.getTerminalSession = terminals.getTerminalSession;
@@ -223,6 +259,7 @@ export class PGliteStore implements Store {
   readonly retireTemplate: Store["retireTemplate"];
   readonly createManagedPrincipal: Store["createManagedPrincipal"];
   readonly updateManagedPrincipal: Store["updateManagedPrincipal"];
+  readonly applyConfiguredPrincipal: Store["applyConfiguredPrincipal"];
   readonly bootstrapOwnerKey: Store["bootstrapOwnerKey"];
   readonly createPrincipal: Store["createPrincipal"];
   readonly getPrincipalByName: Store["getPrincipalByName"];
@@ -232,6 +269,7 @@ export class PGliteStore implements Store {
   readonly getPrincipal: Store["getPrincipal"];
   readonly issueMachineKey: Store["issueMachineKey"];
   readonly listMachineKeys: Store["listMachineKeys"];
+  readonly listActiveMachineKeys: Store["listActiveMachineKeys"];
   readonly revokePrincipalKeys: Store["revokePrincipalKeys"];
   readonly insertMachineKey: Store["insertMachineKey"];
   readonly getMachineKeyWithPrincipal: Store["getMachineKeyWithPrincipal"];
@@ -278,11 +316,18 @@ export class PGliteStore implements Store {
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
   readonly acceptConversationRequest: Store["acceptConversationRequest"];
-  readonly appendConversationMessage: Store["appendConversationMessage"];
-  readonly readConversation: Store["readConversation"];
+  readonly isAcceptedTurn: Store["isAcceptedTurn"];
+  readonly commitConversationTurn: Store["commitConversationTurn"];
+  readonly appendWorkspaceMessage: Store["appendWorkspaceMessage"];
+  readonly readWorkspaceConversation: Store["readWorkspaceConversation"];
+  readonly listConversations: Store["listConversations"];
+  readonly getConversation: Store["getConversation"];
+  readonly readConversationMessages: Store["readConversationMessages"];
+  readonly readConversationRecords: Store["readConversationRecords"];
   readonly getConversationState: Store["getConversationState"];
-  readonly setConversationExpiry: Store["setConversationExpiry"];
   readonly deleteConversation: Store["deleteConversation"];
+  readonly deleteConversationById: Store["deleteConversationById"];
+  readonly recordInterruptedTurns: Store["recordInterruptedTurns"];
   readonly pruneExpiredConversations: Store["pruneExpiredConversations"];
   readonly openTerminalSession: Store["openTerminalSession"];
   readonly getTerminalSession: Store["getTerminalSession"];

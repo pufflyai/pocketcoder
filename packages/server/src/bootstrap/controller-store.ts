@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { constants, existsSync } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { type DatabaseOpenOptions, PGliteStore } from "@pstdio/pocketcoder-db";
+import { type DatabaseOpenOptions, DatabaseStore } from "@pstdio/pocketcoder-db";
 import { syncPrivateDirectory } from "./private-files";
 
 const keyNames = ["auth-pepper", "event-signing-key", "secret-key"] as const;
@@ -84,7 +84,7 @@ export async function openControllerStore(dataDir: string, journalDir?: string, 
       await hooks.beforeOpen?.(directory);
     },
   };
-  const store = await PGliteStore.create(dataDir, options);
+  const store = await DatabaseStore.openPGlite(dataDir, options);
   if (!keys) {
     await store.close();
     throw new Error("controller store requires a disk data folder");

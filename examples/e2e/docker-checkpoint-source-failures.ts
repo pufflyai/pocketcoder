@@ -5,7 +5,7 @@ import {
   OperationResourceSchema,
   PreserveResponseSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { assertRecoverableSource, assertRejectedCheckpoint, cancelRecoverableSource } from "./checkpoint-rejection";
 import { checkpointSourceFixture } from "./checkpoint-source-fixture";
 import type { ReadyHarnessWorkspace } from "./contract";
@@ -49,7 +49,7 @@ async function assertFailedSettlement(
     operationId: string;
   }>,
 ) {
-  const store = await PGliteStore.create(fixture.dataDir);
+  const store = await DatabaseStore.openPGlite(fixture.dataDir);
   try {
     await store.init();
     if ((await readdir(fixture.checkpointDir)).length)

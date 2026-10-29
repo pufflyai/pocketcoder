@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { SourceWriterSchema } from "@pstdio/pocketcoder-contracts";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import {
   type OffNode,
   OffNodeBackupReceiptSchema,
@@ -17,7 +17,7 @@ const Marker = z.strictObject({
   sourceWriter: SourceWriterSchema,
   receipt: OffNodeBackupReceiptSchema,
 });
-export function createOffNodeRecovery(store: PGliteStore, offNode: OffNode, directory: string) {
+export function createOffNodeRecovery(store: DatabaseStore, offNode: OffNode, directory: string) {
   async function marker() {
     return Marker.parse(
       JSON.parse((await readPrivateFile(join(directory, "off-node-restore.json"), 65_536)).toString()),

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 import { allocated, materialized, sourceFootprint, stagingDisk } from "../off-node/staging-capacity";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 import { openRawDatabase } from "./raw-database";
 
 test("an owned physical PGlite copy rejects engine growth before it exceeds admitted bytes", async () => {
@@ -12,7 +12,7 @@ test("an owned physical PGlite copy rejects engine growth before it exceeds admi
   let client: PGlite | undefined;
   let unbounded: PGlite | undefined;
   try {
-    const source = await PGliteStore.create(join(root, "source"));
+    const source = await DatabaseStore.openPGlite(join(root, "source"));
     await source.close();
     const copy = join(root, "copy");
     await cp(join(root, "source", "db"), copy, { recursive: true });

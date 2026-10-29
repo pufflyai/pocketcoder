@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { loadCoreAssets } from "../database/assets";
 import { DurableFilesystem } from "../database/durable-filesystem";
+import { pgliteSqlClient } from "../database/sql-client";
 import { migrateDatabase } from "./migrator";
 
 export const initialMigration = {
@@ -32,6 +33,6 @@ if (import.meta.main) {
   const [dir] = process.argv.slice(2);
   if (!dir) throw new Error("database path required");
   const client = await openMigrationDatabase(dir);
-  await migrateDatabase(client, [initialMigration, upgradeMigration(true)]);
+  await migrateDatabase(pgliteSqlClient(client), [initialMigration, upgradeMigration(true)]);
   await client.close();
 }

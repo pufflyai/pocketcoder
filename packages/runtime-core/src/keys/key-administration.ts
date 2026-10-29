@@ -30,6 +30,8 @@ export async function issuePrincipalKey(
     managedPrincipalIds?: string[];
     operatorBootstrap?: boolean;
     actorKeyId?: string;
+    // Rotation digests the caller's request, not the expiry derived from it, so replays reconcile.
+    requestDigest?: string;
   } = {},
 ) {
   const scopes = [...new Set(request.scopes)].sort();
@@ -53,12 +55,14 @@ export async function issuePrincipalKey(
       templateNames: request.templates ? [...new Set(request.templates)].sort() : principal.templateNames,
       managedPrincipalIds,
       issuanceRequestId: request.request_id,
-      issuanceRequestDigest: digestOf({
-        scopes,
-        expires_at: expiresAt?.toISOString() ?? null,
-        managed_principal_ids: managedPrincipalIds,
-        templates: request.templates ? [...new Set(request.templates)].sort() : null,
-      }),
+      issuanceRequestDigest:
+        options.requestDigest ??
+        digestOf({
+          scopes,
+          expires_at: expiresAt?.toISOString() ?? null,
+          managed_principal_ids: managedPrincipalIds,
+          templates: request.templates ? [...new Set(request.templates)].sort() : null,
+        }),
       createdAt: new Date(),
       expiresAt,
       revokedAt: null,

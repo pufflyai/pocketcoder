@@ -1,0 +1,15 @@
+{{- if not (regexMatch "^[^@]+$" .Values.image.repository) }}
+{{- fail "image.repository is required, without a tag or digest" }}
+{{- end }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.image.digest) }}
+{{- fail "image.digest must pin the controller image (sha256:...)" }}
+{{- end }}
+{{- if not (has .Values.store.kind (list "postgres" "pglite")) }}
+{{- fail "store.kind must be postgres or pglite" }}
+{{- end }}
+{{- if and (eq .Values.store.kind "postgres") (empty .Values.store.database.urlSecret.name) }}
+{{- fail "store.database.urlSecret.name is required with PostgreSQL" }}
+{{- end }}
+{{- if and (eq .Values.store.kind "postgres") (empty .Values.keys.secretName) }}
+{{- fail "keys.secretName is required with PostgreSQL: the auth pepper comes from it" }}
+{{- end }}

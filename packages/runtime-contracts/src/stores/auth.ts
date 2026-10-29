@@ -54,6 +54,14 @@ export interface AuthStore {
     templateNames: string[],
   ): Promise<PrincipalRow>;
   updateManagedPrincipal(actorKeyId: string, id: string, patch: PrincipalPatch): Promise<PrincipalRow>;
+  // Controller-owned create or update for principals declared in its principal file.
+  applyConfiguredPrincipal(input: {
+    id: string;
+    name: string;
+    scopes: string[];
+    templateNames: string[];
+    disabled: boolean;
+  }): Promise<PrincipalRow>;
   createPrincipal(name: string, scopes: string[], templateNames: string[]): Promise<PrincipalRow>;
   getPrincipalByName(name: string): Promise<PrincipalRow | null>;
   getPrincipal(id: string): Promise<PrincipalRow | null>;
@@ -66,6 +74,7 @@ export interface AuthStore {
     actorKeyId?: string,
   ): Promise<{ key: MachineKeyRow; principal: PrincipalRow; created: boolean; conflict: boolean }>;
   listMachineKeys(principalId: string, filter: KeyListFilter): Promise<MachineKeyRow[]>;
+  listActiveMachineKeys(at: Date, expiringBefore?: Date): Promise<{ key: MachineKeyRow; principal: PrincipalRow }[]>;
   revokePrincipalKeys(principalId: string, at: Date, actorKeyId?: string): Promise<void>;
   getMachineKeyWithPrincipal(keyId: string): Promise<{ key: MachineKeyRow; principal: PrincipalRow } | null>;
   revokeMachineKey(keyId: string, at: Date, actorKeyId?: string): Promise<boolean>;

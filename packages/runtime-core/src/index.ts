@@ -22,9 +22,13 @@ export {
   buildEventEnvelope,
   type CheckpointRef,
   type CheckpointUsage,
+  type ConversationDocumentRow,
   type ConversationMessageRow,
+  type ConversationRecordRow,
+  type ConversationRetention,
   type ConversationStateRow,
   type ConversationStore,
+  type ConversationTurnCommit,
   type DiscoveredCheckpoint,
   type DiscoveredProvider,
   type DiscoveredStorage,
@@ -78,6 +82,7 @@ export {
   type WorkspaceAdmissionClaim,
   type WorkspaceCheckpointPatch,
   type WorkspaceCheckpointRow,
+  type WorkspaceConversationMessage,
   type WorkspaceDriver,
   type WorkspaceInsert,
   type WorkspaceInsertResult,
@@ -96,6 +101,7 @@ export {
   type WorkspaceTransferRuntime,
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
+export { rotatePrincipalKey, successorExpiry } from "./keys/key-rotation";
 export { bootstrapLocalOwnerKey, bootstrapLocalRecoveryKey } from "./keys/local-bootstrap";
 export {
   assertAuthorityScope,

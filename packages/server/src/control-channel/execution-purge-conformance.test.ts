@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { eq } from "drizzle-orm";
 import { buildServer } from "../app";
 import { createCoordinatorTick } from "../lifecycle/coordinator-tick";
@@ -97,7 +97,7 @@ test.skipIf(!available)(
   "purge recovers after a controller restart between provider stop and pin release",
   async () => {
     const f = await dockerExecutionFixture();
-    let reopened: PGliteStore | undefined;
+    let reopened: DatabaseStore | undefined;
     try {
       const a = await f.prepare(true);
       await f.store.executions.accept(a.acceptance, new Date());
@@ -120,7 +120,7 @@ test.skipIf(!available)(
       expect((await f.store.inputs.getManifest(executionInputManifestId(a.acceptance)))?.finalizedAt).toBeNull();
       await f.store.close();
       if (!f.directory) throw new Error("Disk fixture missing");
-      reopened = await PGliteStore.create(f.directory);
+      reopened = await DatabaseStore.openPGlite(f.directory);
       const restarted = buildServer({ ...f.serverOptions, store: reopened });
       await restarted.persistence.retryPurges();
       expect((await reopened.getOperation(operation.id))?.state).toBe("succeeded");

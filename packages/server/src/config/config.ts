@@ -1,6 +1,8 @@
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
+import { managedPrincipalsConfig } from "../bootstrap/managed-principals/startup";
+import { conversationRetentionPolicy } from "../conversations/conversation-retention";
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
@@ -8,6 +10,7 @@ import { type InputStorageConfig, inputStorageConfig } from "./input-storage-con
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { kubernetesSharedConfig } from "./kubernetes-shared-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
+import { type StoreConfig, storeConfig } from "./store-config";
 
 type Environment = Record<string, string | undefined>;
 
@@ -18,10 +21,13 @@ export interface ServerConfig {
   purgeConfigFile?: string;
   publicViews?: PublicViewConfig;
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
+  principals?: ReturnType<typeof managedPrincipalsConfig>;
   listenHost: string;
   listenPort: number;
   agentHost: string;
   agentPort: number;
+  store: StoreConfig;
+  // Private controller folder: keys, account state and, with PGlite, the database.
   dataDir: string;
   // Deletion journal outside the data folder; null uses the folder the database records.
   journalDir: string | null;
@@ -238,6 +244,7 @@ function resolvePersistenceLimits(env: Environment): PersistenceLimits {
       "POCKETCODER_MAX_CHECKPOINT_OPERATIONS",
       DEFAULT_PERSISTENCE_LIMITS.maxConcurrentOperations,
     ),
+    conversationRetention: conversationRetentionPolicy(env),
   };
 }
 
@@ -263,6 +270,7 @@ function assertCompatibleBackends(
 export function configSummary(config: ServerConfig) {
   return {
     listen: `${config.listenHost}:${config.listenPort}`,
+    store: config.store.kind,
     dataDir: config.dataDir,
     driver: config.driverKind,
     storage: config.storageBackend,
@@ -311,7 +319,9 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     agentHost: agent.listenHost,
     agentPort: agent.listenPort,
     launchPolicy: launchPolicyConfig(env),
+    principals: managedPrincipalsConfig(env),
     listenPort,
+    store: storeConfig(env),
     ...resolveDataFolders(env),
     pepper,
     ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),

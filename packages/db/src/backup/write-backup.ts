@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import seed from "../../assets/core-seed.json" with { type: "json" };
-import type { DatabaseContext } from "../database/context";
+import { type DatabaseContext, requirePGlite } from "../database/context";
 import { createArchiveOutput } from "./archive-output";
 import { captureDatabase } from "./database-snapshot";
 import { BACKUP_FORMAT, type BackupKeys, type BackupManifest, KEY_NAMES, MANIFEST_PATH } from "./manifest";
@@ -22,6 +22,7 @@ async function* bytesOf(value: Uint8Array) {
 
 export async function writeBackup(context: DatabaseContext, options: BackupOptions) {
   const check = () => options.signal.throwIfAborted();
+  requirePGlite(context, "Controller backup");
   if (!context.dataDir) throw new Error("Backup requires a data folder on disk.");
   const excluded = [context.dataDir, ...(options.checkpointDirectory ? [options.checkpointDirectory] : [])];
   const archive = createArchiveOutput(options.output, excluded, check, options.archiveLimit);

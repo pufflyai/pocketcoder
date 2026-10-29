@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { KEY_NAMES, restoreBackup, writeBackup } from "@pstdio/pocketcoder-db/backup";
 import { checkpointHttpFixture } from "./checkpoint-transfer-fixture.test";
 
@@ -36,7 +36,7 @@ test("restore preserves an external checkpoint archive and reopens the durable c
     const names = await readdir(checkpoints);
     expect(names.length).toBe(1);
     expect(await readFile(join(checkpoints, names[0] as string))).toEqual(Buffer.from(fixture.raw));
-    const store = await PGliteStore.create(restored.directory);
+    const store = await DatabaseStore.openPGlite(restored.directory);
     await store.close();
   } finally {
     await fixture.dispose();

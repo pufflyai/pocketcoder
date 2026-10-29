@@ -72,6 +72,7 @@ export {
   type NetworkState,
 } from "./network/network";
 export * from "./outputs/export-reference";
+export { artifactPath, type PrivateArtifact, PrivateArtifactSchema } from "./persistence/artifacts";
 export {
   CHECKPOINT_STATES,
   type CheckpointManifest,

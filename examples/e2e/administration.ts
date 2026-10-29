@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { bootstrapLocalOwnerKey } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient, type PrincipalCreateRequest } from "@pstdio/pocketcoder-sdk";
 
 export async function bootstrapExampleOwner(dataDir: string, pepper: string, expiresAt: Date) {
-  const store = await PGliteStore.create(dataDir);
+  const store = await DatabaseStore.openPGlite(dataDir);
   try {
     const result = await bootstrapLocalOwnerKey(store, pepper, {
       request_id: `example-owner-${randomUUID()}`,

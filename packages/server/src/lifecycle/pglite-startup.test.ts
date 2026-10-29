@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "./lifecycle";
@@ -18,7 +18,7 @@ test.skipIf(!dockerAvailable)(
     const messages: string[] = [];
     let running: Awaited<ReturnType<typeof startPocketCoderServer>> | undefined;
     try {
-      const store = await PGliteStore.create(dir);
+      const store = await DatabaseStore.openPGlite(dir);
       try {
         const parsed = fixtureTemplatePersistent();
         await store.upsertTemplate({

@@ -238,8 +238,8 @@ Use driver-level scheduling settings to keep all workspace and warm-pool Jobs
 on a labeled, tainted node pool:
 
 ```sh
-export POCKETCODER_KUBERNETES_NODE_SELECTOR='{"onefin.com/workload":"agent-workspace"}'
-export POCKETCODER_KUBERNETES_TOLERATIONS='[{"key":"onefin.com/workload","operator":"Equal","value":"agent-workspace","effect":"NoSchedule"}]'
+export POCKETCODER_KUBERNETES_NODE_SELECTOR='{"example.com/workload":"agent-workspace"}'
+export POCKETCODER_KUBERNETES_TOLERATIONS='[{"key":"example.com/workload","operator":"Equal","value":"agent-workspace","effect":"NoSchedule"}]'
 ```
 
 The selector must be a JSON object with string values. Tolerations must be a
@@ -276,9 +276,218 @@ setup contract and are cleared before the harness starts; runtime environment
 secrets remain read-only projected files. Secret names/values are not stored in
 checkpoint manifests.
 
+## Store
+
+PocketCoder keeps its state in PostgreSQL or in embedded PGlite. Both use the
+same schema, migrations and queries.
+
+- **PostgreSQL** is the store for server deployments. Setting
+  `POCKETCODER_DATABASE_URL` selects it. Use your provider's managed backups,
+  point-in-time recovery and multi-AZ storage.
+- **PGlite** is the store for local, desktop and single-binary use. It is the
+  default when no database URL is set, or when `POCKETCODER_STORE=pglite`.
+
+With PostgreSQL:
+
+1. Run `pcd db migrate` once before controllers of a new release start. It
+   applies pending migrations under a schema-scoped advisory lock. A controller
+   refuses to start while migrations are pending, so startup never changes a
+   shared schema. `pcd db status` lists applied and pending migrations.
+2. Set `POCKETCODER_AUTH_PEPPER` from a secret. Machine key digests use it, so
+   an upgraded database must keep the pepper it was written with.
+3. Mount a small private volume at `POCKETCODER_JOURNAL_DIR` for the deletion
+   journal (see [restore](#restore-a-postgresql-database)). It is required.
+4. `POCKETCODER_DIR` still holds private controller files: the local admin
+   socket and account state. It holds no database.
+
+Only one controller runs per schema. It takes a PostgreSQL advisory lock at
+startup, and a second controller fails with "a PocketCoder coordinator is
+already active". The lock lives on one database session, so connect directly or
+through a session-mode pooler, never PgBouncer in transaction mode. The
+controller does not yet notice a lost session (for example after a database
+failover); restart it after a failover. Local store commands such as
+`pcd keys revoke --id` need `POCKETCODER_JOURNAL_DIR` and a stopped controller;
+prefer the API while it runs.
+
+Folder backups (`pcd backup`), off-node backups and folder recovery
+(`pcd recovery`) copy the PGlite data folder. With PostgreSQL they refuse with
+"Use your database's backups instead".
+
+### Restore a PostgreSQL database
+
+A database restore goes back in time. Without help it would bring back keys
+that were revoked, secrets that were retired, templates that were retired and
+conversations that were deleted after the backup.
+
+The deletion journal prevents that. Every revocation, retirement and deletion
+is written to the journal before the database commits it. The journal lives on
+its own volume, so a database restore does not roll it back. At every start the
+controller replays the whole journal. Each record names an exact key, secret,
+template or conversation, so replaying it again changes nothing that is still
+current.
+
+To restore:
+
+1. Stop the controller.
+2. Restore the database with your provider's tools, for example a point-in-time
+   restore into the same database URL.
+3. Keep the same `POCKETCODER_JOURNAL_DIR` volume. Do not restore it from a
+   backup. A database that was bound to a journal refuses to start with an
+   empty or different journal.
+4. Run `pcd db migrate` if the restored database is from an older release.
+5. Start the controller. It replays the journal before serving requests.
+
+The replay also clears the rows of workspaces that were purged and marks deleted
+checkpoints deleted again. Their files were already removed by the purge.
+
+Rotating the auth pepper also invalidates every machine key, but it does not
+cover secrets, templates or conversations. Use the journal for those.
+
+## GitOps bootstrap
+
+A new environment can come up from Git alone. Nobody needs to run
+`pcd superuser create`, exec into the controller pod or port-forward. Declare the
+principals in a principal file, mount it into the controller, and point
+`POCKETCODER_PRINCIPALS_FILE` at it. The controller reads the file once at
+startup, before it serves requests. If the file is invalid or a target cannot be
+written, the controller stops with an error naming the problem, and Kubernetes
+restarts it. Later failures during renewal are logged and retried.
+
+```json
+{
+  "principals": [
+    {
+      "name": "app-backend",
+      "scopes": ["templates:read", "workspaces:create", "workspaces:read"],
+      "templates": ["app-agent"],
+      "admission_template": "app-standard",
+      "key": {
+        "lifetime_hours": 720,
+        "renew_before_hours": 240,
+        "overlap_minutes": 60,
+        "target": {
+          "kind": "kubernetes-secret",
+          "namespace": "app",
+          "name": "pocketcoder-backend-key",
+          "key": "token"
+        }
+      }
+    }
+  ],
+  "admission_map": { "kind": "file", "path": "/var/run/pocketcoder-admission/map.json" }
+}
+```
+
+What the controller does with the file:
+
+- **Principals.** Each entry is a managed principal. Its ID is a UUID derived from
+  its name, so it is the same after every restart and in every environment. The
+  controller creates missing principals and updates scopes and templates to match
+  the file. A second start with the same file changes nothing.
+- **Only managed principals are touched.** A principal is managed when its ID is
+  the one derived from its name. Principals made with `pcd principals create`
+  keep random IDs and are never changed. If the file names such a principal, the
+  controller refuses to start and names it; rename or remove it first.
+- **Removal disables.** When an entry leaves the file, the controller disables
+  that principal and revokes its keys. It never deletes it. Put the entry back to
+  re-enable it; the controller then issues a new key.
+- **Keys.** For an entry with `key`, the controller issues a machine key and
+  writes the token once to `target`. Nothing in Git holds a token, and tokens
+  never appear in logs or process arguments. The controller never stores tokens;
+  on each pass it reads the target back and checks the token. It issues a new key
+  and rewrites the target when the token is missing, revoked, for other grants,
+  or less than `renew_before_hours` from expiry. The previous key stays valid for
+  `overlap_minutes`, then the controller revokes it. Passes run at startup and
+  every five minutes. Defaults: 720 hours lifetime, 240 hours renewal window,
+  60 minutes overlap. Managed principals cannot hold `admin`, and `owner` is
+  reserved.
+- **Pepper rotation.** After the pepper changes (for example on a restore with a
+  new pepper), no stored token verifies. The same pass detects this and re-issues
+  every managed key to its target.
+- **Admission map.** `admission_map` names a target for a JSON document that maps
+  each principal ID to its `admission_template`. An external admission hook reads
+  it from there. Because IDs derive from names, the hook can also get the map
+  without the controller: `pcd principals admission-map --file principals.json`
+  prints it, so a GitOps pipeline can render it into the hook's own config.
+
+Secret targets:
+
+| `kind` | Fields | Notes |
+|--------|--------|-------|
+| `file` | `path` (absolute) | Written atomically with mode 0600. Mount a volume the consumer can read. |
+| `kubernetes-secret` | `namespace`, `name`, `key` | Applied with `kubectl apply` from stdin. The controller needs `get`, `create` and `patch` on that Secret. |
+
+The consumer reads the token from its Secret or file and must pick up changes
+within the overlap window. A Secret mounted as a volume updates in place; a
+Secret read into an environment variable needs a restart, so give it a longer
+`overlap_minutes`.
+
+Preview changes before you roll them out:
+
+- set `POCKETCODER_PRINCIPALS_DRY_RUN=true` to log the plan at startup and apply
+  nothing (no principals, keys, targets or admission map are written); or
+- on a running controller, run `pcd principals plan`. It re-reads the mounted file
+  and prints what the next start would change, without changing anything.
+
+The plan is logged as `principals.change`, `principals.key` and
+`principals.admission_map` events. They carry names, IDs, actions and target
+locations, never tokens.
+
+GitOps setup for a new environment:
+
+1. Commit the principal file as a ConfigMap and mount it into the controller.
+2. Set `POCKETCODER_PRINCIPALS_FILE` to the mounted path.
+3. Grant the controller's service account `get`, `create` and `patch` on the
+   target Secrets in the consumer namespaces.
+4. Render the admission map with `pcd principals admission-map` into the
+   admission hook's config, or mount the `admission_map` target.
+5. Deploy. The consumer starts once its Secret exists; the admission hook does not
+   wait for the controller.
+
+See [rotating machine keys](security.md#rotating-machine-keys) for keys outside
+the principal file.
+
+## Helm chart
+
+`deploy/helm/pocketcoder` installs the controller with values only. It is
+versioned with each release, published to `oci://ghcr.io/pufflyai/charts/pocketcoder`
+and signed with build provenance (`gh attestation verify`).
+
+```sh
+kubectl create secret generic pocketcoder-database --from-literal=database-url='postgres://...'
+kubectl create secret generic pocketcoder-keys --from-literal=auth-pepper="$(openssl rand -base64 32)"
+helm install pocketcoder oci://ghcr.io/pufflyai/charts/pocketcoder --version <release> \
+  --set image.repository=ghcr.io/pufflyai/pocketcoder/server --set image.digest=sha256:... \
+  --set store.database.urlSecret.name=pocketcoder-database --set keys.secretName=pocketcoder-keys
+```
+
+- **Store.** PostgreSQL by default: `store.database.urlSecret`, `store.database.schema`
+  and an optional CA bundle (`store.database.caConfigMap`). An init container runs
+  `pcd db migrate` before the controller starts. `store.kind: pglite` keeps the
+  embedded database on the data volume instead.
+- **Keys.** `keys.secretName` holds `auth-pepper` and optional `event-signing-key`
+  and `secret-key`. Keep the pepper of an upgraded database.
+- **Volumes.** A data volume (controller files and checkpoint archives) and a
+  journal volume. Both are kept when the release is uninstalled.
+- **Probes and Services.** Liveness uses `/livez`, readiness `/readyz`. The
+  `pocketcoder-server-live` and `pocketcoder-agent` Services include pods that are
+  not ready, so bootstrap jobs, admission hooks and reconnecting workspaces work
+  during an admission outage (see [health probes](#health-probes)).
+- **Workspaces.** `workspace.namespace`, `runtimeClassName`, `nodeSelector` and
+  `tolerations`; the chart creates the workspace service account (no API token)
+  and the controller's namespaced RBAC.
+- **Principals.** `principals.config` is the [principal file](#gitops-bootstrap);
+  `launchPolicy` wires an external admission hook.
+- **Extension points.** `sidecars`, `initContainers`, `extraEnv`, `extraVolumes`,
+  `extraVolumeMounts`, `networkPolicy.ingress`, pod labels and annotations. A
+  consumer can add its own accounting sidecar with values, without a fork.
+
+`bun run example:e2e:kubernetes-helm` installs the chart on a local kind cluster
+against an in-cluster PostgreSQL and runs an echo workspace through it.
+
 ## Data folder
 
-`POCKETCODER_DIR` defaults to `./pc_data`. The server stores PGlite in its `db/`
+`POCKETCODER_DIR` defaults to `./pc_data`. With PGlite, the server stores the database in its `db/`
 subdirectory, with the fixed `pocketcoder` schema. Use local disk or a block
 volume, never NFS or EFS. In a container, mount a private volume at `/pc_data`.
 Do not mount this folder into workspaces.
@@ -307,13 +516,18 @@ replay it so a restore cannot revive deleted data.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
-| `POCKETCODER_JOURNAL_DIR` | folder recorded in the database, else `<POCKETCODER_DIR>-journal` | Deletion journal outside the data folder; restores replay it |
-| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys and registration secrets |
+| `POCKETCODER_STORE` | `postgres` with a database URL, else `pglite` | Store driver: `postgres` or `pglite` |
+| `POCKETCODER_DATABASE_URL` | none | PostgreSQL connection URL; selects the PostgreSQL store |
+| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | PostgreSQL schema for all PocketCoder tables |
+| `POCKETCODER_DIR` | `./pc_data` | Private controller folder; with PGlite it also holds the database |
+| `POCKETCODER_JOURNAL_DIR` | PGlite: folder recorded in the database, else `<POCKETCODER_DIR>-journal`; PostgreSQL: required | Deletion journal outside the data folder; restores replay it |
+| `POCKETCODER_AUTH_PEPPER` | PGlite: generated key bundle; PostgreSQL: required | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
+| `POCKETCODER_PRINCIPALS_FILE` | none | Principal file read at startup; see [GitOps bootstrap](#gitops-bootstrap) |
+| `POCKETCODER_PRINCIPALS_DRY_RUN` | `false` | `true` logs the principal plan and applies nothing |
 | `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `8090` | Listen address |
 | `POCKETCODER_AGENT_HTTP` | `0.0.0.0:8091` | Separate agent listener |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:8091` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |
@@ -334,12 +548,59 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_MAX_CHECKPOINTS_PER_PRINCIPAL` | `100` | Per-principal ready checkpoint count |
 | `POCKETCODER_MAX_CHECKPOINT_FILES` | `1000000` | Measured files per checkpoint |
 | `POCKETCODER_MAX_CHECKPOINT_OPERATIONS` | `4` | Concurrent durable checkpoint operations |
+| `POCKETCODER_CONVERSATION_RETENTION` | template value | Replaces template conversation retention: a duration, or `until-deleted` |
+| `POCKETCODER_MAX_CONVERSATION_RETENTION` | none | Caps template conversation retention |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |
 | `POCKETCODER_SCHEDULER_INTERVAL_MS` | `1000` | Admission/sweep tick |
 | `POCKETCODER_OUTBOX_INTERVAL_MS` | `1000` | Event delivery tick |
 | `POCKETCODER_WARM_POOLS` | `[]` | Operator-only JSON array of stateless template pools |
+
+## Health probes
+
+The operator listener serves two unauthenticated probes:
+
+| Probe | Answers 200 when | Use it for |
+| --- | --- | --- |
+| `GET /livez` | The process is up and serving HTTP | Liveness probes, bootstrap code and external hooks |
+| `GET /readyz` | The controller is admitting work | Readiness probes and product traffic |
+
+`/readyz` answers 503 and lists every check with its state (`ok`, `pending`,
+`failed` or `disabled`), so the failing part is named. The checks are
+`database`, `schema`, `reconciliation`, `coordinator`, `execution-dispatch`,
+`cleanup` and `policy-reconciliation`. `policy-reconciliation` is the external
+admission hook set by `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while
+the hook is down, and while the hook cannot prove that a stopped workspace was
+terminated.
+
+Readiness does not gate the API. Once `/livez` answers, every `/v1` route
+answers too, including principal, key and other admin routes, and workspace and
+conversation reads. While the admission hook is down:
+
+- New launches are accepted and stay `queued` with `reason_code:
+  admission_unavailable`. They still expire at their queue deadline. The next
+  scheduler tick after the hook returns admits them, without a controller
+  restart.
+- Policy reconciliation stays fail-closed. A hook that is down, or answers
+  `termination-unproven`, never counts as a release. The controller keeps
+  retrying and `/readyz` stays 503 until the hook confirms every pending
+  workspace.
+
+Bootstrap code, such as principal enrollment and key issuance, and external
+hooks must wait on `/livez`, never on `/readyz`. Readiness waits on the hook, so
+a hook that waits on readiness never starts.
+
+An admission hook reads its configuration from `GET /v1/principals`. Each item
+carries the principal `id`, `name`, `scopes` and allowed `templates`, which are
+the fields the hook's launch requests refer to. The key needs
+`principals:admin`. It only sees principals whose scopes and templates fit
+within its own, so an `admin` key sees all of them.
+
+A Kubernetes Service only routes to ready pods. The example manifest therefore
+adds a second Service, `pocketcoder-server-live`, with
+`publishNotReadyAddresses: true`. Point bootstrap jobs and the admission hook at
+it, and keep product traffic on `pocketcoder-server`.
 
 ## Warm workspace pools
 

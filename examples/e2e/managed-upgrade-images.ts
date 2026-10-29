@@ -155,13 +155,13 @@ async function imageReference(cluster: Cluster, tag: string) {
 }
 
 function faultEntry(name: string, fault: string) {
-  return `import { PGliteStore } from '@pstdio/pocketcoder-db';
+  return `import { DatabaseStore } from '@pstdio/pocketcoder-db';
 import { loadOffNodeConfig, writePrivateJson } from '@pstdio/pocketcoder-db/off-node';
 const fault=${JSON.stringify(fault)};
 if(fault!=='none') {
   const directory=process.env.POCKETCODER_DIR!;
   const off=await loadOffNodeConfig(process.env.POCKETCODER_OFF_NODE_CONFIG!,directory);
-  const store=await PGliteStore.create(directory,{acknowledgeJournal:off.journal.acknowledge});
+  const store=await DatabaseStore.openPGlite(directory,{acknowledgeJournal:off.journal.acknowledge});
   try {
     if(fault==='write') {
       await store.createPrincipal('upgrade-first-write',[],[]);

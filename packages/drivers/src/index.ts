@@ -42,6 +42,7 @@ export {
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes/kubernetes-scheduling";
+export { applySecretValue, readSecretValue } from "./kubernetes/kubernetes-secret-values";
 export {
   KubernetesSecretResolver,
   type KubernetesSecretResolverOptions,

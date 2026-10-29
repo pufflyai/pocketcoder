@@ -1,9 +1,9 @@
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { FilesystemInputStorage } from "@pstdio/pocketcoder-drivers";
 import { inputBacking } from "./input-storage";
 
 export async function crashInputPublication(directory: string, root: string, phase: string) {
-  const store = await PGliteStore.create(directory);
+  const store = await DatabaseStore.openPGlite(directory);
   const row = (await store.inputs.list())[0]!;
   const storage = new FilesystemInputStorage(root, []);
   const writer = await storage.create(inputBacking(row));

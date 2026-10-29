@@ -5,8 +5,8 @@ and browser images. Keeping their bytes here prevents unrelated repository
 updates from breaking a reviewed build. The cache filenames come from apk and
 depend on the repository URL and architecture. Do not rename them.
 
-The current main revision is `v3.24.2-161-g9b53c2882fa`. The community revision
-is `v3.24.2-155-g75e3be22c50`. Both architectures were downloaded with `apk update`
+The current main revision is `v3.24.3-68-g1a1dabbd9c0`. The community revision
+is `v3.24.3-69-g35f5eb2864e`. Both architectures were downloaded with `apk update`
 in the exact pinned Bun base, which verifies their repository signatures.
 `SHA256SUMS` binds the copied bytes. Installation still verifies the signed
 indexes and each downloaded package against the base image's trusted keys.

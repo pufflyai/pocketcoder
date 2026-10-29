@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { WorkspaceLaunch, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { DEFAULT_LIMITS, Scheduler } from "@pstdio/pocketcoder-runtime-core";
 import { KubernetesDriver } from "./kubernetes";
@@ -183,7 +183,7 @@ test.each(["before-job", "after-job", "missing-receipt"] as const)(
   async (stage) => {
     const namespace = `pc-registry-lost-${randomUUID().slice(0, 8)}`;
     const kubectl = (args: string[]) => run(["kubectl", "--namespace", namespace, ...args]);
-    const store = await PGliteStore.create();
+    const store = await DatabaseStore.openPGlite();
     try {
       await kubectl(["create", "namespace", namespace]);
       const pending = launch(`registry.example/workspace@sha256:${"a".repeat(64)}`);

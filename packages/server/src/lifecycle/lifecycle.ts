@@ -3,7 +3,9 @@ import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools, type Store } from "
 import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
 import { composeBackups } from "../backup/backup-composition";
+import { startManagedPrincipals } from "../bootstrap/managed-principals/startup";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
+import { recordInterruptedTurns } from "../conversations/live-turns";
 import { composeAccountLifecycle } from "../maintenance/account-composition";
 import { AccountPurgeRequiredError, accountPurgeFence, requireNormalController } from "../maintenance/account-purge";
 import { accountState } from "../maintenance/account-state";
@@ -11,7 +13,7 @@ import { createMaintenance } from "../maintenance/maintenance";
 import { configuredPurgeCleanup } from "../maintenance/purge-cleanup";
 import { controllerHealth } from "../observability/controller-health";
 import { Readiness } from "../observability/health";
-import { createStructuredLogger } from "../observability/observability";
+import { createStructuredLogger, type StructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
@@ -79,6 +81,13 @@ async function startupWarmPools(store: Store, config: ServerConfig, driver: Retu
   return { warmPools, warmPoolContinuously };
 }
 
+// Templates and principals come from operator files; both must be in place before serving.
+async function loadDeclaredState(config: ServerConfig, store: Store, log: ServerLog, logger: StructuredLogger) {
+  await loadConfiguredTemplates(store, config.templateDir, log);
+  await requireEgressImageForRestrictedTemplates(store, config);
+  return startManagedPrincipals({ config: config.principals, store, pepper: config.pepper, logger });
+}
+
 export async function startPocketCoderServer(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
@@ -103,9 +112,8 @@ export async function startPocketCoderServer(
     await store.acquireCoordinatorLease();
     const durableAccountState = await accountState(directory);
     if (durableAccountState.state.state !== "ready") maintenance.fence();
-    log("coordinator lease acquired");
-    await loadConfiguredTemplates(store, config.templateDir, log);
-    await requireEgressImageForRestrictedTemplates(store, config);
+    await recordInterruptedTurns(store, log, "coordinator lease acquired");
+    const managedPrincipals = await loadDeclaredState(config, store, log, logger);
     const resolveRegistry = config.secretKey
       ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
       : undefined;
@@ -193,6 +201,7 @@ export async function startPocketCoderServer(
 
     const timers = startBackgroundTimers({
       config,
+      managedPrincipals,
       maintenance,
       log,
       outbox,
@@ -204,6 +213,7 @@ export async function startPocketCoderServer(
       workspaceLeases,
       checkpointTransfers: built.checkpointTransfers,
       inputs: built.inputs,
+      liveTurns: built.liveTurns,
       executionDispatcher: built.executionDispatcher,
       readiness,
       metrics,
@@ -219,6 +229,7 @@ export async function startPocketCoderServer(
         directory: directory,
         store,
         pepper: config.pepper,
+        principalsFile: config.principals?.file,
         accountLifecycle,
         maintenance,
         ...composeBackups(initialized, maintenance, transferOptions?.directory, durableAccountState),

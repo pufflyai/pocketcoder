@@ -51,21 +51,33 @@ test("reconciles an owned request through the API and returns explicit legacy hi
     sequence: 1,
     revision: 1,
   };
-  for (const [messageId, identified] of [
-    ["answer", true],
-    ["older-message", false],
-  ] as const) {
-    await server.store.appendConversationMessage({
-      workspaceId: id,
-      messageId,
-      role: "assistant",
-      content: "Answer",
-      occurredAt: at,
-      metadata: {},
-      createdAt: at,
-      ...(identified ? { identity: messageIdentity } : {}),
-    });
-  }
+  await server.store.commitConversationTurn({
+    workspaceId: id,
+    identity,
+    status: "completed",
+    reason: null,
+    messages: [
+      {
+        messageId: "answer",
+        role: "assistant",
+        content: "Answer",
+        occurredAt: at,
+        metadata: {},
+        identity: messageIdentity,
+      },
+    ],
+    startedAt: at,
+    endedAt: at,
+  });
+  await server.store.appendWorkspaceMessage({
+    workspaceId: id,
+    messageId: "older-message",
+    role: "assistant",
+    content: "Answer",
+    occurredAt: at,
+    metadata: {},
+    createdAt: at,
+  });
   const history = await server.app.request(`/v1/workspaces/${id}/conversation`, authed(server.token));
   const body = (await history.json()) as { items: { identity: unknown }[] };
   expect(body.items.map((item) => item.identity)).toEqual([messageIdentity, null]);

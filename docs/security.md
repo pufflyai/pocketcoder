@@ -71,10 +71,70 @@ may reconcile disabled targets, but cannot mint administrative credentials.
 The issuer's remaining lifetime bounds public issuance. Secrets are returned
 once; lost responses require inventory, revocation and a fresh request ID.
 
+Principals declared in the controller's principal file (`POCKETCODER_PRINCIPALS_FILE`)
+are managed by the controller itself. It issues their keys with its own authority
+and writes each token only to the declared file or Kubernetes Secret, never to
+logs, process arguments or Git. Managed principals cannot hold `admin`. See
+[GitOps bootstrap](deployment.md#gitops-bootstrap).
+
 Controller-only local bootstrap services create a bounded first owner, replace
 owner credentials atomically, and issue the same constrained recovery keys. They
 are intended for the protected local admin socket. PC-60 supplies that socket and
 its mode 0600 boundary; no HTTP route exposes local bootstrap authority.
+
+## Rotating machine keys
+
+Every machine key expires, and no key can outlive the key that issued it. Rotate
+with an overlap, so the consumer never holds an expired or revoked key:
+
+1. **Issue a successor.** `pcd keys rotate --principal-id <id> --id <old-key-id>
+   --request-id <operation-id>` (or `client.keys.rotate`) issues a new key with
+   the old key's grants. The old key stays valid. Without `--expires`, the new key
+   keeps the old lifetime, capped at the calling key's expiry.
+2. **Switch the consumer.** Write the new token to the consumer's secret store and
+   let the consumer reload it. Both keys work while it rolls over.
+3. **Revoke the old key.** `pcd keys revoke --principal-id <id> --id <old-key-id>`.
+
+Who may rotate:
+
+- an **owner** key (`admin`) may rotate any key;
+- a dedicated **automation key** may rotate keys of the principals it names. An
+  owner issues it on its own principal with only `keys:read` and `keys:write`
+  and `--manage-principals <id,...>`. It cannot rotate administrative principals
+  or mint administrative scopes, and the keys it issues expire no later than it
+  does. Rotate the automation key itself with an owner key.
+
+Saving the request ID before rotation makes a lost response safe: repeating the
+same request returns the same key without its token. Then revoke that key and
+rotate with a new request ID.
+
+### GitOps consumers
+
+A GitOps consumer keeps tokens out of Git. Two options:
+
+- **Managed principals.** Declare the principal in the controller's principal
+  file (see [GitOps bootstrap](deployment.md#gitops-bootstrap)). The controller
+  rotates the key before it expires, rewrites the declared secret target, and
+  revokes the old key after the overlap window.
+- **External rotation job.** Run a scheduled job that holds an automation key in
+  its own secret store. Each run: `pcd keys expiring --within-hours 240`; for
+  each key of a principal it manages, rotate it, write the new token to the
+  consumer's Secret (never to Git, process arguments or logs), wait for the
+  consumer to reload, then revoke the old key.
+
+### Alerting on expiry
+
+`GET /v1/keys/metrics` (scope `keys:read`) serves the gauge
+`pocketcoder_principal_key_earliest_expiry_seconds{principal_id,principal_name}`.
+Scrape it with a key that has only `keys:read`. Alert well before the earliest
+expiry, for example:
+
+```text
+pocketcoder_principal_key_earliest_expiry_seconds - time() < 7 * 86400
+```
+
+The gauge reports the earliest active key. An old key left unrevoked after a
+rotation keeps the alert firing, which is the reminder to revoke it.
 
 ## Credential inventory
 
@@ -85,7 +145,7 @@ for the permission model, content inventory, and backup replay rules.
 
 | Credential | Holder | Lifetime rule |
 |------------|--------|---------------|
-| Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Require a future `--expires <ISO8601>` within the issuer lifetime; rotate before expiry |
+| Machine keys (`pcd keys issue`) | Operator backends, never workspaces | Require a future `--expires <ISO8601>` within the issuer lifetime; rotate with `pcd keys rotate` before expiry |
 | Workspace registration secret | Supervisor | Single-use, spent at connect |
 | Reconnect credential | Supervisor | Memory-only, never touches the workspace filesystem |
 | Git/source setup lease (`secretRef:`) | Setup process | Bound to the workspace, template and repository; at most five minutes; revoked before the harness starts |

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, executionInputManifestId } from "@pstdio/pocketcoder-contracts";
 import { ExecutionDispatcher } from "@pstdio/pocketcoder-runtime-core";
-import { PGliteStore } from "../../store";
+import { DatabaseStore } from "../../store";
 import { executionFixture } from "./execution-fixture.test";
 
 test.each([1, 5, 20])(
@@ -56,7 +56,7 @@ test("accepted and canceled intent and finalized input receipts survive controll
       new Date(),
     );
     await f.store.close();
-    const reopened = await PGliteStore.create(f.directory);
+    const reopened = await DatabaseStore.openPGlite(f.directory);
     try {
       expect((await reopened.executions.get(input.execution))?.phase).toBe("canceled");
       expect((await reopened.inputs.getManifest(executionInputManifestId(input)))?.manifest).toEqual(input.inputs);

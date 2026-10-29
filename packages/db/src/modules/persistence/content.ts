@@ -1,6 +1,7 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import { and, eq, notInArray } from "drizzle-orm";
 import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
+import { clearConversations, conversationIds } from "../conversations/retention";
 import { purgeBinaryOutputs } from "../outputs/binary-output-delete";
 import { lockStorageCapacity } from "./reservation-capacity";
 
@@ -51,6 +52,8 @@ export function createContentPurge(context: DatabaseContext) {
           .limit(1);
         if (pending) throw new Error("Workspace leases remain pending");
         await tx.delete(tables.workspaceLeases).where(eq(tables.workspaceLeases.workspaceId, workspaceId));
+        // A purge removes every conversation this workspace wrote to, as a deletion does.
+        await clearConversations(context, tx, conversationIds(context, tx, workspaceId), "deleted", at);
         for (const table of [
           tables.workspaceLogs,
           tables.workspaceOutputs,

@@ -185,10 +185,10 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
         metadata: { provider: "agentapi" },
         createdAt: new Date(),
       };
-      expect((await store.appendConversationMessage(message)).created).toBe(true);
-      expect((await store.appendConversationMessage(message)).created).toBe(false);
-      expect(await store.readConversation(workspace.id, 0, 10)).toEqual([
-        expect.objectContaining({ seq: 1, messageId: "pg-message-1", content: "durable response" }),
+      expect((await store.appendWorkspaceMessage(message)).created).toBe(true);
+      expect((await store.appendWorkspaceMessage(message)).created).toBe(false);
+      expect((await store.readWorkspaceConversation(workspace.id, 0, 10)).map((row) => row.message)).toEqual([
+        expect.objectContaining({ seq: 1, message_id: "pg-message-1", content: "durable response" }),
       ]);
     } finally {
       await fixture.dispose();
@@ -205,7 +205,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       const runtimeId = await insertReadyRuntime(fixture);
       const nextRuntimeId = await insertReadyRuntime(fixture);
       await store.updateWarmPoolRuntime(nextRuntimeId, { readyAt: new Date(Date.now() + 1000) }, new Date());
-      await fixture.context.client.exec("SET enable_hashjoin=off; SET enable_mergejoin=off");
+      await fixture.context.sql.exec("SET enable_hashjoin=off; SET enable_mergejoin=off");
       const claim = {
         workspace: warmWorkspace,
         driverKind: "docker",
@@ -271,12 +271,12 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
         {
           stream: "stderr",
           occurredAt: new Date(),
-          content: new TextEncoder().encode("\nPermissionError: /home/onefin/.pi\n"),
+          content: new TextEncoder().encode("\nPermissionError: /home/worker/.pi\n"),
         },
       ]);
       expect(new TextDecoder().decode((await store.readLogs(workspace.id, 0, 10))[0]?.content)).toBe("hello");
       const tail = await store.readLogTail(workspace.id, 24);
-      expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/onefin/.pi\n");
+      expect(new TextDecoder().decode(tail.content)).toBe("Error: /home/worker/.pi\n");
       expect(tail).toMatchObject({ truncated: true, lastSeq: 2 });
 
       const sessionId = randomUUID();

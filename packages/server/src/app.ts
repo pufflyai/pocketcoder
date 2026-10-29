@@ -17,6 +17,8 @@ import {
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { registerAdministrationRoutes } from "./administration/administration-routes";
+import { registerKeyExpiryRoutes } from "./administration/key-expiry-routes";
+import { registerKeyRotationRoutes } from "./administration/key-rotation-routes";
 import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
@@ -30,6 +32,7 @@ import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { registerExecutionRoutes } from "./conversations/execution-routes";
 import { conversationTransport, executionTransport } from "./conversations/execution-transport";
+import { LiveTurns } from "./conversations/live-turns";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
@@ -40,6 +43,7 @@ import { type Maintenance, maintenanceGate } from "./maintenance/maintenance";
 import { registerDiagnosticRoutes } from "./observability/diagnostics-routes";
 import { Readiness } from "./observability/health";
 import { createStructuredLogger, type StructuredLogger } from "./observability/observability";
+import { registerArtifactRoutes } from "./persistence/artifact-routes";
 import type { CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
@@ -89,6 +93,7 @@ export interface BuildDeps {
 
 export interface BuiltServer {
   executionDispatcher: ExecutionDispatcher;
+  liveTurns: LiveTurns;
   inputs?: InputStorage;
   controlActivity: ControlActivity;
   screenshots?: Screenshots;
@@ -242,12 +247,15 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
   const activity = controlActivity(() => poolHub.fence());
+  const producerStore = controlStore(store, deps.assertAccountAllowed);
+  const liveTurns = new LiveTurns(producerStore);
   const wsDeps = {
     activity,
     executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
     ...(workspaceLeases ? { workspaceLeases } : {}),
-    store: controlStore(store, deps.assertAccountAllowed),
+    store: producerStore,
+    liveTurns,
     hub,
     scheduler,
     pepper,
@@ -289,12 +297,15 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
+  registerKeyRotationRoutes(app, store, pepper);
+  registerKeyExpiryRoutes(app, store);
   registerOperatorRecoveryRoutes(app, store, persistence);
   registerAdministrationRoutes({ app, store, persistence, warmPool });
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
-  registerConversationRoutes({ app, store, service });
+  registerArtifactRoutes({ app, store, service, persistence });
+  registerConversationRoutes({ app, store, service, liveTurns, limits: deps.persistenceLimits });
   registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
@@ -313,6 +324,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
 
   return {
     executionDispatcher,
+    liveTurns,
     inputs,
     controlActivity: activity,
     app,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
+import { sqlStateOf } from "../../test-fixtures";
 import { checkpointTransferFixture } from "./transfer-fixture.test";
 import { createCheckpointTransfers } from "./transfers";
 
@@ -103,7 +104,7 @@ test("a grant insert failure rolls back its physical reservation", async () => {
         () => null,
         (error: Error) => error,
       );
-    expect(failure?.cause).toMatchObject({ code: "23505" });
+    expect(sqlStateOf(failure)).toBe("23505");
     expect(await fixture.store.storageReservations.get(reservationId)).toBeNull();
     expect(
       (await fixture.store.storageReservations.usage(fixture.workspace.id, fixture.principal.id)).instance,

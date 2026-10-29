@@ -5,6 +5,7 @@ export {
   toOperationResource,
 } from "./persistence-base";
 
+import { readCheckpointArtifact } from "./checkpoint-artifacts";
 import type { PersistenceServiceDeps } from "./persistence-base";
 import { PersistenceContext } from "./persistence-base";
 import { PersistenceCheckpointService } from "./persistence-checkpoints";
@@ -30,6 +31,7 @@ export class PersistenceService {
     this.maintenance = new PersistenceMaintenanceService(this.context);
     this.restoreService = new PersistenceRestoreService(this.maintenance, this.context);
     this.getCheckpointOwned = this.context.getCheckpointOwned.bind(this.context);
+    this.readArtifact = (...args) => readCheckpointArtifact(this.context, ...args);
     this.preserve = this.preservePersistence.preserve.bind(this.preservePersistence);
     this.preserveByPolicy = this.preservePersistence.preserveByPolicy.bind(this.preservePersistence);
     this.verify = this.checkpoint.verify.bind(this.checkpoint);
@@ -58,6 +60,9 @@ export class PersistenceService {
   private readonly context: PersistenceContext;
 
   readonly getCheckpointOwned: PersistenceContext["getCheckpointOwned"];
+  readonly readArtifact: (
+    ...args: Parameters<typeof readCheckpointArtifact> extends [unknown, ...infer Rest] ? Rest : never
+  ) => ReturnType<typeof readCheckpointArtifact>;
 
   readonly preserve: PreservePersistenceService["preserve"];
 

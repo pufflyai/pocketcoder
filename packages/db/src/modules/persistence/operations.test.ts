@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { createTestStoreFactory } from "../../test-fixtures";
+import { createTestStoreFactory, sqlStateOf } from "../../test-fixtures";
 
 const createStore = createTestStoreFactory();
 
@@ -28,7 +28,7 @@ function operation(principalId: string): WorkspaceOperationRow {
 test("rejects operation references to a missing result workspace", async () => {
   const store = await createStore();
   const principal = await store.createPrincipal("fk-test", ["admin"], ["*"]);
-  await expect(store.insertOperation(operation(principal.id))).rejects.toMatchObject({
-    cause: { code: "23503", constraint: "workspace_operations_result_workspace_id_workspaces_id_fkey" },
-  });
+  const error = await store.insertOperation(operation(principal.id)).catch((caught) => caught);
+  expect(sqlStateOf(error)).toBe("23503");
+  expect(error.cause).toMatchObject({ constraint: "workspace_operations_result_workspace_id_workspaces_id_fkey" });
 });

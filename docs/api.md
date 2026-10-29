@@ -4,8 +4,10 @@ Base path `/v1`, JSON only, UUIDv7-style identifiers, RFC 3339 UTC
 timestamps. The generated OpenAPI document is served unauthenticated at
 `GET /v1/openapi.json`; `GET /livez` is the process liveness probe and
 `GET /readyz` reports database, schema, reconciliation, and coordinator readiness.
-It also reports unresolved content cleanup. See [verifiable cleanup](cleanup.md)
-for workspace purge, principal-key administration, and isolated backup replay.
+It also reports unresolved content cleanup and the external admission hook. See
+[health probes](deployment.md#health-probes) for which probe to wait on, and
+[verifiable cleanup](cleanup.md) for workspace purge, principal-key
+administration, and isolated backup replay.
 
 ## Authentication
 
@@ -136,6 +138,9 @@ GET   /v1/principals/{id}             principals:admin → principal
 PATCH /v1/principals/{id}             principals:admin → principal
 GET   /v1/principals/{id}/keys        keys:read → { items: [...], next_cursor }
 POST  /v1/principals/{id}/keys        keys:write → { key, token } (201 or replay 200)
+POST  /v1/principals/{id}/keys/{keyId}/rotate keys:write → { key, token } (201 or replay 200)
+GET   /v1/keys/expiring?within_hours=168 keys:read → { items: [...] }
+GET   /v1/keys/metrics                keys:read → Prometheus text
 DELETE /v1/principals/{id}/keys/{keyId} keys:write → { revoked: true }
 DELETE /v1/principals/{id}/keys       keys:write → { revoked: true }
 ```
@@ -161,7 +166,24 @@ Issuance identity includes scopes, templates, expiry and target IDs. Reusing an 
 with changed input returns `idempotency.conflict` (409). Replay returns metadata
 and `token: null`. To recover a lost response, list with `request_id`, revoke,
 then issue a fresh request ID. Plaintext secrets never appear in inventory.
-The SDK exposes `client.principals.create/list/get/update` and `client.keys`.
+Rotation accepts `{ request_id, expires_at? }`. It issues a successor key for the
+same principal with the old key's scopes, templates and target IDs. The old key
+stays valid until you revoke it. Without `expires_at`, the successor keeps the old
+key's lifetime, capped at the calling key's expiry. An explicit `expires_at` past
+the calling key's expiry is rejected. Only an active key with an expiry can be
+rotated. Rotation uses issuance authority: an owner key, or an automation key whose
+`managed_principal_ids` names the principal. Replays reconcile like issuance, even
+after the old key was revoked.
+
+`/v1/keys/expiring` lists active keys (not revoked, not expired, principal
+enabled) that expire within `within_hours` (default 168, at most 8784), soonest
+first. Each item is a key resource plus `principal_name`. `/v1/keys/metrics`
+serves the gauge `pocketcoder_principal_key_earliest_expiry_seconds` with
+`principal_id` and `principal_name` labels: the Unix time when each principal's
+first active key expires. Both show only principals the calling key may administer.
+
+The SDK exposes `client.principals.create/list/get/update` and `client.keys`,
+including `client.keys.rotate` and `client.keys.expiring`.
 
 ## Controller secrets
 
@@ -212,7 +234,7 @@ Requires an `Idempotency-Key` header.
 curl -sS -X POST "$POCKETCODER_URL/v1/workspaces" \
   -H "Authorization: Bearer $POCKETCODER_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: onefin-task-018f6f0e" \
+  -H "Idempotency-Key: task-018f6f0e" \
   --data-binary @- <<'JSON'
 {
   "external_id": "your-task-uuid",
@@ -298,7 +320,7 @@ resource and lifecycle event:
 ```json
 {
   "reason_code": "child_exit_failure",
-  "log_tail": "Traceback ...\nPermissionError: /home/onefin/.pi\n",
+  "log_tail": "Traceback ...\nPermissionError: /home/agent/.pi\n",
   "log_tail_truncated": true,
   "last_log_seq": 42
 }
@@ -309,15 +331,26 @@ and is diagnostic context rather than a substitute for the paginated logs
 route.
 
 `metadata` is a URL-encoded JSON object of exact string matches (up to 16
-keys), for example `{"product":"onefin","tenant":"t-7","user":"u-42"}`.
+keys), for example `{"product":"acme","tenant":"t-7","user":"u-42"}`.
 It is evaluated inside the authenticated principal boundary; it is a query
 constraint, never an authorization substitute. `created_after` is inclusive
 and `created_before` is exclusive.
 
 ## Durable conversation history
 
-See [conversation history and request identities](conversation-identities.md)
-for retention, deletion, v2 identity receipts, and compatibility.
+```text
+GET    /v1/workspaces/{id}/conversation                         scope conversations:read
+GET    /v1/workspaces/{id}/conversations                        scope conversations:read
+GET    /v1/workspaces/{id}/conversations/{conversation_id}      scope conversations:read
+GET    /v1/workspaces/{id}/conversations/{conversation_id}/live scope conversations:read
+DELETE /v1/workspaces/{id}/conversations/{conversation_id}      scope conversations:delete
+```
+
+Each conversation is a JSON document of records written at turn boundaries, with
+several conversations per workspace. See
+[conversation history and request identities](conversation-identities.md#durable-conversation-history)
+for records, live tails, retention, deletion, v2 identity receipts, and
+compatibility.
 
 ## Service relay
 

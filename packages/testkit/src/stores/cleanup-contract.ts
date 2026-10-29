@@ -86,12 +86,12 @@ export function registerCleanupContract(
           createdAt: at,
         };
         const writes = await Promise.allSettled([
-          f.store.appendConversationMessage(content),
+          f.store.appendWorkspaceMessage(content),
           f.store.insertOperation(operation),
         ]);
         expect(writes[1]?.status).toBe("fulfilled");
         await f.store.purgeWorkspaceContent(input.id, at);
-        await expect(f.store.appendConversationMessage({ ...content, messageId: "late" })).rejects.toBeDefined();
+        await expect(f.store.appendWorkspaceMessage({ ...content, messageId: "late" })).rejects.toBeDefined();
         await expect(
           f.store.appendOutput({ workspaceId: input.id, seq: 0, name: "late", value: "synthetic", occurredAt: at }),
         ).rejects.toBeDefined();
@@ -106,7 +106,7 @@ export function registerCleanupContract(
         );
         expect(await f.store.readLogs(input.id, 0, 100)).toEqual([]);
         expect(await f.store.listOutputs(input.id)).toEqual([]);
-        expect(await f.store.readConversation(input.id, 0, 100)).toEqual([]);
+        expect(await f.store.readWorkspaceConversation(input.id, 0, 100)).toEqual([]);
         expect(await f.store.claimDueEvents(at, 100)).toEqual([]);
         expect(await f.store.getWorkspace(input.id)).toMatchObject({ failureLogTail: null, outputs: {}, health: {} });
         await expect(

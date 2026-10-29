@@ -19,6 +19,10 @@ import type {
 } from "@pstdio/pocketcoder-runtime-core";
 import { OperationCapacityExceededError } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "../control-channel/hub";
+import {
+  type ConversationRetentionPolicy,
+  DEFAULT_CONVERSATION_RETENTION,
+} from "../conversations/conversation-retention";
 import type { WorkspaceService } from "../workspaces/service";
 
 export interface PersistenceServiceDeps {
@@ -46,6 +50,7 @@ export interface PersistenceServiceDeps {
     cancel(workspaceId: string, checkpointIds: Set<string>): Promise<void>;
     verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
     delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    readFile(checkpoint: WorkspaceCheckpointRow, mount: string, path: string, maxBytes: number): Promise<Buffer | null>;
     inventory(): Promise<{
       backend: string;
       storage_count: number;
@@ -68,6 +73,7 @@ export interface PersistenceLimits {
   maxCheckpointsPerPrincipal: number;
   maxCheckpointFiles: number;
   maxConcurrentOperations: number;
+  conversationRetention: ConversationRetentionPolicy;
 }
 
 export const DEFAULT_PERSISTENCE_LIMITS: PersistenceLimits = {
@@ -76,7 +82,14 @@ export const DEFAULT_PERSISTENCE_LIMITS: PersistenceLimits = {
   maxCheckpointsPerPrincipal: 100,
   maxCheckpointFiles: 1_000_000,
   maxConcurrentOperations: 4,
+  conversationRetention: DEFAULT_CONVERSATION_RETENTION,
 };
+
+// The storage backend this controller writes checkpoints to and can restore them from.
+export function checkpointProvider(context: PersistenceContext) {
+  if (context.deps.checkpointTransfers) return "controller-archive";
+  return context.storageDriver().kind;
+}
 
 export type SnapshotResult = Awaited<ReturnType<WorkspaceStorageDriver["snapshot"]>>;
 

@@ -8,10 +8,10 @@ describe("Kubernetes scheduling manifest fields", () => {
   });
 
   test("includes configured selectors and tolerations", () => {
-    const nodeSelector = { "onefin.com/workload": "agent-workspace" };
+    const nodeSelector = { "example.com/workload": "agent-workspace" };
     const tolerations = [
       {
-        key: "onefin.com/workload",
+        key: "example.com/workload",
         operator: "Equal" as const,
         value: "agent-workspace",
         effect: "NoSchedule" as const,

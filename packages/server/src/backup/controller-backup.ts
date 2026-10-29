@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { sourceFootprint } from "@pstdio/pocketcoder-db/off-node";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -20,7 +20,7 @@ export interface ControllerKeys {
 }
 
 export function createControllerBackup(deps: {
-  store: PGliteStore;
+  store: DatabaseStore;
   maintenance: Maintenance;
   keys?: ControllerKeys;
   checkpointDirectory?: string;

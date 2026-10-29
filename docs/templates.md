@@ -404,13 +404,37 @@ does not support state persistence for ACP, so native ACP templates must use
 become stable, captures the final transcript, and terminates it before
 snapshotting. Legacy templates may still provide `checkpointHook`.
 
-`conversationRetention` controls how long the canonical display transcript is
-readable after terminal state (default `168h`). It is separate from checkpoint
-retention because callers may delete transcript content without deleting a
-filesystem checkpoint. Native workspaces project complete AgentAPI messages
+`conversationRetention` controls how long a conversation stays readable after
+the last workspace that wrote to it ends (default `168h`). Servers may cap or
+replace it (see [conversation history](conversation-identities.md#durable-conversation-history)).
+It is separate from checkpoint retention because callers may delete
+conversations without deleting a filesystem checkpoint. Native workspaces project complete AgentAPI messages
 into the durable transcript using stable `agentapi:<id>` ids. Legacy harness
 adapters may still write bounded `POCKETCODER_CONVERSATION <json>` lines to
 stdout. Operational log text is never inferred into conversation history.
+
+`artifacts` declares private files that the harness writes into a persisted
+mount, such as per-chat diagnostic transcripts. The control plane reads them from
+the latest ready checkpoint of a preserved workspace, without resuming it:
+
+```json
+"artifacts": [
+  { "name": "chat-transcripts", "mount": "harness-state", "pattern": "chats/*/transcript.jsonl", "maxBytes": 8388608 }
+]
+```
+
+```text
+GET /v1/workspaces/{id}/artifacts/{name}?key=<chat>   scope workspaces:read   application/octet-stream
+```
+
+The `key` fills the pattern's single `*` segment. Unknown names, keys outside
+the pattern, links, missing files and expired checkpoints return
+`404 artifact.not_found`; a file above `maxBytes` (default 8 MiB, at most
+64 MiB) returns `413`. While the workspace runs, the route returns
+`409 artifact.workspace_active`: read the live file through the harness's own
+relay route. PocketCoder neither parses nor displays artifacts, and they are
+never a source of conversation history. `artifacts` is optional, so templates
+without it keep their digest.
 
 Cooperative Stop and shutdown perform a fresh transcript read before TERM,
 within the existing termination grace period. Read failures are reported and

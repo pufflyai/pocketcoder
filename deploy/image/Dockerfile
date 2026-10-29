@@ -20,7 +20,7 @@ RUN bun install --frozen-lockfile \
   && cp -r out/. /src/lib/httpapi/chat/ \
   && rm -rf node_modules .next out
 
-FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine3.24@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS agentapi-build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS agentapi-build
 ARG TARGETARCH
 ENV GOTOOLCHAIN=local
 WORKDIR /src
@@ -42,7 +42,7 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
   io.pstdio.pocketcoder.bun.version="1.4.3" \
   io.pstdio.pocketcoder.agentapi.version="0.12.2" \
   io.pstdio.pocketcoder.agentapi.revision="9ff117e231822f670305254ef24f6389f75953f4" \
-  io.pstdio.pocketcoder.agentapi.go.version="1.27.2" \
+  io.pstdio.pocketcoder.agentapi.go.version="1.27.3" \
   io.pstdio.pocketcoder.agentapi.x-text.version="0.41.0" \
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.glibc.root="/opt/glibc" \

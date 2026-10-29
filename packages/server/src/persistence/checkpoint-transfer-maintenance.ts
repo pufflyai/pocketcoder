@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir } from "node:fs/promises";
+import { type CheckpointArchiveEntry, readCheckpointArchive } from "@pstdio/pocketcoder-contracts";
 import { openCheckpointArchivePublication } from "@pstdio/pocketcoder-db/checkpoints";
 import type { Store, WorkspaceCheckpointRow } from "@pstdio/pocketcoder-runtime-core";
 import type { TransferLifetime } from "./checkpoint-transfer-lifetime";
@@ -21,6 +22,49 @@ export function createCheckpointTransferMaintenance(store: Store, lifetime: Tran
     return row;
   }
   return {
+    // One file from a published archive, read with the archive's own digest checks.
+    async readFile(checkpoint: WorkspaceCheckpointRow, mountName: string, path: string, maxBytes: number) {
+      const row = await publication(checkpoint);
+      const owner = openCheckpointArchivePublication(
+        directory,
+        row.stagePath as string,
+        row.stageIdentity as NonNullable<typeof row.stageIdentity>,
+        () => {},
+      );
+      let mount = -1;
+      let match: CheckpointArchiveEntry | undefined;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      const found = new Error("found");
+      try {
+        await readCheckpointArchive(owner.stream(), {
+          maxArchiveBytes: row.storedBytes ?? 0,
+          async onHeader(header) {
+            mount = header.mounts.findIndex((item) => item.name === mountName);
+          },
+          async onEntry(entry) {
+            if (entry.kind === "file" && entry.mount === mount && entry.path === path) {
+              if (entry.size > maxBytes) throw new Error("artifact.too_large");
+              match = entry;
+            }
+          },
+          async onData(entry, bytes) {
+            if (entry !== match) return;
+            chunks.push(Buffer.from(bytes));
+            size += bytes.length;
+          },
+          async onEntryComplete(entry) {
+            if (entry === match) throw found;
+          },
+        });
+        return null;
+      } catch (error) {
+        if (error === found) return Buffer.concat(chunks, size);
+        throw error;
+      } finally {
+        await owner.close();
+      }
+    },
     async inventory() {
       const rows = await store.checkpointTransfers.listUnsettled();
       const paths = new Set(rows.flatMap((row) => (row.stagePath ? [row.stagePath] : [])));

@@ -3,6 +3,7 @@ import { addResource } from "../command";
 import { addAttachCommand } from "./attach";
 import { addCancelCommand } from "./cancel";
 import { addChatCommand } from "./chat";
+import { addConversationsCommand } from "./conversations";
 import { addCreateCommand } from "./create";
 import { addDisplayCommand } from "./display";
 import { addForwardCommand } from "./forward";
@@ -37,6 +38,7 @@ export function addWorkspaceCommands(parser: Argv) {
     addRestoreCommand,
     addRecreateCommand,
     addOutputsCommand,
+    addConversationsCommand,
     addAttachCommand,
     addChatCommand,
   ];

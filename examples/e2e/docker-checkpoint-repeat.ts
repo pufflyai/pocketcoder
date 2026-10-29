@@ -7,7 +7,7 @@ import {
   RestoreResponseSchema,
   WorkspaceResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { checkpointSourceFixture } from "./checkpoint-source-fixture";
 import { messageList, responseText } from "./contract-messages";
 import { command, waitFor } from "./local-process";
@@ -133,7 +133,7 @@ try {
     "repeated destination teardown",
   );
   await fixture.stop();
-  const store = await PGliteStore.create(fixture.dataDir);
+  const store = await DatabaseStore.openPGlite(fixture.dataDir);
   let allocated = 0;
   try {
     await store.init();

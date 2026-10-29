@@ -1,4 +1,4 @@
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { OffNode } from "@pstdio/pocketcoder-db/off-node";
 import type { accountState } from "../maintenance/account-state";
 import type { Maintenance } from "../maintenance/maintenance";
@@ -7,7 +7,7 @@ import { type ControllerKeys, createControllerBackup } from "./controller-backup
 import { createOffNodeBackup } from "./off-node-backup";
 
 export function composeBackups(
-  input: { store: PGliteStore; keyBundle?: ControllerKeys; offNode?: OffNode; directory: string },
+  input: { store: DatabaseStore; keyBundle?: ControllerKeys; offNode?: OffNode; directory: string },
   maintenance: Maintenance,
   checkpointDirectory?: string,
   state?: Awaited<ReturnType<typeof accountState>>,

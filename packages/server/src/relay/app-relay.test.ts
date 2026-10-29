@@ -7,7 +7,8 @@ const createStore = createTestStoreFactory();
 
 describe("service relay", () => {
   test("workspace not ready returns 409; terminal returns 410", async () => {
-    const server = await createTestServer(await createStore());
+    // Closed admission keeps the workspace queued, so cancel ends it at once.
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const res = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {

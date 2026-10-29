@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { PGliteStore } from "../../store";
+import { DatabaseStore } from "../../store";
 import { createPGliteFixture, insertTestWorkspace } from "../../test-fixtures";
 
 test("queued feedback survives restart, wakes once, and cannot change canceled or purged work", async () => {
@@ -13,7 +13,7 @@ test("queued feedback survives restart, wakes once, and cannot change canceled o
     await fixture.store.setQueuedAdmissionReason(row.id, "admission_actor_capacity", new Date());
     expect(await fixture.store.getWorkspace(row.id)).toEqual(after);
     await fixture.store.close();
-    const reopened = await PGliteStore.create(fixture.directory);
+    const reopened = await DatabaseStore.openPGlite(fixture.directory);
     try {
       expect(await reopened.getWorkspace(row.id)).toEqual(after);
       await reopened.transition(row.id, {

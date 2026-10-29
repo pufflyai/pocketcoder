@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { databaseLocation, storeKind } from "@pstdio/pocketcoder-server/store-config";
 import { parse as parseDotenv } from "dotenv";
 
 export interface Flags {
@@ -75,9 +76,28 @@ export async function api(path: string, init: RequestInit = {}) {
   return await controlPlaneClient().raw(path, init);
 }
 
-export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
+// Folder backups, off-node backups and folder recovery copy the embedded data folder.
+export function requireEmbeddedStore(command: string) {
+  if (storeKind(process.env) === "postgres")
+    fail(`${command} is not available with PostgreSQL. Use your database's backups instead.`);
+}
+
+// Opens the configured store while the server is stopped; both hold the same writer locks.
+async function openLocalStore() {
   const journalDir = process.env.POCKETCODER_JOURNAL_DIR;
-  const store = await PGliteStore.create(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  if (storeKind(process.env) === "pglite")
+    return DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  // Revocations made here must reach the journal, or a database restore would undo them.
+  if (!journalDir)
+    fail(
+      "POCKETCODER_JOURNAL_DIR is required for local store commands on PostgreSQL; stop the controller first, or use the API",
+    );
+  const { databaseUrl, databaseSchema } = databaseLocation(process.env);
+  return DatabaseStore.openPostgres({ url: databaseUrl, schema: databaseSchema, journalDir, max: 1 });
+}
+
+export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
+  const store = await openLocalStore();
   try {
     return await fn(store);
   } finally {

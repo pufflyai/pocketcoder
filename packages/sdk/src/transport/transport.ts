@@ -86,6 +86,19 @@ export class PocketCoderTransport {
     }
   }
 
+  // Long-lived reads such as event streams run until the caller aborts, without timeout or retries.
+  async stream(path: string, signal?: AbortSignal) {
+    const response = await this.fetchImpl(`${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`, {
+      headers: { authorization: `Bearer ${this.apiKey}`, accept: "text/event-stream" },
+      ...(signal ? { signal } : {}),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw responseError(response, text ? JSON.parse(text) : undefined);
+    }
+    return response;
+  }
+
   async request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}) {
     const response = await this.raw(path, init);
     const text = await response.text();

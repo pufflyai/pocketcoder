@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootstrapLocalOwnerKey } from "@pstdio/pocketcoder-runtime-core";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 import { createJournalReplica } from "./journal-replica";
 import { objectStorageFixture } from "./object-storage-fixture";
 
@@ -41,18 +41,18 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
     const key = randomBytes(32);
     const oldReplica = createJournalReplica({ ...fixture.config, endpoint: proxy.url.toString() }, accountId, key);
     const managerReplica = createJournalReplica(fixture.config, accountId, key);
-    let source: PGliteStore | undefined;
-    let fresh: PGliteStore | undefined;
+    let source: DatabaseStore | undefined;
+    let fresh: DatabaseStore | undefined;
     let revocation: Promise<boolean> | undefined;
     try {
-      source = await PGliteStore.create(join(root, "source"), { acknowledgeJournal: oldReplica.acknowledge });
+      source = await DatabaseStore.openPGlite(join(root, "source"), { acknowledgeJournal: oldReplica.acknowledge });
       await oldReplica.acknowledge(source.journalSnapshot());
       const pepper = "pc93-inflight-pepper";
       const expires_at = new Date(Date.now() + 60_000).toISOString();
       const caller = await bootstrapLocalOwnerKey(source, pepper, { request_id: "caller", expires_at });
       const target = await bootstrapLocalOwnerKey(source, pepper, { request_id: "target", expires_at });
       const oldWriter = source.journalSnapshot().writer;
-      fresh = await PGliteStore.create(join(root, "fresh"));
+      fresh = await DatabaseStore.openPGlite(join(root, "fresh"));
       delay = true;
       revocation = source.revokeMachineKey(target.key.id, new Date(), caller.key.id);
       await observed;

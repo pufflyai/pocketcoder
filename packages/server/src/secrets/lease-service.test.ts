@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { createIssuerClient } from "./issuer-client";
 import { createWorkspaceLeaseService } from "./lease-service";
 import { leaseServiceFixture as fixture } from "./lease-service-fixture";
@@ -182,7 +182,7 @@ test("disk reopen reconciles a lost mint response against its actual retained is
     if (!directory) throw new Error("Missing test data directory");
     await f.store.close();
     f.issuer.controls.reply = "valid";
-    const store = await PGliteStore.create(directory);
+    const store = await DatabaseStore.openPGlite(directory);
     try {
       const service = createWorkspaceLeaseService({
         store,

@@ -70,14 +70,16 @@ export function createTemplates({ db, journal, tables: { templates, principals, 
     async retireTemplate(actorKeyId: string, name: string, version: string) {
       return db.transaction(async (tx) => {
         await authorize(tx, actorKeyId, name);
+        const where = and(eq(templates.name, name), eq(templates.version, version));
+        const [current] = await tx.select({ name: templates.name }).from(templates).where(where).for("update");
+        if (!current) throw new ApiError("template.version_not_found", "Unknown template version.");
         journal?.append({ kind: "template_retired", name, version, at: new Date().toISOString() });
         const [row] = await tx
           .update(templates)
           .set({ status: "retired", retiredAt: sql`coalesce(${templates.retiredAt}, now())` })
-          .where(and(eq(templates.name, name), eq(templates.version, version)))
+          .where(where)
           .returning();
-        if (!row) throw new ApiError("template.version_not_found", "Unknown template version.");
-        return fromRow(row);
+        return fromRow(requiredRow(row));
       });
     },
     async listTemplates(names: string[] | null) {

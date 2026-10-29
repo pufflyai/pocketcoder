@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { withStore } from "./cli-context";
 
 test("local commands persist rows and release the writer lock, including after failure", async () => {
@@ -18,7 +18,7 @@ test("local commands persist rows and release the writer lock, including after f
         throw new Error("command failed");
       }),
     ).rejects.toThrow("command failed");
-    const reopened = await PGliteStore.create(dir);
+    const reopened = await DatabaseStore.openPGlite(dir);
     try {
       expect((await reopened.getPrincipalByName("operator"))?.name).toBe("operator");
     } finally {

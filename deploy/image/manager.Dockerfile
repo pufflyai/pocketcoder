@@ -9,7 +9,7 @@ RUN bun install --frozen-lockfile \
   && chmod 0700 /private/manager_data
 
 # Rebuild kubectl until upstream ships the October Go and HTTP/2 fixes.
-FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine3.24@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS kubectl
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS kubectl
 ARG TARGETARCH
 ENV GOWORK=off
 WORKDIR /src
@@ -26,7 +26,7 @@ LABEL org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot"
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.bun.version="1.4.3" \
   dev.pstdio.pocketcoder.kubectl.version="1.35.9" \
-  dev.pstdio.pocketcoder.kubectl.go.version="1.26.9" \
+  dev.pstdio.pocketcoder.kubectl.go.version="1.26.10" \
   dev.pstdio.pocketcoder.kubectl.x-net.version="0.60.0"
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=kubectl /out/kubectl /usr/local/bin/kubectl

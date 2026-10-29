@@ -1,12 +1,14 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { DatabaseContext } from "../database/context";
+import type { DatabaseContext, Transaction } from "../database/context";
 import type { JournalEvent } from "../journal/events";
+import { clearConversations, conversationIds } from "../modules/conversations/retention";
 
 // Applies one journaled access or content change to a restored database. Records are replayed
 // in journal order and name exact targets, so repeating the whole journal is safe.
-export function createRecordReplay({ db, tables }: DatabaseContext) {
+export function createRecordReplay(context: DatabaseContext) {
+  const { db, tables } = context;
   const { machineKeys, principals, secrets, templates } = tables;
-  const { workspaceConversations: conversations, workspaceConversationMessages: messages } = tables;
+  const { workspaceConversations, conversations } = tables;
 
   async function revoke(ids: string[], at: Date) {
     if (!ids.length) return;
@@ -16,16 +18,46 @@ export function createRecordReplay({ db, tables }: DatabaseContext) {
       .where(and(inArray(machineKeys.id, ids), isNull(machineKeys.revokedAt)));
   }
 
-  async function deleteConversation(workspaceId: string, at: Date) {
+  async function deleteConversation(event: Extract<JournalEvent, { kind: "conversation_deleted" }>, at: Date) {
     await db.transaction(async (tx) => {
-      await tx.delete(messages).where(eq(messages.workspaceId, workspaceId));
-      await tx
-        .insert(conversations)
-        .values({ workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
-        .onConflictDoUpdate({
-          target: conversations.workspaceId,
-          set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
-        });
+      if (event.principalId && event.conversationId) {
+        const one = tx
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.principalId, event.principalId),
+              eq(conversations.conversationId, event.conversationId),
+            ),
+          );
+        return clearConversations(context, tx, one, "deleted", at);
+      }
+      await removeHistory(tx, event.workspaceId, at);
+    });
+  }
+
+  async function removeHistory(tx: Transaction, workspaceId: string, at: Date) {
+    await clearConversations(context, tx, conversationIds(context, tx, workspaceId), "deleted", at);
+    await tx
+      .insert(workspaceConversations)
+      .values({ workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
+      .onConflictDoUpdate({
+        target: workspaceConversations.workspaceId,
+        set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
+      });
+  }
+
+  // The purge itself removed provider data; a restored database only needs its rows cleared again.
+  async function purgeWorkspace(workspaceId: string, at: Date) {
+    await db.transaction(async (tx) => {
+      await removeHistory(tx, workspaceId, at);
+      for (const table of [
+        tables.workspaceLogs,
+        tables.workspaceOutputs,
+        tables.workspaceNetworkEvents,
+        tables.eventOutbox,
+      ])
+        await tx.delete(table).where(eq(table.workspaceId, workspaceId));
     });
   }
 
@@ -64,8 +96,16 @@ export function createRecordReplay({ db, tables }: DatabaseContext) {
           .set({ status: "retired", retiredAt: sql`coalesce(${templates.retiredAt}, ${at})` })
           .where(and(eq(templates.name, event.name), eq(templates.version, event.version)));
         return;
+      case "workspace_purged":
+        return purgeWorkspace(event.workspaceId, at);
+      case "checkpoint_deleted":
+        await db
+          .update(tables.workspaceCheckpoints)
+          .set({ state: "deleted", deletedAt: sql`coalesce(${tables.workspaceCheckpoints.deletedAt}, ${at})` })
+          .where(eq(tables.workspaceCheckpoints.id, event.checkpointId));
+        return;
       case "conversation_deleted":
-        return deleteConversation(event.workspaceId, at);
+        return deleteConversation(event, at);
     }
   };
 }

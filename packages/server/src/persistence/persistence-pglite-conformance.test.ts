@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
@@ -38,7 +38,7 @@ async function removeStorageRoot(root: string) {
 
 describe.each(["memory", "disk"] as const)("PGlite persistence routes (%s)", (mode) => {
   let root: string;
-  let store: PGliteStore;
+  let store: DatabaseStore;
   let server: ReturnType<typeof buildServer>;
   let storageDriver: FilesystemStorageDriver;
   let request: (path: string, init?: RequestInit) => Response | Promise<Response>;
@@ -47,7 +47,7 @@ describe.each(["memory", "disk"] as const)("PGlite persistence routes (%s)", (mo
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "pocketcoder-postgres-routes-"));
-    store = await PGliteStore.create(mode === "disk" ? join(root, "pc_data") : undefined);
+    store = await DatabaseStore.openPGlite(mode === "disk" ? join(root, "pc_data") : undefined);
   });
 
   afterAll(async () => {

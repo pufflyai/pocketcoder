@@ -11,7 +11,7 @@ import type { JournalSnapshot } from "../journal/acknowledgement";
 import { JOURNAL_FORMAT, type JournalCursorSchema } from "../journal/events";
 import { sourceWriterIdentity } from "../recovery/source-writer";
 import { RecoveryStateSchema } from "../recovery/state";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 import { digestFile, type OffNodeBackupReceipt } from "./backup-receipt";
 import type { OffNode } from "./config";
 import { downloadFile } from "./download";
@@ -74,7 +74,7 @@ async function installJournal(directory: string, snapshot: JournalSnapshot) {
 }
 
 async function published(input: OffNodeRestoreInput, snapshotId: string, databaseBudget: DatabaseBudget) {
-  const store = await PGliteStore.create(input.dataDir, { journalDir: input.journalDir, databaseBudget });
+  const store = await DatabaseStore.openPGlite(input.dataDir, { journalDir: input.journalDir, databaseBudget });
   try {
     const recovery = await store.recovery.recoveryState();
     if (!recovery || recovery.snapshotId !== snapshotId)
@@ -165,7 +165,7 @@ export async function restoreOffNodeBackup(input: OffNodeRestoreInput) {
     try {
       const result = Result.parse(JSON.parse((await readPrivateFile(resultPath, 65_536)).toString()));
       // Opening validates the real LOCK identity and the bound journal, even after completion.
-      const store = await PGliteStore.create(input.dataDir, {
+      const store = await DatabaseStore.openPGlite(input.dataDir, {
         journalDir: input.journalDir,
         databaseBudget: capacity.databaseBudget,
       });

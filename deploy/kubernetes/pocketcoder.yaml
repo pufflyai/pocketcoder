@@ -170,6 +170,22 @@ spec:
       port: 7080
       targetPort: http
 ---
+# Bootstrap jobs and the admission hook read principals here while /readyz
+# fails. Otherwise readiness would wait on the hook, and the hook on readiness.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pocketcoder-server-live
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    app: pocketcoder-server
+  ports:
+    - name: http
+      port: 7080
+      targetPort: http
+---
 apiVersion: v1
 kind: Service
 metadata:

@@ -6,7 +6,7 @@ import {
   RestoreResponseSchema,
   WorkspaceResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { assertRecoverableSource, cancelRecoverableSource } from "./checkpoint-rejection";
 import { checkpointSourceFixture } from "./checkpoint-source-fixture";
 import { command, waitFor } from "./local-process";
@@ -106,7 +106,7 @@ try {
   if (read.stdout.trim() !== "survives controller restart") throw new Error("Restored bytes changed across restart.");
   await next.request(`/v1/workspaces/${restored.workspace.id}/cancel`, { method: "POST" });
   await fixture.stop();
-  const store = await PGliteStore.create(fixture.dataDir);
+  const store = await DatabaseStore.openPGlite(fixture.dataDir);
   try {
     const usage = await store.storageReservations.usage(null, null);
     if (usage.outstanding.bytes || usage.outstanding.files)

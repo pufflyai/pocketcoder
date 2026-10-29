@@ -55,10 +55,10 @@ function warmLaunch(ephemeralStorage?: string) {
 
 const options = {
   imagePullPolicy: "IfNotPresent" as const,
-  nodeSelector: { "onefin.com/workload": "agent-workspace" },
+  nodeSelector: { "example.com/workload": "agent-workspace" },
   tolerations: [
     {
-      key: "onefin.com/workload",
+      key: "example.com/workload",
       operator: "Equal" as const,
       value: "agent-workspace",
       effect: "NoSchedule" as const,

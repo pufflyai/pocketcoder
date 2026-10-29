@@ -1,4 +1,5 @@
 export type { DatabaseOpenOptions } from "./database/context";
+export { postgresSqlClient, type SqlClient } from "./database/sql-client";
 export {
   advisoryLockKey,
   assertValidSchema,
@@ -29,4 +30,4 @@ export {
   workspaces,
   workspaceTerminalSessions,
 } from "./schema/index";
-export { PGliteStore } from "./store";
+export { DatabaseStore } from "./store";

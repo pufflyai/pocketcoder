@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { restoreBackup } from "@pstdio/pocketcoder-db/backup";
 import { insertTestWorkspace } from "@pstdio/pocketcoder-db/testing";
 import { DockerDriver, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
@@ -60,7 +60,7 @@ class FlakyDocker extends DockerDriver {
 async function restored(out: string, archive: string, driver = new DockerDriver({ inputDir: join(out, "inputs") })) {
   const checkpoints = join(out, "checkpoints");
   const { directory } = await restoreBackup({ archive, dataDir: join(out, "restored"), checkpointDir: checkpoints });
-  const store = await PGliteStore.create(directory);
+  const store = await DatabaseStore.openPGlite(directory);
   cleanup.push(() => store.close());
   const storageDriver = new FilesystemStorageDriver({
     workspaceRoot: join(out, "live"),
