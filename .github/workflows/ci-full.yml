@@ -167,6 +167,26 @@ jobs:
       - name: Qualify isolated shared storage on two Kubernetes nodes
         run: bun run example:e2e:kubernetes-shared-storage
 
+  kubernetes-helm:
+    runs-on: ubuntu-latest
+    # A new job: it builds the server and workspace images before installing the chart.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: kubernetes-helm
+      - name: Install the pinned kind release
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Install the chart on PostgreSQL and run an echo workspace
+        run: bun run example:e2e:kubernetes-helm
+
   extensions:
     runs-on: ubuntu-latest
     steps:
@@ -182,6 +202,7 @@ jobs:
       - integration
       - extensions
       - kubernetes-shared-storage
+      - kubernetes-helm
       - contracts
       - performance
       - service-fixtures

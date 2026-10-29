@@ -439,6 +439,44 @@ GitOps setup for a new environment:
 See [rotating machine keys](security.md#rotating-machine-keys) for keys outside
 the principal file.
 
+## Helm chart
+
+`deploy/helm/pocketcoder` installs the controller with values only. It is
+versioned with each release, published to `oci://ghcr.io/pufflyai/charts/pocketcoder`
+and signed with build provenance (`gh attestation verify`).
+
+```sh
+kubectl create secret generic pocketcoder-database --from-literal=database-url='postgres://...'
+kubectl create secret generic pocketcoder-keys --from-literal=auth-pepper="$(openssl rand -base64 32)"
+helm install pocketcoder oci://ghcr.io/pufflyai/charts/pocketcoder --version <release> \
+  --set image.repository=ghcr.io/pufflyai/pocketcoder/server --set image.digest=sha256:... \
+  --set store.database.urlSecret.name=pocketcoder-database --set keys.secretName=pocketcoder-keys
+```
+
+- **Store.** PostgreSQL by default: `store.database.urlSecret`, `store.database.schema`
+  and an optional CA bundle (`store.database.caConfigMap`). An init container runs
+  `pcd db migrate` before the controller starts. `store.kind: pglite` keeps the
+  embedded database on the data volume instead.
+- **Keys.** `keys.secretName` holds `auth-pepper` and optional `event-signing-key`
+  and `secret-key`. Keep the pepper of an upgraded database.
+- **Volumes.** A data volume (controller files and checkpoint archives) and a
+  journal volume. Both are kept when the release is uninstalled.
+- **Probes and Services.** Liveness uses `/livez`, readiness `/readyz`. The
+  `pocketcoder-server-live` and `pocketcoder-agent` Services include pods that are
+  not ready, so bootstrap jobs, admission hooks and reconnecting workspaces work
+  during an admission outage (see [health probes](#health-probes)).
+- **Workspaces.** `workspace.namespace`, `runtimeClassName`, `nodeSelector` and
+  `tolerations`; the chart creates the workspace service account (no API token)
+  and the controller's namespaced RBAC.
+- **Principals.** `principals.config` is the [principal file](#gitops-bootstrap);
+  `launchPolicy` wires an external admission hook.
+- **Extension points.** `sidecars`, `initContainers`, `extraEnv`, `extraVolumes`,
+  `extraVolumeMounts`, `networkPolicy.ingress`, pod labels and annotations. A
+  consumer such as Onefin adds its accounting sidecar with values, without a fork.
+
+`bun run example:e2e:kubernetes-helm` installs the chart on a local kind cluster
+against an in-cluster PostgreSQL and runs an echo workspace through it.
+
 ## Data folder
 
 `POCKETCODER_DIR` defaults to `./pc_data`. With PGlite, the server stores the database in its `db/`
