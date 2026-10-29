@@ -9,13 +9,13 @@ test("service startup retains declared mounts, checkpoint hook and bounded launc
   const lifecycle = {
     persistence: {
       mounts: [
-        { name: "home", target: "/home/onefin", maxBytes: 1048576, maxFiles: 100 },
-        { name: "state", target: "/var/onefin/state", maxBytes: 1048576, maxFiles: 100 },
+        { name: "home", target: "/home/worker", maxBytes: 1048576, maxFiles: 100 },
+        { name: "state", target: "/var/worker/state", maxBytes: 1048576, maxFiles: 100 },
       ],
       conversationRestore: "supported",
-      sessionCompatibility: "onefin-test/v1",
+      sessionCompatibility: "worker-test/v1",
     },
-    checkpointHook: { command: ["python3", "/opt/onefin/chat_runtime.py", "quiesce"], timeoutSeconds: 20 },
+    checkpointHook: { command: ["python3", "/opt/worker/chat_runtime.py", "quiesce"], timeoutSeconds: 20 },
   };
   const snapshot = workloadSnapshotOf(parseWorkloadTemplate({ ...source, spec: { ...source.spec, lifecycle } }));
   const exec = waitingExecSpec(snapshot, "observed-incarnation", "restore", input);
