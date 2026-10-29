@@ -9,6 +9,14 @@ test("maps Kubernetes readiness and liveness to the matching endpoints", async (
   expect(manifest).toContain("livenessProbe:\n            httpGet:\n              path: /livez");
 });
 
+test("lets bootstrap jobs and admission hooks reach a live controller before it is ready", async () => {
+  const manifest = await readFile(join(import.meta.dir, "kubernetes/pocketcoder.yaml"), "utf8");
+
+  expect(manifest).toContain(
+    "name: pocketcoder-server-live\nspec:\n  type: ClusterIP\n  publishNotReadyAddresses: true",
+  );
+});
+
 test("configures kubectl with the rotating in-cluster service account token", async () => {
   const [dockerfile, kubeconfig] = await Promise.all([
     readFile(join(import.meta.dir, "image/server.Dockerfile"), "utf8"),
