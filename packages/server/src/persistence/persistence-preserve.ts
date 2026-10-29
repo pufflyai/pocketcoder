@@ -13,18 +13,13 @@ import type {
   WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
 
-import type { PersistenceContext } from "./persistence-base";
+import { checkpointProvider, type PersistenceContext } from "./persistence-base";
 import type { PersistencePreserveRunner } from "./persistence-preserve-runner";
 
 function admissionBytes(context: PersistenceContext, workspace: WorkspaceRow) {
   // Transfers reserve their measured archive after capture; this check admits the checkpoint count only.
   if (context.deps.checkpointTransfers) return 0;
   return workspace.templateSnapshot.spec.persistence.mounts.reduce((sum, mount) => sum + mount.maxBytes, 0);
-}
-
-function checkpointProvider(context: PersistenceContext) {
-  if (context.deps.checkpointTransfers) return "controller-archive";
-  return context.storageDriver().kind;
 }
 
 function policyOperationReason(reason: ReasonCode) {

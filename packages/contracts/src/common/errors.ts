@@ -33,6 +33,7 @@ export const ERROR_CODES = {
   "workspace.persistence_not_enabled": 409,
   "workspace.preserving": 409,
   "checkpoint.not_found": 404,
+  "checkpoint.unsupported": 409,
   "checkpoint.not_ready": 409,
   "checkpoint.none_ready": 409,
   "checkpoint.corrupt": 409,

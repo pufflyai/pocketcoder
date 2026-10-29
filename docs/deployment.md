@@ -502,6 +502,8 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_MAX_CHECKPOINTS_PER_PRINCIPAL` | `100` | Per-principal ready checkpoint count |
 | `POCKETCODER_MAX_CHECKPOINT_FILES` | `1000000` | Measured files per checkpoint |
 | `POCKETCODER_MAX_CHECKPOINT_OPERATIONS` | `4` | Concurrent durable checkpoint operations |
+| `POCKETCODER_CONVERSATION_RETENTION` | template value | Replaces template conversation retention: a duration, or `until-deleted` |
+| `POCKETCODER_MAX_CONVERSATION_RETENTION` | none | Caps template conversation retention |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |

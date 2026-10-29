@@ -112,8 +112,7 @@ export async function startPocketCoderServer(
     await store.acquireCoordinatorLease();
     const durableAccountState = await accountState(directory);
     if (durableAccountState.state.state !== "ready") maintenance.fence();
-    log("coordinator lease acquired");
-    await recordInterruptedTurns(store, log);
+    await recordInterruptedTurns(store, log, "coordinator lease acquired");
     const managedPrincipals = await loadDeclaredState(config, store, log, logger);
     const resolveRegistry = config.secretKey
       ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))

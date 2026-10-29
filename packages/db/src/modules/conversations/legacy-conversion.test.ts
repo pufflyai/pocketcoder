@@ -49,7 +49,7 @@ test("legacy rows become documents once: identified turns by conversation, the r
 
   const progress: number[] = [];
   const result = await convertLegacyConversations(f.context, { onProgress: (done) => progress.push(done.messages) });
-  expect(result).toEqual({ workspaces: 1, messages: 5, records: 2 });
+  expect(result).toEqual({ workspaces: 1, messages: 5, records: 3 });
   expect(progress).toEqual([5]);
 
   const identified = await f.store.getConversation(f.principal.id, request.conversation_id);
@@ -60,10 +60,16 @@ test("legacy rows become documents once: identified turns by conversation, the r
 
   const legacy = (await f.store.listConversations(workspace.id)).find((row) => row.conversationId === null);
   expect(legacy).toMatchObject({ legacy: true, messageCount: 2 });
-  const [record] = await f.store.readConversationRecords(legacy?.id ?? "");
-  expect(record).toMatchObject({ status: "legacy", recordKey: "legacy" });
-  expect(record?.document.messages.map((message) => message.content)).toEqual([
+  const records = await f.store.readConversationRecords(legacy?.id ?? "");
+  expect(records.map((record) => [record.status, record.recordKey])).toEqual([
+    ["legacy", "legacy:1"],
+    ["legacy", "legacy:5"],
+  ]);
+  // The workspace history keeps the order the earlier release wrote.
+  expect((await f.store.readWorkspaceConversation(workspace.id, 0, 10)).map((row) => row.message.content)).toEqual([
     "plain old message",
+    "Draft answer",
+    "",
     "second plain message",
   ]);
 

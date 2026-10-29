@@ -45,6 +45,30 @@ function messageOf(row: LegacyRow) {
   };
 }
 
+// Turns and runs of messages without identity, in the order they were first written, so the
+// workspace history reads back in its original order.
+function groupsInOrder(rows: LegacyRow[]) {
+  const groups: { turnId: string | null; rows: LegacyRow[] }[] = [];
+  const turns = new Map<string, { turnId: string; rows: LegacyRow[] }>();
+  for (const row of rows) {
+    const turnId = row.identity?.turn_id ?? null;
+    if (turnId === null) {
+      const last = groups.at(-1);
+      if (last && last.turnId === null) last.rows.push(row);
+      else groups.push({ turnId: null, rows: [row] });
+      continue;
+    }
+    const turn = turns.get(turnId);
+    if (turn) turn.rows.push(row);
+    else {
+      const group = { turnId, rows: [row] };
+      turns.set(turnId, group);
+      groups.push(group);
+    }
+  }
+  return groups;
+}
+
 // Converts one workspace at a time and removes its source rows in the same transaction, so the
 // step can stop and resume anywhere, and running it again changes nothing.
 export async function convertLegacyConversations(
@@ -65,43 +89,37 @@ export async function convertLegacyConversations(
         .orderBy(asc(legacy.seq))
         .for("update");
       const at = rows[0]?.createdAt ?? new Date();
-      const turns = new Map<string, LegacyRow[]>();
-      const unidentified: LegacyRow[] = [];
-      for (const row of rows) {
-        if (!row.identity) unidentified.push(row);
-        else turns.set(row.identity.turn_id, [...(turns.get(row.identity.turn_id) ?? []), row]);
-      }
-      for (const [turnId, turnRows] of turns) {
-        const request = ConversationRequestIdentitySchema.parse(turnRows[0]?.identity);
-        const document = await lockDocument(context, tx, next.workspaceId, request.conversation_id, at);
-        const messages = latestRevisions(turnRows);
-        await insertRecord(context, tx, document, {
-          workspaceId: next.workspaceId,
-          recordKey: turnId,
-          request,
-          status: turnStatus(messages),
-          reason: null,
-          messages: messages.map(messageOf),
-          startedAt: messages[0]?.occurredAt ?? null,
-          endedAt: messages.at(-1)?.occurredAt ?? null,
-          createdAt: messages.at(-1)?.createdAt ?? at,
-        });
-        done.records += 1;
-      }
-      // ADR 001: history without identity stays unidentified rather than getting made-up IDs.
-      if (unidentified.length) {
-        const document = await lockDocument(context, tx, next.workspaceId, null, at, true);
-        await insertRecord(context, tx, document, {
-          workspaceId: next.workspaceId,
-          recordKey: "legacy",
-          request: null,
-          status: "legacy",
-          reason: null,
-          messages: unidentified.map(messageOf),
-          startedAt: unidentified[0]?.occurredAt ?? null,
-          endedAt: unidentified.at(-1)?.occurredAt ?? null,
-          createdAt: unidentified.at(-1)?.createdAt ?? at,
-        });
+      for (const group of groupsInOrder(rows)) {
+        if (group.turnId) {
+          const request = ConversationRequestIdentitySchema.parse(group.rows[0]?.identity);
+          const document = await lockDocument(context, tx, next.workspaceId, request.conversation_id, at);
+          const messages = latestRevisions(group.rows);
+          await insertRecord(context, tx, document, {
+            workspaceId: next.workspaceId,
+            recordKey: group.turnId,
+            request,
+            status: turnStatus(messages),
+            reason: null,
+            messages: messages.map(messageOf),
+            startedAt: messages[0]?.occurredAt ?? null,
+            endedAt: messages.at(-1)?.occurredAt ?? null,
+            createdAt: messages.at(-1)?.createdAt ?? at,
+          });
+        } else {
+          // ADR 001: history without identity stays unidentified rather than getting made-up IDs.
+          const document = await lockDocument(context, tx, next.workspaceId, null, at, true);
+          await insertRecord(context, tx, document, {
+            workspaceId: next.workspaceId,
+            recordKey: `legacy:${group.rows[0]?.seq}`,
+            request: null,
+            status: "legacy",
+            reason: null,
+            messages: group.rows.map(messageOf),
+            startedAt: group.rows[0]?.occurredAt ?? null,
+            endedAt: group.rows.at(-1)?.occurredAt ?? null,
+            createdAt: group.rows.at(-1)?.createdAt ?? at,
+          });
+        }
         done.records += 1;
       }
       await tx.delete(legacy).where(eq(legacy.workspaceId, next.workspaceId));

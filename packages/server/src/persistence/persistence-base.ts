@@ -84,6 +84,12 @@ export const DEFAULT_PERSISTENCE_LIMITS: PersistenceLimits = {
   conversationRetention: DEFAULT_CONVERSATION_RETENTION,
 };
 
+// The storage backend this controller writes checkpoints to and can restore them from.
+export function checkpointProvider(context: PersistenceContext) {
+  if (context.deps.checkpointTransfers) return "controller-archive";
+  return context.storageDriver().kind;
+}
+
 export type SnapshotResult = Awaited<ReturnType<WorkspaceStorageDriver["snapshot"]>>;
 
 export function toCheckpointResource(row: WorkspaceCheckpointRow) {

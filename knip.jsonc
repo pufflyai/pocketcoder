@@ -12,6 +12,7 @@
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
         "scripts/native-startup-runner.ts",
+        "scripts/upgrade/seed-previous-release.ts",
         "examples/e2e/managed-interruption-child.ts",
         "examples/e2e/managed-purge-bootstrap-child.ts",
         "examples/e2e/kind-purge-rbac.ts",

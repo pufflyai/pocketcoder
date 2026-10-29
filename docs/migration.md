@@ -32,13 +32,70 @@ write checks and completed a correlated request/response turn through the
 relay. It is safe to remove image-side world-writable workarounds after all
 deployed control planes contain the writable-memory ownership fix.
 
-## Embedded database cutover
+## Upgrade from 0.8.x on PostgreSQL
 
-The embedded database opens only PGlite data folders. It does not convert an
-existing PostgreSQL install in place. Keep the stopped source database, original
-auth pepper, event-signing identity and required checkpoint bytes intact until
-the offline export/import flow is available and verified. A fresh `pc_data`
-folder is a new install, not a migration of existing state.
+A 0.8.x PostgreSQL database upgrades in place. Keep the same database, schema and
+auth pepper. You do not need a fresh controller, new principals or new keys.
+
+1. Back up the database with your provider's tools.
+2. Stop the 0.8.x controller.
+3. Run the new release's migration with the existing settings:
+
+   ```sh
+   POCKETCODER_DATABASE_URL=... POCKETCODER_DATABASE_SCHEMA=pocketcoder pcd db migrate
+   ```
+
+   It applies the 1.0 migrations under an advisory lock. Then it converts the
+   conversation history into documents, one workspace per transaction, and prints
+   its progress. If it stops, run it again: it continues where it stopped, and a
+   finished conversion changes nothing.
+4. Start the 1.0 controller with `POCKETCODER_DATABASE_URL`, the same
+   `POCKETCODER_AUTH_PEPPER`, and a new private volume for
+   `POCKETCODER_JOURNAL_DIR` (see [deployment](deployment.md#store)).
+
+What the upgrade does:
+
+- **0.8.1 history.** 0.8.1 shipped `20261013125843_tiny_marvel_zombies`, which the
+  1.0 chain does not contain. 1.0 has the same statements in
+  `20261014100009_marvelous_praxagora`, plus two reason-code constraints. The
+  migrator detects the 0.8.1 migration, applies only the two missing constraints
+  and records `marvelous_praxagora` with its real hash. No shipped migration
+  changes.
+- **0.7.1 JSON.** 0.7.1 stored some JSON objects as text inside jsonb strings, and
+  0.8.x decoded them on read. The upgrade decodes them once in place: template
+  specs, workspace snapshots, metadata, storage and checkpoint references, and
+  conversation metadata and identities.
+- **Conversation history** becomes [conversation documents](api.md#durable-conversation-history).
+  Turns with a request identity join the document of their conversation.
+  Messages without one become a document of their workspace, flagged `legacy`
+  (ADR 001 forbids made-up identities). The workspace history keeps its order.
+
+What carries over:
+
+| Carried over | Not carried over |
+|---|---|
+| Principals and machine keys (same pepper) | Old checkpoints on 0.8 storage such as `kubernetes-pvc`: restore and resume return `409 checkpoint.unsupported` |
+| Templates and template status | Old workspaces do not resume; they stay readable |
+| Admission state and queued workspaces | |
+| Warm-pool configuration (from the environment) | |
+| Conversation history and request receipts | |
+
+**Custom tables.** Some consumers added their own tables to the `pocketcoder`
+schema, such as Onefin's `admission-migration.sql` patch. 1.0 does not read or
+change them, but they share the schema's name space. Before upgrading, list them:
+
+```sql
+SELECT tablename FROM pg_tables WHERE schemaname = 'pocketcoder' ORDER BY tablename;
+```
+
+Compare the list with the tables of a scratch database that `pcd db migrate` just
+created. Move every extra table to the consumer's own schema, or drop it once its
+data is no longer needed.
+
+PGlite data folders from 1.0 candidates open with the 1.0 release directly; their
+history converts the first time the store opens. See the
+[release checklist](release.md) for the rule that every release upgrades the
+previous one in place.
 
 ## Alpha templates to canonical workloads
 

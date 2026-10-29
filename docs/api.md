@@ -338,8 +338,19 @@ and `created_before` is exclusive.
 
 ## Durable conversation history
 
-See [conversation history and request identities](conversation-identities.md)
-for retention, deletion, v2 identity receipts, and compatibility.
+```text
+GET    /v1/workspaces/{id}/conversation                         scope conversations:read
+GET    /v1/workspaces/{id}/conversations                        scope conversations:read
+GET    /v1/workspaces/{id}/conversations/{conversation_id}      scope conversations:read
+GET    /v1/workspaces/{id}/conversations/{conversation_id}/live scope conversations:read
+DELETE /v1/workspaces/{id}/conversations/{conversation_id}      scope conversations:delete
+```
+
+Each conversation is a JSON document of records written at turn boundaries, with
+several conversations per workspace. See
+[conversation history and request identities](conversation-identities.md#durable-conversation-history)
+for records, live tails, retention, deletion, v2 identity receipts, and
+compatibility.
 
 ## Service relay
 

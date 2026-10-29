@@ -1,6 +1,6 @@
 # 003: Run servers on PostgreSQL and store conversations as JSON documents
 
-Status: Proposed for PC-143. Supersedes PC-58's PGlite-only store and the
+Status: Accepted for PC-143. Supersedes PC-58's PGlite-only store and the
 per-revision message rows in ADR 001.
 
 PC-58 replaced the PostgreSQL store with embedded PGlite. The first server
@@ -53,10 +53,43 @@ launches keep queueing and policy reconciliation stays fail-closed. Admin and
 principal APIs answer once the process is live, so bootstrap code waits on
 `/livez`, not `/readyz`.
 
-Open: whether a conversation document is rewritten whole at each turn, or
-assembled on read from immutable per-turn JSON records. Per-turn records give
-constant write cost and simpler object storage, at the price of an extra read
-step. Decide before PC-153 starts.
+## Decisions made during implementation
+
+- **Per-turn records, not whole-document rewrites.** A conversation document is
+  assembled on read from immutable per-turn JSON records. A turn costs one insert
+  of its own size, whatever the length of the history, and object storage can
+  later hold each record as one object. Cursor reads page by message sequence;
+  the record's sequence range finds the records to read.
+- **Store selection.** A database URL selects PostgreSQL; without one the
+  embedded store stays the default for local and desktop use.
+  `POCKETCODER_STORE=pglite` keeps the embedded store even with a URL.
+  PostgreSQL needs the existing auth pepper from the environment, so upgraded
+  key digests keep working, and the deletion journal volume.
+- **Restore rule.** On PostgreSQL the controller replays the whole deletion
+  journal at every start, not only after a detected restore. Records name exact
+  targets and every runtime access change is journaled, so a replay changes
+  nothing that is still current. Writer fencing by data folder is replaced by the
+  coordinator advisory lock. A database bound to a journal refuses to start with
+  a missing or different one.
+- **Migrations on PostgreSQL** run only through `pcd db migrate`. Controllers
+  refuse to start with pending migrations, so startup never changes a shared
+  schema.
+- **Unidentified messages** (AgentAPI messages and harness lines without a
+  request identity) are single message records in a document of their
+  workspace. Converted pre-1.0 messages without identity form legacy records in
+  that document, in their original order.
+- **Turn boundaries.** An identified turn is written when its `turn_terminal`
+  fact arrives. A turn left open is written as `interrupted` when its workspace
+  ends or, after a controller restart, from its request receipt. A request that
+  is still waiting for dispatch is left alone.
+- **Old checkpoints.** 0.8.x checkpoints live on storage backends 1.0 does not
+  use (`kubernetes-pvc`). Restore and resume return `409 checkpoint.unsupported`
+  with the provider kind instead of failing inside a restore. Old workspaces stay
+  readable; their alpha snapshots are still supported by the 1.0 runtime.
+- **AgentAPI reads.** AgentAPI 0.12 has no incremental message read. The
+  supervisor now reads `/messages` while the agent runs and once after it
+  settles, instead of on every health probe of an idle agent. A truly
+  incremental read waits for the AgentAPI events stream (PC-136).
 
 This brings back a PostgreSQL context, migrator and lease from 0.8.1, an upgrade
 step, a conversation document store, and CI for both drivers plus upgrades from

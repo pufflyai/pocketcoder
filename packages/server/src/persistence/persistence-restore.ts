@@ -1,10 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { ApiError, canonicalJson, parseDurationMs, type RestoreRequest } from "@pstdio/pocketcoder-contracts";
-import type { PrincipalRow, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
+import type { PrincipalRow, WorkspaceCheckpointRow, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
 
 import { templateAuthorized } from "../workspaces/service";
-import type { PersistenceContext } from "./persistence-base";
+import { checkpointProvider, type PersistenceContext } from "./persistence-base";
 import type { PersistenceMaintenanceService } from "./persistence-maintenance";
+
+// Releases before 1.0 kept checkpoints on volumes such as `kubernetes-pvc`. Say so instead
+// of failing somewhere inside a restore.
+function requireRestorableBackend(context: PersistenceContext, checkpoint: WorkspaceCheckpointRow) {
+  context.requirePersistence();
+  if (checkpoint.providerKind !== checkpointProvider(context))
+    throw new ApiError(
+      "checkpoint.unsupported",
+      "This checkpoint was written to a storage backend this controller does not use.",
+      { provider_kind: checkpoint.providerKind },
+    );
+}
 
 export class PersistenceRestoreService {
   constructor(
@@ -21,6 +33,7 @@ export class PersistenceRestoreService {
     if (replay.result) return replay.result;
     const { requestDigest } = replay;
     const checkpoint = await this.context.getCheckpointOwned(principal, checkpointId);
+    requireRestorableBackend(this.context, checkpoint);
     const transferred = checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers;
     if (checkpoint.state !== "ready" || !checkpoint.providerRef || (!transferred && !checkpoint.manifest)) {
       throw new ApiError("checkpoint.not_ready", "Checkpoint is not ready for restore.");
@@ -40,7 +53,6 @@ export class PersistenceRestoreService {
         `launch_input exceeds the template limit of ${checkpoint.templateSnapshot.spec.maxLaunchInputBytes} bytes.`,
       );
     }
-    this.context.requirePersistence();
     const now = this.context.now();
     const resultWorkspaceId = randomUUID();
     const operationResult = await this.context.insertOperation({
