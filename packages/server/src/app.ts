@@ -29,7 +29,6 @@ import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { processTransport } from "./control-channel/process-dispatch";
 import { controlStore } from "./control-channel/store";
-import { conversationRetention, DEFAULT_CONVERSATION_RETENTION } from "./conversations/conversation-retention";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { registerExecutionRoutes } from "./conversations/execution-routes";
 import { conversationTransport, executionTransport } from "./conversations/execution-transport";
@@ -304,13 +303,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
-  registerConversationRoutes({
-    app,
-    store,
-    service,
-    liveTurns,
-    retention: conversationRetention(deps.persistenceLimits?.conversationRetention ?? DEFAULT_CONVERSATION_RETENTION),
-  });
+  registerConversationRoutes({ app, store, service, liveTurns, limits: deps.persistenceLimits });
   registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);

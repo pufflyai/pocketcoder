@@ -141,3 +141,12 @@ function snapshot(turn: OpenTurn): Extract<ConversationLiveEvent, { type: "turn"
     })),
   };
 }
+
+// Open turns lived in the previous process; record them before producers reconnect.
+export async function recordInterruptedTurns(
+  store: Pick<Store, "recordInterruptedTurns">,
+  log: (line: string) => void,
+) {
+  const interrupted = await store.recordInterruptedTurns(new Date());
+  if (interrupted) log(`conversations: recorded ${interrupted} interrupted turns`);
+}

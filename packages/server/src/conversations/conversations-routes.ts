@@ -9,12 +9,14 @@ import {
   OutputListQuerySchema,
   OutputPageSchema,
 } from "@pstdio/pocketcoder-contracts";
-import type { ConversationRetention, Store } from "@pstdio/pocketcoder-runtime-core";
+import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { decodeSequenceCursor, encodeCursor } from "../http/pagination";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
+import type { PersistenceLimits } from "../persistence/persistence-base";
 import type { WorkspaceService } from "../workspaces/service";
 import { CONVERSATION_PROTOCOL, registerConversationDocumentRoutes } from "./conversation-document-routes";
+import { conversationRetention, DEFAULT_CONVERSATION_RETENTION } from "./conversation-retention";
 import type { LiveTurns } from "./live-turns";
 
 export function registerConversationRoutes({
@@ -22,14 +24,15 @@ export function registerConversationRoutes({
   store,
   service,
   liveTurns,
-  retention,
+  limits,
 }: {
   app: OpenAPIHono<AppEnv>;
   store: Store;
   service: WorkspaceService;
   liveTurns: LiveTurns;
-  retention: ConversationRetention;
+  limits?: Pick<PersistenceLimits, "conversationRetention">;
 }) {
+  const retention = conversationRetention(limits?.conversationRetention ?? DEFAULT_CONVERSATION_RETENTION);
   registerConversationDocumentRoutes({ app, store, service, liveTurns });
   app.openapi(
     createRoute({

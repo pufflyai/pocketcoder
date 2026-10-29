@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ConversationFact, ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import type {
+  ConversationFact,
+  ConversationMessageIdentity,
+  ConversationRequestIdentity,
+} from "@pstdio/pocketcoder-contracts";
+import type { ConversationMessageRow, Store } from "@pstdio/pocketcoder-runtime-contracts";
 import { type StoreContractHarness, withStore } from "./store-fixture";
 
 function requiredIdentity<T>(identity: T | null | undefined): T {
@@ -73,50 +78,7 @@ export function registerConversationIdentityContract(name: string, harness: Stor
             request: accepted.request,
           });
           expect(await store.isAcceptedTurn(resumed.id, message.identity)).toBe(true);
-          const turn = {
-            workspaceId: original.id,
-            identity,
-            status: "completed" as const,
-            reason: null,
-            messages: [message],
-            startedAt: acceptedAt,
-            endedAt: acceptedAt,
-          };
-          const committed = await store.commitConversationTurn(turn);
-          expect(committed.created).toBe(true);
-          const activity = requiredActivity(requiredIdentity(committed.record.document.messages[0]?.identity).fact);
-          activity.label = "altered display label";
-          expect(message.identity.fact.label).toBe("Read selected files");
-          expect(await store.commitConversationTurn(turn)).toMatchObject({ created: false });
-          const document = await store.getConversation(original.principalId, identity.conversation_id);
-          if (!document) throw new Error("conversation document missing");
-          expect(await store.readConversationMessages(document.id, 0, 10)).toEqual([
-            expect.objectContaining({ seq: 1, identity: message.identity }),
-          ]);
-          const nextTurn = {
-            ...identity,
-            request_id: "10000000-0000-4000-8000-000000000008",
-            turn_id: "10000000-0000-4000-8000-000000000009",
-          };
-          await store.acceptConversationRequest(resumed.id, nextTurn, acceptedAt);
-          expect(
-            await store.commitConversationTurn({
-              ...turn,
-              workspaceId: resumed.id,
-              identity: nextTurn,
-              messages: [{ ...message, identity: { ...message.identity, ...nextTurn } }],
-            }),
-          ).toMatchObject({ created: true });
-          expect(
-            (await store.readConversationMessages(document.id, 0, 10)).map((row) => [row.seq, row.identity?.turn_id]),
-          ).toEqual([
-            [1, identity.turn_id],
-            [2, nextTurn.turn_id],
-          ]);
-          // The resumed generation lists the conversation its origin started.
-          expect((await store.listConversations(resumed.id)).map((row) => row.conversationId)).toEqual([
-            identity.conversation_id,
-          ]);
+          await commitAcrossGenerations(store, original, resumed, identity, message, acceptedAt);
           for (const conflict of [
             { request_fingerprint: "b".repeat(64) },
             { turn_id: "10000000-0000-4000-8000-000000000004" },
@@ -154,4 +116,61 @@ export function registerConversationIdentityContract(name: string, harness: Stor
       },
     );
   });
+}
+
+// One turn in the original generation, the next in the resumed one, under one conversation.
+async function commitAcrossGenerations(
+  store: Store,
+  original: { id: string; principalId: string },
+  resumed: { id: string },
+  identity: ConversationRequestIdentity,
+  message: Omit<ConversationMessageRow, "workspaceId" | "createdAt"> & {
+    identity: ConversationMessageIdentity & { fact: Extract<ConversationFact, { type: "activity_started" }> };
+  },
+  acceptedAt: Date,
+) {
+  const turn = {
+    workspaceId: original.id,
+    identity,
+    status: "completed" as const,
+    reason: null,
+    messages: [message],
+    startedAt: acceptedAt,
+    endedAt: acceptedAt,
+  };
+  const committed = await store.commitConversationTurn(turn);
+  expect(committed.created).toBe(true);
+  const activity = requiredActivity(requiredIdentity(committed.record.document.messages[0]?.identity).fact);
+  activity.label = "altered display label";
+  expect(message.identity.fact.label).toBe("Read selected files");
+  expect(await store.commitConversationTurn(turn)).toMatchObject({ created: false });
+  const document = await store.getConversation(original.principalId, identity.conversation_id);
+  if (!document) throw new Error("conversation document missing");
+  expect(await store.readConversationMessages(document.id, 0, 10)).toEqual([
+    expect.objectContaining({ seq: 1, identity: message.identity }),
+  ]);
+  const nextTurn = {
+    ...identity,
+    request_id: "10000000-0000-4000-8000-000000000008",
+    turn_id: "10000000-0000-4000-8000-000000000009",
+  };
+  await store.acceptConversationRequest(resumed.id, nextTurn, acceptedAt);
+  expect(
+    await store.commitConversationTurn({
+      ...turn,
+      workspaceId: resumed.id,
+      identity: nextTurn,
+      messages: [{ ...message, identity: { ...message.identity, ...nextTurn } }],
+    }),
+  ).toMatchObject({ created: true });
+  expect(
+    (await store.readConversationMessages(document.id, 0, 10)).map((row) => [row.seq, row.identity?.turn_id]),
+  ).toEqual([
+    [1, identity.turn_id],
+    [2, nextTurn.turn_id],
+  ]);
+  // The resumed generation lists the conversation its origin started.
+  expect((await store.listConversations(resumed.id)).map((row) => row.conversationId)).toEqual([
+    identity.conversation_id,
+  ]);
 }
