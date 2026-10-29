@@ -6,10 +6,9 @@ import {
 import type { PersistenceContext } from "./persistence-base";
 
 export async function cleanupTransferAuthority(context: PersistenceContext, workspace: WorkspaceRow) {
-  const { store, driver, hub, checkpointTransfers } = context.deps;
+  const { store, hub, checkpointTransfers } = context.deps;
   await context.deps.revokeWorkspaceLeases?.(workspace.id);
   await checkpointTransfers?.cleanup(workspace.id);
-  await driver.purgeInput(workspace.id);
   hub.close(workspace.id);
   await store.updateWorkspace(
     workspace.id,
