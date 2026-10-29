@@ -137,3 +137,5 @@ released directory, including after controller restart. Provider removal deletes
 workspace purge waits for container removal. Neither operation deletes canonical
 objects or releases their pins. The Docker workload verifier combines this observed input boundary with measured
 image-owned runtime and adapter evidence before it binds canonical service support. Attachment-bearing legacy relay remains rejected.
+
+Canonical service checkpoint capture requires an image-owned hook that stops and reaps every service descendant, including detached tools. The Docker descriptor binds its command, working directory, environment and measured artifact under immutable code roots. A snapshot without this hook cannot be captured. The supervisor also stops its service groups, waits for writer and output drains, and fails capture when the checkpoint deadline expires. A hook must fail if it cannot prove that its descendants stopped.

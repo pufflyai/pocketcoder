@@ -1,13 +1,14 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   type AgentFrame,
   type ExecSpec,
   type FiniteProcessFact,
+  type PersistenceMount,
   PROTOCOL_VERSION,
   parseWorkloadTemplate,
   type ServerFrame,
@@ -16,7 +17,7 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 
 async function fixture(command: string[], configure?: (exec: ExecSpec, root: string) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "pc-waiting-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pc-waiting-")));
   const workspaceId = randomUUID();
   const execution = {
     workspaceId,
@@ -226,6 +227,120 @@ test("waiting readiness stays behind setup and source revocation acknowledgment"
     f.send("setup_complete_ack", completed.payload);
     await f.waitFor(() => f.frames.some((frame) => frame.type === "runtime_ready"));
     expect(facts(f.frames)).toEqual([]);
+  } finally {
+    f.send("shutdown", { reason: "fixture-ended" });
+    await f.child.exited;
+    await f.close();
+  }
+});
+
+test("canonical checkpoint capture stops service writers without an alpha harness", async () => {
+  const mounts: PersistenceMount[] = [];
+  const f = await fixture([process.execPath, "-e", "process.exit(0)"], async (exec, root) => {
+    if (!exec.workload) throw new Error("Missing workload");
+    exec.workload.profile = "service";
+    const pidPath = join(root, "writer.pid");
+    exec.workload.infrastructure = {
+      writer: {
+        command: [
+          process.execPath,
+          "-e",
+          `await Bun.write(${JSON.stringify(pidPath)}, String(process.pid)); setInterval(()=>{},10);`,
+        ],
+        env: {},
+      },
+    };
+    exec.checkpoint_hook = { command: [process.execPath, "-e", "process.exit(0)"], env: {}, timeout_seconds: 1 };
+    mounts.push({ name: "state", target: root, maxBytes: 1048576, maxFiles: 100 });
+    exec.persistence.mounts = mounts;
+  });
+  try {
+    await f.waitFor(() => existsSync(join(f.root, "writer.pid")));
+    const pid = Number(await Bun.file(join(f.root, "writer.pid")).text());
+    f.send("prepare_checkpoint_archive", {
+      operation_id: randomUUID(),
+      checkpoint_id: randomUUID(),
+      deadline_ms: 3000,
+      mounts,
+      max_archive_bytes: 1048576,
+      max_index_bytes: 1048576,
+      max_queue_bytes: 1048576,
+    });
+    await f.waitFor(() =>
+      f.frames.some(
+        (frame) =>
+          frame.type === "checkpoint_prepared" ||
+          (frame.type === "checkpoint_status" && frame.payload.phase === "failed"),
+      ),
+    );
+    expect(
+      f.frames.some((frame) => frame.type === "checkpoint_prepared"),
+      JSON.stringify(f.frames.filter((frame) => frame.type.startsWith("checkpoint"))),
+    ).toBe(true);
+    expect(() => process.kill(pid, 0)).toThrow();
+    expect(f.child.exitCode).toBeNull();
+  } finally {
+    f.send("shutdown", { reason: "fixture-ended" });
+    await f.child.exited;
+    await f.close();
+  }
+});
+
+test("canonical checkpoint deadline fails when an escaped writer holds its output pipe", async () => {
+  let escapedPid: number | undefined;
+  const f = await fixture([process.execPath, "-e", "process.exit(0)"], async (exec, root) => {
+    if (!exec.workload) throw new Error("Missing workload");
+    exec.workload.profile = "service";
+    exec.checkpoint_hook = { command: [process.execPath, "-e", "process.exit(0)"], env: {}, timeout_seconds: 1 };
+    const pidPath = join(root, "escaped.pid");
+    const script = `const child = Bun.spawn([process.execPath, '-e', 'setInterval(()=>{},1000)'], {detached:true,stdin:'ignore',stdout:'inherit',stderr:'inherit'}); await Bun.write(${JSON.stringify(pidPath)}, String(child.pid)); setInterval(()=>{},1000);`;
+    exec.workload.infrastructure = { writer: { command: [process.execPath, "-e", script], env: {} } };
+  });
+  try {
+    await f.waitFor(() => existsSync(join(f.root, "escaped.pid")));
+    escapedPid = Number(await Bun.file(join(f.root, "escaped.pid")).text());
+    f.send("prepare_checkpoint_archive", {
+      operation_id: randomUUID(),
+      checkpoint_id: randomUUID(),
+      deadline_ms: 100,
+      mounts: [],
+      max_archive_bytes: 1048576,
+      max_index_bytes: 1048576,
+      max_queue_bytes: 1048576,
+    });
+    await f.waitFor(() =>
+      f.frames.some((frame) => frame.type === "checkpoint_status" && frame.payload.phase === "failed"),
+    );
+    expect(f.frames.some((frame) => frame.type === "checkpoint_prepared")).toBe(false);
+    expect(f.child.exitCode).toBeNull();
+  } finally {
+    if (escapedPid) process.kill(-escapedPid, "SIGKILL");
+    f.send("shutdown", { reason: "fixture-ended" });
+    await f.child.exited;
+    await f.close();
+  }
+});
+
+test("canonical capture rejects a snapshot without its writer hook", async () => {
+  const f = await fixture([process.execPath, "-e", "process.exit(0)"], async (exec) => {
+    if (!exec.workload) throw new Error("Missing workload");
+    exec.workload.profile = "service";
+  });
+  try {
+    await f.waitFor(() => f.frames.some((frame) => frame.type === "runtime_ready"));
+    f.send("prepare_checkpoint_archive", {
+      operation_id: randomUUID(),
+      checkpoint_id: randomUUID(),
+      deadline_ms: 100,
+      mounts: [],
+      max_archive_bytes: 1048576,
+      max_index_bytes: 1048576,
+      max_queue_bytes: 1048576,
+    });
+    await f.waitFor(() =>
+      f.frames.some((frame) => frame.type === "checkpoint_status" && frame.payload.phase === "failed"),
+    );
+    expect(f.frames.some((frame) => frame.type === "checkpoint_prepared")).toBe(false);
   } finally {
     f.send("shutdown", { reason: "fixture-ended" });
     await f.child.exited;

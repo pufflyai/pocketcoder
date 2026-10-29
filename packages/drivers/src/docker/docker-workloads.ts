@@ -12,7 +12,7 @@ import type {
   WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
 import { resolveDockerImage, runDocker } from "./docker-command";
-import { type Descriptor, descriptorSchema, qualifyAdapters } from "./docker-workload-policy";
+import { type Descriptor, descriptorArtifacts, descriptorSchema, qualifyAdapters } from "./docker-workload-policy";
 
 export class DockerWorkloads {
   // Digest-pinned image bytes are immutable; live incarnation and mount evidence
@@ -72,7 +72,7 @@ export class DockerWorkloads {
     const raw = await this.imageCommand(image, "cat", ["/opt/pocketcoder/workload.json"]);
     if (Buffer.byteLength(raw) > 65536) throw new Error("Installed workload descriptor exceeds 65536 bytes.");
     const value = descriptorSchema.parse(JSON.parse(raw));
-    const entries = [value.runtime, ...Object.values(value.adapters)];
+    const entries = descriptorArtifacts(value);
     for (const entry of entries) {
       if (!entry.command.includes(entry.artifact))
         throw new Error("Installed command does not name its measured artifact.");
@@ -140,10 +140,10 @@ export class DockerWorkloads {
     const live = await this.imageCommand(
       spec.image,
       "sha256sum",
-      [descriptor.runtime, ...Object.values(descriptor.adapters)].map((entry) => `/proc/1/root${entry.artifact}`),
+      descriptorArtifacts(descriptor).map((entry) => `/proc/1/root${entry.artifact}`),
       ref.id,
     );
-    for (const entry of [descriptor.runtime, ...Object.values(descriptor.adapters)]) {
+    for (const entry of descriptorArtifacts(descriptor)) {
       if (!live.includes(`${entry.digest.slice(7)}  /proc/1/root${entry.artifact}`))
         throw new Error("Live installed artifact differs from its image pin.");
     }

@@ -92,6 +92,7 @@ class Supervisor {
             void this.screenshots.cancel();
             this.credentials.setQuiescing(true);
           },
+          runtime: () => this.waiting,
           child: () => this.harness.child,
           drainChild: () => this.harness.drained,
           send: this.sendFrame.bind(this),

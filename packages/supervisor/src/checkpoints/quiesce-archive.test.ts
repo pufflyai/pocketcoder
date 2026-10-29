@@ -23,6 +23,7 @@ test("archive capture stops an ordinary real writer without a checkpoint hook", 
         setQuiescing: () => {
           quiescing = true;
         },
+        runtime: () => null,
         child: () => child,
         drainChild: async () => {
           await child.exited;

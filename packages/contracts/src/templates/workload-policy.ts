@@ -61,5 +61,7 @@ export function runtimeTemplateDefinition(input: unknown) {
     throw new ApiError("validation.invalid", "Service output publication is not qualified.");
   if (Object.keys(spec.credentialSlots).length)
     throw new ApiError("validation.invalid", "Workload credential slots are not qualified.");
+  if (spec.lifecycle?.persistence.mounts.length && !spec.lifecycle.checkpointHook)
+    throw new ApiError("validation.invalid", "Persistent service workloads require an image-owned checkpoint hook.");
   return { ...parsed, policy: workloadLifecycle(parsed.manifest), workload: parsed.manifest };
 }
