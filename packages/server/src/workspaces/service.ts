@@ -259,7 +259,8 @@ export class WorkspaceService {
         reason: "canceled_by_caller",
         at: now,
       });
-      return updated ?? (await this.getOwned(principal, id));
+      // Admission can win between the read and this write; then terminate what it admitted.
+      return updated ?? (await this.cancel(principal, id));
     }
     if (row.state === "terminating" || row.terminalAt) {
       // Cancellation is idempotent.

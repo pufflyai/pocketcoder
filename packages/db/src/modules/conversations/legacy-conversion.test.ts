@@ -15,7 +15,7 @@ async function legacyRow(f: Fixture, workspaceId: string, seq: number, content: 
   await f.query(
     `INSERT INTO ${f.schema}.workspace_conversation_messages
       (workspace_id, seq, message_id, role, content, occurred_at, metadata, identity, created_at)
-      VALUES ($1, $2, $3, 'assistant', $4, now(), '{}', $5, now())`,
+      VALUES ($1, $2, $3, 'assistant', $4, now(), '{}', CAST($5 AS text)::jsonb, now())`,
     [workspaceId, seq, `legacy-${seq}`, content, identity === null ? null : JSON.stringify(identity)],
   );
 }

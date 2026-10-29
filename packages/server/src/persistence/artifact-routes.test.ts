@@ -26,7 +26,7 @@ async function preserved(state: "canceled" | "ready" = "canceled") {
     { name: "chat-transcripts", mount: "harness-state", pattern: "chats/*/transcript.jsonl", maxBytes: 64 },
   ];
   await store.context.sql.query(
-    `UPDATE pocketcoder.workspaces SET template_snapshot = jsonb_set(template_snapshot, '{spec,persistence,artifacts}', $1::jsonb) WHERE id = $2`,
+    `UPDATE pocketcoder.workspaces SET template_snapshot = jsonb_set(template_snapshot, '{spec,persistence,artifacts}', CAST($1 AS text)::jsonb) WHERE id = $2`,
     [JSON.stringify(artifacts), id],
   );
   if (state === "canceled")
