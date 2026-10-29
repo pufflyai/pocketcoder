@@ -76,3 +76,33 @@ test("a pinned entry file cannot qualify another command or transport", () => {
   process.command = ["bun", "/tmp/other.js"];
   expect(() => qualifyAdapters(spec, descriptor, [])).toThrow("startup");
 });
+
+test.each(["command", "cwd", "environment", "code-root"])(
+  "checkpoint writer ownership binds the image hook %s",
+  (changed) => {
+    const { spec, descriptor } = fixture();
+    const command = ["bun", "/opt/agent/adapter.js", "quiesce"];
+    spec.lifecycle = parseWorkloadTemplate({
+      apiVersion: "pocketcoder.dev/v1",
+      kind: "Template",
+      metadata: { name: "hook-proof" },
+      spec: { ...spec, lifecycle: { checkpointHook: { command } } },
+    }).manifest.spec.lifecycle;
+    expect(() => qualifyAdapters(spec, descriptor, [])).toThrow("Checkpoint hook");
+    descriptor.checkpoint = {
+      command,
+      artifact: "/opt/agent/adapter.js",
+      digest: `sha256:${"b".repeat(64)}`,
+      environment: [],
+      ownsServiceDescendants: true,
+    };
+    expect(qualifyAdapters(spec, descriptor, []).main).toBeDefined();
+    const hook = spec.lifecycle?.checkpointHook;
+    if (!hook) throw new Error("Missing hook");
+    if (changed === "command") hook.command = ["bun", "/tmp/untrusted.js"];
+    if (changed === "cwd") hook.cwd = "/tmp";
+    if (changed === "environment") hook.env.PYTHONPATH = "/tmp";
+    if (changed === "code-root") descriptor.checkpoint.artifact = "/tmp/hook.js";
+    expect(() => qualifyAdapters(spec, descriptor, [])).toThrow();
+  },
+);

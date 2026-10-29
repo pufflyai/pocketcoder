@@ -22,6 +22,16 @@ export const descriptorSchema = z.strictObject({
     command: z.array(z.string()).min(1),
     entrypoint: z.array(z.string()),
   }),
+  checkpoint: z
+    .strictObject({
+      artifact,
+      digest: pin,
+      command: z.array(z.string()).min(1),
+      cwd: z.string().optional(),
+      environment: z.array(z.string()),
+      ownsServiceDescendants: z.literal(true),
+    })
+    .optional(),
   adapters: z.record(
     z.string(),
     z.strictObject({
@@ -40,6 +50,14 @@ export const descriptorSchema = z.strictObject({
 });
 export type Descriptor = z.infer<typeof descriptorSchema>;
 
+export function descriptorArtifacts(descriptor: Descriptor) {
+  return [
+    descriptor.runtime,
+    ...Object.values(descriptor.adapters),
+    ...(descriptor.checkpoint ? [descriptor.checkpoint] : []),
+  ];
+}
+
 function overlaps(left: string, right: string) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
@@ -53,9 +71,20 @@ export function qualifyAdapters(
   const writable = [...mounts.map((mount) => mount.Destination), ...spec.security.writableMemoryPaths];
   if (descriptor.codeRoots.some((root) => writable.some((path) => overlaps(root, path))))
     throw new Error("A writable runtime mount aliases installed workload code.");
-  for (const entry of [descriptor.runtime, ...Object.values(descriptor.adapters)])
+  for (const entry of descriptorArtifacts(descriptor))
     if (!descriptor.codeRoots.some((root) => entry.artifact.startsWith(`${root}/`)))
       throw new Error("Installed artifact is outside image-owned code roots.");
+  const hook = spec.lifecycle?.checkpointHook;
+  if (hook) {
+    const owned = descriptor.checkpoint;
+    if (
+      !owned ||
+      canonicalJson(hook.command) !== canonicalJson(owned.command) ||
+      hook.cwd !== owned.cwd ||
+      Object.keys(hook.env).some((key) => !owned.environment.includes(key))
+    )
+      throw new Error("Checkpoint hook is not owned by the installed image.");
+  }
   const adapters: InstalledWorkload["adapters"] = {};
   for (const [name, declared] of Object.entries(spec.adapters)) {
     const observed = descriptor.adapters[name];

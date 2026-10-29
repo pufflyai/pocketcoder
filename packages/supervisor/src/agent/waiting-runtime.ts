@@ -9,9 +9,11 @@ import {
 import { enforcedEnvironment } from "../bootstrap/supervisor-utils";
 import type { SupervisorLogs } from "../observability/supervisor-logs";
 import { FiniteProcess } from "./finite-process";
+import { groupHasWriters } from "./process-group";
 
 export class WaitingRuntime {
   readonly process: FiniteProcess;
+  private readonly drains: Promise<void>[] = [];
   private readonly services: ReturnType<typeof Bun.spawn>[] = [];
   private readonly spec: NonNullable<ExecSpec["workload"]>;
   private pending: ProcessReference | null = null;
@@ -52,8 +54,7 @@ export class WaitingRuntime {
         stderr: "pipe",
       });
       this.services.push(child);
-      void this.logs.pump(child.stdout, "stdout");
-      void this.logs.pump(child.stderr, "stderr");
+      this.drains.push(this.logs.pump(child.stdout, "stdout"), this.logs.pump(child.stderr, "stderr"));
     }
     this.reconnect();
   }
@@ -130,6 +131,14 @@ export class WaitingRuntime {
   async close() {
     clearInterval(this.resend);
     this.signal("SIGKILL");
-    await Promise.all([this.process.drained, ...this.services.map((child) => child.exited)]);
+    await Promise.all([
+      this.process.stopWriters("SIGKILL"),
+      this.process.drained,
+      ...this.services.map(async (child) => {
+        await child.exited;
+        while (groupHasWriters(child.pid)) await Bun.sleep(10);
+      }),
+      ...this.drains,
+    ]);
   }
 }
