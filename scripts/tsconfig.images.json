@@ -3,6 +3,7 @@
   "include": [
     "./candidate-images.ts",
     "./publish-candidate-images.ts",
+    "./release-images.ts",
     "./image-*.ts",
     "./native-startup-*.ts",
     "../examples/e2e/image-*.ts"

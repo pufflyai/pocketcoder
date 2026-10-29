@@ -40,6 +40,12 @@ bun scripts/check-migrations.ts <tag>
 
 Add the new tag to the upgrade test cases, so the next release upgrades from it.
 
+Publish the release's container images. Run the `candidate images` workflow on
+the tagged commit, then run the `release images` workflow with the tag (for
+example `v0.9.0`). It points `<role>:<version>` and, unless you clear `latest`,
+`<role>:latest` at that commit's scanned candidate digests for every role. It
+rebuilds nothing, and it changes no tag unless every role has a candidate.
+
 ## Exceptions
 
 A migration that shipped on a line that the next release does not continue is
