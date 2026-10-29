@@ -14,9 +14,9 @@ hashes, agent protocol and a link to its test evidence.
 Produce an entry from the exact source used to build the image:
 
 ```sh
-bun run candidate:controller-manifest 1.0.0-rc.2 \
+bun run candidate:controller-manifest 0.9.0-rc.2 \
   ghcr.io/YOUR_TEAM/controller@sha256:YOUR_IMAGE_DIGEST \
-  https://YOUR_TEST_EVIDENCE 1.0.0-rc.1 > candidate-release.json
+  https://YOUR_TEST_EVIDENCE 0.9.0-rc.1 > candidate-release.json
 ```
 
 Combine the approved source and target entries into the manifest. `upgradesFrom`
@@ -38,7 +38,7 @@ Use the manager's finite operator token from the operator host:
 ```sh
 curl -X POST -H "Authorization: Bearer $OPERATOR_TOKEN" \
   -H 'Content-Type: application/json' -H 'Idempotency-Key: upgrade-one' \
-  --data '{"version":"1.0.0-rc.2"}' \
+  --data '{"version":"0.9.0-rc.2"}' \
   "http://127.0.0.1:8092/v1/accounts/$ACCOUNT_ID/upgrade"
 ```
 
@@ -83,7 +83,7 @@ dependency and let the same operation retry. To replace a failed image during
 ```sh
 curl -X POST -H "Authorization: Bearer $OPERATOR_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"operation_id":"YOUR_OPERATION_UUID","action":"forward_fix","version":"1.0.0-rc.3"}' \
+  --data '{"operation_id":"YOUR_OPERATION_UUID","action":"forward_fix","version":"0.9.0-rc.3"}' \
   "http://127.0.0.1:8092/v1/accounts/$ACCOUNT_ID/upgrade-recovery"
 ```
 

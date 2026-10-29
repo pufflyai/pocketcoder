@@ -14,7 +14,7 @@ Obsolete PR runs are cancelled. Queue runs and protected-branch runs finish so a
 
 The queue tests the checked-out merge result, using github.sha for builds and artifacts. Full mode selects all packages. Separate runners execute integration, repository contracts, performance, harnesses, package builds, and image qualification. The suite coverage check rejects a new root test command until it has a full-CI owner.
 
-The 1.0 integration branch also requires embedded database checks on three platforms, native builds and clean installation, managed Docker and Kubernetes services, recovery and upgrade scenarios, monitoring, and image scans and smoke checks on both Linux architectures. Main keeps PostgreSQL-backed tests and validates its three existing image roles on both architectures. These are separate changes because main does not contain the unreleased 1.0 product.
+The 0.9 integration branch (`feature/pocketcoder-1-0`) also requires embedded database checks on three platforms, native builds and clean installation, managed Docker and Kubernetes services, recovery and upgrade scenarios, monitoring, and image scans and smoke checks on both Linux architectures. Main keeps PostgreSQL-backed tests and validates its three existing image roles on both architectures. These are separate changes because main does not contain the unreleased 0.9 product.
 
 Add the full-ci label to a PR to qualify a CI change before rollout. Full checks can also be requested without a merge:
 
@@ -38,7 +38,7 @@ Protected-branch pushes run fast smoke checks and package builds after merging. 
 
 Both main and feature/pocketcoder-1-0 require a PR, a merge queue, and the CI check from GitHub Actions. Rules have no bypass actors and block branch deletion and force pushes. Queue groups merge one PR at a time and require every selected job to pass. Use the normal merge queue; do not use an administrator bypass.
 
-Install and qualify the matching workflows before enabling a branch's rules. Keep the main bootstrap PR separate from the 1.0 integration change. Existing PRs may need an update from their base branch to receive the new workflow. A green fast PR run does not replace full queue validation.
+Install and qualify the matching workflows before enabling a branch's rules. Keep the main bootstrap PR separate from the 0.9 integration change. Existing PRs may need an update from their base branch to receive the new workflow. A green fast PR run does not replace full queue validation.
 
 ## Timing and local validation
 

@@ -1,5 +1,5 @@
 ---
-"@pstdio/pocketcoder-cli": major
+"@pstdio/pocketcoder-cli": minor
 "@pstdio/pocketcoder-sdk": minor
 ---
 

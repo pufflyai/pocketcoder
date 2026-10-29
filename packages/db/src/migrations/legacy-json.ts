@@ -1,7 +1,7 @@
 import type { SqlClient } from "../database/sql-client";
 
 // 0.7.1 wrote some JSON objects as text inside jsonb strings, and 0.8.x decoded them on read.
-// 1.0 reads plain JSON, so an upgrade decodes them once. Only columns whose contract is an
+// 0.9 reads plain JSON, so an upgrade decodes them once. Only columns whose contract is an
 // object or array are listed: a string there can only be this legacy encoding.
 const STRUCTURED_COLUMNS: Record<string, string[]> = {
   templates: ["spec"],
@@ -22,7 +22,7 @@ const STRUCTURED_COLUMNS: Record<string, string[]> = {
   warm_pool_runtimes: ["provider_ref"],
 };
 
-// The first migration that only 1.0 has. Databases without it were written by 0.x.
+// The first migration that only 0.9 has. Databases without it were written by 0.8.x or earlier.
 export const FIRST_1_0_MIGRATION = "20261005163843_tan_galactus";
 
 export async function normalizeLegacyJson(tx: SqlClient, schema: string) {

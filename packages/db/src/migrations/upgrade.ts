@@ -6,8 +6,8 @@ interface AppliedMigration {
   hash: string;
 }
 
-// A 0.8.1 database applied RELEASE_081_MIGRATION after the eight migrations it shares with 1.0.
-// The plan drops that history row, runs only the statements of its 1.0 replacement that are
+// A 0.8.1 database applied RELEASE_081_MIGRATION after the eight migrations it shares with 0.9.
+// The plan drops that history row, runs only the statements of its 0.9 replacement that are
 // still missing, and records the replacement with its real hash. The prefix check stays strict.
 export function planUpgrade<Row extends AppliedMigration>(applied: Row[], registry: MigrationRegistry) {
   const index = applied.findIndex((row) => row.name === RELEASE_081_MIGRATION.name);

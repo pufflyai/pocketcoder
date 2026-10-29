@@ -102,7 +102,7 @@ if (withIdentity) {
 }
 await message("agentapi:2", "second message from an earlier release");
 await store.transition(ended.id, { from: ["queued"], to: "canceled", reason: "canceled_by_caller", at });
-// 0.8.x preserved workspaces on Kubernetes volumes, a backend 1.0 controllers no longer use.
+// 0.8.x preserved workspaces on Kubernetes volumes, a backend 0.9 controllers no longer use.
 const storageId = randomUUID();
 await store.insertWorkspaceStorage({
   id: storageId,

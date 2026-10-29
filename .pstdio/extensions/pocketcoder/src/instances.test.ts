@@ -6,7 +6,7 @@ import { createInstances } from "./instances";
 
 const binary = resolve(import.meta.dir, "../../../../out/native/pocketcoder");
 
-test("starts isolated 1.0 instances with private, expiring owner keys and restarts one", async () => {
+test("starts isolated 0.9 instances with private, expiring owner keys and restarts one", async () => {
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-extension-"));
   const instances = createInstances(root);
   try {

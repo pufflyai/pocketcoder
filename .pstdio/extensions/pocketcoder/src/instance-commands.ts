@@ -28,7 +28,7 @@ export const launchInstance = defineCommand({
   palette: [{ group: "PocketCoder Lab", label: "Launch PocketCoder instance" }],
   params: {
     name: params.text({ label: "Instance name", required: true }),
-    binary: params.text({ label: "PocketCoder 1.0 executable", required: true, defaultValue: "pocketcoder" }),
+    binary: params.text({ label: "PocketCoder 0.9 executable", required: true, defaultValue: "pocketcoder" }),
     template: params.select({
       label: "Agent template",
       required: true,

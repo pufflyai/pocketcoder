@@ -4,7 +4,7 @@ import { ConversationMessageResourceSchema } from "./conversation";
 import { ConversationProtocolSupportSchema, ConversationRequestIdentitySchema } from "./identity";
 
 // How a stored record ended. Turns use their terminal outcome; `message` holds one message
-// without identity; `legacy` holds history converted from releases before 1.0.
+// without identity; `legacy` holds history converted from releases before 0.9.
 export const CONVERSATION_RECORD_STATUSES = [
   "completed",
   "failed",

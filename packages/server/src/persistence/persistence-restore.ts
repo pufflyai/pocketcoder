@@ -6,7 +6,7 @@ import { templateAuthorized } from "../workspaces/service";
 import { checkpointProvider, type PersistenceContext } from "./persistence-base";
 import type { PersistenceMaintenanceService } from "./persistence-maintenance";
 
-// Releases before 1.0 kept checkpoints on volumes such as `kubernetes-pvc`. Say so instead
+// Releases before 0.9 kept checkpoints on volumes such as `kubernetes-pvc`. Say so instead
 // of failing somewhere inside a restore.
 function requireRestorableBackend(context: PersistenceContext, checkpoint: WorkspaceCheckpointRow) {
   context.requirePersistence();

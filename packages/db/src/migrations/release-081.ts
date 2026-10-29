@@ -1,4 +1,4 @@
-// 0.8.1 shipped one migration that the 1.0 chain does not contain. 1.0 has the same
+// 0.8.1 shipped one migration that the 0.9 chain does not contain. 0.9 has the same
 // statements inside "20261014100009_marvelous_praxagora", plus two reason-code constraints.
 // Shipped migrations never change, so the upgrade reconciles the history instead.
 export const RELEASE_081_MIGRATION = {

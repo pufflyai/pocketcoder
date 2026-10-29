@@ -100,7 +100,7 @@ records:
   outcome;
 - a **message record** for each message that arrives without identity, in the
   document of its workspace;
-- **legacy records** for history converted from releases before 1.0.
+- **legacy records** for history converted from releases before 0.9.
 
 Records are written at turn boundaries, never per streamed revision, so a turn
 costs one write. Totals are running values on the document, never a scan. If the

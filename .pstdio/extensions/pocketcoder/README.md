@@ -6,9 +6,9 @@ For normal workspace provisioning, install [PocketCoder Workspaces](../pocketcod
 
 ## Setup
 
-Use pstdio 0.40.0 or later with extension API 0.1.1, Docker Engine, and a PocketCoder 1.0 executable. Stable 0.x binaries do not have the required embedded database and private admin socket.
+Use pstdio 0.40.0 or later with extension API 0.1.1, Docker Engine, and a PocketCoder 0.9 executable. Released 0.8.x binaries do not have the required embedded database and private admin socket.
 
-From the 1.0 integration checkout:
+From the integration checkout:
 
 ```sh
 bun install
@@ -19,7 +19,7 @@ pst extensions dev .pstdio/extensions/pocketcoder
 
 The extension keeps its own dependencies and `bun.lock`, so the root `bun install` does not install them. Install them before you run the root typecheck or tests.
 
-Use the absolute path to `out/native/pocketcoder` in the launch form, or install a tested 1.0 candidate as `pocketcoder` on PATH. The extension does not download or update executables.
+Use the absolute path to `out/native/pocketcoder` in the launch form, or install a tested 0.9 candidate as `pocketcoder` on PATH. The extension does not download or update executables.
 
 ## Dashboard
 
