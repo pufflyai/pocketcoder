@@ -1,5 +1,61 @@
 # @pstdio/pocketcoder-sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Add principal administration over HTTP and bounded owner and recovery key issuance.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Store each conversation as JSON records written at turn boundaries, with several conversations per workspace: `client.conversations.listConversations`, `read`, `delete` and `live`, and `pcd workspaces conversations`.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Stage inputs in bounded controller storage with digest verification and opaque immutable references.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Start a private local controller, issue finite owner keys, and publish immutable templates over HTTP.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Expose the declared agent type and optional model on template and workspace resources.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Rotate machine keys with an overlapping successor and list keys that expire soon (`pcd keys rotate`, `pcd keys expiring`, `client.keys.rotate`, `client.keys.expiring`).
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Start private-image workspaces using encrypted controller-only registry references.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Interrupt the agent's current turn without ending the workspace, and stop the remote turn when Pi aborts a reply.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Run agents with renewable workspace credentials and revoke their authority during cleanup.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Open template-declared workspace webapps with authenticated browser previews and loopback forwarding.
+
+### Patch Changes
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Expose queued admission reasons and ship reliable repeated replies with explicit turn completion support.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Open isolated HTTPS previews and displays with explicit parent-bound embedding and a cookie fallback.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Fetch private workspace source with a bounded setup lease that is revoked before agent startup.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Add canonical workload contracts, capability admission checks, and offline template tooling.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Preserve supplied conversation identities and reconcile accepted requests across workspace generations.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Persist execution intent and reconcile dispatch with operation-scoped cancellation.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Retain explicit conversation, activity, and terminal facts through v2 identified turns without inferring a final answer from agent status.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Open trusted workspace desktop viewers with server-enforced view and control permissions.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Fence purged accounts permanently and retry verified removal of their private data.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Add private off-node account backup and recovery commands and the pending journal error contract.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Recognize the `maintenance.active`, `maintenance.timeout` and `backup.failed` error codes.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Watch and control Chromium workspaces through trusted display sessions.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Publish qualified service workloads and deliver immutable files through durable conversation executions.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Add waiting supervisor control and durable finite process outcomes bound to container identity.
+
+- [#139](https://github.com/pufflyai/pocketcoder/pull/139) [`963a21e`](https://github.com/pufflyai/pocketcoder/commit/963a21e29fb5b4ece6e8940e82321c25a47e925d) Thanks [@au-re](https://github.com/au-re)! - Capture private workspace screenshots with quota, authorized downloads, retention and purge.
+
 ## 0.6.1
 
 ### Patch Changes
