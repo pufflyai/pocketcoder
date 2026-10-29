@@ -90,7 +90,7 @@ try {
     const key = await store.getMachineKeyWithPrincipal(owner.key.id);
     const row = await store.getWorkspace(workspaceId);
     return context.json({
-      conversationCount: (await store.readConversation(workspaceId, 0, 10)).length,
+      conversationCount: (await store.readWorkspaceConversation(workspaceId, 0, 10)).length,
       hubPresent: runtime.hub.get(workspaceId) !== undefined,
       revoked: Boolean(key?.key.revokedAt),
       state: row?.state ?? "missing",

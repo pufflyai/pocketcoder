@@ -8,23 +8,29 @@ import {
   ConversationRequestReceiptSchema,
   OutputListQuerySchema,
   OutputPageSchema,
-  parseDurationMs,
 } from "@pstdio/pocketcoder-contracts";
-import type { Store } from "@pstdio/pocketcoder-runtime-core";
+import type { ConversationRetention, Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { decodeSequenceCursor, encodeCursor } from "../http/pagination";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 import type { WorkspaceService } from "../workspaces/service";
+import { CONVERSATION_PROTOCOL, registerConversationDocumentRoutes } from "./conversation-document-routes";
+import type { LiveTurns } from "./live-turns";
 
 export function registerConversationRoutes({
   app,
   store,
   service,
+  liveTurns,
+  retention,
 }: {
   app: OpenAPIHono<AppEnv>;
   store: Store;
   service: WorkspaceService;
+  liveTurns: LiveTurns;
+  retention: ConversationRetention;
 }) {
+  registerConversationDocumentRoutes({ app, store, service, liveTurns });
   app.openapi(
     createRoute({
       method: "post",
@@ -92,41 +98,25 @@ export function registerConversationRoutes({
       if (state?.status === "deleted") {
         throw new ApiError("conversation.deleted", "Conversation history was deleted.");
       }
-      const expiresAt =
-        state?.expiresAt ??
-        (workspace.terminalAt
-          ? new Date(
-              workspace.terminalAt.getTime() +
-                parseDurationMs(workspace.templateSnapshot.spec.persistence.conversationRetention),
-            )
-          : null);
+      const keep = workspace.terminalAt
+        ? retention({ conversationRetention: workspace.templateSnapshot.spec.persistence.conversationRetention })
+        : null;
+      const expiresAt = workspace.terminalAt && keep !== null ? new Date(workspace.terminalAt.getTime() + keep) : null;
       if (expiresAt && expiresAt <= new Date()) {
         throw new ApiError("conversation.expired", "Conversation history has expired.");
       }
       const { cursor, limit } = c.req.valid("query");
       const after = decodeSequenceCursor("conversation", cursor);
-      const rows = await store.readConversation(workspace.id, after, limit + 1);
+      const rows = await store.readWorkspaceConversation(workspace.id, after, limit + 1);
       const hasMore = rows.length > limit;
       const items = rows.slice(0, limit);
       const last = items.at(-1);
       return c.json(
         {
-          items: items.map((row) => ({
-            message_id: row.messageId,
-            seq: row.seq,
-            role: row.role,
-            content: row.content,
-            occurred_at: row.occurredAt.toISOString(),
-            metadata: row.metadata,
-            identity: row.identity ?? null,
-          })),
-          next_cursor: hasMore && last ? encodeCursor("conversation", last.seq) : null,
+          items: items.map((row) => row.message),
+          next_cursor: hasMore && last ? encodeCursor("conversation", last.position) : null,
           retention: { status: "retained" as const, expires_at: expiresAt?.toISOString() ?? null },
-          protocol: {
-            schema: "pocketcoder.conversation/v2" as const,
-            request_identity_authorities: ["external" as const, "generic" as const],
-            producer_capabilities: null,
-          },
+          protocol: CONVERSATION_PROTOCOL,
         },
         200,
       );

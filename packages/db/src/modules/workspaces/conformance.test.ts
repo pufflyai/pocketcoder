@@ -185,10 +185,10 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
         metadata: { provider: "agentapi" },
         createdAt: new Date(),
       };
-      expect((await store.appendConversationMessage(message)).created).toBe(true);
-      expect((await store.appendConversationMessage(message)).created).toBe(false);
-      expect(await store.readConversation(workspace.id, 0, 10)).toEqual([
-        expect.objectContaining({ seq: 1, messageId: "pg-message-1", content: "durable response" }),
+      expect((await store.appendWorkspaceMessage(message)).created).toBe(true);
+      expect((await store.appendWorkspaceMessage(message)).created).toBe(false);
+      expect((await store.readWorkspaceConversation(workspace.id, 0, 10)).map((row) => row.message)).toEqual([
+        expect.objectContaining({ seq: 1, message_id: "pg-message-1", content: "durable response" }),
       ]);
     } finally {
       await fixture.dispose();

@@ -85,20 +85,25 @@ async function handleConversation(deps: WsDeps, frame: Extract<AgentFrame, { typ
   if (!workspace) return;
   try {
     await deps.assertAccountAllowed?.();
-    await deps.store.appendConversationMessage({
-      workspaceId: frame.workspace_id,
-      messageId: frame.payload.message_id,
-      role: frame.payload.role,
-      content: frame.payload.content,
-      occurredAt: new Date(frame.payload.occurred_at),
-      metadata: frame.payload.metadata,
-      identity: frame.payload.identity,
-      createdAt: new Date(),
-    });
+    const { identity, ...message } = frame.payload;
+    // Turns live in memory until their terminal fact; messages without identity are final as sent.
+    if (identity) {
+      await deps.liveTurns.receive(frame.workspace_id, { ...message, identity });
+      // Frames that arrive after the workspace ended are the last of their turn.
+      if (workspace.terminalAt) await deps.liveTurns.close(frame.workspace_id, workspace.terminalAt);
+    } else
+      await deps.store.appendWorkspaceMessage({
+        workspaceId: frame.workspace_id,
+        messageId: message.message_id,
+        role: message.role,
+        content: message.content,
+        occurredAt: new Date(message.occurred_at),
+        metadata: message.metadata,
+        createdAt: new Date(),
+      });
   } catch (error) {
     deps.log?.(`conversation ${frame.workspace_id}: ${String(error)}`);
   }
-  return;
 }
 
 export async function handleConnectedFrame(

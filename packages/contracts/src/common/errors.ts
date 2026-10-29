@@ -42,6 +42,7 @@ export const ERROR_CODES = {
   "restore.image_unavailable": 409,
   "restore.incompatible": 409,
   "resume.unsupported": 409,
+  "conversation.not_found": 404,
   "conversation.expired": 410,
   "conversation.deleted": 410,
   "operation.conflict": 409,

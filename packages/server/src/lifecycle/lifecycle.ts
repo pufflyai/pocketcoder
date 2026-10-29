@@ -112,6 +112,9 @@ export async function startPocketCoderServer(
     const durableAccountState = await accountState(directory);
     if (durableAccountState.state.state !== "ready") maintenance.fence();
     log("coordinator lease acquired");
+    // Open turns lived in the previous process; record them before producers reconnect.
+    const interrupted = await store.recordInterruptedTurns(new Date());
+    if (interrupted) log(`conversations: recorded ${interrupted} interrupted turns`);
     const managedPrincipals = await loadDeclaredState(config, store, log, logger);
     const resolveRegistry = config.secretKey
       ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
@@ -212,6 +215,7 @@ export async function startPocketCoderServer(
       workspaceLeases,
       checkpointTransfers: built.checkpointTransfers,
       inputs: built.inputs,
+      liveTurns: built.liveTurns,
       executionDispatcher: built.executionDispatcher,
       readiness,
       metrics,

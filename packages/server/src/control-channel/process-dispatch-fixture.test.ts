@@ -5,6 +5,7 @@ import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS, ExecutionDispatcher, Scheduler } from "@pstdio/pocketcoder-runtime-core";
 import { WSContext } from "hono/ws";
 import { conversationTransport, executionTransport } from "../conversations/execution-transport";
+import { LiveTurns } from "../conversations/live-turns";
 import { Hub } from "./hub";
 import { processTransport } from "./process-dispatch";
 import { execSpecOf } from "./ws-auth";
@@ -108,7 +109,14 @@ export async function processDispatchFixture(
           const conn = hub.get(f.id);
           if (conn && !dropReplies)
             await handleConnectedFrame(
-              { store: f.store, hub, executionDispatcher: dispatcher, scheduler, pepper: "fixture" },
+              {
+                store: f.store,
+                liveTurns: new LiveTurns(f.store),
+                hub,
+                executionDispatcher: dispatcher,
+                scheduler,
+                pepper: "fixture",
+              },
               conn,
               ws,
               frame,

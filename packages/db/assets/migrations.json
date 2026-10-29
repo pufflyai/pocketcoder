@@ -297,5 +297,26 @@
     "folderMillis": 1792157189000,
     "hash": "d3119fcc6bc4a35b5760adcfcf2dd0290af1f39590de5367827018c57f853f40",
     "name": "20261016132629_friendly_killmonger"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"conversation_records\" (\n\t\"id\" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"conversation_records_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),\n\t\"conversation_ref\" uuid NOT NULL,\n\t\"record_seq\" integer NOT NULL,\n\t\"record_key\" text NOT NULL,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"first_seq\" bigint NOT NULL,\n\t\"last_seq\" bigint NOT NULL,\n\t\"status\" text NOT NULL,\n\t\"document\" jsonb NOT NULL,\n\t\"bytes\" integer NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"conversation_records_seq\" UNIQUE(\"conversation_ref\",\"record_seq\"),\n\tCONSTRAINT \"conversation_records_key\" UNIQUE(\"conversation_ref\",\"record_key\")\n);\n",
+      "\nCREATE TABLE \"conversations\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"principal_id\" uuid NOT NULL,\n\t\"conversation_id\" uuid,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"legacy\" boolean DEFAULT false NOT NULL,\n\t\"status\" text NOT NULL,\n\t\"record_count\" integer DEFAULT 0 NOT NULL,\n\t\"message_count\" integer DEFAULT 0 NOT NULL,\n\t\"bytes\" bigint DEFAULT 0 NOT NULL,\n\t\"last_seq\" bigint DEFAULT 0 NOT NULL,\n\t\"expires_at\" timestamp with time zone,\n\t\"retention_set\" boolean DEFAULT false NOT NULL,\n\t\"deleted_at\" timestamp with time zone,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"updated_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"conversations_identity\" UNIQUE(\"principal_id\",\"conversation_id\")\n);\n",
+      "\nALTER TABLE \"conversation_requests\" ADD COLUMN \"workspace_id\" uuid;",
+      "\nALTER TABLE \"workspace_conversations\" ADD COLUMN \"bytes\" bigint DEFAULT 0 NOT NULL;",
+      "\nCREATE INDEX \"conversation_records_messages\" ON \"conversation_records\" (\"conversation_ref\",\"last_seq\");",
+      "\nCREATE INDEX \"conversation_records_workspace\" ON \"conversation_records\" (\"workspace_id\",\"id\");",
+      "\nCREATE UNIQUE INDEX \"conversations_workspace_unidentified\" ON \"conversations\" (\"workspace_id\") WHERE \"conversation_id\" IS NULL;",
+      "\nCREATE INDEX \"conversations_workspace\" ON \"conversations\" (\"workspace_id\");",
+      "\nALTER TABLE \"conversation_records\" ADD CONSTRAINT \"conversation_records_conversation_ref_conversations_id_fkey\" FOREIGN KEY (\"conversation_ref\") REFERENCES \"conversations\"(\"id\") ON DELETE CASCADE;",
+      "\nALTER TABLE \"conversation_records\" ADD CONSTRAINT \"conversation_records_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"conversation_requests\" ADD CONSTRAINT \"conversation_requests_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");",
+      "\nALTER TABLE \"conversations\" ADD CONSTRAINT \"conversations_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"conversations\" ADD CONSTRAINT \"conversations_workspace_id_workspaces_id_fkey\" FOREIGN KEY (\"workspace_id\") REFERENCES \"workspaces\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1793233733000,
+    "hash": "b59b27f020997e6776fb75cc35d1c23c7070a4c8f18350028f56dfdd56d003ed",
+    "name": "20261029002853_bumpy_darkstar"
   }
 ]

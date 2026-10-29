@@ -18,7 +18,7 @@ test("purge removes failed allocations without checkpoints and covered database 
   expect(await app.storageDriver.listCheckpoints()).toEqual([]);
   expect(await app.store.readLogs(app.workspace.id, 0, 100)).toEqual([]);
   expect(await app.store.listOutputs(app.workspace.id)).toEqual([]);
-  expect(await app.store.readConversation(app.workspace.id, 0, 100)).toEqual([]);
+  expect(await app.store.readWorkspaceConversation(app.workspace.id, 0, 100)).toEqual([]);
   expect(await app.store.getWorkspace(app.workspace.id)).toMatchObject({ failureLogTail: null, outputs: {} });
   expect(await (await app.purge()).json()).toMatchObject({ id: operation.id, kind: "purge", state: "succeeded" });
 });
@@ -52,7 +52,7 @@ test("accepted purge fences delayed content and new copies while deletion is pen
   expect((await app.purge()).status).toBe(202);
   const at = new Date();
   await expect(
-    app.store.appendConversationMessage({
+    app.store.appendWorkspaceMessage({
       workspaceId: app.workspace.id,
       messageId: "late",
       role: "user",

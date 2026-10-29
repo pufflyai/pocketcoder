@@ -21,7 +21,14 @@ export const JournalEventSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("secret_retired"), name: z.string().min(1), versionId: z.uuid(), at }),
   z.strictObject({ kind: z.literal("template_retired"), name: z.string().min(1), version: z.string().min(1), at }),
-  z.strictObject({ kind: z.literal("conversation_deleted"), workspaceId: z.uuid(), at }),
+  // Without a conversation ID, every conversation the workspace wrote to was deleted.
+  z.strictObject({
+    kind: z.literal("conversation_deleted"),
+    workspaceId: z.uuid(),
+    principalId: z.uuid().optional(),
+    conversationId: z.uuid().optional(),
+    at,
+  }),
   z.strictObject({ kind: z.literal("workspace_purged"), principalId: z.uuid(), workspaceId: z.uuid(), at }),
   z.strictObject({ kind: z.literal("checkpoint_deleted"), principalId: z.uuid(), checkpointId: z.uuid(), at }),
   z.strictObject({ kind: z.literal("writer_claimed"), writer: SourceWriterSchema, at }),

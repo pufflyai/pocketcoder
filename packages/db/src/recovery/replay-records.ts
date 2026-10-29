@@ -1,12 +1,14 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../database/context";
 import type { JournalEvent } from "../journal/events";
+import { clearConversations, conversationIds } from "../modules/conversations/retention";
 
 // Applies one journaled access or content change to a restored database. Records are replayed
 // in journal order and name exact targets, so repeating the whole journal is safe.
-export function createRecordReplay({ db, tables }: DatabaseContext) {
+export function createRecordReplay(context: DatabaseContext) {
+  const { db, tables } = context;
   const { machineKeys, principals, secrets, templates } = tables;
-  const { workspaceConversations: conversations, workspaceConversationMessages: messages } = tables;
+  const { workspaceConversations, conversations } = tables;
 
   async function revoke(ids: string[], at: Date) {
     if (!ids.length) return;
@@ -16,14 +18,26 @@ export function createRecordReplay({ db, tables }: DatabaseContext) {
       .where(and(inArray(machineKeys.id, ids), isNull(machineKeys.revokedAt)));
   }
 
-  async function deleteConversation(workspaceId: string, at: Date) {
+  async function deleteConversation(event: Extract<JournalEvent, { kind: "conversation_deleted" }>, at: Date) {
     await db.transaction(async (tx) => {
-      await tx.delete(messages).where(eq(messages.workspaceId, workspaceId));
+      if (event.principalId && event.conversationId) {
+        const one = tx
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.principalId, event.principalId),
+              eq(conversations.conversationId, event.conversationId),
+            ),
+          );
+        return clearConversations(context, tx, one, "deleted", at);
+      }
+      await clearConversations(context, tx, conversationIds(context, tx, event.workspaceId), "deleted", at);
       await tx
-        .insert(conversations)
-        .values({ workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
+        .insert(workspaceConversations)
+        .values({ workspaceId: event.workspaceId, status: "deleted", deletedAt: at, updatedAt: at })
         .onConflictDoUpdate({
-          target: conversations.workspaceId,
+          target: workspaceConversations.workspaceId,
           set: { status: "deleted", expiresAt: null, deletedAt: at, updatedAt: at },
         });
     });
@@ -65,7 +79,7 @@ export function createRecordReplay({ db, tables }: DatabaseContext) {
           .where(and(eq(templates.name, event.name), eq(templates.version, event.version)));
         return;
       case "conversation_deleted":
-        return deleteConversation(event.workspaceId, at);
+        return deleteConversation(event, at);
     }
   };
 }

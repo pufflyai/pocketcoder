@@ -7,6 +7,7 @@ import { createWorkspaceWaiter } from "./database/workspace-changes";
 import type { JournalSnapshot } from "./journal/acknowledgement";
 import { createJournalAcknowledgement } from "./journal/acknowledgement";
 import { createAuth } from "./modules/auth/repository";
+import { convertLegacyConversations } from "./modules/conversations/legacy-conversion";
 import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
 import { createNetworkAudit } from "./modules/network-audit/repository";
@@ -45,7 +46,14 @@ export class DatabaseStore implements Store {
   readonly recovery: ReturnType<typeof createRecovery>;
 
   static async openPGlite(dataDir?: string, options?: DatabaseOpenOptions) {
-    return new DatabaseStore(await createPGliteContext(dataDir, options));
+    const context = await createPGliteContext(dataDir, options);
+    try {
+      await convertLegacyConversations(context);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
   }
 
   // A database restore can roll back revocations and deletions. Journal records name exact
@@ -53,6 +61,7 @@ export class DatabaseStore implements Store {
   static async openPostgres(options: PostgresOptions) {
     const context = await createPostgresContext(options);
     try {
+      await convertLegacyConversations(context, { onProgress: options.onConversionProgress });
       const replay = createRecordReplay(context);
       for (const record of context.journal?.records() ?? []) await replay(record.event);
     } catch (error) {
@@ -190,12 +199,19 @@ export class DatabaseStore implements Store {
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
     this.acceptConversationRequest = conversations.acceptConversationRequest;
-    this.appendConversationMessage = conversations.appendConversationMessage;
-    this.readConversation = conversations.readConversation;
+    this.isAcceptedTurn = conversations.isAcceptedTurn;
+    this.commitConversationTurn = conversations.commitConversationTurn;
+    this.appendWorkspaceMessage = conversations.appendWorkspaceMessage;
+    this.readWorkspaceConversation = conversations.readWorkspaceConversation;
+    this.listConversations = conversations.listConversations;
+    this.getConversation = conversations.getConversation;
+    this.readConversationMessages = conversations.readConversationMessages;
+    this.readConversationRecords = conversations.readConversationRecords;
     this.getConversationState = conversations.getConversationState;
-    this.setConversationExpiry = conversations.setConversationExpiry;
     this.deleteConversation = journal.after(conversations.deleteConversation);
-    this.pruneExpiredConversations = journal.after(conversations.pruneExpiredConversations);
+    this.deleteConversationById = journal.after(conversations.deleteConversationById);
+    this.recordInterruptedTurns = conversations.recordInterruptedTurns;
+    this.pruneExpiredConversations = conversations.pruneExpiredConversations;
     const terminals = createTerminals(context);
     this.openTerminalSession = terminals.openTerminalSession;
     this.getTerminalSession = terminals.getTerminalSession;
@@ -300,11 +316,18 @@ export class DatabaseStore implements Store {
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
   readonly acceptConversationRequest: Store["acceptConversationRequest"];
-  readonly appendConversationMessage: Store["appendConversationMessage"];
-  readonly readConversation: Store["readConversation"];
+  readonly isAcceptedTurn: Store["isAcceptedTurn"];
+  readonly commitConversationTurn: Store["commitConversationTurn"];
+  readonly appendWorkspaceMessage: Store["appendWorkspaceMessage"];
+  readonly readWorkspaceConversation: Store["readWorkspaceConversation"];
+  readonly listConversations: Store["listConversations"];
+  readonly getConversation: Store["getConversation"];
+  readonly readConversationMessages: Store["readConversationMessages"];
+  readonly readConversationRecords: Store["readConversationRecords"];
   readonly getConversationState: Store["getConversationState"];
-  readonly setConversationExpiry: Store["setConversationExpiry"];
   readonly deleteConversation: Store["deleteConversation"];
+  readonly deleteConversationById: Store["deleteConversationById"];
+  readonly recordInterruptedTurns: Store["recordInterruptedTurns"];
   readonly pruneExpiredConversations: Store["pruneExpiredConversations"];
   readonly openTerminalSession: Store["openTerminalSession"];
   readonly getTerminalSession: Store["getTerminalSession"];

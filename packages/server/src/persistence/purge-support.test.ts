@@ -30,7 +30,7 @@ export async function failedAllocation(store: Store) {
     value: "synthetic output",
     occurredAt: now,
   });
-  await app.store.appendConversationMessage({
+  await app.store.appendWorkspaceMessage({
     workspaceId: workspace.id,
     messageId: "message",
     role: "user",

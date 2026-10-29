@@ -2,6 +2,7 @@ import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
 import { managedPrincipalsConfig } from "../bootstrap/managed-principals/startup";
+import { conversationRetentionPolicy } from "../conversations/conversation-retention";
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
@@ -243,6 +244,7 @@ function resolvePersistenceLimits(env: Environment): PersistenceLimits {
       "POCKETCODER_MAX_CHECKPOINT_OPERATIONS",
       DEFAULT_PERSISTENCE_LIMITS.maxConcurrentOperations,
     ),
+    conversationRetention: conversationRetentionPolicy(env),
   };
 }
 

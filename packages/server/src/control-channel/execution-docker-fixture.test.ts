@@ -278,6 +278,7 @@ function runtimeServer(f: Awaited<ReturnType<typeof createPGliteFixture>>, built
               await handleConnectedFrame(
                 {
                   store: f.store,
+                  liveTurns: built.liveTurns,
                   hub: built.hub,
                   scheduler: built.scheduler,
                   executionDispatcher: built.executionDispatcher,

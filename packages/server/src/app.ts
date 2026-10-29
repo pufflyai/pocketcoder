@@ -29,9 +29,11 @@ import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
 import { processTransport } from "./control-channel/process-dispatch";
 import { controlStore } from "./control-channel/store";
+import { conversationRetention, DEFAULT_CONVERSATION_RETENTION } from "./conversations/conversation-retention";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { registerExecutionRoutes } from "./conversations/execution-routes";
 import { conversationTransport, executionTransport } from "./conversations/execution-transport";
+import { LiveTurns } from "./conversations/live-turns";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
@@ -91,6 +93,7 @@ export interface BuildDeps {
 
 export interface BuiltServer {
   executionDispatcher: ExecutionDispatcher;
+  liveTurns: LiveTurns;
   inputs?: InputStorage;
   controlActivity: ControlActivity;
   screenshots?: Screenshots;
@@ -244,12 +247,15 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
   const activity = controlActivity(() => poolHub.fence());
+  const producerStore = controlStore(store, deps.assertAccountAllowed);
+  const liveTurns = new LiveTurns(producerStore);
   const wsDeps = {
     activity,
     executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
     ...(workspaceLeases ? { workspaceLeases } : {}),
-    store: controlStore(store, deps.assertAccountAllowed),
+    store: producerStore,
+    liveTurns,
     hub,
     scheduler,
     pepper,
@@ -298,7 +304,13 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerCheckpointRoutes({ app, store, service, persistence });
   registerRecoveryRoutes({ app, store, service, persistence });
   registerPurgeRoutes(app, persistence);
-  registerConversationRoutes({ app, store, service });
+  registerConversationRoutes({
+    app,
+    store,
+    service,
+    liveTurns,
+    retention: conversationRetention(deps.persistenceLimits?.conversationRetention ?? DEFAULT_CONVERSATION_RETENTION),
+  });
   registerExecutionRoutes({ app, store, service, executionDispatcher });
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
@@ -317,6 +329,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
 
   return {
     executionDispatcher,
+    liveTurns,
     inputs,
     controlActivity: activity,
     app,

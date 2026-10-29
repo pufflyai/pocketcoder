@@ -14,6 +14,7 @@ export interface PostgresOptions {
   // The deletion journal survives a database restore, so the controller can reapply it.
   journalDir?: string;
   max?: number;
+  onConversionProgress?(done: { workspaces: number; messages: number; records: number }): void;
 }
 
 // Startup never migrates a shared database. Operators run `pcd db migrate` first.

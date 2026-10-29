@@ -92,7 +92,7 @@ test.each([
     release();
     await pending;
     await receive();
-    const messages = await server.store.readConversation(id, 0, 10);
+    const messages = (await server.store.readWorkspaceConversation(id, 0, 10)).map((row) => row.message);
     if (history === "retained") expect(messages[0]?.identity).toEqual(identified ? identity : null);
     expect((await server.store.getWorkspace(id))?.state).toBe("canceled");
     expect(messages.map((message) => message.content)).toEqual(history === "retained" ? ["accepted before Stop"] : []);

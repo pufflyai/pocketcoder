@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ApiError, digestOf, type RestoreRequest } from "@pstdio/pocketcoder-contracts";
 import type { PrincipalRow, StorageRef, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
 
+import { conversationRetention } from "../conversations/conversation-retention";
 import type { PersistenceContext } from "./persistence-base";
 import { cleanupPreservedStorage } from "./persistence-cleanup";
 
@@ -40,7 +41,10 @@ export class PersistenceMaintenanceService {
 
   async pruneExpired(): Promise<{ deleted: number; skipped: number; transcriptsDeleted: number }> {
     const now = this.context.now();
-    const transcriptsDeleted = await this.context.deps.store.pruneExpiredConversations(now);
+    const transcriptsDeleted = await this.context.deps.store.pruneExpiredConversations(
+      now,
+      conversationRetention(this.context.limits().conversationRetention),
+    );
     let deleted = 0;
     let skipped = 0;
     for (const principal of await this.context.deps.store.listPrincipals()) {

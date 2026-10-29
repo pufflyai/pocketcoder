@@ -106,7 +106,7 @@ describe("historical conversations", () => {
     );
     const workspace = (await createdResponse.json()) as { id: string };
     const occurredAt = new Date("2026-08-03T08:00:00.000Z");
-    const first = await server.store.appendConversationMessage({
+    const first = await server.store.appendWorkspaceMessage({
       workspaceId: workspace.id,
       messageId: "m-1",
       role: "user",
@@ -115,7 +115,7 @@ describe("historical conversations", () => {
       metadata: { provider: "agentapi" },
       createdAt: occurredAt,
     });
-    const duplicate = await server.store.appendConversationMessage({
+    const duplicate = await server.store.appendWorkspaceMessage({
       workspaceId: workspace.id,
       messageId: "m-1",
       role: "user",
@@ -126,8 +126,8 @@ describe("historical conversations", () => {
     });
     expect(first.created).toBe(true);
     expect(duplicate.created).toBe(false);
-    expect(duplicate.message.content).toBe("Fix the failing test");
-    await server.store.appendConversationMessage({
+    expect(duplicate.record.document.messages[0]?.content).toBe("Fix the failing test");
+    await server.store.appendWorkspaceMessage({
       workspaceId: workspace.id,
       messageId: "m-2",
       role: "assistant",
@@ -165,12 +165,28 @@ describe("historical conversations", () => {
     };
     expect(secondPage.items[0]?.message_id).toBe("m-2");
     expect(secondPage.next_cursor).toBeNull();
-    await server.store.setConversationExpiry(workspace.id, new Date(Date.now() - 1), new Date());
-    const expired = await server.app.request(`/v1/workspaces/${workspace.id}/conversation`, authed(server.token));
+    // Retention counts from the end of the workspace that wrote last.
+    expect(await server.store.pruneExpiredConversations(new Date(), () => 0)).toBe(1);
+    expect(await server.store.readWorkspaceConversation(workspace.id, 0, 10)).toEqual([]);
+    const old = (await (
+      await server.app.request(
+        "/v1/workspaces",
+        authed(server.token, {
+          method: "POST",
+          headers: { "idempotency-key": "history-old" },
+          body: createTestBody("history-old"),
+        }),
+      )
+    ).json()) as { id: string };
+    await server.store.transition(old.id, {
+      from: ["queued"],
+      to: "canceled",
+      reason: "canceled_by_caller",
+      at: new Date(Date.now() - 200 * 3_600_000),
+    });
+    const expired = await server.app.request(`/v1/workspaces/${old.id}/conversation`, authed(server.token));
     expect(expired.status).toBe(410);
     expect(((await expired.json()) as { error: { code: string } }).error.code).toBe("conversation.expired");
-    expect(await server.store.pruneExpiredConversations(new Date())).toBe(1);
-    expect(await server.store.readConversation(workspace.id, 0, 10)).toEqual([]);
 
     const deleted = await server.app.request(
       `/v1/workspaces/${workspace.id}/conversation`,

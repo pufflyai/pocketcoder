@@ -81,7 +81,7 @@ test("recovery repeats later retirements, narrowing and conversation deletion by
   const { f, out } = await backedUp();
   const workspace = await insertTestWorkspace(f, "conversation");
   const now = new Date();
-  await f.store.appendConversationMessage({
+  await f.store.appendWorkspaceMessage({
     workspaceId: workspace.id,
     messageId: crypto.randomUUID(),
     role: "user",
@@ -121,7 +121,7 @@ test("recovery repeats later retirements, narrowing and conversation deletion by
   const store = new DatabaseStore(await createPGliteContext(restored.directory));
   try {
     for (const event of await store.recovery.recoveryEvents()) await store.recovery.applyRecord(event);
-    expect(await store.readConversation(workspace.id, 0, 10)).toEqual([]);
+    expect(await store.readWorkspaceConversation(workspace.id, 0, 10)).toEqual([]);
     expect((await store.getConversationState(workspace.id))?.status).toBe("deleted");
     expect((await store.getPrincipal(reader.id))?.scopes).toEqual(["templates:read"]);
     expect((await store.getTemplate(f.template.name, f.template.version))?.status).toBe("retired");

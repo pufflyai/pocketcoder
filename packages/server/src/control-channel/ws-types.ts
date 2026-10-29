@@ -11,6 +11,7 @@ export interface WsDeps {
   assertAccountAllowed?: () => Promise<void>;
   activity?: ControlActivity;
   store: Store;
+  liveTurns: import("../conversations/live-turns").LiveTurns;
   hub: Hub;
   scheduler: Scheduler;
   pepper: string;
