@@ -1,7 +1,9 @@
 import {
+  ExpiringKeyListResponseSchema,
   type KeyIssueRequest,
   KeyIssueResponseSchema,
   KeyListResponseSchema,
+  type KeyRotateRequest,
   OperationResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
@@ -34,12 +36,30 @@ export class KeysApi {
     } while (cursor);
   }
 
+  // Active keys that expire within the window, soonest first. The server default is 168 hours.
+  expiring(query: { withinHours?: number } = {}, options: RequestOptions = {}) {
+    return this.transport.request(
+      `/v1/keys/expiring?${queryString({ within_hours: query.withinHours })}`,
+      ExpiringKeyListResponseSchema,
+      options,
+    );
+  }
+
   issue(principalId: string, input: KeyIssueRequest, options: RequestOptions = {}) {
     return this.transport.request(`/v1/principals/${encodeURIComponent(principalId)}/keys`, KeyIssueResponseSchema, {
       method: "POST",
       body: JSON.stringify(input),
       signal: options.signal,
     });
+  }
+
+  // Issues a successor with the same grants; the rotated key stays valid until you revoke it.
+  rotate(principalId: string, keyId: string, input: KeyRotateRequest, options: RequestOptions = {}) {
+    return this.transport.request(
+      `/v1/principals/${encodeURIComponent(principalId)}/keys/${encodeURIComponent(keyId)}/rotate`,
+      KeyIssueResponseSchema,
+      { method: "POST", body: JSON.stringify(input), signal: options.signal },
+    );
   }
 
   revoke(principalId: string, keyId: string, options: RequestOptions = {}) {

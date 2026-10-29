@@ -16,7 +16,8 @@
     "./lifecycle": "./src/lifecycle/lifecycle.ts",
     "./public-views": "./src/config/public-views.ts",
     "./release": "./src/administration/release.ts",
-    "./monitoring": "./src/observability/controller-health.ts"
+    "./monitoring": "./src/observability/controller-health.ts",
+    "./principal-file": "./src/bootstrap/managed-principals/principal-file.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",

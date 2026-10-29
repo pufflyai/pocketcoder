@@ -1,6 +1,7 @@
 import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type { KubernetesToleration } from "@pstdio/pocketcoder-drivers";
 import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "@pstdio/pocketcoder-runtime-core";
+import { managedPrincipalsConfig } from "../bootstrap/managed-principals/startup";
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
@@ -19,6 +20,7 @@ export interface ServerConfig {
   purgeConfigFile?: string;
   publicViews?: PublicViewConfig;
   launchPolicy?: ReturnType<typeof launchPolicyConfig>;
+  principals?: ReturnType<typeof managedPrincipalsConfig>;
   listenHost: string;
   listenPort: number;
   agentHost: string;
@@ -315,6 +317,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     agentHost: agent.listenHost,
     agentPort: agent.listenPort,
     launchPolicy: launchPolicyConfig(env),
+    principals: managedPrincipalsConfig(env),
     listenPort,
     store: storeConfig(env),
     ...resolveDataFolders(env),

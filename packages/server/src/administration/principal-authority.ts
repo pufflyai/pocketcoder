@@ -27,3 +27,11 @@ export async function keyAdministrationPrincipal(context: Context<AppEnv>, store
     throw new ApiError("principal.not_found", "Unknown principal.");
   return principal;
 }
+
+// Key inventory follows the same split as key administration: delegation names exact targets.
+export function keyInventoryVisible(context: Context<AppEnv>, principal: PrincipalRow) {
+  if (!context.get("scopes").includes("admin") && context.get("managedPrincipalIds").length) {
+    return context.get("managedPrincipalIds").includes(principal.id);
+  }
+  return principalVisible(context, principal);
+}

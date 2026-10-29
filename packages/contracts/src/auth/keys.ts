@@ -14,6 +14,12 @@ export const KeyIssueRequestSchema = z.strictObject({
 });
 export type KeyIssueRequest = z.infer<typeof KeyIssueRequestSchema>;
 
+// Omitting expires_at keeps the predecessor's lifetime, capped at the calling key's expiry.
+export const KeyRotateRequestSchema = KeyIssueRequestSchema.pick({ request_id: true, expires_at: true }).partial({
+  expires_at: true,
+});
+export type KeyRotateRequest = z.infer<typeof KeyRotateRequestSchema>;
+
 export const KeyResourceSchema = z.object({
   id: z.uuid(),
   principal_id: z.uuid(),
@@ -33,3 +39,8 @@ export const KeyIssueResponseSchema = z.object({ key: KeyResourceSchema, token: 
 export type KeyIssueResponse = z.infer<typeof KeyIssueResponseSchema>;
 export const KeyListResponseSchema = z.object({ items: z.array(KeyResourceSchema), next_cursor: z.uuid().nullable() });
 export type KeyListResponse = z.infer<typeof KeyListResponseSchema>;
+
+export const ExpiringKeySchema = KeyResourceSchema.extend({ principal_name: z.string() });
+export type ExpiringKey = z.infer<typeof ExpiringKeySchema>;
+export const ExpiringKeyListResponseSchema = z.object({ items: z.array(ExpiringKeySchema) });
+export type ExpiringKeyListResponse = z.infer<typeof ExpiringKeyListResponseSchema>;

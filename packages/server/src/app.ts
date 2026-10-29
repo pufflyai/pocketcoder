@@ -17,6 +17,8 @@ import {
 import type { ServerWebSocket } from "bun";
 import { createBunWebSocket } from "hono/bun";
 import { registerAdministrationRoutes } from "./administration/administration-routes";
+import { registerKeyExpiryRoutes } from "./administration/key-expiry-routes";
+import { registerKeyRotationRoutes } from "./administration/key-rotation-routes";
 import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
@@ -289,6 +291,8 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
+  registerKeyRotationRoutes(app, store, pepper);
+  registerKeyExpiryRoutes(app, store);
   registerOperatorRecoveryRoutes(app, store, persistence);
   registerAdministrationRoutes({ app, store, persistence, warmPool });
   registerCheckpointRoutes({ app, store, service, persistence });

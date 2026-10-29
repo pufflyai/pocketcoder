@@ -20,7 +20,7 @@ interface PrincipalChange {
 
 // Restrictions are journaled before they commit and grants after, so a lost record
 // can only leave a restored principal narrower than it was, never wider.
-function principalEvents({ target, patch, scopes, templateNames, keyIds, at }: PrincipalChange) {
+export function principalEvents({ target, patch, scopes, templateNames, keyIds, at }: PrincipalChange) {
   const now: JournalEvent[] = [];
   const later: JournalEvent[] = [];
   const time = at.toISOString();

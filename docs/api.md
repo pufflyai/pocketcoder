@@ -138,6 +138,9 @@ GET   /v1/principals/{id}             principals:admin → principal
 PATCH /v1/principals/{id}             principals:admin → principal
 GET   /v1/principals/{id}/keys        keys:read → { items: [...], next_cursor }
 POST  /v1/principals/{id}/keys        keys:write → { key, token } (201 or replay 200)
+POST  /v1/principals/{id}/keys/{keyId}/rotate keys:write → { key, token } (201 or replay 200)
+GET   /v1/keys/expiring?within_hours=168 keys:read → { items: [...] }
+GET   /v1/keys/metrics                keys:read → Prometheus text
 DELETE /v1/principals/{id}/keys/{keyId} keys:write → { revoked: true }
 DELETE /v1/principals/{id}/keys       keys:write → { revoked: true }
 ```
@@ -163,7 +166,24 @@ Issuance identity includes scopes, templates, expiry and target IDs. Reusing an 
 with changed input returns `idempotency.conflict` (409). Replay returns metadata
 and `token: null`. To recover a lost response, list with `request_id`, revoke,
 then issue a fresh request ID. Plaintext secrets never appear in inventory.
-The SDK exposes `client.principals.create/list/get/update` and `client.keys`.
+Rotation accepts `{ request_id, expires_at? }`. It issues a successor key for the
+same principal with the old key's scopes, templates and target IDs. The old key
+stays valid until you revoke it. Without `expires_at`, the successor keeps the old
+key's lifetime, capped at the calling key's expiry. An explicit `expires_at` past
+the calling key's expiry is rejected. Only an active key with an expiry can be
+rotated. Rotation uses issuance authority: an owner key, or an automation key whose
+`managed_principal_ids` names the principal. Replays reconcile like issuance, even
+after the old key was revoked.
+
+`/v1/keys/expiring` lists active keys (not revoked, not expired, principal
+enabled) that expire within `within_hours` (default 168, at most 8784), soonest
+first. Each item is a key resource plus `principal_name`. `/v1/keys/metrics`
+serves the gauge `pocketcoder_principal_key_earliest_expiry_seconds` with
+`principal_id` and `principal_name` labels: the Unix time when each principal's
+first active key expires. Both show only principals the calling key may administer.
+
+The SDK exposes `client.principals.create/list/get/update` and `client.keys`,
+including `client.keys.rotate` and `client.keys.expiring`.
 
 ## Controller secrets
 

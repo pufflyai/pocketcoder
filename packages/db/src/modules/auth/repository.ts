@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { createConfiguredPrincipals } from "./configured-principals";
+import { createKeyExpiry } from "./key-expiry";
 import { createKeyInventory } from "./key-inventory";
 import { createKeyRevocation } from "./key-revocation";
 import { createOwnerBootstrap } from "./owner-bootstrap";
@@ -13,6 +15,8 @@ export function createAuth(context: DatabaseContext) {
     tables: { principals, machineKeys },
   } = context;
   return {
+    ...createConfiguredPrincipals(context),
+    ...createKeyExpiry(context),
     ...createKeyInventory(context),
     ...createKeyRevocation(context),
     bootstrapOwnerKey: createOwnerBootstrap(context),
