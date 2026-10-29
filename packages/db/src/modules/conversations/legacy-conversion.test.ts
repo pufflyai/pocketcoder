@@ -78,3 +78,31 @@ test("legacy rows become documents once: identified turns by conversation, the r
     { n: 0 },
   ]);
 });
+
+// A caller could replay one request into a resumed workspace, so 0.8.x has the same turn twice.
+test("a turn written by two workspaces converts once, under the earlier workspace", async () => {
+  fixture = await createPGliteFixture("pc-legacy-duplicate");
+  const f = fixture;
+  const [first, second] = [await insertTestWorkspace(f, "first"), await insertTestWorkspace(f, "second")];
+  const request = {
+    schema: "pocketcoder.conversation/v2",
+    authority: "external",
+    conversation_id: randomUUID(),
+    request_id: randomUUID(),
+    turn_id: randomUUID(),
+    request_fingerprint: "c".repeat(64),
+  };
+  const envelope = { ...request, event_id: randomUUID(), message_id: "m", sequence: 0, revision: 1 };
+  await legacyRow(f, second.id, 1, "replayed", envelope);
+  await legacyRow(f, first.id, 1, "original", envelope);
+  await f.query(
+    `UPDATE ${f.schema}.workspace_conversation_messages SET created_at = now() - interval '1 hour' WHERE workspace_id = $1`,
+    [first.id],
+  );
+  expect(await convertLegacyConversations(f.context)).toMatchObject({ workspaces: 2, records: 1 });
+  const document = await f.store.getConversation(f.principal.id, request.conversation_id);
+  const records = await f.store.readConversationRecords(document?.id ?? "");
+  expect(records.map((record) => [record.workspaceId, record.document.messages[0]?.content])).toEqual([
+    [first.id, "original"],
+  ]);
+});

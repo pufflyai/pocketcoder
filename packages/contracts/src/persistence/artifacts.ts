@@ -7,7 +7,8 @@ const KEY = /^(?!\.\.?$)[A-Za-z0-9._-]{1,128}$/;
 // from the latest checkpoint. Diagnostics only: never a second source of conversation history.
 export const PrivateArtifactSchema = z.object({
   name: z.string().regex(/^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/),
-  mount: z.string().min(1).max(64),
+  // A mount name, checked against the template's declared mounts when the artifact is read.
+  mount: z.string().regex(/^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$/),
   // Relative path segments; at most one `*` segment, filled by the reader's `key`.
   pattern: z
     .string()

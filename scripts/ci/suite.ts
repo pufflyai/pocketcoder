@@ -7,6 +7,7 @@ export const suiteGroups = {
     "example:test",
     "check-licenses:test",
     "check-boundaries:test",
+    "check-migrations:test",
     "pack:check:test",
     "images:check:test",
     "ci:test",

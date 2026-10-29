@@ -43,7 +43,10 @@ export function registerArtifactRoutes({
     async (c) => {
       const { id, name } = c.req.valid("param");
       const workspace = await service.getOwned(c.get("principal"), id);
-      const artifact = workspace.templateSnapshot.spec.persistence.artifacts?.find((item) => item.name === name);
+      const declared = workspace.templateSnapshot.spec.persistence;
+      const artifact = declared.artifacts?.find(
+        (item) => item.name === name && declared.mounts.some((mount) => mount.name === item.mount),
+      );
       const path = artifact ? artifactPath(artifact, c.req.valid("query").key) : null;
       if (!artifact || path === null) throw notFound();
       // A running harness owns the live file; read it through the harness's own relay route.

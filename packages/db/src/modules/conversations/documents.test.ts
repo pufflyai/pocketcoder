@@ -140,7 +140,11 @@ test("a restart records an accepted turn without a stored result as interrupted,
   const records = await f.store.readConversationRecords((await documentOf(f, conversation)).id);
   expect(records.map((record) => record.status)).toEqual(["completed", "interrupted"]);
   expect(records[1]?.recordKey).toBe(identity.turn_id);
-  expect(records[1]?.document).toMatchObject({ reason: "controller_restarted", messages: [] });
+  expect(records[1]?.document).toMatchObject({ reason: "controller_restarted" });
+  // The outcome is part of the history, so readers see it instead of a gap.
+  expect(records[1]?.document.messages.map((message) => message.identity?.fact)).toEqual([
+    { type: "turn_terminal", outcome: "interrupted", reason: "controller_restarted" },
+  ]);
 });
 
 test("retention starts when the last writing workspace ends and can keep history until deleted", async () => {
@@ -186,4 +190,37 @@ test("messages without identity are single records of the workspace history", as
   ]);
   const [document] = await f.store.listConversations(workspace.id);
   expect(document).toMatchObject({ conversationId: null, recordCount: 2, workspaceId: workspace.id });
+});
+
+test("interrupted turns between others never cut a page short", async () => {
+  const f = await open();
+  const workspace = await insertTestWorkspace(f, "gaps");
+  const conversation = randomUUID();
+  await turn(f, workspace.id, conversation, "before");
+  for (let index = 0; index < 3; index++)
+    await f.store.acceptConversationRequest(
+      workspace.id,
+      {
+        schema: "pocketcoder.conversation/v2",
+        authority: "external",
+        conversation_id: conversation,
+        request_id: randomUUID(),
+        turn_id: randomUUID(),
+        request_fingerprint: "d".repeat(64),
+      },
+      new Date(),
+    );
+  expect(await f.store.recordInterruptedTurns(new Date())).toBe(3);
+  await turn(f, workspace.id, conversation, "after");
+  const messages = await readAll(f, (await documentOf(f, conversation)).id, 2);
+  expect(messages.map((message) => message.content)).toEqual(["before?", "before!", "", "", "", "after?", "after!"]);
+  const view = [];
+  let position = 0;
+  while (true) {
+    const page = await f.store.readWorkspaceConversation(workspace.id, position, 2);
+    view.push(...page);
+    if (page.length < 2) break;
+    position = page.at(-1)?.position ?? position;
+  }
+  expect(view).toHaveLength(7);
 });

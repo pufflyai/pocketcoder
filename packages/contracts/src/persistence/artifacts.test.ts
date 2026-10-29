@@ -26,3 +26,8 @@ test("patterns stay inside their mount", () => {
   for (const pattern of ["../secret", "/etc/passwd", "chats/*/*/x", "a//b", "chats/**/x", "./x"])
     expect(PrivateArtifactSchema.safeParse({ name: "bad", mount: "state", pattern }).success).toBe(false);
 });
+
+test("artifacts name a mount, never a path", () => {
+  for (const mount of ["../../etc", "a/b", "/", "."])
+    expect(PrivateArtifactSchema.safeParse({ name: "bad", mount, pattern: "x" }).success).toBe(false);
+});

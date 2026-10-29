@@ -26,8 +26,13 @@ async function preserved(state: "canceled" | "ready" = "canceled") {
     { name: "chat-transcripts", mount: "harness-state", pattern: "chats/*/transcript.jsonl", maxBytes: 64 },
   ];
   await store.context.sql.query(
-    `UPDATE pocketcoder.workspaces SET template_snapshot = jsonb_set(template_snapshot, '{spec,persistence,artifacts}', CAST($1 AS text)::jsonb) WHERE id = $2`,
-    [JSON.stringify(artifacts), id],
+    `UPDATE pocketcoder.workspaces SET template_snapshot = jsonb_set(jsonb_set(template_snapshot,
+      '{spec,persistence,artifacts}', CAST($1 AS text)::jsonb), '{spec,persistence,mounts}', CAST($2 AS text)::jsonb) WHERE id = $3`,
+    [
+      JSON.stringify(artifacts),
+      JSON.stringify([{ name: "harness-state", target: "/var/state", maxBytes: 1024, maxFiles: 10 }]),
+      id,
+    ],
   );
   if (state === "canceled")
     await store.transition(id, { from: ["queued"], to: "canceled", reason: "canceled_by_caller", at: new Date() });
@@ -104,6 +109,7 @@ test("unknown names, keys outside the pattern, links and missing files are not f
   try {
     for (const path of [
       "unknown?key=chat-1",
+      "undeclared-mount?key=chat-1",
       "chat-transcripts",
       "chat-transcripts?key=..",
       "chat-transcripts?key=escape",

@@ -3,7 +3,7 @@ import {
   type ConversationRecordStatus,
   ConversationRequestIdentitySchema,
 } from "@pstdio/pocketcoder-contracts";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, min } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { insertRecord, lockDocument } from "./documents";
 
@@ -76,10 +76,16 @@ export async function convertLegacyConversations(
   options: { onProgress?(done: Progress): void } = {},
 ) {
   const { db } = context;
-  const legacy = context.tables.workspaceConversationMessages;
+  const { workspaceConversationMessages: legacy, conversationRecords: records } = context.tables;
   const done: Progress = { workspaces: 0, messages: 0, records: 0 };
   while (true) {
-    const [next] = await db.select({ workspaceId: legacy.workspaceId }).from(legacy).limit(1);
+    // Oldest workspace first, so a conversation's records keep the order they were written in.
+    const [next] = await db
+      .select({ workspaceId: legacy.workspaceId })
+      .from(legacy)
+      .groupBy(legacy.workspaceId)
+      .orderBy(min(legacy.createdAt))
+      .limit(1);
     if (!next) return done;
     await db.transaction(async (tx) => {
       const rows = await tx
@@ -93,6 +99,12 @@ export async function convertLegacyConversations(
         if (group.turnId) {
           const request = ConversationRequestIdentitySchema.parse(group.rows[0]?.identity);
           const document = await lockDocument(context, tx, next.workspaceId, request.conversation_id, at);
+          // A request replayed into a later workspace repeats the turn; the first copy stands.
+          const [converted] = await tx
+            .select({ id: records.id })
+            .from(records)
+            .where(and(eq(records.conversationRef, document.id), eq(records.recordKey, group.turnId)));
+          if (converted) continue;
           const messages = latestRevisions(group.rows);
           await insertRecord(context, tx, document, {
             workspaceId: next.workspaceId,

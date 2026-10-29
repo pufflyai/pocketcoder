@@ -17,6 +17,36 @@ export interface RecordWrite extends Omit<RecordInput, "firstSeq"> {
   createdAt: Date;
 }
 
+// A turn the controller closed itself (interrupted, or its workspace ended) has no terminal
+// fact from the producer. The record states the outcome, so history never has a silent gap.
+function withTerminalFact(turn: ConversationTurnCommit) {
+  if (
+    turn.status !== "interrupted" ||
+    turn.messages.some((message) => message.identity?.fact?.type === "turn_terminal")
+  )
+    return turn.messages;
+  const messageId = `${turn.identity.turn_id}:terminal`;
+  const sequence = Math.max(-1, ...turn.messages.map((message) => message.identity?.sequence ?? -1)) + 1;
+  return [
+    ...turn.messages,
+    {
+      messageId,
+      role: "system" as const,
+      content: "",
+      occurredAt: turn.endedAt,
+      metadata: {},
+      identity: {
+        ...turn.identity,
+        event_id: randomUUID(),
+        message_id: messageId,
+        sequence,
+        revision: 1,
+        fact: { type: "turn_terminal" as const, outcome: turn.status, ...(turn.reason ? { reason: turn.reason } : {}) },
+      },
+    },
+  ];
+}
+
 // Creates the document on its first record and locks it, so records of one conversation
 // get consecutive sequence numbers while other conversations write in parallel.
 export async function lockDocument(
@@ -156,7 +186,7 @@ export function createConversationDocuments(context: DatabaseContext) {
         request: turn.identity,
         status: turn.status,
         reason: turn.reason,
-        messages: turn.messages,
+        messages: withTerminalFact(turn),
         startedAt: turn.startedAt,
         endedAt: turn.endedAt,
         createdAt: turn.endedAt,
