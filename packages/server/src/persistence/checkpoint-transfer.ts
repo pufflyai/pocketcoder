@@ -211,14 +211,7 @@ export function createCheckpointTransferService(options: CheckpointTransferOptio
         return false;
       }
     },
-    async ready(connection: LiveConnection) {
-      const check = () => {
-        lifetime.ensureOpen();
-        assertRestoreReady(hub, connection);
-      };
-      check();
-      return store.checkpointTransfers.completeRestore(connection.workspaceId, connection.epoch, check);
-    },
+    ready: (connection: LiveConnection) => completeRestore(store, hub, connection, () => lifetime.ensureOpen()),
     cleanup: lifetime.cleanupWorkspace,
     cancel: lifetime.cancel,
     disconnected(connection: LiveConnection) {
@@ -245,12 +238,22 @@ export function createCheckpointTransferService(options: CheckpointTransferOptio
 }
 export type CheckpointTransferService = ReturnType<typeof createCheckpointTransferService>;
 
-function assertRestoreReady(hub: Hub, connection: LiveConnection) {
+async function completeRestore(store: Store, hub: Hub, connection: LiveConnection, ensureOpen: () => void) {
+  const waitingRuntime = Boolean((await store.getWorkspace(connection.workspaceId))?.runtimeRegistration);
+  const check = () => {
+    ensureOpen();
+    assertRestoreReady(hub, connection, waitingRuntime);
+  };
+  check();
+  return store.checkpointTransfers.completeRestore(connection.workspaceId, connection.epoch, check);
+}
+
+function assertRestoreReady(hub: Hub, connection: LiveConnection, waitingRuntime: boolean) {
   if (
     hub.get(connection.workspaceId) !== connection ||
     !connection.registered ||
     !connection.restoreInstalled ||
-    !connection.harnessRunning
+    (!waitingRuntime && !connection.harnessRunning)
   )
     throw new Error("Restore ready connection changed.");
 }

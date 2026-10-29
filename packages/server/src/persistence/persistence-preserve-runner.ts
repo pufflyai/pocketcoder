@@ -58,6 +58,8 @@ export class PersistencePreserveRunner {
       Math.max(1, Math.ceil(parseDurationMs(workspace.templateSnapshot.spec.timeouts.terminateGrace) / 1000)),
       this.context.now(),
     );
+    // Immutable input mounts stay valid until the provider has been removed.
+    await driver.purgeInput(workspace.id);
     if (this.context.deps.storageDriver?.kind === "kubernetes-shared")
       await this.context.deps.storageDriver.deleteStorage(storage.providerRef as StorageRef);
     const at = this.context.now();
