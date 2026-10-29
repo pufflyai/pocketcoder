@@ -6,11 +6,39 @@ agent wrapper or credentials. Generic HTTP transport can use the `service`
 profile with no operation adapters. That profile promises no request recovery or
 cloud-interactive execution semantics.
 
-PC-125 delivers the G0 contract and offline tools. The current controller and
-supervisor execute only `v1alpha1`; publication and startup import reject `v1`
-before admission. The process, storage, adapter and preview gates must install
-and qualify their implementations before a deployment enables either minimum
-workload profile. Offline validation is not qualification.
+The Docker controller admits authored `service` workloads with request-aware
+`pocketcoder.execution/v1` adapters, no credential slots and no output roots.
+Set `POCKETCODER_WORKLOAD_LIMITS` to a JSON object with the deployment's finite
+workload ceilings, and configure [immutable input storage](input-storage.md).
+Publication retains the complete canonical manifest. Startup checks the actual
+image, runtime, adapter, read-only input mount and incarnation before readiness.
+Finite-process and cloud-interactive publication remain closed. Kubernetes has
+no qualified canonical service driver. Offline validation is not qualification.
+
+A service workload can declare `spec.lifecycle.persistence`, `checkpointHook`,
+`timeouts` and `maxLaunchInputBytes`. These use the existing lifecycle owners.
+They preserve state mounts, quiescing hooks and conversation restore without
+creating an alpha agent or harness. Alpha snapshots retain their original bytes
+and digests.
+
+The image must contain `/opt/pocketcoder/workload.json`, with format
+`pocketcoder.image/v1`. Its `runtime` records the measured supervisor artifact,
+SHA-256 digest, protocol, exact container command and entrypoint. Each entry in
+`adapters` records the service artifact, digest, protocol, exact command, working
+directory, allowed environment keys, loopback base URL, health path and
+capabilities. `codeRoots` lists the immutable directories containing runtime and
+adapter code, including imported dependencies. Writable mounts and memory paths
+cannot overlap those roots. Artifacts and their ancestors cannot be symlinks.
+The driver hashes pristine image artifacts and the installed process-root bytes;
+HTTP capability responses never substitute for this evidence.
+
+The fixed runtime command is `/usr/local/bin/bun /opt/pocketcoder/supervisor.js
+supervise --launch-input /run/pocketcoder/input`. The service process is image-owned
+infrastructure. A user task starts only through the durable execution API.
+For no-export service operations, a durable terminal acknowledgment closes input
+publication, releases that operation's projection and finalizes its input pins.
+The next request waits for this barrier. Replays retain the original execution
+receipt and never redispatch a settled operation.
 
 ## Contract owners
 

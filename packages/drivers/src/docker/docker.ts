@@ -20,6 +20,7 @@ import { createDockerEgress } from "./docker-egress";
 import { type DockerInputProjectionOptions, DockerInputs, PROJECTION_LABEL } from "./docker-inputs";
 import { pullPrivateImage } from "./docker-registry";
 import { createWarmDocker, listWarmDocker } from "./docker-warm";
+import { DockerWorkloads } from "./docker-workloads";
 
 export { resolveDockerImage } from "./docker-command";
 
@@ -56,6 +57,7 @@ export class DockerDriver implements WorkspaceDriver {
   readonly kind = "docker";
   private readonly inputs?: DockerInputs;
   private readonly opts: ResolvedDockerOptions;
+  private readonly workloads: DockerWorkloads;
 
   constructor(options: DockerDriverOptions = {}) {
     this.inputs = options.inputProjection
@@ -65,6 +67,7 @@ export class DockerDriver implements WorkspaceDriver {
           options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
         )
       : undefined;
+    this.workloads = new DockerWorkloads(options.dockerBin ?? "docker");
     this.opts = {
       ...(options.resolveRegistry ? { resolveRegistry: options.resolveRegistry } : {}),
       inputDir: options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
@@ -174,6 +177,7 @@ export class DockerDriver implements WorkspaceDriver {
       const containerId = await runDocker(this.opts.dockerBin, args);
       const ref = {
         kind: this.kind,
+        ...this.workloads.reference(workspace),
         id: containerId,
         ...(projection ? { workspaceId: workspace.id, inputProjectionId: projection.projectionId } : {}),
         name: `pocketcoder-ws-${workspace.id}`,
@@ -238,6 +242,7 @@ export class DockerDriver implements WorkspaceDriver {
           state.detail = String(error);
         }
       }
+      state.workload = await this.workloads.inspect(ref, state, state.inputStorage);
       return state;
     } catch (error) {
       // A daemon outage is not evidence that the runtime disappeared.

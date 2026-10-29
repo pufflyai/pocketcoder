@@ -3,9 +3,9 @@ import { isAbsolute, relative, resolve } from "node:path";
 import {
   agentApiHarness,
   isAgentApiNative,
+  type RuntimeTemplatePolicy,
   SOURCE_CREDENTIAL_MAX_BYTES,
   secretMountPath,
-  type TemplateSpec,
 } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeSecretRef, WorkspaceRow, WorkspaceSecretResolver } from "@pstdio/pocketcoder-runtime-core";
 
@@ -15,7 +15,7 @@ export interface FileSecretResolverOptions {
   root: string;
 }
 
-function collectReferences(spec: TemplateSpec): Set<string> {
+function collectReferences(spec: RuntimeTemplatePolicy): Set<string> {
   const references = new Set<string>();
   const collect = (env: Record<string, string>) => {
     for (const value of Object.values(env)) {
@@ -23,7 +23,7 @@ function collectReferences(spec: TemplateSpec): Set<string> {
     }
   };
   collect(spec.env);
-  collect(agentApiHarness(spec).env);
+  if (spec.agent || spec.harness) collect(agentApiHarness(spec).env);
   for (const step of spec.setup) collect(step.env);
   if (!isAgentApiNative(spec) && spec.checkpointHook) collect(spec.checkpointHook.env);
   return references;

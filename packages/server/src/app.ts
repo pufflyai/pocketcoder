@@ -82,6 +82,7 @@ export interface BuildDeps {
   eventSigningKey?: string;
   egressImage?: string | null;
   limits: AdmissionLimits;
+  workloadLimits?: SchedulerDeps["workloadLimits"];
   workspaceServerUrl: string;
   instanceId?: string;
   logger?: StructuredLogger;
@@ -161,6 +162,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     : undefined;
   const persistenceHolder: { service?: PersistenceService } = {};
   const scheduler = new Scheduler({
+    workloadLimits: deps.workloadLimits,
     admissionFenced: () => deps.maintenance?.fenced ?? false,
     ...(deps.authorizeLaunch ? { authorizeLaunch: deps.authorizeLaunch } : {}),
     store,

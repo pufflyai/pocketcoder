@@ -72,6 +72,8 @@ export class FilesystemInputProjection {
     return this.serialize(() => this.publishSelection(scope, incarnationId, input));
   }
   private async publishSelection(scope: ProjectionScope, incarnationId: string, input: InputProjectionRef) {
+    if (await Bun.file(this.releasePath(scope, input.manifestId)).exists())
+      throw new Error("Input projection was released.");
     const manifest = await this.selection(scope, incarnationId, input);
     const root = this.path(scope);
     await assertDirectory(root);
@@ -206,9 +208,31 @@ export class FilesystemInputProjection {
       await rm(join(this.root, ".staging", scope.workspaceId, scope.projectionId), { recursive: true, force: true });
     });
   }
+  private releasePath(scope: ProjectionScope, manifestId: string) {
+    return join(
+      this.root,
+      ".receipts",
+      inputId(scope.workspaceId),
+      inputId(scope.projectionId),
+      `${inputId(manifestId)}.released`,
+    );
+  }
   release(scope: ProjectionScope, manifestId: string) {
     return this.serialize(async () => {
+      const marker = this.releasePath(scope, manifestId);
+      await directory(dirname(marker));
+      if (!(await Bun.file(marker).exists())) {
+        const receipt = join(dirname(marker), inputId(manifestId));
+        try {
+          await rename(receipt, marker);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          await writeProjectionFile(marker, new Blob(["released"]).stream());
+        }
+        await syncDirectory(dirname(marker));
+      }
       await rm(join(this.path(scope), inputId(manifestId)), { recursive: true, force: true });
+      await syncDirectory(this.path(scope));
     });
   }
   purge(workspaceId: string) {

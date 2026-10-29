@@ -2,7 +2,12 @@ import type { z } from "zod";
 import type { PersistenceMount } from "../persistence/persistence";
 import { isAbsolutePath, SECRET_ENV_PATTERN, SECRET_REFERENCE_PREFIX } from "./template-constants";
 import { agentApiHarness, isAgentApiNative, templateServices } from "./template-runtime";
-import { secretMountPath, type TemplateServiceRoute, type TemplateSpec } from "./template-schema";
+import {
+  type RuntimeTemplatePolicy,
+  secretMountPath,
+  type TemplateServiceRoute,
+  type TemplateSpec,
+} from "./template-schema";
 
 function envSources(spec: TemplateSpec): Array<[Array<string | number>, Record<string, string>]> {
   const sources: Array<[Array<string | number>, Record<string, string>]> = [
@@ -161,7 +166,9 @@ function pathContains(parent: string, child: string): boolean {
   return child === parent || child.startsWith(`${parent}/`);
 }
 
-function validatePersistence(spec: TemplateSpec, ctx: z.RefinementCtx): void {
+type PersistenceTemplatePolicy = Pick<RuntimeTemplatePolicy, "persistence" | "security" | "source" | "agent">;
+
+export function validateTemplatePersistence(spec: PersistenceTemplatePolicy, ctx: z.RefinementCtx): void {
   const seenNames = new Set<string>();
   const mounts: PersistenceMount[] = spec.persistence.mounts;
   for (const [index, mount] of mounts.entries()) {
@@ -181,8 +188,12 @@ function validatePersistence(spec: TemplateSpec, ctx: z.RefinementCtx): void {
   }
 }
 
-function validateAgentStateFile(spec: TemplateSpec, mounts: PersistenceMount[], ctx: z.RefinementCtx): void {
-  if (!isAgentApiNative(spec)) return;
+function validateAgentStateFile(
+  spec: PersistenceTemplatePolicy,
+  mounts: PersistenceMount[],
+  ctx: z.RefinementCtx,
+): void {
+  if (!spec.agent) return;
   const stateFile = spec.agent.stateFile;
   const normalized = stateFile !== undefined && isNormalizedFilesystemPath(stateFile);
   if (stateFile !== undefined && !normalized) {
@@ -210,7 +221,7 @@ function validateAgentStateFile(spec: TemplateSpec, mounts: PersistenceMount[], 
 }
 
 function validatePersistenceMount(
-  spec: TemplateSpec,
+  spec: PersistenceTemplatePolicy,
   mounts: PersistenceMount[],
   mount: PersistenceMount,
   index: number,
@@ -265,7 +276,7 @@ function validateMountOverlap(
 }
 
 function validateMemoryPathOverlap(
-  spec: TemplateSpec,
+  spec: PersistenceTemplatePolicy,
   mount: PersistenceMount,
   path: Array<string | number>,
   ctx: z.RefinementCtx,
@@ -282,7 +293,7 @@ function validateMemoryPathOverlap(
   }
 }
 
-function validateSourceMount(spec: TemplateSpec, mounts: PersistenceMount[], ctx: z.RefinementCtx): void {
+function validateSourceMount(spec: PersistenceTemplatePolicy, mounts: PersistenceMount[], ctx: z.RefinementCtx): void {
   if (!spec.source) return;
   const destination = mounts.find((mount) => mount.name === spec.source?.destinationMount);
   if (destination) return;
@@ -324,7 +335,7 @@ export function validateTemplateSpec(spec: TemplateSpec, ctx: z.RefinementCtx): 
   validateEnvironment(spec, ctx);
   validateOutputs(spec, ctx);
   validateWritableMemoryPaths(spec, ctx);
-  validatePersistence(spec, ctx);
+  validateTemplatePersistence(spec, ctx);
   validateNetworkEnvironment(spec, ctx);
   validateTerminal(spec, ctx);
 }

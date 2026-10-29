@@ -1,4 +1,11 @@
-import { type Agent, type Harness, ServiceSchema, type TemplateService, type TemplateSpec } from "./template-schema";
+import {
+  type Agent,
+  type Harness,
+  type RuntimeTemplatePolicy,
+  ServiceSchema,
+  type TemplateService,
+  type TemplateSpec,
+} from "./template-schema";
 
 const LEGACY_AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
   baseUrl: "http://127.0.0.1:3284",
@@ -23,12 +30,15 @@ const AGENTAPI_SERVICE: TemplateService = ServiceSchema.parse({
   ],
 });
 
-export function isAgentApiNative(spec: TemplateSpec): spec is Extract<TemplateSpec, { agent: Agent }> {
+export function isAgentApiNative(spec: RuntimeTemplatePolicy): spec is Extract<TemplateSpec, { agent: Agent }> {
   return "agent" in spec && spec.agent !== undefined;
 }
 
-export function agentApiHarness(spec: TemplateSpec): Harness {
-  if (!isAgentApiNative(spec)) return spec.harness;
+export function agentApiHarness(spec: RuntimeTemplatePolicy): Harness {
+  if (!isAgentApiNative(spec)) {
+    if (!spec.harness) throw new Error("A workload infrastructure process is not an alpha harness.");
+    return spec.harness;
+  }
   return {
     command: [
       "/usr/local/bin/agentapi",
@@ -48,10 +58,10 @@ export function agentApiHarness(spec: TemplateSpec): Harness {
   };
 }
 
-export function templateServices(spec: TemplateSpec): Record<string, TemplateService> {
-  return isAgentApiNative(spec) ? { agent: AGENTAPI_SERVICE } : spec.services;
+export function templateServices(spec: RuntimeTemplatePolicy): Record<string, TemplateService> {
+  return isAgentApiNative(spec) ? { agent: AGENTAPI_SERVICE } : (spec.services ?? {});
 }
 
-export function legacyTemplateServices(spec: TemplateSpec): Record<string, TemplateService> {
-  return isAgentApiNative(spec) ? { agent: LEGACY_AGENTAPI_SERVICE } : spec.services;
+export function legacyTemplateServices(spec: RuntimeTemplatePolicy): Record<string, TemplateService> {
+  return isAgentApiNative(spec) ? { agent: LEGACY_AGENTAPI_SERVICE } : (spec.services ?? {});
 }

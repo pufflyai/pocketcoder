@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
   ApiError,
-  parseTemplateManifest,
+  normalizeTemplateSnapshot,
   runtimeCredentialReferences,
+  runtimeTemplateDefinition,
   type TemplateManifest,
   TemplateSpecSchema,
+  type WorkloadTemplate,
 } from "@pstdio/pocketcoder-contracts";
 import type { TemplateUpsert } from "@pstdio/pocketcoder-runtime-contracts";
 import { assertAuthorityScope } from "@pstdio/pocketcoder-runtime-core";
@@ -14,7 +16,18 @@ import { requiredRow } from "../../database/required-row";
 import { lockKeyAuthority } from "../auth/authority";
 
 export function createTemplates({ db, journal, tables: { templates, principals, machineKeys } }: DatabaseContext) {
-  const fromRow = (row: typeof templates.$inferSelect) => ({ ...row, spec: TemplateSpecSchema.parse(row.spec) });
+  const fromRow = (row: typeof templates.$inferSelect) => ({
+    ...row,
+    spec: row.manifest
+      ? normalizeTemplateSnapshot({
+          name: row.name,
+          version: row.version,
+          digest: row.digest,
+          spec: row.spec,
+          manifest: row.manifest,
+        }).spec
+      : TemplateSpecSchema.parse(row.spec),
+  });
   async function authorize(tx: Transaction, actorKeyId: string, name: string) {
     const { authority } = await lockKeyAuthority(tx, { principals, machineKeys }, actorKeyId);
     assertAuthorityScope(authority, "templates:write");
@@ -44,10 +57,11 @@ export function createTemplates({ db, journal, tables: { templates, principals, 
     async upsertTemplate(input: TemplateUpsert) {
       return db.transaction((tx) => upsert(tx, input));
     },
-    async publishTemplate(actorKeyId: string, manifest: TemplateManifest) {
-      const parsed = parseTemplateManifest(manifest);
+    async publishTemplate(actorKeyId: string, manifest: TemplateManifest | WorkloadTemplate) {
+      const parsed = runtimeTemplateDefinition(manifest);
       return db.transaction(async (tx) => {
-        const { metadata, spec } = parsed.manifest;
+        const { metadata } = parsed.manifest;
+        const spec = parsed.policy;
         const authority = await authorize(tx, actorKeyId, metadata.name);
         if (
           spec.imagePullSecret ||
@@ -61,6 +75,7 @@ export function createTemplates({ db, journal, tables: { templates, principals, 
           digest: parsed.digest,
           description: metadata.description ?? null,
           spec,
+          manifest: parsed.workload,
         });
         if (result.conflict)
           throw new ApiError("template.version_immutable", "This template version already has different content.");

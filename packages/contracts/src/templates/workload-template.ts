@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { canonicalJson, digestOf } from "../common/canonical";
 import { NetworkPolicySchema } from "../network/network";
+import { PersistenceSpecSchema } from "../persistence/persistence";
 import { PreviewsSchema } from "../previews/preview";
 import { CredentialSlotSchema } from "../secrets/credential-slot";
-import { HarnessSchema, ResourcesSchema, SecuritySchema, ServiceSchema } from "./template-alpha-schema";
+import {
+  CheckpointHookSchema,
+  HarnessSchema,
+  ResourcesSchema,
+  SecuritySchema,
+  ServiceSchema,
+  TimeoutsSchema,
+} from "./template-alpha-schema";
 import {
   WorkloadCapabilitySchema,
   WorkloadDigestSchema,
@@ -55,6 +63,14 @@ export const WorkloadTemplateBaseSchema = z.strictObject({
     network: NetworkPolicySchema,
     security: SecuritySchema.strict(),
     limits: WorkloadLimitsSchema,
+    lifecycle: z
+      .strictObject({
+        persistence: PersistenceSpecSchema.prefault({}),
+        checkpointHook: CheckpointHookSchema.optional(),
+        timeouts: TimeoutsSchema.optional(),
+        maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
+      })
+      .optional(),
   }),
 });
 export type WorkloadTemplate = z.infer<typeof WorkloadTemplateBaseSchema>;

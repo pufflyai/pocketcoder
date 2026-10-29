@@ -2,6 +2,7 @@ import { createRoute, type OpenAPIHono } from "@hono/zod-openapi";
 import {
   ApiError,
   ErrorEnvelopeSchema,
+  runtimeTemplateDefinition,
   TemplateListItemSchema,
   TemplatePublishRequestSchema,
   TemplateVersionParamsSchema,
@@ -64,7 +65,8 @@ export function registerTemplateMutations(app: OpenAPIHono<AppEnv>, store: Store
     }),
     async (c) => {
       const { manifest } = c.req.valid("json");
-      if (manifest.spec.network.mode === "restricted" && !egressImage) {
+      const definition = runtimeTemplateDefinition(manifest);
+      if (definition.policy.network.mode === "restricted" && !egressImage) {
         throw new ApiError("validation.invalid", "Restricted templates require a configured POCKETCODER_EGRESS_IMAGE.");
       }
       const result = await store.publishTemplate(c.get("keyId"), manifest);

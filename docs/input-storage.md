@@ -129,10 +129,11 @@ appears through the same mount and cannot replace earlier entries. Lost executio
 directories rebuild from the same pinned objects and receipt. Loss of the stable
 mount root fails closed and needs a fresh runtime; it cannot be rebound in place.
 
-PC-129 owns acceptance/dispatch fencing and finalization. After its finalization
-barrier it may call `releaseInputProjection`, then release canonical pins through
-`InputStorage.finalize`. Provider removal deletes only that incarnation's copies;
+The execution owner owns acceptance, dispatch fencing and finalization. Qualified
+no-export service operations release their projection after durable terminal
+acknowledgment, then finalize canonical pins through the same execution owner.
+Release records a durable tombstone. A delayed publisher cannot recreate a
+released directory, including after controller restart. Provider removal deletes only that incarnation's copies;
 workspace purge waits for container removal. Neither operation deletes canonical
-objects or releases their pins. Full installed workload capability evidence still
-requires the producer and operation owners; this driver reports only its observed
-`inputStorage` profile. Attachment-bearing legacy relay remains rejected.
+objects or releases their pins. The Docker workload verifier combines this observed input boundary with measured
+image-owned runtime and adapter evidence before it binds canonical service support. Attachment-bearing legacy relay remains rejected.

@@ -167,6 +167,7 @@ export class WorkspaceService {
       digest: template.digest,
       spec: template.spec,
       services: templateServices(template.spec),
+      ...(template.manifest ? { manifest: template.manifest } : {}),
     };
     this.validateCreateInput(template, body);
     const now = this.now();

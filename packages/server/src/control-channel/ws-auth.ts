@@ -60,6 +60,40 @@ function validReconnect(deps: WsDeps, row: WorkspaceRow, secret: string): boolea
   );
 }
 
+function waitingProtocolRejected(row: WorkspaceRow, protocol: number) {
+  return Boolean(
+    row.runtimeRegistration?.endedAt ||
+      ((row.runtimeRegistration || row.templateSnapshot.manifest) && protocol < WAITING_RUNTIME_MIN_PROTOCOL_VERSION),
+  );
+}
+
+async function authenticateRegistration(
+  deps: WsDeps,
+  credentials: WsCredentials,
+  initial: WorkspaceRow,
+  secret: string,
+): Promise<WsAuthResult> {
+  let row: WorkspaceRow | null = initial;
+  if (!validRegistration(deps, row, secret)) {
+    return { error: "Invalid or expired registration secret." };
+  }
+  // The driver verifies the live image and mount after create returns. Keep
+  // the one-use registration pending until that owner has bound its evidence.
+  while (row.templateSnapshot.manifest && !row.runtimeRegistration) {
+    await Bun.sleep(50);
+    row = await deps.store.getWorkspace(credentials.workspaceId);
+    if (!row || row.purgeRequestedAt || !validRegistration(deps, row, secret))
+      return { error: "Runtime preparation failed or registration expired." };
+  }
+  return {
+    auth: {
+      workspaceId: credentials.workspaceId,
+      mode: "register",
+      protocolVersion: credentials.protocolVersion as ProtocolVersion,
+    },
+  };
+}
+
 async function authenticateConnection(deps: WsDeps, credentials: WsCredentials): Promise<WsAuthResult> {
   if (!SUPPORTED_PROTOCOL_VERSIONS.includes(credentials.protocolVersion as ProtocolVersion)) {
     return { error: "Unsupported agent protocol version." };
@@ -74,10 +108,7 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
   )
     return { error: "Runtime credentials require agent protocol version 9." };
-  if (
-    row?.runtimeRegistration &&
-    (row.runtimeRegistration.endedAt || credentials.protocolVersion < WAITING_RUNTIME_MIN_PROTOCOL_VERSION)
-  )
+  if (row && waitingProtocolRejected(row, credentials.protocolVersion))
     return { error: "Waiting runtime is ended or requires protocol version 12." };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
   if (
@@ -90,18 +121,7 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
   if (sourceCredentialReference(row) && credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION) {
     return { error: "Source credentials require agent protocol version 8." };
   }
-  if (credentials.registration) {
-    if (!validRegistration(deps, row, credentials.registration)) {
-      return { error: "Invalid or expired registration secret." };
-    }
-    return {
-      auth: {
-        workspaceId: credentials.workspaceId,
-        mode: "register",
-        protocolVersion: credentials.protocolVersion as ProtocolVersion,
-      },
-    };
-  }
+  if (credentials.registration) return authenticateRegistration(deps, credentials, row, credentials.registration);
   if (!validReconnect(deps, row, credentials.reconnect ?? "")) {
     return { error: "Invalid reconnect credential." };
   }
@@ -131,8 +151,26 @@ export function agentConnectValidator(deps: WsDeps): MiddlewareHandler<AppEnv> {
 }
 
 export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, restoreMode: RestoreMode): ExecSpec {
-  if (row.runtimeRegistration?.template)
-    return waitingExecSpec(row.runtimeRegistration.template, row.runtimeRegistration.incarnationId, row.launchMode);
+  if (row.runtimeRegistration?.template) {
+    const exec = waitingExecSpec(
+      row.runtimeRegistration.template,
+      row.runtimeRegistration.incarnationId,
+      row.launchMode,
+      row.launchInput,
+    );
+    return {
+      ...exec,
+      restore:
+        row.restoredFromCheckpointId && row.originWorkspaceId
+          ? {
+              mode: restoreMode,
+              checkpoint_id: row.restoredFromCheckpointId,
+              origin_workspace_id: row.originWorkspaceId,
+              transfer: null,
+            }
+          : null,
+    };
+  }
   const spec = row.templateSnapshot.spec;
   const sourceSpec = spec.source;
   const sourceRepository =

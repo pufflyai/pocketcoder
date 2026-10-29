@@ -154,6 +154,12 @@ export function relayHandler(
     const prefix = options?.pathPrefix?.(id) ?? `/v1/workspaces/${id}/services/${serviceName}`;
     const path = requestPath(c, prefix);
     const method = c.req.method as RelayMethod;
+    const workload = row.runtimeRegistration?.template?.manifest ?? row.templateSnapshot.manifest;
+    const boundExecutionService = Object.values(workload?.spec.adapters ?? {}).some(
+      (adapter) => adapter.service === serviceName && adapter.protocol === "pocketcoder.execution/v1",
+    );
+    if (boundExecutionService && path.startsWith("/executions/"))
+      throw new ApiError("relay.route_not_allowed", "Execution endpoints belong to the durable execution owner.");
     const match = findRoute(row.templateSnapshot, serviceName, method, path);
     if (!match) {
       throw new ApiError("relay.route_not_allowed", `${method} ${path} is not declared by this template.`);

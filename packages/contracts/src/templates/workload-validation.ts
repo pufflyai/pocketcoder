@@ -1,6 +1,8 @@
 import type { z } from "zod";
+import { parseDurationMs } from "../common/duration";
+import { PersistenceSpecSchema } from "../persistence/persistence";
 import { SECRET_ENV_PATTERN } from "./template-constants";
-import { isNormalizedPath } from "./template-validation";
+import { isNormalizedPath, validateTemplatePersistence } from "./template-validation";
 import type { WorkloadTemplate } from "./workload-template";
 
 type Spec = WorkloadTemplate["spec"];
@@ -65,6 +67,9 @@ function validateAdapters(spec: Spec, issue: Issue) {
 
 function validateProcessEnvironment(spec: Spec, issue: Issue) {
   const processes = [
+    ...(spec.lifecycle?.checkpointHook
+      ? [{ path: ["lifecycle", "checkpointHook"], process: spec.lifecycle.checkpointHook }]
+      : []),
     ...Object.entries(spec.adapters).map(([name, adapter]) => ({ path: ["adapters", name], process: adapter })),
     ...Object.entries(spec.services).flatMap(([name, service]) =>
       service.process ? [{ path: ["services", name, "process"], process: service.process }] : [],
@@ -150,6 +155,21 @@ function validateServices(spec: Spec, issue: Issue) {
 export function validateWorkloadTemplate(manifest: WorkloadTemplate, ctx: z.RefinementCtx) {
   const spec = manifest.spec;
   const issue: Issue = (path, message) => ctx.addIssue({ code: "custom", path: ["spec", ...path], message });
+  validateTemplatePersistence(
+    {
+      security: spec.security,
+      source: null,
+      persistence: spec.lifecycle?.persistence ?? PersistenceSpecSchema.parse({}),
+    },
+    ctx,
+  );
+  const timeouts = spec.lifecycle?.timeouts;
+  if (
+    timeouts &&
+    (parseDurationMs(timeouts.maxAge) > spec.limits.deadlineSeconds * 1000 ||
+      parseDurationMs(timeouts.terminateGrace) > spec.limits.finalizationSeconds * 1000)
+  )
+    issue(["lifecycle", "timeouts"], "Lifecycle timeouts exceed the workload limits.");
   validateProfile(spec, issue);
   validateSecurity(spec, issue);
   validateAdapters(spec, issue);
