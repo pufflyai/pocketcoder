@@ -7,7 +7,7 @@ COPY apk-indexes/$TARGETARCH/ /var/cache/apk/
 RUN cd /var/cache/apk \
   && sha256sum -c SHA256SUMS \
   && touch APKINDEX.*.tar.gz \
-  && apk add chromium=155.0.8059.39-r0 font-dejavu=2.37-r6 \
+  && apk add chromium=155.0.8059.84-r0 font-dejavu=2.37-r6 \
   && rm -rf /var/cache/apk/*
 COPY browser-harness.ts /opt/pocketcoder/browser-harness.ts
 USER 10001:10001
