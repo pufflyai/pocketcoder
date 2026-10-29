@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 import { lockDataFolder } from "./data-folder";
 
 const fixture = join(import.meta.dir, "crash-fixture.ts");
@@ -116,12 +116,12 @@ test("an interrupted staged seed is discarded, while incomplete published data i
   try {
     await mkdir(join(dir, ".db-staging"));
     await writeFile(join(dir, ".db-staging", "partial"), "interrupted");
-    const store = await PGliteStore.create(dir);
+    const store = await DatabaseStore.openPGlite(dir);
     await store.close();
     await rm(join(dir, "db"), { recursive: true });
     await mkdir(join(dir, "db"));
     await writeFile(join(dir, "db", "partial"), "existing data");
-    await expect(PGliteStore.create(dir)).rejects.toThrow("incomplete database directory");
+    await expect(DatabaseStore.openPGlite(dir)).rejects.toThrow("incomplete database directory");
     expect(await Bun.file(join(dir, "db", "partial")).text()).toBe("existing data");
   } finally {
     await rm(dir, { recursive: true, force: true });

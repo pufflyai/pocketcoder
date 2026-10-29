@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { loadOffNodeConfig, restoreOffNodeBackup } from "@pstdio/pocketcoder-db/off-node";
 import { objectStorageFixture } from "@pstdio/pocketcoder-db/testing";
 import { bootstrapLocalOwnerKey } from "@pstdio/pocketcoder-runtime-core";
@@ -17,8 +17,8 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
   async () => {
     const fixture = await objectStorageFixture();
     const root = await mkdtemp(join(tmpdir(), "pc93-restore-"));
-    let source: PGliteStore | undefined;
-    let restored: PGliteStore | undefined;
+    let source: DatabaseStore | undefined;
+    let restored: DatabaseStore | undefined;
     try {
       const key = join(root, "outer-key");
       await writeFile(key, randomBytes(32), { mode: 0o600 });
@@ -57,7 +57,7 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
         checkpointDir: join(root, "fresh-checkpoints"),
       };
       const result = await restoreOffNodeBackup(input);
-      restored = await PGliteStore.create(input.dataDir, {
+      restored = await DatabaseStore.openPGlite(input.dataDir, {
         journalDir: input.journalDir,
         acknowledgeJournal: offNode.journal.acknowledge,
       });

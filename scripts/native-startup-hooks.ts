@@ -83,8 +83,8 @@ const hooks: Record<string, Hook[]> = {
   ],
   "packages/db/src/store.ts": [
     [
-      "return new PGliteStore(await createDatabaseContext(dataDir, options));",
-      'const context = await startupPhase("database-context", () => createDatabaseContext(dataDir, options));\nreturn startupPhase("store-construction", () => new PGliteStore(context));',
+      "return new DatabaseStore(await createPGliteContext(dataDir, options));",
+      'const context = await startupPhase("database-context", () => createPGliteContext(dataDir, options));\nreturn startupPhase("store-construction", () => new DatabaseStore(context));',
     ],
   ],
   "packages/server/src/bootstrap/controller-store.ts": [

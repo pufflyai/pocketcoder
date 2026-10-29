@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bootstrapLocalOwnerKey } from "@pstdio/pocketcoder-runtime-core";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 import { createJournalReplica } from "./journal-replica";
 import { objectStorageFixture } from "./object-storage-fixture";
 
@@ -17,8 +17,8 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
     const outerKey = randomBytes(32);
     const replica = createJournalReplica(fixture.config, accountId, outerKey);
     const directory = join(root, "source");
-    let source = await PGliteStore.create(directory, { acknowledgeJournal: replica.acknowledge });
-    let fresh: PGliteStore | undefined;
+    let source = await DatabaseStore.openPGlite(directory, { acknowledgeJournal: replica.acknowledge });
+    let fresh: DatabaseStore | undefined;
     try {
       await replica.acknowledge(source.journalSnapshot());
       const pepper = "remote-journal-pepper";
@@ -31,17 +31,17 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
       const unavailable = endpoint.url.toString();
       endpoint.stop(true);
       const offline = createJournalReplica({ ...fixture.config, endpoint: unavailable }, accountId, outerKey);
-      source = await PGliteStore.create(directory, { acknowledgeJournal: offline.acknowledge });
+      source = await DatabaseStore.openPGlite(directory, { acknowledgeJournal: offline.acknowledge });
       await expect(source.revokeMachineKey(target.key.id, new Date(), caller.key.id)).rejects.toMatchObject({
         code: "journal.pending",
       });
       expect((await source.getMachineKeyWithPrincipal(target.key.id))?.key.revokedAt).not.toBeNull();
       expect((await replica.current())?.records.some((record) => record.event.kind === "key_revoked")).toBe(false);
       await source.close();
-      source = await PGliteStore.create(directory, { acknowledgeJournal: replica.acknowledge });
+      source = await DatabaseStore.openPGlite(directory, { acknowledgeJournal: replica.acknowledge });
       expect(await source.revokeMachineKey(target.key.id, new Date(), caller.key.id)).toBe(false);
       expect((await replica.current())?.head).toEqual(source.journalSnapshot().head);
-      fresh = await PGliteStore.create(join(root, "fresh"));
+      fresh = await DatabaseStore.openPGlite(join(root, "fresh"));
       const restored = { ...source.journalSnapshot(), writer: fresh.journalSnapshot().writer };
       await replica.transfer(restored, oldWriter);
       const versions = await fixture.storage.versions(`accounts/${accountId}/journal/`);

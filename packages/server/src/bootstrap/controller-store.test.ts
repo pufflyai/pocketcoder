@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { openControllerStore } from "./controller-store";
 
 test("first start publishes private independent keys and restart reuses them", async () => {
@@ -71,7 +71,7 @@ test("an interrupted unpublished key write is repaired without changing complete
 test("an initialized database with missing keys is never given new signing identities", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pc-controller-missing-keys-"));
   try {
-    const store = await PGliteStore.create(directory);
+    const store = await DatabaseStore.openPGlite(directory);
     await store.close();
     await expect(openControllerStore(directory)).rejects.toThrow("initialized data folder has no key bundle");
     expect(await Bun.file(join(directory, "keys", "auth-pepper")).exists()).toBe(false);

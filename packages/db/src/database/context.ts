@@ -1,18 +1,13 @@
-import { existsSync } from "node:fs";
-import { lstat, readdir, readFile, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { PGlite } from "@electric-sql/pglite";
+import type { PGlite } from "@electric-sql/pglite";
+import type { SourceWriter } from "@pstdio/pocketcoder-contracts";
+import type { SQL } from "bun";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
-import { boundedFilesystem, type DatabaseBudget } from "../backup/bounded-filesystem";
+import type { PgAsyncDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import type { DatabaseBudget } from "../backup/bounded-filesystem";
 import type { JournalAcknowledgement } from "../journal/acknowledgement";
-import { bindJournal } from "../journal/binding";
-import { migrateDatabase } from "../migrations/migrator";
-import { createSchema } from "../schema";
-import { loadCoreAssets } from "./assets";
-import { bindCheckpointWriter } from "./checkpoint-writer";
-import { lockDataFolder, syncDirectory, syncSeed } from "./data-folder";
-import { DurableFilesystem } from "./durable-filesystem";
+import type { DeletionJournal } from "../journal/journal";
+import type { createSchema } from "../schema";
+import type { SqlClient } from "./sql-client";
 
 export interface DatabaseOpenOptions {
   databaseBudget?: DatabaseBudget;
@@ -22,94 +17,50 @@ export interface DatabaseOpenOptions {
   acknowledgeJournal?: JournalAcknowledgement;
 }
 
-// Returns the database folder, installing the seed on first start.
-async function installDatabase(directory: string, assets: Awaited<ReturnType<typeof loadCoreAssets>>) {
-  const databaseDir = join(directory, "db");
-  if (!existsSync(databaseDir)) {
-    const stage = join(directory, ".db-staging");
-    await rm(stage, { recursive: true, force: true });
-    // Install the seed before opening the engine to avoid two WASM memory peaks.
-    await new Bun.Archive(assets.seedArchive()).extract(stage);
-    if ((await readFile(join(stage, "PG_VERSION"), "utf8")).trim() !== "18")
-      throw new Error("incompatible core seed engine format");
-    await syncSeed(stage);
-    await rename(stage, databaseDir);
-    syncDirectory(directory);
-    return databaseDir;
-  }
-  if (!(await lstat(databaseDir)).isDirectory() || !(await readdir(databaseDir)).includes("PG_VERSION"))
-    throw new Error("incomplete database directory; refusing to replace existing data");
-  if ((await readFile(join(databaseDir, "PG_VERSION"), "utf8")).trim() !== "18")
-    throw new Error("incompatible database engine format");
-  return databaseDir;
+interface SharedContext {
+  schema: string;
+  sql: SqlClient;
+  db: PgAsyncDatabase<PgQueryResultHKT>;
+  tables: ReturnType<typeof createSchema>;
+  journal: DeletionJournal | undefined;
+  changes: Map<string, Set<() => void>>;
+  close(): Promise<void>;
 }
 
-export async function createDatabaseContext(dataDir?: string, hooks: DatabaseOpenOptions = {}) {
-  if (dataDir === "") throw new Error("data folder must not be empty");
-  const folder = dataDir !== undefined ? lockDataFolder(dataDir) : undefined;
-  let client: PGlite | undefined;
-  try {
-    if (folder && existsSync(join(folder.dir, "FORMAT"))) throw new Error("incompatible core data format");
-    if (folder) await hooks.beforeOpen?.(folder.dir);
-    const assets = await loadCoreAssets();
-    const options = {
-      pgliteWasmModule: assets.pgliteWasmModule,
-      fsBundle: assets.fsBundle,
-      relaxedDurability: false,
-      postgresqlconf: ["shared_buffers = 16MB"],
-      startParams: PGlite.defaultStartParams.filter((param) => param !== "-F"),
-    };
-    const databaseDir = folder ? await installDatabase(folder.dir, assets) : undefined;
-    client = databaseDir
-      ? await PGlite.create({
-          ...options,
-          fs: boundedFilesystem(new DurableFilesystem(databaseDir), databaseDir, hooks.databaseBudget),
-        })
-      : await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });
-    await migrateDatabase(client);
-    const tables = createSchema("pocketcoder");
-    const db = drizzle({ client });
-    const dataWriter = await bindCheckpointWriter(db, tables, folder);
-    const journal =
-      folder && dataWriter ? await bindJournal(db, tables, folder.dir, dataWriter, hooks.journalDir) : undefined;
-    let closed = false;
-    const database = client;
-    return {
-      schema: "pocketcoder",
-      client: database,
-      db,
-      tables,
-      dataWriter,
-      journal,
-      acknowledgeJournal: hooks.acknowledgeJournal,
-      dataDir: folder?.dir,
-      validateStorage: folder?.validate,
-      changes: new Map<string, Set<() => void>>(),
-      async close() {
-        if (closed) return;
-        closed = true;
-        try {
-          await database.close();
-        } finally {
-          journal?.close();
-          folder?.close();
-        }
-      },
-    };
-  } catch (error) {
-    try {
-      await client?.close();
-    } finally {
-      folder?.close();
-    }
-    throw error;
-  }
+// The embedded engine owns a private data folder, so it also fences writers by that folder.
+export interface PGliteContext extends SharedContext {
+  driver: "pglite";
+  client: PGlite;
+  dataWriter: SourceWriter | undefined;
+  acknowledgeJournal: JournalAcknowledgement | undefined;
+  dataDir: string | undefined;
+  validateStorage: (() => void) | undefined;
 }
-export type DatabaseContext = Awaited<ReturnType<typeof createDatabaseContext>>;
+
+// A PostgreSQL server owns durability and backups. The coordinator lease fences writers.
+export interface PostgresContext extends SharedContext {
+  driver: "postgres";
+  client: SQL;
+  acquireCoordinatorLease(): Promise<() => Promise<void>>;
+  releaseCoordinatorLease(): Promise<void>;
+  dataWriter?: undefined;
+  acknowledgeJournal?: undefined;
+  dataDir?: undefined;
+  validateStorage?: undefined;
+}
+
+export type DatabaseContext = PGliteContext | PostgresContext;
 export type Transaction = Parameters<Parameters<DatabaseContext["db"]["transaction"]>[0]>[0];
 export type QueryContext = DatabaseContext["db"] | Transaction;
 
-// Row-spanning limits remain atomic inside the serialized database transaction.
+// Folder snapshots, off-node backups and writer fencing need the embedded data folder.
+export function requirePGlite(context: DatabaseContext, feature: string): PGliteContext {
+  if (context.driver !== "pglite")
+    throw new Error(`${feature} is not available with PostgreSQL. Use your database's backups instead.`);
+  return context;
+}
+
+// Row-spanning limits stay atomic: the advisory lock serializes transactions on one key.
 export async function lock(tx: Transaction, name: string, seed: number) {
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${name}, ${seed}))`);
 }
@@ -125,6 +76,8 @@ export function createLifecycle(context: DatabaseContext) {
   return {
     async init() {},
     async acquireCoordinatorLease() {
+      if (context.driver === "postgres") return context.acquireCoordinatorLease();
+      // The data folder lock already excludes other processes; this excludes a second coordinator here.
       if (coordinator) throw new Error("a PocketCoder coordinator is already active");
       coordinator = true;
       return async () => {

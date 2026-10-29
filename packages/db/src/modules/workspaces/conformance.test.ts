@@ -205,7 +205,7 @@ describe.each(["memory", "disk"] as const)("PGlite workspace capabilities (%s)",
       const runtimeId = await insertReadyRuntime(fixture);
       const nextRuntimeId = await insertReadyRuntime(fixture);
       await store.updateWarmPoolRuntime(nextRuntimeId, { readyAt: new Date(Date.now() + 1000) }, new Date());
-      await fixture.context.client.exec("SET enable_hashjoin=off; SET enable_mergejoin=off");
+      await fixture.context.sql.exec("SET enable_hashjoin=off; SET enable_mergejoin=off");
       const claim = {
         workspace: warmWorkspace,
         driverKind: "docker",

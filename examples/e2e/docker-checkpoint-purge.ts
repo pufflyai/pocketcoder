@@ -7,7 +7,7 @@ import {
   RestoreResponseSchema,
   WorkspaceResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { checkpointSourceFixture } from "./checkpoint-source-fixture";
 import type { ReadyHarnessWorkspace } from "./contract";
 import { command, waitFor } from "./local-process";
@@ -219,7 +219,7 @@ try {
   await fixture.restart(async () => {
     const files = await readdir(fixture.checkpointDir);
     if (!files.some((name) => name.startsWith(archive.id))) throw new Error("Blocked deletion removed the archive.");
-    const store = await PGliteStore.create(fixture.dataDir);
+    const store = await DatabaseStore.openPGlite(fixture.dataDir);
     try {
       chargedWhileBlocked = (await store.storageReservations.usage(interrupted.workspaceId, null)).workspace.bytes;
     } finally {
@@ -234,7 +234,7 @@ try {
   const left = (await readdir(fixture.checkpointDir)).filter((name) => !before.has(name));
   if (left.length) throw new Error(`Purge left checkpoint files: ${left.join(", ")}`);
   await fixture.stop();
-  const store = await PGliteStore.create(fixture.dataDir);
+  const store = await DatabaseStore.openPGlite(fixture.dataDir);
   try {
     for (const id of purgedIds) {
       const usage = await store.storageReservations.usage(id, null);

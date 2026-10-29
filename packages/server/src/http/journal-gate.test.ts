@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { bootstrapLocalOwnerKey } from "@pstdio/pocketcoder-runtime-core";
 import { Hono } from "hono";
 import { createStructuredLogger } from "../observability/observability";
@@ -23,7 +23,7 @@ test("a metadata read cannot expose a revocation appended after its first remote
   const observed = new Promise<void>((resolve) => {
     entered = resolve;
   });
-  const store = await PGliteStore.create(join(root, "data"), {
+  const store = await DatabaseStore.openPGlite(join(root, "data"), {
     acknowledgeJournal: async (snapshot) => {
       if (offline) {
         await fetch(unavailable);

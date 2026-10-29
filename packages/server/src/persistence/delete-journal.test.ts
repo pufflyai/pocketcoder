@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { writePrivateJson } from "@pstdio/pocketcoder-db/off-node";
 import { DockerDriver, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
@@ -19,7 +19,7 @@ test("checkpoint deletion is enforced during remote outage and its worker waits 
   let store = f.store;
   const dataDir = f.context.dataDir;
   if (!dataDir) throw new Error("Disk data directory missing.");
-  const build = (current: PGliteStore) =>
+  const build = (current: DatabaseStore) =>
     buildServer({
       store: current,
       driver: new DockerDriver(),
@@ -59,7 +59,7 @@ test("checkpoint deletion is enforced during remote outage and its worker waits 
     let original: string | undefined;
     for (let restart = 0; restart < 2; restart++) {
       await store.close();
-      store = await PGliteStore.create(dataDir, {
+      store = await DatabaseStore.openPGlite(dataDir, {
         acknowledgeJournal: async () => {
           await fetch(unavailable);
         },
@@ -100,7 +100,7 @@ test("checkpoint deletion is enforced during remote outage and its worker waits 
     }
     await store.close();
     const acknowledgement = join(dirname(f.directory), "ack.json");
-    store = await PGliteStore.create(dataDir, {
+    store = await DatabaseStore.openPGlite(dataDir, {
       acknowledgeJournal: (snapshot) => writePrivateJson(acknowledgement, snapshot.head),
     });
     const built = build(store);

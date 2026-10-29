@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { buildServer } from "@pstdio/pocketcoder-server";
@@ -14,7 +14,7 @@ test("an isolated example bootstraps its owner then uses HTTP for workload autho
   const pepper = "example-access-test-pepper";
   const expiresAt = new Date(Date.now() + 60_000);
   const ownerKey = await bootstrapExampleOwner(directory, pepper, expiresAt);
-  const store = await PGliteStore.create(directory);
+  const store = await DatabaseStore.openPGlite(directory);
   const built = buildServer({
     store,
     driver: new FakeDriver(),

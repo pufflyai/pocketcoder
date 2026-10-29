@@ -2,20 +2,20 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "../store";
-import { createDatabaseContext } from "./context";
+import { DatabaseStore } from "../store";
+import { createPGliteContext } from "./pglite-context";
 
 test("first start migrates a private data folder and restart keeps committed rows", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pc-pglite-"));
-  let store: PGliteStore | undefined;
+  let store: DatabaseStore | undefined;
   try {
-    store = await PGliteStore.create(dir);
+    store = await DatabaseStore.openPGlite(dir);
     const principal = await store.createPrincipal("owner", ["admin"], ["*"]);
     expect((await stat(join(dir, "db"))).mode & 0o777).toBe(0o700);
     expect((await stat(join(dir, "LOCK"))).mode & 0o777).toBe(0o600);
-    await expect(PGliteStore.create(dir)).rejects.toThrow("data folder is in use");
+    await expect(DatabaseStore.openPGlite(dir)).rejects.toThrow("data folder is in use");
     await store.close();
-    store = await PGliteStore.create(dir);
+    store = await DatabaseStore.openPGlite(dir);
     expect(await store.getPrincipal(principal.id)).toEqual(principal);
     for (const cache of ["db/global/pg_internal.init", "db/base/5/pg_internal.init"])
       expect((await stat(join(dir, cache))).mode & 0o777).toBe(0o600);
@@ -26,7 +26,7 @@ test("first start migrates a private data folder and restart keeps committed row
 });
 
 test("in-memory startup uses the migrated seed and small shared buffers", async () => {
-  const context = await createDatabaseContext();
+  const context = await createPGliteContext();
   try {
     expect((await context.client.query<{ fsync: string }>("SHOW fsync")).rows[0]?.fsync).toBe("on");
 
@@ -40,5 +40,5 @@ test("in-memory startup uses the migrated seed and small shared buffers", async 
 });
 
 test("an empty data folder cannot silently select memory storage", async () => {
-  await expect(PGliteStore.create("")).rejects.toThrow("data folder must not be empty");
+  await expect(DatabaseStore.openPGlite("")).rejects.toThrow("data folder must not be empty");
 });

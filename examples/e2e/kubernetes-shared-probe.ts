@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { FilesystemInputStorage, KubernetesDriver, KubernetesSharedStorage } from "@pstdio/pocketcoder-drivers";
 import type { InputProjectionRef, ProviderRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { measureSharedCapacity } from "./kubernetes-shared-capacity";
@@ -28,7 +28,7 @@ const shared = new KubernetesSharedStorage({
 });
 const canonical = new FilesystemInputStorage("/data/private/inputs", [root]);
 await resumePublisher(shared, canonical);
-const store = await PGliteStore.create("/data/private/db");
+const store = await DatabaseStore.openPGlite("/data/private/db");
 await store.init();
 const principal = await store.createPrincipal("shared-fixture", ["admin"], ["*"]);
 const parsed = parseTemplateManifest({

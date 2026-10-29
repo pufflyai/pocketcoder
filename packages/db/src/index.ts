@@ -29,4 +29,4 @@ export {
   workspaces,
   workspaceTerminalSessions,
 } from "./schema/index";
-export { PGliteStore } from "./store";
+export { DatabaseStore } from "./store";

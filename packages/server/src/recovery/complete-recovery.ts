@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import {
   reconcilePersistence,
   type WorkspaceDriver,
@@ -10,12 +10,12 @@ import { reconcileCheckpointPreserves } from "../lifecycle/lifecycle-resources";
 import { fenceRuntimes, removeRuntime } from "./fence-runtimes";
 
 export interface RecoveryDeps {
-  store: PGliteStore;
+  store: DatabaseStore;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
 }
 type Runtime = Pick<BuiltServer, "scheduler" | "persistence" | "workspaceLeases" | "checkpointTransfers">;
-type Event = Awaited<ReturnType<PGliteStore["recovery"]["recoveryEvents"]>>[number];
+type Event = Awaited<ReturnType<DatabaseStore["recovery"]["recoveryEvents"]>>[number];
 type Keys = { recovery: string; attempt: string };
 
 // Keys belong to this recovery: an old receipt in the restored database cannot prove that

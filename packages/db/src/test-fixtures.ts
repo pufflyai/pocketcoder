@@ -6,11 +6,20 @@ import { join } from "node:path";
 import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import type { Store, WorkspaceInsertResult } from "@pstdio/pocketcoder-runtime-core";
 import { getTableName } from "drizzle-orm";
-import { createDatabaseContext, notifyChange } from "./database/context";
+import { notifyChange } from "./database/context";
+import { createPGliteContext } from "./database/pglite-context";
 import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
-import { PGliteStore } from "./store";
+import { createPostgresTestDatabase, TEST_STORE_DRIVER } from "./postgres-test-schema";
+import { DatabaseStore } from "./store";
 
 export { objectStorageFixture } from "./off-node/object-storage-fixture";
+export { TEST_DATABASE_URL, TEST_STORE_DRIVER } from "./postgres-test-schema";
+
+// PGlite reports the SQLSTATE as `code`; Bun's PostgreSQL client reports it as `errno`.
+export function sqlStateOf(error: unknown) {
+  const cause = (error as { cause?: { code?: string; errno?: string } } | undefined)?.cause;
+  return cause?.errno ?? cause?.code;
+}
 
 export function workspaceOf(result: WorkspaceInsertResult) {
   if (result.kind === "capacity_exceeded") throw new Error("unexpected queue capacity failure");
@@ -34,14 +43,31 @@ export function templateFixture() {
   });
 }
 
-export async function createPGliteFixture(prefix: string, mode: "memory" | "disk" = "memory") {
+// Opens a migrated store on the driver selected for this test run. Disk mode is a PGlite data folder.
+async function openTestDatabase(prefix: string, mode: "memory" | "disk") {
+  if (mode === "memory" && TEST_STORE_DRIVER === "postgres") {
+    const database = await createPostgresTestDatabase(prefix);
+    const store = await DatabaseStore.openPostgres(database);
+    return { directory: undefined, context: store.context, store, drop: database.drop };
+  }
   const dir = mode === "disk" ? await mkdtemp(join(tmpdir(), `${prefix}-`)) : undefined;
-  const context = await createDatabaseContext(dir);
-  expect(await migrateDatabase(context.client)).toEqual([]);
+  const context = await createPGliteContext(dir);
+  const drop = async () => {
+    if (!dir) return;
+    await rm(dir, { recursive: true, force: true });
+    await rm(`${dir}-journal`, { recursive: true, force: true });
+  };
+  return { directory: dir, context, store: new DatabaseStore(context), drop };
+}
+
+export async function createPGliteFixture(prefix: string, mode: "memory" | "disk" = "memory") {
+  const { directory, context, store, drop } = await openTestDatabase(prefix, mode);
+  expect(await migrateDatabase(context.sql, undefined, context.schema)).toEqual([]);
   expect(
-    (await getMigrationStatus(context.client)).every((migration) => migration.appliedAt && !migration.drifted),
+    (await getMigrationStatus(context.sql, context.schema)).every(
+      (migration) => migration.appliedAt && !migration.drifted,
+    ),
   ).toBe(true);
-  const store = new PGliteStore(context);
   const parsed = templateFixture();
   const principal = await store.createPrincipal("pg-test", ["admin"], ["*"]);
   const { row: template } = await store.upsertTemplate({
@@ -52,7 +78,7 @@ export async function createPGliteFixture(prefix: string, mode: "memory" | "disk
     spec: parsed.manifest.spec,
   });
   return {
-    directory: dir,
+    directory,
     parsed,
     principal,
     schema: context.schema,
@@ -60,14 +86,11 @@ export async function createPGliteFixture(prefix: string, mode: "memory" | "disk
     store,
     template,
     async query<T>(statement: string, params?: unknown[]) {
-      return (await context.client.query<T>(statement, params)).rows;
+      return context.sql.query<T>(statement, params);
     },
     async dispose() {
       await store.close();
-      if (dir) {
-        await rm(dir, { recursive: true, force: true });
-        await rm(`${dir}-journal`, { recursive: true, force: true });
-      }
+      await drop();
     },
   };
 }
@@ -104,9 +127,9 @@ export function registerTestCleanup(store: Store, cleanup: Cleanup, phase: "jobs
 }
 
 export async function createTestStore() {
-  const context = await createDatabaseContext();
-  let store = new PGliteStore(context);
-  const tables = Object.values(context.tables).map((table) => `"pocketcoder"."${getTableName(table)}"`);
+  const { context, store: first, drop } = await openTestDatabase("pc_store", "memory");
+  let store = first;
+  const tables = Object.values(context.tables).map((table) => `"${context.schema}"."${getTableName(table)}"`);
   async function cleanup() {
     const callbacks = cleanups.get(store);
     for (const cleanup of callbacks?.jobs ?? []) await cleanup();
@@ -120,12 +143,14 @@ export async function createTestStore() {
     async reset() {
       await cleanup();
       for (const id of context.changes.keys()) notifyChange(context, id);
-      await context.client.exec(`TRUNCATE ${tables.join(", ")} RESTART IDENTITY CASCADE`);
-      store = new PGliteStore(context);
+      if (context.driver === "postgres") await context.releaseCoordinatorLease();
+      await context.sql.exec(`TRUNCATE ${tables.join(", ")} RESTART IDENTITY CASCADE`);
+      store = new DatabaseStore(context);
     },
     async dispose() {
       await cleanup();
       await store.close();
+      await drop();
     },
   };
 }

@@ -1,22 +1,23 @@
 import { expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
-import { createDatabaseContext } from "../database/context";
+import { createPGliteContext } from "../database/pglite-context";
+import { pgliteSqlClient } from "../database/sql-client";
 import { getMigrationStatus, migrateDatabase } from "./migrator";
 
 test("migration registry applies in order and does not repeat writes", async () => {
   const client = await PGlite.create({ postgresqlconf: ["shared_buffers = 16MB"], relaxedDurability: false });
   try {
-    const names = await migrateDatabase(client);
+    const names = await migrateDatabase(pgliteSqlClient(client));
     expect(names.length).toBeGreaterThan(0);
-    expect(await migrateDatabase(client)).toEqual([]);
-    expect((await getMigrationStatus(client)).map((row) => row.name)).toEqual(names);
+    expect(await migrateDatabase(pgliteSqlClient(client))).toEqual([]);
+    expect((await getMigrationStatus(pgliteSqlClient(client))).map((row) => row.name)).toEqual(names);
   } finally {
     await client.close();
   }
 });
 
 test.each(["drift", "newer", "gap"])("rejects %s history before applying pending migrations", async (kind) => {
-  const context = await createDatabaseContext();
+  const context = await createPGliteContext();
   try {
     const client = context.client;
     if (kind === "drift")
@@ -27,7 +28,7 @@ test.each(["drift", "newer", "gap"])("rejects %s history before applying pending
       );
     if (kind === "gap") await client.exec("DELETE FROM pocketcoder.__drizzle_migrations WHERE id = 1");
     const before = (await client.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id")).rows;
-    await expect(migrateDatabase(client)).rejects.toThrow();
+    await expect(migrateDatabase(pgliteSqlClient(client))).rejects.toThrow();
     expect((await client.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id")).rows).toEqual(before);
   } finally {
     await context.close();

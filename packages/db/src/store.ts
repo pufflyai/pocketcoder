@@ -1,11 +1,8 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
 import { type BackupOptions, writeBackup } from "./backup/write-backup";
-import {
-  createDatabaseContext,
-  createLifecycle,
-  type DatabaseContext,
-  type DatabaseOpenOptions,
-} from "./database/context";
+import { createLifecycle, type DatabaseContext, type DatabaseOpenOptions } from "./database/context";
+import { createPGliteContext } from "./database/pglite-context";
+import { createPostgresContext, type PostgresOptions } from "./database/postgres-context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import type { JournalSnapshot } from "./journal/acknowledgement";
 import { createJournalAcknowledgement } from "./journal/acknowledgement";
@@ -36,8 +33,9 @@ import { createFiniteProcesses } from "./modules/workspaces/finite-process";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
+import { createRecordReplay } from "./recovery/replay-records";
 
-export class PGliteStore implements Store {
+export class DatabaseStore implements Store {
   readonly executions: Store["executions"];
   readonly inputs: Store["inputs"];
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
@@ -46,11 +44,31 @@ export class PGliteStore implements Store {
   readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
   readonly recovery: ReturnType<typeof createRecovery>;
 
-  static async create(dataDir?: string, options?: DatabaseOpenOptions) {
-    return new PGliteStore(await createDatabaseContext(dataDir, options));
+  static async openPGlite(dataDir?: string, options?: DatabaseOpenOptions) {
+    return new DatabaseStore(await createPGliteContext(dataDir, options));
   }
 
+  // A database restore can roll back revocations and deletions. Journal records name exact
+  // targets, so replaying all of them on every start keeps those changes in force.
+  static async openPostgres(options: PostgresOptions) {
+    const context = await createPostgresContext(options);
+    try {
+      const replay = createRecordReplay(context);
+      for (const record of context.journal?.records() ?? []) await replay(record.event);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
+  }
+
+  readonly driver: DatabaseContext["driver"];
+  // Test fixtures and operator commands reach the raw connection through this.
+  readonly context: DatabaseContext;
+
   constructor(context: DatabaseContext) {
+    this.driver = context.driver;
+    this.context = context;
     const journal = createJournalAcknowledgement(context);
     this.acknowledgeJournal = journal.acknowledge;
     this.journalStatus = journal.status;

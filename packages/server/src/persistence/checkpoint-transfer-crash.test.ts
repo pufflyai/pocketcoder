@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
@@ -32,7 +32,7 @@ async function crash(phase: string) {
     await child.exited;
   }
 }
-function transfers(store: PGliteStore, directory: string) {
+function transfers(store: DatabaseStore, directory: string) {
   return createCheckpointTransferService({
     store,
     hub: new Hub(),
@@ -61,7 +61,7 @@ test.each(["upload", "partial", "rename", "metadata", "committed"])(
   "SIGKILL during %s recovers durable transfer ownership and quota",
   async (phase) => {
     const f = await crash(phase);
-    const store = await PGliteStore.create(f.dataDir);
+    const store = await DatabaseStore.openPGlite(f.dataDir);
     const service = transfers(store, f.directory);
     try {
       await writeFile(join(f.directory, "unrelated"), "keep");
@@ -114,7 +114,7 @@ test.each(["upload", "partial", "rename", "metadata", "committed"])(
 
 test("restart keeps a moved publication inode charged until owned removal", async () => {
   const f = await crash("rename");
-  const store = await PGliteStore.create(f.dataDir);
+  const store = await DatabaseStore.openPGlite(f.dataDir);
   const service = transfers(store, f.directory);
   const path = join(f.directory, `${f.checkpointId}-${f.transferId}.tar`);
   const moved = join(f.directory, "moved-owned-publication");

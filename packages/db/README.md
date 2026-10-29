@@ -1,6 +1,6 @@
 # `@pstdio/pocketcoder-db`
 
-The embedded PGlite store for PocketCoder. `PGliteStore.create(dataDir)` opens
+The embedded PGlite store for PocketCoder. `DatabaseStore.openPGlite(dataDir)` opens
 `dataDir/db/`, migrates it and returns the full runtime `Store`. Omit `dataDir`
 for a fresh in-memory PGlite instance in tests. Close the store when finished.
 

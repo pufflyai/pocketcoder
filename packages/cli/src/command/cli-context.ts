@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { parse as parseDotenv } from "dotenv";
@@ -77,7 +77,7 @@ export async function api(path: string, init: RequestInit = {}) {
 
 export async function withStore<T>(fn: (store: Store) => Promise<T>): Promise<T> {
   const journalDir = process.env.POCKETCODER_JOURNAL_DIR;
-  const store = await PGliteStore.create(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
+  const store = await DatabaseStore.openPGlite(process.env.POCKETCODER_DIR ?? "./pc_data", journalDir ? { journalDir } : {});
   try {
     return await fn(store);
   } finally {

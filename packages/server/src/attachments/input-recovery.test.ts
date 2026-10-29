@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { inputFixture } from "./input-fixture.test";
 import { InputStorage } from "./input-storage";
 
 for (const phase of ["writing", "published", "committed"])
   test(`real process crash while ${phase} reconciles private objects`, async () => {
     const f = await inputFixture();
-    let reopened: PGliteStore | undefined;
+    let reopened: DatabaseStore | undefined;
     try {
       const reference = f.reference();
       await f.store.inputs.begin(
@@ -29,7 +29,7 @@ for (const phase of ["writing", "published", "committed"])
       );
       expect(await child.exited).not.toBe(0);
       expect(await new Response(child.stderr).text()).toBe("");
-      reopened = await PGliteStore.create(f.directory);
+      reopened = await DatabaseStore.openPGlite(f.directory);
       const service = new InputStorage(reopened.inputs, f.options);
       await service.reconcile(new Date(Date.now() + 30_000));
       const row = (await reopened.inputs.get(f.workspace.id, reference.fileId))!;

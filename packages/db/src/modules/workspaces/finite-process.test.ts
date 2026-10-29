@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { FiniteProcessFact } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "../../store";
+import { DatabaseStore } from "../../store";
 import { insertTestWorkspace } from "../../test-fixtures";
 import { executionFixture } from "./execution-fixture.test";
 
@@ -49,7 +49,7 @@ test("runtime identity and accepted process facts survive reconnect and cannot r
     expect(await f.store.recordFiniteProcess(restored.id, 2, exited)).toBe(false);
     expect((await f.store.getWorkspace(restored.id))?.finiteProcess).toBeNull();
     await f.store.close();
-    const reopened = await PGliteStore.create(f.directory);
+    const reopened = await DatabaseStore.openPGlite(f.directory);
     try {
       expect((await reopened.getWorkspace(f.id))?.finiteProcess).toEqual(exited);
       expect((await reopened.executions.get(input.execution))?.outcome).toEqual(exited);

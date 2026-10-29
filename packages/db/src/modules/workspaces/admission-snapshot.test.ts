@@ -6,13 +6,15 @@ test.each(["memory", "disk"] as const)(
   "admission snapshot reads fresh heads, backlog and capacity (%s)",
   async (mode) => {
     const fixture = await createPGliteFixture("pc-admission-snapshot", mode);
-    const client = fixture.context.client;
-    const execute = client.execProtocolRawSync.bind(client);
+    // PGlite prepares the plan through its own protocol path; count those preparations.
+    const client = fixture.context.driver === "pglite" ? fixture.context.client : undefined;
+    const execute = client?.execProtocolRawSync.bind(client);
     let preparations = 0;
-    client.execProtocolRawSync = (message) => {
-      if (new TextDecoder().decode(message).includes('with "queued_workspaces"')) preparations += 1;
-      return execute(message);
-    };
+    if (client && execute)
+      client.execProtocolRawSync = (message) => {
+        if (new TextDecoder().decode(message).includes('with "queued_workspaces"')) preparations += 1;
+        return execute(message);
+      };
     try {
       const first = await insertTestWorkspace(fixture, "first");
       const second = await insertTestWorkspace(fixture, "second");
@@ -46,9 +48,9 @@ test.each(["memory", "disk"] as const)(
         });
       }
       expect(snapshot.queued).toEqual([]);
-      expect(preparations).toBe(1);
+      if (client) expect(preparations).toBe(1);
     } finally {
-      client.execProtocolRawSync = execute;
+      if (client && execute) client.execProtocolRawSync = execute;
       await fixture.dispose();
     }
   },

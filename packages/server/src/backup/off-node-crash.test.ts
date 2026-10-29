@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { loadOffNodeConfig, restoreOffNodeBackup } from "@pstdio/pocketcoder-db/off-node";
 import { objectStorageFixture } from "@pstdio/pocketcoder-db/testing";
 import { openControllerStore } from "../bootstrap/controller-store";
@@ -174,7 +174,7 @@ test.skipIf(!enabled)(
       expect(await restoreOffNodeBackup({ ...input, offNode })).toEqual(result);
       expect(existsSync(stage)).toBe(false);
       expect(existsSync(join(restoreDirectory, "capacity.json"))).toBe(false);
-      const restored = await PGliteStore.create(input.dataDir, { journalDir: input.journalDir });
+      const restored = await DatabaseStore.openPGlite(input.dataDir, { journalDir: input.journalDir });
       try {
         expect((await restored.storageReservations.get(receipt.staging.reservationId))?.state).toBe("released");
         expect((await restored.storageReservations.usage(null, null)).instance.bytes).toBeGreaterThan(0);

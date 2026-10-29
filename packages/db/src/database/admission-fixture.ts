@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import type { PGliteStore } from "../store";
+import type { DatabaseStore } from "../store";
 
-export async function inspectAdmission(store: PGliteStore) {
+export async function inspectAdmission(store: DatabaseStore) {
   const empty = await store.readAdmissionSnapshot();
   const principal = await store.createPrincipal("admission", ["admin"], ["*"]);
   const parsed = parseTemplateManifest({

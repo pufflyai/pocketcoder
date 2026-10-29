@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJournalReplica } from "../off-node/journal-replica";
 import { objectStorageFixture } from "../off-node/object-storage-fixture";
-import { PGliteStore } from "../store";
+import { DatabaseStore } from "../store";
 
 test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
   "journal health stays unknown until remote acknowledgement succeeds",
@@ -15,7 +15,7 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
     const key = randomBytes(32);
     const account = randomUUID();
     const online = createJournalReplica(fixture.config, account, key);
-    let store = await PGliteStore.create(root, { acknowledgeJournal: online.acknowledge });
+    let store = await DatabaseStore.openPGlite(root, { acknowledgeJournal: online.acknowledge });
     try {
       expect(store.journalStatus()).toMatchObject({ configured: true, lastAcknowledgedAt: null });
       expect(store.journalStatus().pendingSince).toBeInstanceOf(Date);
@@ -27,12 +27,12 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
       const endpoint = probe.url.toString();
       probe.stop(true);
       const offline = createJournalReplica({ ...fixture.config, endpoint }, account, key);
-      store = await PGliteStore.create(root, { acknowledgeJournal: offline.acknowledge });
+      store = await DatabaseStore.openPGlite(root, { acknowledgeJournal: offline.acknowledge });
       await expect(store.acknowledgeJournal()).rejects.toMatchObject({ code: "journal.pending" });
       expect(store.journalStatus()).toMatchObject({ lastAcknowledgedAt: null });
       expect(store.journalStatus().pendingSince).toBeInstanceOf(Date);
       await store.close();
-      store = await PGliteStore.create(root, { acknowledgeJournal: online.acknowledge });
+      store = await DatabaseStore.openPGlite(root, { acknowledgeJournal: online.acknowledge });
       await store.acknowledgeJournal();
       expect(store.journalStatus().pendingSince).toBeNull();
     } finally {

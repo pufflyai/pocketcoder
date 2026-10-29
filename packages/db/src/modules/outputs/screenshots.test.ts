@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { PGliteStore } from "../../store";
+import { DatabaseStore } from "../../store";
 import { screenshotFixture } from "./screenshot-fixture";
 
 test("a screenshot commits private bytes under its reservation and purge fences a late capture", async () => {
@@ -39,7 +39,7 @@ test("a screenshot commits private bytes under its reservation and purge fences 
 
 test("retained screenshot bytes survive restart then expire and cannot be republished", async () => {
   const f = await screenshotFixture("disk");
-  let reopened: PGliteStore | undefined;
+  let reopened: DatabaseStore | undefined;
   try {
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -48,7 +48,7 @@ test("retained screenshot bytes survive restart then expire and cannot be republ
     await f.store.binaryOutputs.begin(f.input, f.capacity, () => {});
     await f.store.binaryOutputs.publish(f.input.id, png, () => {});
     await f.store.close();
-    reopened = await PGliteStore.create(f.directory);
+    reopened = await DatabaseStore.openPGlite(f.directory);
     await reopened.init();
     expect(await reopened.binaryOutputs.content(f.input.id, f.principal.id)).toEqual(png);
     await reopened.binaryOutputs.prune(new Date(f.input.retainedUntil.getTime() + 1));

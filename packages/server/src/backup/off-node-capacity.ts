@@ -4,7 +4,7 @@ import { open, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { SourceWriterSchema } from "@pstdio/pocketcoder-contracts";
-import type { PGliteStore } from "@pstdio/pocketcoder-db";
+import type { DatabaseStore } from "@pstdio/pocketcoder-db";
 import type { BackupManifest } from "@pstdio/pocketcoder-db/backup";
 import {
   allocated,
@@ -43,7 +43,7 @@ export function capturePaths(directory: string) {
 }
 
 interface CaptureInput {
-  store: PGliteStore;
+  store: DatabaseStore;
   offNode: OffNode;
   backup: ControllerBackup;
   staging?: StagingPolicy;
@@ -172,7 +172,7 @@ export async function admitCapture(input: CaptureInput, directory: string, opera
   };
 }
 
-export async function releaseCapture(store: PGliteStore, directory: string, reservationId: string) {
+export async function releaseCapture(store: DatabaseStore, directory: string, reservationId: string) {
   const row = await store.storageReservations.get(reservationId);
   if (row && (row.purpose !== "backup" || row.operationId || row.workspaceId || row.principalId))
     throw new Error("Off-node backup staging owner differs.");

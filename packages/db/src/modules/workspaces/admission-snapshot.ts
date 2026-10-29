@@ -1,11 +1,15 @@
 import type { ActiveCounts } from "@pstdio/pocketcoder-runtime-contracts";
 import { asc, count, eq, getColumns, inArray, sql } from "drizzle-orm";
-import { compileSelect } from "../../database/compiled-select";
 import type { DatabaseContext } from "../../database/context";
+import { prepareSelect } from "../../database/prepared-select";
 import { requiredRow } from "../../database/required-row";
 import { workspaceFromRow } from "./mapping";
 
-export function createAdmissionSnapshot({ client, db, tables: { workspaces } }: DatabaseContext) {
+export function createAdmissionSnapshot(context: DatabaseContext) {
+  const {
+    db,
+    tables: { workspaces },
+  } = context;
   function prepare() {
     const queued = db.$with("queued_workspaces").as(
       db
@@ -45,7 +49,7 @@ export function createAdmissionSnapshot({ client, db, tables: { workspaces } }: 
       .from(summary)
       .leftJoin(heads, sql`true`)
       .orderBy(asc(heads.createdAt), asc(heads.id));
-    return compileSelect(client, query, { active_summary: true, heads: false });
+    return prepareSelect(context, query, { active_summary: true, heads: false });
   }
   let statement: ReturnType<typeof prepare> | undefined;
   return async () => {

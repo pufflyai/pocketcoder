@@ -5,8 +5,8 @@ import { mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { createDatabaseContext } from "../database/context";
-import { PGliteStore } from "../store";
+import { createPGliteContext } from "../database/pglite-context";
+import { DatabaseStore } from "../store";
 import { createPGliteFixture, insertTestWorkspace } from "../test-fixtures";
 import { KEY_NAMES } from "./manifest";
 import { restoreBackup } from "./restore-backup";
@@ -62,8 +62,8 @@ test("a restored folder starts in recovery, replays later revocations and then f
   expect((await readdir(out)).sort()).toEqual(["controller.tar", "restored"]);
 
   // The restored folder finds the original journal through its database.
-  const context = await createDatabaseContext(target);
-  const store = new PGliteStore(context);
+  const context = await createPGliteContext(target);
+  const store = new DatabaseStore(context);
   expect((await store.recovery.recoveryState())?.recoveryId).toBe(restored.recovery.recoveryId);
   expect((await store.getMachineKeyWithPrincipal(kept.id))?.key.revokedAt).toBeNull();
   for (const event of await store.recovery.recoveryEvents()) await store.recovery.applyRecord(event);
@@ -72,8 +72,8 @@ test("a restored folder starts in recovery, replays later revocations and then f
   expect(await store.recovery.recoveryState()).toBeNull();
   await store.close();
 
-  await expect(createDatabaseContext(source)).rejects.toThrow("replaced by a restore");
-  const reopened = await createDatabaseContext(target);
+  await expect(createPGliteContext(source)).rejects.toThrow("replaced by a restore");
+  const reopened = await createPGliteContext(target);
   await reopened.close();
 });
 
@@ -118,7 +118,7 @@ test("recovery repeats later retirements, narrowing and conversation deletion by
   await f.store.close();
 
   const restored = await restoreBackup({ archive, dataDir: join(out, "restored") });
-  const store = new PGliteStore(await createDatabaseContext(restored.directory));
+  const store = new DatabaseStore(await createPGliteContext(restored.directory));
   try {
     for (const event of await store.recovery.recoveryEvents()) await store.recovery.applyRecord(event);
     expect(await store.readConversation(workspace.id, 0, 10)).toEqual([]);
@@ -151,7 +151,7 @@ test("recovery stays closed without the journal that covers the backup", async (
     .where(eq(f.context.tables.controllerState.id, "controller"));
   await f.store.close();
   const elsewhere = `${target}-other-journal`;
-  await expect(createDatabaseContext(target, { journalDir: elsewhere })).rejects.toThrow("missing");
+  await expect(createPGliteContext(target, { journalDir: elsewhere })).rejects.toThrow("missing");
   expect(existsSync(elsewhere)).toBe(false);
 });
 

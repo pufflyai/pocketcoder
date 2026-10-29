@@ -1,6 +1,6 @@
 import { and, asc, eq, getColumns, isNotNull, isNull, sql } from "drizzle-orm";
-import { compileSelect } from "../../database/compiled-select";
 import type { DatabaseContext } from "../../database/context";
+import { prepareSelect } from "../../database/prepared-select";
 
 export function buildWarmClaimQuery({
   db,
@@ -126,7 +126,7 @@ export function buildWarmClaimQuery({
 }
 
 export function createWarmClaimQuery(context: DatabaseContext) {
-  return compileSelect(context.client, buildWarmClaimQuery(context), {
+  return prepareSelect(context, buildWarmClaimQuery(context), {
     locked_workspace: true,
     leased_runtime: false,
     admitted_workspace: false,

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import { bootstrapLocalOwnerKey, DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
@@ -18,7 +18,7 @@ test("a committed purge intent cannot start its worker before remote acknowledge
   const endpoint = Bun.serve({ port: 0, fetch: () => new Response() });
   const unavailable = endpoint.url.toString();
   endpoint.stop(true);
-  let store = await PGliteStore.create(directory);
+  let store = await DatabaseStore.openPGlite(directory);
   const pepper = "pc93-purge-pepper";
   try {
     const caller = await bootstrapLocalOwnerKey(store, pepper, {
@@ -52,7 +52,7 @@ test("a committed purge intent cannot start its worker before remote acknowledge
     };
     let original: string | undefined;
     for (let restart = 0; restart < 2; restart++) {
-      store = await PGliteStore.create(directory, options);
+      store = await DatabaseStore.openPGlite(directory, options);
       const built = buildServer({
         store,
         driver: new DockerDriver({ inputDir }),

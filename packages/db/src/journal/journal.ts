@@ -69,10 +69,11 @@ function readLines(file: number, path: string) {
 
 // An append-only, hash-chained file of deletions and revocations, kept outside the data folder
 // so a restored backup cannot roll it back. Records are fsynced before the change they describe.
-export function openJournal(directory: string, dataDirectory: string, create = true) {
-  const data = realpathSync(dataDirectory);
+// PostgreSQL has no data folder, so there is nothing to keep the journal apart from.
+export function openJournal(directory: string, dataDirectory: string | undefined, create = true) {
   const target = canonical(directory);
-  if (nested(data, target) || nested(target, data))
+  const data = dataDirectory && realpathSync(dataDirectory);
+  if (data && (nested(data, target) || nested(target, data)))
     throw new Error("Deletion journal must be outside the data folder.");
   // A bound data folder must find its journal; a missing one is missing evidence.
   if (!create && !existsSync(join(target, "journal.log"))) throw new Error(`Deletion journal is missing at ${target}.`);

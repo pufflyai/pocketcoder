@@ -1,9 +1,9 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 
 async function assertFailedCapture(
-  store: PGliteStore,
+  store: DatabaseStore,
   rejected: { workspaceId: string; checkpointId: string; operationId: string },
 ) {
   const checkpoint = await store.getCheckpoint(rejected.checkpointId);
@@ -33,7 +33,7 @@ export async function assertCheckpointSettlement(input: {
   sourceStoppedAt: number;
   rejectedCapture: { workspaceId: string; checkpointId: string; operationId: string };
 }) {
-  const store = await PGliteStore.create(input.dataDir);
+  const store = await DatabaseStore.openPGlite(input.dataDir);
   try {
     await store.init();
     const checkpoint = await store.getCheckpoint(input.checkpointId);

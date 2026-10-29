@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { type DatabaseOpenOptions, PGliteStore } from "@pstdio/pocketcoder-db";
+import { type DatabaseOpenOptions, DatabaseStore } from "@pstdio/pocketcoder-db";
 import {
   type AccountPurgeReader,
   createAccountPurgeReader,
@@ -42,7 +42,7 @@ async function initializeStore(
   offNode?: OffNode,
   beforeOpen?: DatabaseOpenOptions["beforeOpen"],
 ) {
-  const store = await PGliteStore.create(config.dataDir, {
+  const store = await DatabaseStore.openPGlite(config.dataDir, {
     ...(config.journalDir ? { journalDir: config.journalDir } : {}),
     ...(offNode ? { acknowledgeJournal: offNode.journal.acknowledge } : {}),
     ...(beforeOpen ? { beforeOpen } : {}),

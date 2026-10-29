@@ -12,6 +12,7 @@ import wasmPath from "../../assets/pglite.wasm.zst" with { type: "file" };
 import { getMigrationStatus } from "../migrations/migrator";
 import { decodeDatabaseAsset } from "./asset-codec";
 import { loadCoreAssets } from "./assets";
+import { pgliteSqlClient } from "./sql-client";
 
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const engine = dirname(fileURLToPath(import.meta.resolve("@electric-sql/pglite")));
@@ -51,7 +52,7 @@ test("bundled bounded Zstd assets open the unchanged seeded PostgreSQL engine", 
     expect((await client.query<{ server_version: string }>("SHOW server_version")).rows[0]?.server_version).toBe(
       manifest.postgresVersion,
     );
-    const migrations = await getMigrationStatus(client);
+    const migrations = await getMigrationStatus(pgliteSqlClient(client));
     expect(migrations).toHaveLength(manifest.migrations.length);
     expect(migrations.every((migration) => migration.appliedAt && !migration.drifted)).toBe(true);
   } finally {

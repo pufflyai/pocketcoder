@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PGliteStore } from "@pstdio/pocketcoder-db";
+import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import { bootstrapLocalOwnerKey, DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { buildServer } from "../app";
@@ -13,7 +13,7 @@ test("an offline journal leaves revocation enforced and unacknowledged across re
   const endpoint = Bun.serve({ port: 0, fetch: () => new Response() });
   const unavailable = endpoint.url.toString();
   endpoint.stop(true);
-  let store = await PGliteStore.create(directory);
+  let store = await DatabaseStore.openPGlite(directory);
   const pepper = "pc93-test-pepper";
   const expires_at = new Date(Date.now() + 60_000).toISOString();
   try {
@@ -27,7 +27,7 @@ test("an offline journal leaves revocation enforced and unacknowledged across re
     };
     const path = `/v1/principals/${target.key.principal_id}/keys/${target.key.id}`;
     for (let restart = 0; restart < 2; restart++) {
-      store = await PGliteStore.create(directory, options);
+      store = await DatabaseStore.openPGlite(directory, options);
       const built = buildServer({
         store,
         driver: new DockerDriver({ inputDir: join(root, "inputs") }),
