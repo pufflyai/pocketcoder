@@ -81,7 +81,7 @@ What carries over:
 | Conversation history and request receipts | |
 
 **Custom tables.** Some consumers added their own tables to the `pocketcoder`
-schema, such as Onefin's `admission-migration.sql` patch. 1.0 does not read or
+schema, for example through an admission migration patch. 1.0 does not read or
 change them, but they share the schema's name space. Before upgrading, list them:
 
 ```sql

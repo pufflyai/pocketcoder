@@ -234,7 +234,7 @@ Requires an `Idempotency-Key` header.
 curl -sS -X POST "$POCKETCODER_URL/v1/workspaces" \
   -H "Authorization: Bearer $POCKETCODER_KEY" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: onefin-task-018f6f0e" \
+  -H "Idempotency-Key: task-018f6f0e" \
   --data-binary @- <<'JSON'
 {
   "external_id": "your-task-uuid",
@@ -320,7 +320,7 @@ resource and lifecycle event:
 ```json
 {
   "reason_code": "child_exit_failure",
-  "log_tail": "Traceback ...\nPermissionError: /home/onefin/.pi\n",
+  "log_tail": "Traceback ...\nPermissionError: /home/agent/.pi\n",
   "log_tail_truncated": true,
   "last_log_seq": 42
 }
@@ -331,7 +331,7 @@ and is diagnostic context rather than a substitute for the paginated logs
 route.
 
 `metadata` is a URL-encoded JSON object of exact string matches (up to 16
-keys), for example `{"product":"onefin","tenant":"t-7","user":"u-42"}`.
+keys), for example `{"product":"acme","tenant":"t-7","user":"u-42"}`.
 It is evaluated inside the authenticated principal boundary; it is a query
 constraint, never an authorization substitute. `created_after` is inclusive
 and `created_before` is exclusive.

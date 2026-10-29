@@ -59,7 +59,7 @@ function fixtureWorkspace(): WorkspaceRow {
       security: {
         uid: 12_345,
         gid: 23_456,
-        writableMemoryPaths: ["/tmp", "/home/onefin"],
+        writableMemoryPaths: ["/tmp", "/home/worker"],
       },
       persistence: {
         mounts: [
@@ -267,7 +267,7 @@ describe("Kubernetes workspace driver", () => {
       "/run/pocketcoder/secrets/model-key",
     );
     expect(job.spec.template.spec.containers[0]?.volumeMounts.map((mount) => mount.mountPath)).toContain(
-      "/home/onefin",
+      "/home/worker",
     );
     expect(job.spec.template.spec.volumes).toHaveLength(6);
   });

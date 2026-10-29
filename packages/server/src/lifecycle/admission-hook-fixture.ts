@@ -20,7 +20,7 @@ interface HookPrincipal {
 }
 
 // An external admission hook that can only decide once it has read its
-// principal map from the controller, like Onefin's accounting hook.
+// principal map from the controller, like a consumer's accounting hook.
 function startAdmissionHook() {
   const state = {
     principals: undefined as HookPrincipal[] | undefined,

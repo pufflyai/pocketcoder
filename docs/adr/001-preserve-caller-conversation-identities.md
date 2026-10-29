@@ -1,9 +1,9 @@
 # 001: Preserve caller conversation identities across workspace generations
 
-Status: Accepted for PC-115 / Onefin O-202.
+Status: Accepted for PC-115.
 
-A physical PocketCoder workspace is replaced on resume. Onefin already owns
-request acceptance and turn allocation. Scoping receipts to the physical
+A physical PocketCoder workspace is replaced on resume. The calling service
+already owns request acceptance and turn allocation. Scoping receipts to the physical
 workspace or allocating another turn would break retries after replacement.
 
 Store the supplied request context under `(principal, logical conversation,
@@ -18,4 +18,4 @@ conversation, turn, event, and revision. Existing history stays unidentified.
 Protocol support never advertises an installed producer capability.
 
 This adds a small receipt table and requires a generated migration. It does not
-own Onefin request normalization, turn allocation, dispatch, or draft links.
+own the caller's request normalization, turn allocation, dispatch, or draft links.

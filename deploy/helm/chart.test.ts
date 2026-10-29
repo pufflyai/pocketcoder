@@ -99,7 +99,7 @@ describe.skipIf(!helm)("Helm chart", () => {
     await expect(render(values)).rejects.toThrow(message);
   });
 
-  // An Onefin-shaped install: values plus its accounting sidecar, no forked templates.
+  // A consumer install: values plus its own accounting sidecar, no forked templates.
   test("consumers extend the chart with values only", async () => {
     const resources = await render({
       ...postgres,

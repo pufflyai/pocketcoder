@@ -5,7 +5,7 @@ export const IdempotencyHeadersSchema = z.object({
   "Idempotency-Key": z.string().min(1).max(256).openapi({
     description:
       "Opaque caller key. Reusing it with the same request returns the original result; a different request returns idempotency.conflict.",
-    example: "onefin-task-018f6f0e",
+    example: "task-018f6f0e",
   }),
 });
 

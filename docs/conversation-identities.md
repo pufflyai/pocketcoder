@@ -5,10 +5,10 @@ caller. PocketCoder does not allocate turns or infer identities from old message
 
 ## Authority and acceptance
 
-Use `authority: external` when another service owns request acceptance. Onefin
-allocates its turn UUID and fingerprints the normalized message plus the accepted
+Use `authority: external` when another service owns request acceptance. That
+service allocates its turn UUID and fingerprints the normalized message plus the accepted
 immutable manifest. PocketCoder stores a receipt of that decision; this receipt
-is not a second Onefin turn ledger and does not dispatch a prompt.
+is not a second turn ledger for the caller and does not dispatch a prompt.
 
 Use `authority: generic` when a generic PocketCoder caller owns those identities.
 Both modes require caller-supplied UUIDs for `conversation_id`, `request_id`, and

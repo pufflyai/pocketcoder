@@ -4,7 +4,7 @@ Status: Accepted for PC-143. Supersedes PC-58's PGlite-only store and the
 per-revision message rows in ADR 001.
 
 PC-58 replaced the PostgreSQL store with embedded PGlite. The first server
-consumer, Onefin, could not upgrade: 1.0 cannot read a 0.8.x database, so Alpha
+consumer could not upgrade: 1.0 cannot read a 0.8.x database, so its deployment
 needed a fresh controller with new principals, keys and an admission map. Its
 deploys failed for a week, and an attempt to automate the cutover left the
 runtime down. PGlite gave server deployments nothing in return. Both lines run
