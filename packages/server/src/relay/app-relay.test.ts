@@ -1,56 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import type { WSContext } from "hono/ws";
-import { authed, createTestBody, createTestServer, type TestServer } from "../testing/test-server.test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
+import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
+import { fakeAgent, readyWorkspace, respondJson } from "./relay-fixtures.test";
+
+const createStore = createTestStoreFactory();
 
 describe("service relay", () => {
-  async function readyWorkspace(server: TestServer) {
-    const res = await server.app.request(
-      "/v1/workspaces",
-      authed(server.token, {
-        method: "POST",
-        headers: { "idempotency-key": randomUUID() },
-        body: createTestBody(),
-      }),
-    );
-    const ws = (await res.json()) as { id: string };
-    await server.scheduler.tick();
-    const now = new Date();
-    await server.store.transition(ws.id, { from: ["provisioning"], to: "connected", at: now });
-    await server.store.transition(ws.id, {
-      from: ["connected"],
-      to: "ready",
-      at: now,
-      patch: { readyAt: now, lastActivityAt: now },
-    });
-    return ws.id;
-  }
-
-  function fakeAgent(
-    server: TestServer,
-    workspaceId: string,
-    respond: (frame: { payload: { request_id: string; path: string } }) => void,
-    protocolVersion: 4 | 5 = 5,
-  ) {
-    const sent: string[] = [];
-    const ws = {
-      send: (data: string) => {
-        sent.push(data);
-        const frame = JSON.parse(data) as {
-          type: string;
-          payload: { request_id: string; path: string };
-        };
-        if (frame.type === "proxy_request") queueMicrotask(() => respond(frame));
-      },
-      close: () => {},
-    } as unknown as WSContext;
-    const conn = server.hub.attach(workspaceId, randomUUID(), 1, ws, protocolVersion);
-    conn.registered = true;
-    return { conn, sent };
-  }
-
   test("workspace not ready returns 409; terminal returns 410", async () => {
-    const server = await createTestServer();
+    // Closed admission keeps the workspace queued, so cancel ends it at once.
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const res = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -69,7 +27,7 @@ describe("service relay", () => {
   });
 
   test("ready but disconnected returns 503", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const res = await server.app.request(`/v1/workspaces/${id}/services/agent/status`, authed(server.token));
     expect(res.status).toBe(503);
@@ -77,7 +35,7 @@ describe("service relay", () => {
   });
 
   test("undeclared routes and query fields are rejected with 422", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {});
     const badRoute = await server.app.request(`/v1/workspaces/${id}/services/agent/shell`, authed(server.token));
@@ -97,7 +55,7 @@ describe("service relay", () => {
   });
 
   test("oversized request body returns 413", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {});
     const res = await server.app.request(
@@ -111,15 +69,10 @@ describe("service relay", () => {
   });
 
   test("relays a declared route through the live connection", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, (frame) => {
-      server.hub.resolveRelay(server.hub.get(id) as never, {
-        request_id: frame.payload.request_id,
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body_b64: Buffer.from(JSON.stringify({ status: "stable" })).toString("base64"),
-      });
+      respondJson(server, id, frame, { status: "stable" });
     });
     const res = await server.app.request(`/v1/workspaces/${id}/services/agent/status`, authed(server.token));
     expect(res.status).toBe(200);
@@ -127,15 +80,10 @@ describe("service relay", () => {
   });
 
   test("offers a direct AgentAPI alias without exposing the service abstraction", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     const { sent } = fakeAgent(server, id, (frame) => {
-      server.hub.resolveRelay(server.hub.get(id) as never, {
-        request_id: frame.payload.request_id,
-        status: 200,
-        headers: { "content-type": "application/json" },
-        body_b64: Buffer.from(JSON.stringify({ status: "stable" })).toString("base64"),
-      });
+      respondJson(server, id, frame, { status: "stable" });
     });
     const res = await server.app.request(`/v1/workspaces/${id}/agent/status`, authed(server.token));
     expect(res.status).toBe(200);
@@ -148,7 +96,7 @@ describe("service relay", () => {
   });
 
   test("streams a declared AgentAPI event response before upstream EOF", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     let requestId = "";
     const { conn } = fakeAgent(server, id, (frame) => {
@@ -188,7 +136,7 @@ describe("service relay", () => {
   });
 
   test("returns a compatibility error for streaming through a protocol-v4 supervisor", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {}, 4);
     const response = await server.app.request(`/v1/workspaces/${id}/agent/events`, authed(server.token));

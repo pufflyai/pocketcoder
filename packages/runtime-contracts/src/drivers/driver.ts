@@ -1,11 +1,13 @@
 import type {
   CheckpointManifest,
+  InstalledWorkload,
   PersistenceMount,
   PoolProviderInput,
   ProviderInput,
   TemplateSnapshot,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "../types";
+import type { InputProjectionRef, InputProjectionStorage, PublishedInputProjection } from "./inputs";
 
 // The single workspace-driver contract. Docker (development) and Kubernetes
 // (production) implement the same interface; deployment configuration selects
@@ -25,10 +27,16 @@ export interface WorkspaceLaunch {
 }
 
 export interface ProviderState {
+  // Opaque execution lifetime: this must change whenever the container starts again.
+  containerIdentity?: string;
   exists: boolean;
   running: boolean;
   exitCode: number | null;
   detail?: string;
+  // Observed producer and qualified storage for this exact incarnation. An
+  // omitted descriptor advertises no canonical workload capabilities.
+  workload?: InstalledWorkload;
+  inputStorage?: InputProjectionStorage;
 }
 
 export interface DiscoveredProvider {
@@ -54,7 +62,14 @@ export interface WorkspaceDriver {
   readonly kind: string;
   create(launch: WorkspaceLaunch): Promise<ProviderRef>;
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
+  uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
+  uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
   inspect(ref: ProviderRef): Promise<ProviderState>;
+  // Resolves only after the selected pinned objects and ordered manifest are published and verified.
+  // Dispatch owners must await this before sending an execution to the producer.
+  publishInputs?(ref: ProviderRef, input: InputProjectionRef): Promise<PublishedInputProjection>;
+  // Called by finalization after the execution can no longer read its inputs. Canonical pins have a separate owner.
+  releaseInputProjection?(ref: ProviderRef, manifestId: string): Promise<void>;
   // Runtime stop and object deletion are separate so persistence workflows
   // can snapshot a quiesced workload before deleting the provider object.
   stop(ref: ProviderRef, graceSeconds: number): Promise<void>;
@@ -71,17 +86,25 @@ export interface WorkspaceDriver {
 }
 
 // Runtime mount refs are internal driver-neutral capabilities. Docker consumes
-// host-path sources; a Kubernetes adapter consumes PVC sources. Public APIs
+// host paths or bounded disposable mounts; Kubernetes consumes bounded emptyDir
+// or an opaque shared allocation resolved by its configured storage owner. Public APIs
 // and template manifests never contain either physical form.
 export type RuntimeMountSource =
   | { kind: "host-path"; path: string }
-  | { kind: "pvc"; claimName: string; subPath?: string };
+  | { kind: "tmpfs"; maxBytes: number; uid: number; gid: number }
+  | { kind: "shared-filesystem"; allocationId: string; directory: string }
+  | { kind: "empty-dir"; maxBytes: number };
 
 export interface RuntimeMountRef {
   name: string;
   target: string;
   source: RuntimeMountSource;
   readOnly?: boolean;
+}
+
+export interface WorkspaceTransferRuntime {
+  prepareStorage(workspace: WorkspaceRow): Promise<RuntimeMountRef[]>;
+  cleanupWorkspace(workspace: WorkspaceRow): Promise<void>;
 }
 
 export interface RuntimeSecretRef {
@@ -110,6 +133,8 @@ export interface CheckpointRef {
 }
 
 export interface StorageAllocation {
+  // Trusted finite-output owners keep this allocation until extraction settles.
+  retainForExtraction?: boolean;
   storageId: string;
   workspaceId: string;
   mounts: PersistenceMount[];
@@ -153,6 +178,7 @@ export interface WorkspaceStorageDriver {
   ): Promise<SnapshotResult>;
   verifyCheckpoint(ref: CheckpointRef, expected: CheckpointManifest): Promise<CheckpointManifest>;
   deleteStorage(ref: StorageRef): Promise<void>;
+  completeExtraction?(ref: StorageRef): Promise<void>;
   deleteCheckpoint(ref: CheckpointRef): Promise<void>;
   listStorage(): Promise<DiscoveredStorage[]>;
   listCheckpoints(): Promise<DiscoveredCheckpoint[]>;

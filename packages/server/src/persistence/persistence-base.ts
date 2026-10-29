@@ -8,22 +8,57 @@ import type {
   PersistenceStore,
   PrincipalRow,
   Scheduler,
+  Store,
   TemplateStore,
   WorkspaceCheckpointRow,
   WorkspaceDriver,
   WorkspaceOperationRow,
+  WorkspaceRow,
   WorkspaceStorageDriver,
   WorkspaceStore,
 } from "@pstdio/pocketcoder-runtime-core";
 import { OperationCapacityExceededError } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "../control-channel/hub";
+import {
+  type ConversationRetentionPolicy,
+  DEFAULT_CONVERSATION_RETENTION,
+} from "../conversations/conversation-retention";
 import type { WorkspaceService } from "../workspaces/service";
 
 export interface PersistenceServiceDeps {
-  store: AuthStore & TemplateStore & WorkspaceStore & PersistenceStore & OutputStore & ConversationStore & OutboxStore;
+  drainExecutions?: (workspaceId: string) => Promise<void>;
+  purgeInputs?: (workspaceId: string) => Promise<void>;
+  store: AuthStore &
+    TemplateStore &
+    WorkspaceStore &
+    PersistenceStore &
+    OutputStore &
+    ConversationStore &
+    OutboxStore &
+    Pick<Store, "checkpointTransfers" | "acknowledgeJournal">;
   scheduler: Scheduler;
+  revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
+  checkpointTransfers?: {
+    preserve(
+      workspace: WorkspaceRow,
+      checkpoint: WorkspaceCheckpointRow,
+      operationId: string,
+    ): Promise<WorkspaceCheckpointRow>;
+    cleanup(workspaceId: string): Promise<void>;
+    cancel(workspaceId: string, checkpointIds: Set<string>): Promise<void>;
+    verify(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    delete(checkpoint: WorkspaceCheckpointRow): Promise<void>;
+    readFile(checkpoint: WorkspaceCheckpointRow, mount: string, path: string, maxBytes: number): Promise<Buffer | null>;
+    inventory(): Promise<{
+      backend: string;
+      storage_count: number;
+      checkpoint_count: number;
+      unknown_storage: string[];
+      unknown_checkpoints: string[];
+    }>;
+  };
   hub: Hub;
   workspaces: WorkspaceService;
   maxQueuedWorkspaces: number;
@@ -38,6 +73,7 @@ export interface PersistenceLimits {
   maxCheckpointsPerPrincipal: number;
   maxCheckpointFiles: number;
   maxConcurrentOperations: number;
+  conversationRetention: ConversationRetentionPolicy;
 }
 
 export const DEFAULT_PERSISTENCE_LIMITS: PersistenceLimits = {
@@ -46,7 +82,14 @@ export const DEFAULT_PERSISTENCE_LIMITS: PersistenceLimits = {
   maxCheckpointsPerPrincipal: 100,
   maxCheckpointFiles: 1_000_000,
   maxConcurrentOperations: 4,
+  conversationRetention: DEFAULT_CONVERSATION_RETENTION,
 };
+
+// The storage backend this controller writes checkpoints to and can restore them from.
+export function checkpointProvider(context: PersistenceContext) {
+  if (context.deps.checkpointTransfers) return "controller-archive";
+  return context.storageDriver().kind;
+}
 
 export type SnapshotResult = Awaited<ReturnType<WorkspaceStorageDriver["snapshot"]>>;
 
@@ -92,8 +135,26 @@ export function toOperationResource(row: WorkspaceOperationRow) {
 export class PersistenceContext {
   constructor(readonly deps: PersistenceServiceDeps) {}
 
+  private readonly tasks = new Set<Promise<void>>();
+
+  track(task: Promise<void>) {
+    this.tasks.add(task);
+    void task.then(
+      () => this.tasks.delete(task),
+      () => this.tasks.delete(task),
+    );
+  }
+
+  async drain() {
+    while (this.tasks.size) await Promise.allSettled([...this.tasks]);
+  }
+
   now(): Date {
     return this.deps.now ? this.deps.now() : new Date();
+  }
+
+  requirePersistence() {
+    if (!this.deps.checkpointTransfers) this.storageDriver();
   }
 
   storageDriver(): WorkspaceStorageDriver {

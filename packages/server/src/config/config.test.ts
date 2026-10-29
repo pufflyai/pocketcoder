@@ -2,9 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { configSummary, loadConfig } from "./config";
 
 describe("portable persistence configuration", () => {
+  test("rejects an empty embedded data folder", () => {
+    expect(() => loadConfig({ POCKETCODER_DIR: "", POCKETCODER_AUTH_PEPPER: "test" })).toThrow(
+      "POCKETCODER_DIR must not be empty",
+    );
+  });
+  test("defaults to embedded data and accepts an explicit data folder", () => {
+    const env = { POCKETCODER_AUTH_PEPPER: "test-pepper" };
+    expect(loadConfig(env).dataDir).toBe("./pc_data");
+    expect(loadConfig({ ...env, POCKETCODER_DIR: "/data/private" }).dataDir).toBe("/data/private");
+  });
   test("parses operator warm pool configuration with safe defaults", () => {
     const config = loadConfig({
-      POCKETCODER_STORE: "memory",
+      POCKETCODER_AUTH_PEPPER: "test-pepper",
       POCKETCODER_WARM_POOLS: JSON.stringify([{ template: "fixture-echo" }]),
     });
     expect(config.warmPools).toEqual([
@@ -19,7 +29,7 @@ describe("portable persistence configuration", () => {
   });
   test("configures host-local filesystem storage explicitly", () => {
     const config = loadConfig({
-      POCKETCODER_STORE: "memory",
+      POCKETCODER_AUTH_PEPPER: "test-pepper",
       POCKETCODER_DRIVER: "docker",
       POCKETCODER_STORAGE_BACKEND: "filesystem",
       POCKETCODER_WORKSPACE_DATA_DIR: "/var/lib/pocketcoder/workspaces",
@@ -34,79 +44,72 @@ describe("portable persistence configuration", () => {
     expect(config.persistenceLimits.maxRetainedBytes).toBe(2 * 1024 ** 3);
   });
 
-  test("configures Kubernetes Jobs, PVC storage, and Secret projection", () => {
+  test("configures Kubernetes Jobs, private controller archives, and Secret projection", () => {
     const config = loadConfig({
-      POCKETCODER_STORE: "memory",
+      POCKETCODER_AUTH_PEPPER: "test-pepper",
       POCKETCODER_DRIVER: "kubernetes",
       POCKETCODER_KUBERNETES_NAMESPACE: "agents",
       POCKETCODER_KUBERNETES_SERVICE_ACCOUNT: "workspace",
       POCKETCODER_KUBERNETES_NODE_SELECTOR: '{"dedicated":"workspace"}',
       POCKETCODER_KUBERNETES_TOLERATIONS: '[{"operator":"Exists","effect":"NoSchedule"}]',
-      POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-      POCKETCODER_KUBERNETES_WORKSPACE_CLAIM: "workspace-data",
-      POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+      POCKETCODER_STORAGE_BACKEND: "controller-archive",
       POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
       POCKETCODER_SECRET_PROVIDER: "kubernetes",
     });
     expect(config.driverKind).toBe("kubernetes");
-    expect(config.storageBackend).toBe("kubernetes-pvc");
+    expect(config.storageBackend).toBe("controller-archive");
     expect(config.secretProvider).toBe("kubernetes");
     expect(config.kubernetesNodeSelector).toEqual({ dedicated: "workspace" });
     expect(config.kubernetesTolerations).toEqual([{ operator: "Exists", effect: "NoSchedule" }]);
-    expect(config.workspaceServerUrl).toBe("http://pocketcoder-server.agents.svc:7080");
+    expect(config.workspaceServerUrl).toBe("http://pocketcoder-agent.agents.svc:8091");
   });
 
   test("fails closed when a persistence backend is only partially configured", () => {
     expect(() =>
       loadConfig({
-        POCKETCODER_STORE: "memory",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_STORAGE_BACKEND: "filesystem",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
       }),
     ).toThrow("POCKETCODER_CHECKPOINT_DIR");
     expect(() =>
       loadConfig({
-        POCKETCODER_STORE: "memory",
-        POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
+        POCKETCODER_STORAGE_BACKEND: "controller-archive",
         POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
       }),
-    ).toThrow("POCKETCODER_KUBERNETES_WORKSPACE_CLAIM");
+    ).toThrow("POCKETCODER_DRIVER");
   });
 
   test("rejects unknown explicit backend values instead of selecting fallbacks", () => {
-    expect(() => loadConfig({ POCKETCODER_STORE: "memroy", POCKETCODER_DATABASE_URL: "postgres://unused" })).toThrow(
-      "POCKETCODER_STORE",
-    );
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_DRIVER: "dokcer" })).toThrow(
+    expect(() => loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_DRIVER: "dokcer" })).toThrow(
       "POCKETCODER_DRIVER",
     );
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_STORAGE_BACKEND: "filesytem" })).toThrow(
-      "POCKETCODER_STORAGE_BACKEND",
-    );
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_SECRET_PROVIDER: "kubernets" })).toThrow(
-      "POCKETCODER_SECRET_PROVIDER",
-    );
+    expect(() =>
+      loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_STORAGE_BACKEND: "filesytem" }),
+    ).toThrow("POCKETCODER_STORAGE_BACKEND");
+    expect(() =>
+      loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_SECRET_PROVIDER: "kubernets" }),
+    ).toThrow("POCKETCODER_SECRET_PROVIDER");
   });
 
   test("rejects ports outside the TCP range", () => {
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_PORT: "65536" })).toThrow("POCKETCODER_PORT");
+    expect(() => loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_PORT: "65536" })).toThrow(
+      "POCKETCODER_PORT",
+    );
   });
 
   test("rejects driver, storage, and secret combinations that cannot be mounted", () => {
     expect(() =>
       loadConfig({
-        POCKETCODER_STORE: "memory",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_DRIVER: "docker",
-        POCKETCODER_STORAGE_BACKEND: "kubernetes-pvc",
-        POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
+        POCKETCODER_STORAGE_BACKEND: "controller-archive",
         POCKETCODER_CHECKPOINT_DIR: "/data/checkpoints",
-        POCKETCODER_KUBERNETES_WORKSPACE_CLAIM: "workspace-data",
       }),
     ).toThrow("POCKETCODER_DRIVER");
     expect(() =>
       loadConfig({
-        POCKETCODER_STORE: "memory",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_DRIVER: "kubernetes",
         POCKETCODER_STORAGE_BACKEND: "filesystem",
         POCKETCODER_WORKSPACE_DATA_DIR: "/data/workspaces",
@@ -118,30 +121,29 @@ describe("portable persistence configuration", () => {
   test("accepts only digest-pinned egress runtime images", () => {
     expect(
       loadConfig({
-        POCKETCODER_STORE: "memory",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_EGRESS_IMAGE: `registry.example/egress@sha256:${"a".repeat(64)}`,
       }).egressImage,
     ).toContain("@sha256:");
     expect(() =>
       loadConfig({
-        POCKETCODER_STORE: "memory",
+        POCKETCODER_AUTH_PEPPER: "test-pepper",
         POCKETCODER_EGRESS_IMAGE: "registry.example/egress:latest",
       }),
     ).toThrow("immutable sha256 digest");
   });
 
   test("rejects malformed service URLs", () => {
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_WORKSPACE_SERVER_URL: "localhost" })).toThrow(
-      "POCKETCODER_WORKSPACE_SERVER_URL",
-    );
-    expect(() => loadConfig({ POCKETCODER_STORE: "memory", POCKETCODER_EVENT_SINK_URL: "file:///tmp/sink" })).toThrow(
-      "POCKETCODER_EVENT_SINK_URL",
-    );
+    expect(() =>
+      loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_WORKSPACE_SERVER_URL: "localhost" }),
+    ).toThrow("POCKETCODER_WORKSPACE_SERVER_URL");
+    expect(() =>
+      loadConfig({ POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_EVENT_SINK_URL: "file:///tmp/sink" }),
+    ).toThrow("POCKETCODER_EVENT_SINK_URL");
   });
 
   test("summarizes resolved configuration without secrets or URLs", () => {
     const config = loadConfig({
-      POCKETCODER_STORE: "memory",
       POCKETCODER_AUTH_PEPPER: "secret-pepper",
       POCKETCODER_EVENT_SINK_URL: "https://token@example.test/events",
     });
@@ -149,6 +151,15 @@ describe("portable persistence configuration", () => {
 
     expect(serialized).not.toContain("secret-pepper");
     expect(serialized).not.toContain("token@example");
-    expect(serialized).toContain('"store":"memory"');
+    expect(serialized).toContain('"dataDir":"./pc_data"');
   });
+});
+
+test("local defaults need no supplied keys and callback uses the separate agent port", () => {
+  const config = loadConfig({});
+  expect(config.pepper).toBe("");
+  expect(config.listenHost).toBe("127.0.0.1");
+  expect(config.workspaceServerUrl).toBe("http://host.docker.internal:8091");
+  expect(() => loadConfig({ POCKETCODER_HTTP: "127.0.0.1:8091" })).toThrow("different ports");
+  expect(() => loadConfig({ POCKETCODER_AGENT_HTTP: "host:0" })).toThrow("port");
 });

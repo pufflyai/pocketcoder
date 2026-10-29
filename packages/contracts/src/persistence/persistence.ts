@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isDuration } from "../common/duration";
+import { PrivateArtifactSchema } from "./artifacts";
 
 const DurationValueSchema = z.string().refine(isDuration, { message: "expected a duration like 15s, 20m, or 2h" });
 
@@ -75,6 +76,8 @@ export const PersistenceSpecSchema = z.object({
   conversationRetention: DurationValueSchema.default("168h"),
   sessionCompatibility: z.string().min(1).max(128).optional(),
   checkpoint: CheckpointPolicySchema.prefault({}),
+  // Optional, so templates without artifacts keep their digest.
+  artifacts: z.array(PrivateArtifactSchema).max(16).optional(),
 });
 export type PersistenceSpec = z.infer<typeof PersistenceSpecSchema>;
 

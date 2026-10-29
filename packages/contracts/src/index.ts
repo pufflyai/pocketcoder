@@ -25,7 +25,10 @@ export {
   attachmentManifest,
   splitAttachmentManifest,
 } from "./attachments/attachment";
+export * from "./attachments/input-reference";
 export * from "./auth/keys";
+export * from "./auth/principals";
+export * from "./checkpoints";
 export { canonicalJson, digestOf, sha256Hex } from "./common/canonical";
 export { isDuration, parseDurationMs } from "./common/duration";
 export {
@@ -36,31 +39,20 @@ export {
   ErrorEnvelopeSchema,
   errorEnvelope,
 } from "./common/errors";
+export { JsonValueSchema } from "./common/json-value";
 export { CursorPageSchema, CursorQuerySchema, CursorSchema } from "./common/pagination";
 export { hasScope, isScope, SCOPES, type Scope } from "./common/scopes";
+export * from "./conversations";
+export { BROWSER_IMAGE_BYTES, BrowserFrames, browserFrameChunks } from "./displays/browser-frames";
 export {
-  CONVERSATION_RESUME_REASONS,
-  CONVERSATION_ROLES,
-  ConversationListQuerySchema,
-  type ConversationMessageInput,
-  ConversationMessageInputSchema,
-  type ConversationMessageResource,
-  ConversationMessageResourceSchema,
-  ConversationMetadataSchema,
-  ConversationPageSchema,
-  ConversationResumeOutcomeSchema,
-  type ConversationResumeReason,
-  type ConversationRole,
-} from "./conversations/conversation";
-export { type ConversationFact, ConversationFactSchema } from "./conversations/facts";
-export {
-  type ConversationMessageIdentity,
-  ConversationMessageIdentitySchema,
-  ConversationProtocolSupportSchema,
-  type ConversationRequestIdentity,
-  ConversationRequestIdentitySchema,
-  ConversationRequestReceiptSchema,
-} from "./conversations/identity";
+  BROWSER_HEIGHT,
+  BROWSER_WIDTH,
+  type BrowserAction,
+  BrowserActionSchema,
+  DisplayOpenRequestSchema,
+  DisplaySchema,
+} from "./displays/display";
+export * from "./displays/screenshot";
 export {
   findNetworkRule,
   isPrivateAddress,
@@ -79,6 +71,8 @@ export {
   NetworkRuleSchema,
   type NetworkState,
 } from "./network/network";
+export * from "./outputs/export-reference";
+export { artifactPath, type PrivateArtifact, PrivateArtifactSchema } from "./persistence/artifacts";
 export {
   CHECKPOINT_STATES,
   type CheckpointManifest,
@@ -116,6 +110,10 @@ export {
   STORAGE_STATES,
   type StorageState,
 } from "./persistence/persistence";
+export * from "./previews/headers";
+export * from "./previews/preview";
+export * from "./previews/socket-flow";
+export * from "./previews/view-session";
 export {
   CheckpointListQuerySchema,
   CheckpointPageSchema,
@@ -150,6 +148,7 @@ export {
   ATTACHMENTS_MIN_PROTOCOL_VERSION,
   CheckpointStatusPayload,
   ConversationMessagePayload,
+  EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION,
   type ExecSpec,
   ExecSpecSchema,
   HEADER_POOL_ENROLLMENT,
@@ -184,7 +183,10 @@ export {
   ProxyResponsePayload,
   RegisteredAckPayload,
   RegisteredPayload,
+  type RestoreMode,
+  RestoreModeSchema,
   RestoreStatusPayload,
+  RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
   type ServerFrame,
   ServerFrameSchema,
   ServiceHealthPayload,
@@ -195,7 +197,23 @@ export {
   SourceResolvedPayload,
   SUPPORTED_PROTOCOL_VERSIONS,
   TerminationAckPayload,
+  WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol";
+export {
+  CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
+  type CheckpointInstalled,
+  CheckpointInstalledPayload,
+  type CheckpointPrepared,
+  CheckpointPreparedPayload,
+  type CheckpointUpload,
+  CheckpointUploadPayload,
+  CheckpointUploadStatusPayload,
+  type PrepareCheckpointArchive,
+  PrepareCheckpointArchivePayload,
+  type RestoreTransferSpec,
+  RestoreTransferSpecSchema,
+} from "./protocol/protocol-checkpoint";
+export * from "./protocol/protocol-credentials";
 export {
   PROXY_STREAM_CANCEL_REASONS,
   PROXY_STREAM_CHUNK_BYTES,
@@ -211,49 +229,30 @@ export {
   ProxyStreamStartPayload,
   STREAMING_MIN_PROTOCOL_VERSION,
 } from "./protocol/protocol-stream";
+export { waitingExecSpec } from "./protocol/waiting-exec";
 export {
-  type Agent,
-  AgentSchema,
-  agentApiHarness,
-  type CheckpointHook,
-  CheckpointHookSchema,
-  DurationSchema,
-  findRoute,
-  type Harness,
-  HarnessSchema,
-  isAgentApiNative,
-  isNormalizedPath,
-  normalizeTemplateSnapshot,
-  type ParsedTemplate,
-  parseTemplateManifest,
-  ResourcesSchema,
-  SecuritySchema,
-  ServiceRouteSchema,
-  ServiceSchema,
-  type SetupStep,
-  SetupStepSchema,
-  type SourceSpec,
-  SourceSpecSchema,
-  secretMountPath,
-  snapshotOf,
-  snapshotServices,
-  type TemplateManifest,
-  TemplateManifestSchema,
-  type TemplateService,
-  type TemplateServiceRoute,
-  type TemplateSnapshot,
-  type TemplateSpec,
-  TemplateSpecSchema,
-  type Terminal,
-  TerminalSchema,
-  TimeoutsSchema,
-  templateServices,
-  timeoutMs,
-} from "./templates/template";
+  type AccountPurgeCompletion,
+  AccountPurgeCompletionSchema,
+  type AccountPurgeIntent,
+  AccountPurgeIntentSchema,
+} from "./recovery/account-purge";
+export * from "./recovery/source-writer";
+export * from "./secrets/credential-slot";
+export * from "./secrets/secret";
+export * from "./templates/runtime-credentials";
+export * from "./templates/template";
+export { TemplatePublishRequestSchema, TemplateVersionParamsSchema } from "./templates/template-api";
 export {
   renderTemplateManifest,
+  renderWorkloadTemplateManifest,
   type TemplateRenderOptions,
 } from "./templates/template-render";
+export * from "./templates/workload-admission";
+export * from "./templates/workload-capabilities";
+export * from "./templates/workload-format";
+export * from "./templates/workload-input-schema";
+export * from "./templates/workload-policy";
+export * from "./templates/workload-template";
 export {
   type ClientTerminalMessage,
   ClientTerminalMessageSchema,
@@ -283,8 +282,19 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/execution-dispatch";
+export * from "./workspaces/execution-envelope";
+export * from "./workspaces/execution-runtime";
+export * from "./workspaces/finite-process";
+export * from "./workspaces/producer-observation";
+export * from "./workspaces/workload-operation";
 export {
+  ADMISSION_REASONS,
+  type AdmissionDecision,
+  type AdmissionReason,
   AGENT_STATES,
+  type AgentInterruptResponse,
+  AgentInterruptResponseSchema,
   type AgentState,
   canTransition,
   isTerminal,

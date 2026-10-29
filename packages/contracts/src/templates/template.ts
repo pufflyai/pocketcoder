@@ -3,16 +3,17 @@ import { canonicalJson, digestOf } from "../common/canonical";
 import { parseDurationMs } from "../common/duration";
 import { legacyTemplateServices, templateServices } from "./template-runtime";
 import {
+  type RuntimeTemplatePolicy,
   ServiceSchema,
   type TemplateManifest,
   TemplateManifestBaseSchema,
   type TemplateService,
   type TemplateServiceRoute,
-  type TemplateSpec,
   TemplateSpecSchema,
   type TimeoutsSchema,
 } from "./template-schema";
 import { validateTemplateSpec } from "./template-validation";
+import { runtimeTemplateDefinition } from "./workload-policy";
 
 export {
   agentApiHarness,
@@ -28,6 +29,8 @@ export {
   type Harness,
   HarnessSchema,
   ResourcesSchema,
+  type RuntimeTemplatePolicy,
+  RuntimeTemplatePolicySchema,
   SecuritySchema,
   ServiceRouteSchema,
   ServiceSchema,
@@ -71,11 +74,25 @@ export interface TemplateSnapshot {
   name: string;
   version: string;
   digest: string;
-  spec: TemplateSpec;
+  spec: RuntimeTemplatePolicy;
+  manifest?: import("./workload-template").WorkloadTemplate;
   services?: Record<string, TemplateService>;
 }
 
 export function normalizeTemplateSnapshot(snapshot: TemplateSnapshot): TemplateSnapshot {
+  if ("format" in snapshot && snapshot.format !== "pocketcoder.dev/v1alpha1") {
+    throw new Error(`unsupported immutable snapshot format for the alpha runtime: ${String(snapshot.format)}`);
+  }
+  if (snapshot.manifest) {
+    const parsed = runtimeTemplateDefinition(snapshot.manifest);
+    if (
+      parsed.digest !== snapshot.digest ||
+      parsed.manifest.metadata.name !== snapshot.name ||
+      parsed.manifest.spec.version !== snapshot.version
+    )
+      throw new Error("Workload snapshot identity mismatch");
+    return { ...snapshot, manifest: snapshot.manifest, spec: parsed.policy, services: templateServices(parsed.policy) };
+  }
   return {
     ...snapshot,
     spec: TemplateSpecSchema.parse(snapshot.spec),

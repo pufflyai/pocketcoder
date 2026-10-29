@@ -43,7 +43,7 @@ const TRANSITIONS: Record<WorkspaceState, readonly WorkspaceState[]> = {
   provisioning: ["connected", "queued", "terminating", "failed", "canceled", "expired"],
   connected: ["ready", "preserving", "terminating", "failed", "canceled", "expired"],
   ready: ["preserving", "terminating", "succeeded", "failed", "canceled", "expired"],
-  preserving: ["preserved", "failed"],
+  preserving: ["terminating", "preserved", "failed"],
   terminating: ["succeeded", "failed", "canceled", "expired"],
   succeeded: [],
   failed: [],
@@ -56,7 +56,28 @@ export function canTransition(from: WorkspaceState, to: WorkspaceState): boolean
   return TRANSITIONS[from].includes(to);
 }
 
+export const ADMISSION_REASONS = [
+  "admission_global_capacity",
+  "admission_principal_capacity",
+  "admission_template_capacity",
+  "admission_policy_global_capacity",
+  "admission_actor_capacity",
+  "admission_denied",
+  "admission_unavailable",
+] as const;
+export type AdmissionReason = (typeof ADMISSION_REASONS)[number];
+export type AdmissionDecision =
+  | boolean
+  | {
+      allowed: false;
+      reason: Exclude<
+        AdmissionReason,
+        "admission_global_capacity" | "admission_principal_capacity" | "admission_template_capacity"
+      >;
+    };
+
 export const REASON_CODES = [
+  ...ADMISSION_REASONS,
   "child_exit_success",
   "child_exit_failure",
   "setup_failed",
@@ -92,6 +113,14 @@ export type ReasonCode = (typeof REASON_CODES)[number];
 export const AGENT_STATES = ["unknown", "running", "stable"] as const;
 export type AgentState = (typeof AGENT_STATES)[number];
 
+// `requested` only confirms delivery of interrupt keys. Stable terminal input
+// is a readiness observation; capable producers report a separate turn outcome.
+export const AgentInterruptResponseSchema = z.object({
+  status: z.enum(["requested", "idle"]),
+});
+
+export type AgentInterruptResponse = z.infer<typeof AgentInterruptResponseSchema>;
+
 // REST request/response schemas.
 
 export const WorkspaceCreateRequestSchema = z.object({
@@ -113,10 +142,16 @@ export const TemplateRefSchema = z.object({
   digest: z.string(),
 });
 
+const AgentMetadataSchema = z.object({
+  type: z.string(),
+  model: z.string().min(1).max(255).nullable(),
+});
+
 export const WorkspaceResourceSchema = z.object({
   id: z.uuid(),
   external_id: z.string(),
   template: TemplateRefSchema,
+  agent: AgentMetadataSchema.nullable(),
   state: z.enum(WORKSPACE_STATES),
   reason_code: z.enum(REASON_CODES).nullable(),
   agent_state: z.enum(AGENT_STATES),
@@ -179,6 +214,7 @@ export const TemplateListItemSchema = z.object({
   name: z.string(),
   version: z.string(),
   digest: z.string(),
+  agent: AgentMetadataSchema.nullable(),
   description: z.string().optional(),
   status: z.enum(["active", "available", "retired"]),
 });

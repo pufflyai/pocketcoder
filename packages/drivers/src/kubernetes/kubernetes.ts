@@ -6,8 +6,10 @@ import type {
   WarmRuntimeLaunch,
   WorkspaceDriver,
   WorkspaceLaunch,
+  WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
-import { type EgressDriverOptions, egressConfig, poolInput, workspaceInput } from "../egress/egress";
+import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
+import type { RegistryResolver } from "../registry/registry";
 import { isKubernetesName, kubectl, resourceName } from "./kubernetes-command";
 import { discoveredWarmRuntimes, discoveredWorkspaces } from "./kubernetes-discovery";
 import {
@@ -16,14 +18,32 @@ import {
   readTerminationEvidence,
   retainNodeIdentities,
 } from "./kubernetes-evidence";
-import { KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
-import { warmJobManifest, workspaceJobManifest } from "./kubernetes-manifests";
+import {
+  deleteResource,
+  jobUidOf,
+  neverAdmittedInputUid,
+  referencedJob,
+  removeReferencedJob,
+} from "./kubernetes-identity";
+import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
+import { workspaceJobManifest } from "./kubernetes-manifests";
+import { applyRegistrySecret } from "./kubernetes-registry";
 import {
   type KubernetesSchedulingOptions,
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes-scheduling";
+import { requireSharedVolume } from "./kubernetes-shared-profile";
+import type { KubernetesSharedStorage } from "./kubernetes-shared-storage";
 import { stopKubernetesJob } from "./kubernetes-stop";
+import {
+  claimLaunchPhase,
+  LAUNCH_PHASE,
+  type LaunchMetadata,
+  uncommittedKubernetesProvider,
+} from "./kubernetes-uncommitted";
+import { resolveSharedMounts } from "./kubernetes-volumes";
+import { createKubernetesWarm } from "./kubernetes-warm";
 
 export {
   KUBERNETES_DIGEST_ANNOTATION,
@@ -37,6 +57,8 @@ export interface KubernetesDriverOptions extends EgressDriverOptions, Kubernetes
   serviceAccountName?: string;
   imagePullPolicy?: "Always" | "IfNotPresent" | "Never";
   captureTerminationEvidence?: boolean;
+  resolveRegistry?: RegistryResolver;
+  sharedStorage?: KubernetesSharedStorage;
 }
 
 export class KubernetesDriver implements WorkspaceDriver {
@@ -44,14 +66,19 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly namespace: string;
   private readonly kubectlBin: string;
   private readonly serviceAccountName: string | undefined;
+  private readonly runtimeClassName: string | undefined;
   private readonly nodeSelector: Record<string, string> | undefined;
   private readonly tolerations: KubernetesToleration[] | undefined;
   private readonly imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   private readonly egress: EgressDriverOptions;
   private sidecarsSupported = false;
   private readonly captureEvidence: boolean;
+  private readonly resolveRegistry?: RegistryResolver;
+  private readonly sharedStorage?: KubernetesSharedStorage;
 
   constructor(options: KubernetesDriverOptions = {}) {
+    this.resolveRegistry = options.resolveRegistry;
+    this.sharedStorage = options.sharedStorage;
     this.captureEvidence = options.captureTerminationEvidence ?? false;
     this.namespace = options.namespace ?? "default";
     if (!isKubernetesName(this.namespace)) {
@@ -59,6 +86,10 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
     this.kubectlBin = options.kubectlBin ?? "kubectl";
     this.serviceAccountName = options.serviceAccountName;
+    this.runtimeClassName = options.runtimeClassName;
+    if (this.runtimeClassName !== undefined && !isKubernetesName(this.runtimeClassName)) {
+      throw new Error("runtimeClassName must be a Kubernetes resource name");
+    }
     if (this.serviceAccountName && !isKubernetesName(this.serviceAccountName)) {
       throw new Error("serviceAccountName must be a Kubernetes resource name");
     }
@@ -85,155 +116,143 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
+    let storageIdentity: { claimUid: string; volumeUid: string } | undefined;
+    if (this.sharedStorage) {
+      storageIdentity = await requireSharedVolume(this.sharedStorage.options, this.namespace, (args) =>
+        kubectl(this.kubectlBin, this.namespace, args),
+      );
+      launch = { ...launch, mounts: [...launch.mounts, await this.sharedStorage.inputMount(launch.workspace.id)] };
+    }
+    const sharedMounts = await resolveSharedMounts(launch, this.sharedStorage);
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
     const name = resourceName(workspace.id);
     const inputSecret = `${name}-input`;
     const restricted = spec.network.mode === "restricted";
-    if (restricted) await this.requireNativeSidecars();
     const egressSecret = `${name}-egress`;
-    const inputManifest = {
-      apiVersion: "v1",
-      kind: "Secret",
-      metadata: {
-        name: inputSecret,
-        labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
-      },
-      type: "Opaque",
-      stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
-    };
-    await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(inputManifest));
-    if (restricted) {
-      await kubectl(
-        this.kubectlBin,
-        this.namespace,
-        ["apply", "-f", "-"],
-        JSON.stringify({
-          apiVersion: "v1",
-          kind: "Secret",
-          metadata: { name: egressSecret, labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id } },
-          type: "Opaque",
-          stringData: {
-            "egress.json": JSON.stringify(egressConfig(this.egress, input, spec.network, workspace.deadlineAt)),
-          },
-        }),
-      );
-    }
+    const registrySecret = `${name}-registry`;
+    {
+      const inputManifest = {
+        apiVersion: "v1",
+        kind: "Secret",
+        metadata: {
+          name: inputSecret,
+          labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id },
+          annotations: { [LAUNCH_PHASE]: "prepared", [KUBERNETES_DIGEST_ANNOTATION]: workspace.templateDigest },
+        },
+        type: "Opaque",
+        stringData: { "input.json": JSON.stringify(restricted ? workspaceInput(input) : input) },
+      };
+      const receipt = JSON.parse(
+        await kubectl(
+          this.kubectlBin,
+          this.namespace,
+          ["create", "-f", "-", "-o", "json"],
+          JSON.stringify(inputManifest),
+        ),
+      ) as { metadata: LaunchMetadata };
+      if (spec.imagePullSecret) {
+        if (!this.resolveRegistry) throw new Error("Stored registry credentials are unavailable");
+        await applyRegistrySecret(
+          this.kubectlBin,
+          this.namespace,
+          registrySecret,
+          workspace.id,
+          await this.resolveRegistry(spec.imagePullSecret, spec.image),
+        );
+      }
 
-    const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
-      serviceAccountName: this.serviceAccountName,
-      nodeSelector: this.nodeSelector,
-      tolerations: this.tolerations,
-      imagePullPolicy: this.imagePullPolicy,
-      ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
-      egressImage: this.egress.egressImage,
-    });
-    try {
-      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
+      if (this.runtimeClassName)
+        await kubectl(this.kubectlBin, this.namespace, ["get", "runtimeclass", this.runtimeClassName, "-o", "name"]);
+      if (restricted) await this.requireNativeSidecars();
+      if (restricted) {
+        await kubectl(
+          this.kubectlBin,
+          this.namespace,
+          ["apply", "-f", "-"],
+          JSON.stringify({
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: { name: egressSecret, labels: { [KUBERNETES_WORKSPACE_LABEL]: workspace.id } },
+            type: "Opaque",
+            stringData: {
+              "egress.json": JSON.stringify(egressConfig(this.egress, input, spec.network, workspace.deadlineAt)),
+            },
+          }),
+        );
+      }
+
+      const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
+        sharedMounts,
+        serviceAccountName: this.serviceAccountName,
+        runtimeClassName: this.runtimeClassName,
+        nodeSelector: this.nodeSelector,
+        tolerations: this.tolerations,
+        imagePullPolicy: this.imagePullPolicy,
+        ...(spec.imagePullSecret ? { imagePullSecret: registrySecret } : {}),
+        ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
+        egressImage: this.egress.egressImage,
+      });
+      await claimLaunchPhase(
+        (args) => kubectl(this.kubectlBin, this.namespace, args),
+        inputSecret,
+        receipt.metadata,
+        "submitting",
+      );
+      const job = JSON.parse(
+        await kubectl(this.kubectlBin, this.namespace, ["create", "-f", "-", "-o", "json"], JSON.stringify(manifest)),
+      );
       return {
         kind: this.kind,
         id: name,
+        jobUid: jobUidOf(job),
+        ...(storageIdentity ? { storageIdentity } : {}),
         name,
         inputSecret,
+        ...(spec.imagePullSecret ? { registrySecret } : {}),
         ...(restricted ? { egressSecret } : {}),
         namespace: this.namespace,
       };
-    } catch (error) {
-      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]).catch(
-        () => {},
-      );
-      if (restricted) {
-        await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", egressSecret, "--ignore-not-found"]).catch(
-          () => {},
-        );
-      }
-      throw error;
     }
+  }
+
+  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest">) {
+    return uncommittedKubernetesProvider(
+      (args) => kubectl(this.kubectlBin, this.namespace, args),
+      this.namespace,
+      workspace,
+    );
+  }
+
+  uncommittedWarmProvider(runtime: { id: string; templateDigest: string }) {
+    return uncommittedKubernetesProvider(
+      (args) => kubectl(this.kubectlBin, this.namespace, args),
+      this.namespace,
+      runtime,
+      true,
+    );
   }
 
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
-    const spec = launch.template.spec;
-    const name = `pocketcoder-pool-${launch.runtimeId}`;
-    const inputSecret = `${name}-input`;
-    const restricted = spec.network.mode === "restricted";
-    if (restricted) await this.requireNativeSidecars();
-    const egressSecret = `${name}-egress`;
-    await kubectl(
-      this.kubectlBin,
-      this.namespace,
-      ["apply", "-f", "-"],
-      JSON.stringify({
-        apiVersion: "v1",
-        kind: "Secret",
-        metadata: { name: inputSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
-        type: "Opaque",
-        stringData: {
-          "input.json": JSON.stringify(restricted ? poolInput(launch.input) : launch.input),
-        },
-      }),
-    );
-    if (restricted) {
-      await kubectl(
-        this.kubectlBin,
-        this.namespace,
-        ["apply", "-f", "-"],
-        JSON.stringify({
-          apiVersion: "v1",
-          kind: "Secret",
-          metadata: { name: egressSecret, labels: { [KUBERNETES_POOL_LABEL]: launch.runtimeId } },
-          type: "Opaque",
-          stringData: {
-            "egress.json": JSON.stringify(egressConfig(this.egress, launch.input, spec.network, launch.expiresAt)),
-          },
-        }),
-      );
-    }
-    const manifest = warmJobManifest(launch, name, inputSecret, egressSecret, {
+    if (this.sharedStorage) throw new Error("Shared storage requires a cold workspace allocation");
+    if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
+    return createKubernetesWarm(launch, {
+      namespace: this.namespace,
+      kubectlBin: this.kubectlBin,
       serviceAccountName: this.serviceAccountName,
+      runtimeClassName: this.runtimeClassName,
       nodeSelector: this.nodeSelector,
       tolerations: this.tolerations,
       imagePullPolicy: this.imagePullPolicy,
-      ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
-      egressImage: this.egress.egressImage,
+      requireNativeSidecars: () => this.requireNativeSidecars(),
+      captureEvidence: this.captureEvidence,
+      egress: this.egress,
     });
-    try {
-      await kubectl(this.kubectlBin, this.namespace, ["apply", "-f", "-"], JSON.stringify(manifest));
-      return {
-        kind: this.kind,
-        id: name,
-        name,
-        inputSecret,
-        namespace: this.namespace,
-        poolRuntimeId: launch.runtimeId,
-        ...(restricted ? { egressSecret } : {}),
-      };
-    } catch (error) {
-      await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]).catch(
-        () => {},
-      );
-      if (restricted) {
-        await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", egressSecret, "--ignore-not-found"]).catch(
-          () => {},
-        );
-      }
-      throw error;
-    }
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
-    const output = await kubectl(this.kubectlBin, this.namespace, [
-      "get",
-      "job",
-      ref.id,
-      "--ignore-not-found",
-      "-o",
-      "json",
-    ]);
-    if (!output) return { exists: false, running: false, exitCode: null };
-    const job = JSON.parse(output) as {
-      metadata?: { uid?: string };
-      status?: { active?: number; succeeded?: number; failed?: number };
-    };
+    const job = await referencedJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref);
+    if (!job) return { exists: false, running: false, exitCode: null };
     if (this.captureEvidence) {
       if (!job.metadata?.uid) throw new Error("Termination evidence unavailable");
       await retainNodeIdentities((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, job.metadata.uid);
@@ -248,32 +267,38 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async stop(ref: ProviderRef, graceSeconds: number): Promise<void> {
-    if (this.captureEvidence) {
-      await captureTermination((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, graceSeconds);
+    const run = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
+    if (!ref.jobUid && neverAdmittedInputUid(ref)) {
+      await referencedJob(run, ref);
       return;
     }
-    await stopKubernetesJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, graceSeconds);
+    if (typeof ref.jobUid !== "string" || !ref.jobUid) throw new Error("Kubernetes Job identity unavailable");
+    if (this.captureEvidence) {
+      await captureTermination(run, ref.id, graceSeconds, ref.jobUid, this.namespace);
+      return;
+    }
+    await stopKubernetesJob(run, this.namespace, ref, graceSeconds);
   }
 
   async remove(ref: ProviderRef): Promise<void> {
-    await kubectl(this.kubectlBin, this.namespace, [
-      "delete",
-      "job",
-      ref.id,
-      "--ignore-not-found",
-      "--cascade=foreground",
-      "--wait=true",
-    ]);
+    const run = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
+    await removeReferencedJob(run, this.namespace, ref);
+    await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", `${ref.id}-registry`, "--ignore-not-found"]);
     const inputSecret = typeof ref.inputSecret === "string" ? ref.inputSecret : `${ref.id}-input`;
-    await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", inputSecret, "--ignore-not-found"]);
+    const inputUid = neverAdmittedInputUid(ref);
+    if (inputUid) await deleteResource(run, this.namespace, "secrets", inputSecret, inputUid);
+    else await run(["delete", "secret", inputSecret, "--ignore-not-found"]);
     if (typeof ref.egressSecret === "string") {
       await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", ref.egressSecret, "--ignore-not-found"]);
     }
   }
 
   async terminationEvidence(ref: ProviderRef): Promise<Record<string, unknown> | null> {
+    const run = (args: string[]) => kubectl(this.kubectlBin, this.namespace, args);
+    await referencedJob(run, ref);
+    if (!ref.jobUid && neverAdmittedInputUid(ref)) return ref.terminationEvidence as Record<string, unknown>;
     if (!this.captureEvidence) return null;
-    return readTerminationEvidence((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id);
+    return readTerminationEvidence(run, ref.id, ref.jobUid as string);
   }
 
   async purgeInput(workspaceId: string): Promise<void> {
@@ -283,9 +308,11 @@ export class KubernetesDriver implements WorkspaceDriver {
       "secret",
       `${name}-input`,
       `${name}-egress`,
+      `${name}-registry`,
       "--ignore-not-found",
       "--wait=true",
     ]);
+    if (this.sharedStorage) await this.sharedStorage.purgeInputs(workspaceId);
   }
 
   async cleanupInput(workspaceId: string): Promise<void> {
@@ -293,6 +320,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       "delete",
       "secret",
       `${resourceName(workspaceId)}-input`,
+      `${resourceName(workspaceId)}-registry`,
       "--ignore-not-found",
     ]).catch(() => {});
   }

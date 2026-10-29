@@ -9,12 +9,12 @@ test("maps Kubernetes readiness and liveness to the matching endpoints", async (
   expect(manifest).toContain("livenessProbe:\n            httpGet:\n              path: /livez");
 });
 
-test("ships database migrations beside the bundled server and pcd entry points", async () => {
-  const dockerfile = await readFile(join(import.meta.dir, "image/server.Dockerfile"), "utf8");
+test("lets bootstrap jobs and admission hooks reach a live controller before it is ready", async () => {
+  const manifest = await readFile(join(import.meta.dir, "kubernetes/pocketcoder.yaml"), "utf8");
 
-  expect(dockerfile).toContain("COPY --from=build /src/packages/db/drizzle /opt/pocketcoder/drizzle");
-  expect(dockerfile).toContain("RUN test -f /opt/pocketcoder/drizzle/20260730103433_initial/migration.sql");
-  expect(dockerfile.split("\n")).toContain("WORKDIR /");
+  expect(manifest).toContain(
+    "name: pocketcoder-server-live\nspec:\n  type: ClusterIP\n  publishNotReadyAddresses: true",
+  );
 });
 
 test("configures kubectl with the rotating in-cluster service account token", async () => {
@@ -29,11 +29,12 @@ test("configures kubectl with the rotating in-cluster service account token", as
   expect(kubeconfig).toContain("certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt");
 });
 
-test("downloads Pi AgentAPI binaries without running emulated Bun", async () => {
+test("cross-builds patched Pi AgentAPI on the native build platform", async () => {
   const dockerfile = await readFile(join(import.meta.dir, "../examples/harnesses/pi/Dockerfile"), "utf8");
 
-  expect(dockerfile).toContain("FROM scratch AS agentapi-amd64");
-  expect(dockerfile).toContain("FROM scratch AS agentapi-arm64");
+  expect(dockerfile).toContain("FROM --platform=$BUILDPLATFORM golang:");
   expect(dockerfile).toContain("ADD --checksum=sha256:");
+  expect(dockerfile).toContain("patch -p1 < /tmp/agentapi-identical-replies.patch");
+  expect(dockerfile).toContain("CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build");
   expect(dockerfile).not.toContain("await fetch(process.argv[1])");
 });

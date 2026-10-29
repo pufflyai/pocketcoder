@@ -1,11 +1,13 @@
 export const suiteGroups = {
   integration: ["test:browser", "test:integration"],
   performance: ["test:performance"],
+  extensions: ["test:extensions"],
   contracts: [
     "test:deploy",
     "example:test",
     "check-licenses:test",
     "check-boundaries:test",
+    "check-migrations:test",
     "pack:check:test",
     "images:check:test",
     "ci:test",

@@ -1,14 +1,18 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
+import { FilesystemInputStorage, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { supervise } from "@pstdio/pocketcoder-supervisor";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
+import { createIssuerClient } from "../secrets/issuer-client";
+import { createTestIssuer } from "../secrets/issuer-test-server";
+import { createSecretVault } from "../secrets/secret-vault";
 import {
   createSourceFixture,
   e2eTemplate,
@@ -17,17 +21,20 @@ import {
   verifySourceSecretBoundary,
   waitFor,
 } from "./e2e-test-support";
+import { registerServerTestCleanup } from "./test-server-cleanup";
+
+const createStore = createTestStoreFactory();
 
 const PEPPER = "e2e-pepper";
 
 describe("end-to-end workspace lifecycle", () => {
-  const cleanups: Array<() => void> = [];
+  const cleanups: Array<() => void | Promise<void>> = [];
   // Ensures the supervisor and its harness child are stopped even when an
   // assertion fails mid-flight, so no process leaks across runs.
   let teardown: (() => Promise<void>) | null = null;
   afterAll(async () => {
     await teardown?.().catch(() => {});
-    for (const fn of cleanups) fn();
+    for (const fn of cleanups) await fn();
   });
 
   test(
@@ -35,13 +42,14 @@ describe("end-to-end workspace lifecycle", () => {
     async () => {
       const dir = await mkdtemp(join(tmpdir(), "pocketcoder-e2e-"));
       const harnessPath = join(dir, "harness.ts");
-      const sourceCredential = "short-lived-git-token";
+      const issuer = await createTestIssuer({ sourceUrl: "https://github.com/example/app.git" });
+      cleanups.push(() => issuer.close());
       const { setupPath, setupMarker, harnessEnvironment, worktree } = await createSourceFixture(dir);
       await writeFile(harnessPath, HARNESS_SCRIPT);
 
       const template = e2eTemplate({ setupPath, harnessPath, harnessEnvironment, worktree });
 
-      const store = new MemoryStore();
+      const store = await createStore();
       const driver = new FakeDriver();
       const principal = await store.createPrincipal("e2e", ["admin"], ["*"]);
       const key = issueMachineKey(PEPPER);
@@ -67,23 +75,49 @@ describe("end-to-end workspace lifecycle", () => {
         workspaceRoot: join(dir, "storage"),
         checkpointRoot: join(dir, "checkpoints"),
       });
-      const secretResolver = {
-        resolve: async () => [],
-        resolveSourceCredential: async () => sourceCredential,
-      };
-      const { app, websocket, scheduler } = buildServer({
+      const encryptionKey = randomBytes(32);
+      await createSecretVault(store, encryptionKey).put(key.id, "git-clone", {
+        type: "setup-issuer",
+        value: { url: issuer.url, authorization: issuer.authorization, policy: issuer.policy },
+      });
+      const inputRoot = await mkdtemp(join(tmpdir(), "pc-e2e-trusted-inputs-"));
+      cleanups.push(() => rm(inputRoot, { recursive: true, force: true }));
+      const built = buildServer({
+        inputStorageOptions: {
+          driver: new FilesystemInputStorage(inputRoot, [dir]),
+          limits: {
+            fileBytes: 1048576,
+            stagedBytes: 8388608,
+            files: 16,
+            transfers: 2,
+            transferMs: 30000,
+            retentionMs: 600000,
+          },
+          capacity: async () => ({
+            workspace: { bytes: 8388608, files: 16 },
+            principal: { bytes: 8388608, files: 16 },
+            instance: { bytes: 8388608, files: 16 },
+            freeDisk: { bytes: 16777216, files: 32, headroomBytes: 0, headroomFiles: 0 },
+          }),
+        },
         store,
         driver,
         storageDriver,
-        secretResolver,
+        secretKey: encryptionKey.toString("base64url"),
+        issuerClient: createIssuerClient({ ca: issuer.ca }),
         pepper: PEPPER,
         limits: DEFAULT_LIMITS,
         workspaceServerUrl: "placeholder",
       });
+      registerServerTestCleanup(store, built);
+      const { app, agentApp, websocket, scheduler } = built;
       const server = Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
-        fetch: app.fetch,
+        fetch: (request, server) =>
+          new URL(request.url).pathname.startsWith("/v1/agent/")
+            ? agentApp.fetch(request, server)
+            : app.fetch(request, server),
         websocket,
       });
       cleanups.push(() => server.stop(true));
@@ -114,8 +148,7 @@ describe("end-to-end workspace lifecycle", () => {
       expect(driver.created[0]?.secrets).toEqual([]);
 
       // 3. Start the real supervisor with the provider input, pointed
-      // at the real WSS endpoint. HOME points at the test directory so
-      // supervisor-owned attachment storage stays inside the sandbox.
+      // at the real WSS endpoint. HOME is separate from canonical input storage.
       const originalHome = process.env.HOME;
       process.env.HOME = dir;
       cleanups.push(() => {
@@ -134,7 +167,7 @@ describe("end-to-end workspace lifecycle", () => {
 
       // 4. The workspace becomes ready after setup + harness health.
       await waitFor(async () => (await store.getWorkspace(ws.id))?.state === "ready", 15_000, "workspace ready");
-      await verifySourceSecretBoundary(store, ws.id, setupMarker, harnessEnvironment, sourceCredential);
+      await verifySourceSecretBoundary(store, ws.id, setupMarker, harnessEnvironment, issuer.controls.captured);
 
       // 5. Converse through the relay.
       const post = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/message`, {
@@ -179,8 +212,8 @@ describe("end-to-end workspace lifecycle", () => {
       ]);
       expect(conversation.map(({ seq }) => seq)).toEqual([1, 2]);
 
-      // 5b. Attachments flow end-to-end through the real supervisor.
-      await verifyAttachmentFlow(baseUrl, ws.id, authHeaders, dir);
+      // 5b. HTTP staging stays outside workload authority, and dispatch fails closed.
+      await verifyAttachmentFlow(baseUrl, ws.id, authHeaders, dir, inputRoot, store);
 
       // 6. Undeclared routes stay rejected even on a live workspace.
       const forbidden = await fetch(`${baseUrl}/v1/workspaces/${ws.id}/services/agent/admin`, {

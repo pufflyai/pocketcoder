@@ -34,6 +34,10 @@ function parseReference(reference: string) {
   ) {
     throw new Error("Kubernetes secret refs must use secretRef:<secret-name>/<key>");
   }
+  // Pull authority belongs to the kubelet, even when a template names another workspace's Secret.
+  if (secretName.startsWith("pocketcoder-ws-") && secretName.endsWith("-registry")) {
+    throw new Error("Controller registry Secrets cannot be read by workspaces");
+  }
   return { secretName, key };
 }
 

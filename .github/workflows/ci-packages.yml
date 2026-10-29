@@ -28,6 +28,13 @@ jobs:
           node-version: 22.19.0
       - name: Verify publishable package contents
         run: bun run pack:check
+      - name: Pack candidate packages from the same source commit
+        run: bun run candidate:packages pack "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
       - name: Export portable task results for this run
         run: bun --no-env-file scripts/ci/task-cache.ts export
       - uses: actions/upload-artifact@v4

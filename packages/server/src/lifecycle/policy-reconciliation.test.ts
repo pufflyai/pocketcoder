@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
 import { PolicyReconciliation } from "./policy-reconciliation";
 
+const createStore = createTestStoreFactory();
+
 test("policy reconciliation retries terminal reservations after a lost response and restart", async () => {
-  const runtime = await createTestServer({ globalActiveWorkspaces: 0 });
+  const runtime = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
   const created = await runtime.app.request(
     "/v1/workspaces",
     authed(runtime.token, {

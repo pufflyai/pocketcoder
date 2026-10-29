@@ -8,15 +8,25 @@ export const KeyIssueRequestSchema = z.strictObject({
     .max(128)
     .regex(/^[A-Za-z0-9._:-]+$/),
   scopes: z.array(z.enum(SCOPES)).min(1).max(SCOPES.length),
+  templates: z.array(z.string().min(1).max(128)).max(100).optional(),
+  managed_principal_ids: z.array(z.uuid()).max(100).optional(),
   expires_at: z.iso.datetime(),
 });
 export type KeyIssueRequest = z.infer<typeof KeyIssueRequestSchema>;
+
+// Omitting expires_at keeps the predecessor's lifetime, capped at the calling key's expiry.
+export const KeyRotateRequestSchema = KeyIssueRequestSchema.pick({ request_id: true, expires_at: true }).partial({
+  expires_at: true,
+});
+export type KeyRotateRequest = z.infer<typeof KeyRotateRequestSchema>;
 
 export const KeyResourceSchema = z.object({
   id: z.uuid(),
   principal_id: z.uuid(),
   scopes: z.array(z.string()),
   effective_scopes: z.array(z.string()),
+  templates: z.array(z.string()).nullable(),
+  effective_templates: z.array(z.string()),
   managed_principal_ids: z.array(z.uuid()),
   issuance_request_id: z.string().nullable(),
   created_at: z.iso.datetime(),
@@ -29,3 +39,8 @@ export const KeyIssueResponseSchema = z.object({ key: KeyResourceSchema, token: 
 export type KeyIssueResponse = z.infer<typeof KeyIssueResponseSchema>;
 export const KeyListResponseSchema = z.object({ items: z.array(KeyResourceSchema), next_cursor: z.uuid().nullable() });
 export type KeyListResponse = z.infer<typeof KeyListResponseSchema>;
+
+export const ExpiringKeySchema = KeyResourceSchema.extend({ principal_name: z.string() });
+export type ExpiringKey = z.infer<typeof ExpiringKeySchema>;
+export const ExpiringKeyListResponseSchema = z.object({ items: z.array(ExpiringKeySchema) });
+export type ExpiringKeyListResponse = z.infer<typeof ExpiringKeyListResponseSchema>;

@@ -1,11 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import type { AttachmentDescriptor, ProtocolVersion } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import type { ProtocolVersion } from "@pstdio/pocketcoder-contracts";
+import { registerTestCleanup } from "@pstdio/pocketcoder-db/testing";
+import { FilesystemInputStorage } from "@pstdio/pocketcoder-drivers";
 import { DEFAULT_LIMITS, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import type { WSContext } from "hono/ws";
 import { type BuiltServer, buildServer } from "../app";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
 
 const PEPPER = "attachment-pepper";
 
@@ -15,8 +20,7 @@ export interface TestServer extends BuiltServer {
   relayOnlyToken: string;
 }
 
-export async function createTestServer(): Promise<TestServer> {
-  const store = new MemoryStore();
+export async function createTestServer(store: Store): Promise<TestServer> {
   const driver = new FakeDriver();
   const principal = await store.createPrincipal(
     "attachment-backend",
@@ -54,13 +58,33 @@ export async function createTestServer(): Promise<TestServer> {
     description: null,
     spec: parsed.manifest.spec,
   });
+  const root = await mkdtemp(join(tmpdir(), "pc-http-inputs-"));
+  registerTestCleanup(store, () => rm(root, { recursive: true, force: true }), "resources");
   const built = buildServer({
+    inputStorageOptions: {
+      driver: new FilesystemInputStorage(root, []),
+      limits: {
+        fileBytes: 1024 * 1024,
+        stagedBytes: 8 * 1024 * 1024,
+        files: 16,
+        transfers: 2,
+        transferMs: 5000,
+        retentionMs: 600_000,
+      },
+      capacity: async () => ({
+        workspace: { bytes: 8 * 1024 * 1024, files: 16 },
+        principal: { bytes: 8 * 1024 * 1024, files: 16 },
+        instance: { bytes: 8 * 1024 * 1024, files: 16 },
+        freeDisk: { bytes: 16 * 1024 * 1024, files: 32, headroomBytes: 0, headroomFiles: 0 },
+      }),
+    },
     store,
     driver,
     pepper: PEPPER,
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
   });
+  registerServerTestCleanup(store, built);
   return { ...built, store, token: key.token, relayOnlyToken: relayOnly.token };
 }
 
@@ -93,97 +117,15 @@ export async function readyWorkspace(server: TestServer): Promise<string> {
   return ws.id;
 }
 
-interface FakeUpload {
-  attachmentId: string;
-  name: string;
-  mediaType: string;
-  declared: number;
-  received: Buffer[];
-}
-
-// An in-memory stand-in for the supervisor's attachment manager, driven by
-// the frames the hub sends over the (fake) socket.
 export function fakeAgent(server: TestServer, workspaceId: string, protocolVersion: ProtocolVersion = 3) {
-  const stored = new Map<string, AttachmentDescriptor>();
-  const ops = new Map<string, FakeUpload>();
   const frames: Array<{ type: string; payload: Record<string, unknown> }> = [];
   const proxied: Array<{ path: string; body: unknown }> = [];
   const connId = randomUUID();
-
-  const finishUpload = (
-    conn: NonNullable<ReturnType<TestServer["hub"]["get"]>>,
-    op: FakeUpload,
-    operationId: string,
-  ) => {
-    const bytes = Buffer.concat(op.received);
-    const descriptor: AttachmentDescriptor = {
-      id: op.attachmentId,
-      name: op.name,
-      path: `/home/pocketcoder/.pcd/attachments/${op.attachmentId}/${op.name}`,
-      media_type: op.mediaType,
-      size_bytes: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-    };
-    const existing = stored.get(op.attachmentId);
-    if (!existing) stored.set(op.attachmentId, descriptor);
-    const identical = existing?.sha256 === descriptor.sha256;
-    const existingStatus = identical ? "existing" : "conflict";
-    server.hub.pushAttachment(conn, {
-      kind: "result",
-      payload: {
-        operation_id: operationId,
-        status: existing ? existingStatus : "created",
-        descriptor: existing && identical ? existing : descriptor,
-      },
-    });
-  };
-
   const respond = (frame: { type: string; payload: Record<string, unknown> }) => {
     const conn = server.hub.get(workspaceId);
     if (!conn) return;
     const payload = frame.payload;
-    const operationId = payload.operation_id as string;
-    const op = ops.get(operationId);
     switch (frame.type) {
-      case "attachment_start":
-        ops.set(operationId, {
-          attachmentId: payload.attachment_id as string,
-          name: payload.name as string,
-          mediaType: payload.media_type as string,
-          declared: payload.size_bytes as number,
-          received: [],
-        });
-        return;
-      case "attachment_chunk": {
-        if (!op) return;
-        op.received.push(Buffer.from(payload.content_b64 as string, "base64"));
-        server.hub.pushAttachment(conn, {
-          kind: "ack",
-          payload: {
-            operation_id: operationId,
-            seq: payload.seq as number,
-            received_bytes: Buffer.concat(op.received).byteLength,
-          },
-        });
-        return;
-      }
-      case "attachment_finish":
-        if (op) finishUpload(conn, op, operationId);
-        return;
-      case "attachment_resolve": {
-        const ids = payload.attachment_ids as string[];
-        const missing = ids.find((id) => !stored.has(id));
-        server.hub.pushAttachment(conn, {
-          kind: "resolved",
-          payload: missing
-            ? { operation_id: operationId, missing_id: missing }
-            : {
-                operation_id: operationId,
-                descriptors: ids.map((id) => stored.get(id) as AttachmentDescriptor),
-              },
-        });
-        return;
-      }
       case "proxy_request": {
         proxied.push({
           path: payload.path as string,
@@ -212,7 +154,7 @@ export function fakeAgent(server: TestServer, workspaceId: string, protocolVersi
   } as unknown as WSContext;
   const conn = server.hub.attach(workspaceId, connId, 1, ws, protocolVersion);
   conn.registered = true;
-  return { conn, stored, frames, proxied };
+  return { conn, frames, proxied };
 }
 
 export function uploadRequest(token: string, bytes: Uint8Array, overrides: Record<string, string> = {}): RequestInit {
@@ -222,6 +164,7 @@ export function uploadRequest(token: string, bytes: Uint8Array, overrides: Recor
       "content-type": "text/plain",
       "content-disposition": 'attachment; filename="notes.txt"',
       "content-length": String(bytes.byteLength),
+      "x-content-sha256": createHash("sha256").update(bytes).digest("hex"),
       ...overrides,
     },
     body: bytes,

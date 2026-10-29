@@ -1,10 +1,5 @@
-import {
-  type ConversationFact,
-  type ConversationMessageInput,
-  type ConversationRequestIdentity,
-  ConversationRequestIdentitySchema,
-  canonicalJson,
-} from "@pstdio/pocketcoder-contracts";
+import { type ConversationFact, ConversationRequestIdentitySchema, canonicalJson } from "@pstdio/pocketcoder-contracts";
+import type { ConversationMessageInput, ConversationRequestIdentity } from "@pstdio/pocketcoder-sdk";
 import { readAgentApiEvents } from "../stream/agentapi-events";
 import { delay } from "./client-helpers";
 import { remoteResponseError } from "./remote-request-error";

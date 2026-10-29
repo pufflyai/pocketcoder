@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
-import type { ProviderInput } from "@pstdio/pocketcoder-contracts";
+import {
+  type ProviderInput,
+  parseWorkloadTemplate,
+  runtimeCredentialReferences,
+  workloadSnapshotOf,
+} from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
-
+import { capacityReason, recordAdmissionReason, recordCapacityReasons } from "./admission-feedback";
+import { cleanupUncommittedProvider } from "./provider-termination";
 import type { SchedulerContext } from "./scheduler-base";
+import { prepareWaitingRuntime } from "./waiting-runtime";
 
 export class SchedulerAdmission {
   constructor(private readonly context: SchedulerContext) {}
@@ -27,11 +34,7 @@ export class SchedulerAdmission {
   }
 
   canAdmit(row: WorkspaceRow, counts: ActiveCounts): boolean {
-    const { limits } = this.context.deps;
-    const principalActive = counts.byPrincipal[row.principalId] ?? 0;
-    if (principalActive >= limits.perPrincipalActiveWorkspaces) return false;
-    const templateLimit = limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
-    return (counts.byTemplate[row.templateName] ?? 0) < templateLimit;
+    return capacityReason(row, counts, this.context.deps.limits) === null;
   }
 
   recordAdmission(row: WorkspaceRow, counts: ActiveCounts): void {
@@ -48,6 +51,7 @@ export class SchedulerAdmission {
   ): Promise<boolean> {
     let progressed = false;
     for (const principalId of rotation) {
+      if (this.context.deps.admissionFenced?.()) break;
       if (counts.global >= this.context.deps.limits.globalActiveWorkspaces) break;
       const list = byPrincipal.get(principalId);
       const row = list?.[0];
@@ -72,35 +76,50 @@ export class SchedulerAdmission {
 
   async admit(): Promise<void> {
     const { store, limits } = this.context.deps;
-    let counts: ActiveCounts;
-    try {
-      counts = await store.countActive();
-    } catch (err) {
-      this.context.report("admit.count", err);
-      return;
-    }
-    while (counts.global < limits.globalActiveWorkspaces) {
-      let queued: WorkspaceRow[];
+    while (true) {
+      if (this.context.deps.admissionFenced?.()) return;
+      let snapshot: Awaited<ReturnType<typeof store.readAdmissionSnapshot>>;
       try {
-        queued = await store.listQueuedHeads();
+        snapshot = await store.readAdmissionSnapshot();
       } catch (err) {
-        this.context.report("admit.list", err);
+        this.context.report("admit.snapshot", err);
         return;
       }
+      if (snapshot.queuedCount === 0) return;
+      if (await recordCapacityReasons(this.context, snapshot.counts, snapshot)) {
+        // Feedback bumps the cursor used by the atomic warm lease. Refresh
+        // before policy evaluation; later changes still fail the stale guard.
+        snapshot = await store.readAdmissionSnapshot();
+      }
+      const { counts, queued, queuedCount } = snapshot;
+      if (counts.global >= limits.globalActiveWorkspaces) return;
       if (queued.length === 0) return;
       // The store returns only each principal's FIFO head, so a deep backlog
       // cannot hide another principal from the round-robin rotation.
       const byPrincipal = this.groupQueuedByPrincipal(queued);
       const rotation = this.principalRotation(byPrincipal);
+      const before = counts.global;
       if (!(await this.admitRound(byPrincipal, rotation, counts))) return;
+      // All rows in this snapshot were admitted; new arrivals wait for the next tick.
+      if (counts.global - before === queuedCount) return;
+      await recordCapacityReasons(this.context, counts);
+      if (counts.global >= limits.globalActiveWorkspaces) return;
     }
   }
 
   private async authorized(row: WorkspaceRow): Promise<boolean> {
     if (!this.context.deps.authorizeLaunch) return true;
     try {
-      return (await this.context.deps.authorizeLaunch(row)) === true;
+      const decision = await this.context.deps.authorizeLaunch(row);
+      if (decision === true) return true;
+      await recordAdmissionReason(
+        this.context,
+        row.id,
+        typeof decision === "object" ? decision.reason : "admission_denied",
+      );
+      return false;
     } catch {
+      await recordAdmissionReason(this.context, row.id, "admission_unavailable");
       this.context.report(`admit.policy.${row.id}`, new Error("Launch policy unavailable"));
       return false;
     }
@@ -109,6 +128,7 @@ export class SchedulerAdmission {
   async launch(row: WorkspaceRow): Promise<boolean> {
     const { store, driver, secrets } = this.context.deps;
     if (!(await this.authorized(row))) return false;
+    if (this.context.deps.admissionFenced?.()) return false;
     const now = this.context.now();
     const secret = secrets.generate();
     const registrationDigest = secrets.digest(secret);
@@ -134,7 +154,8 @@ export class SchedulerAdmission {
     };
     if (this.context.deps.warmPool) {
       const hit = await this.context.deps.warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
-      if (hit) return true;
+      if (hit === "leased") return true;
+      if (hit === "deferred") return false;
       if (this.context.deps.warmPool.missDecision(row) === "wait") return false;
     }
     const claimed = await store.claimWorkspaceAdmission({
@@ -145,14 +166,11 @@ export class SchedulerAdmission {
       limits: this.context.deps.limits,
     });
     if (!claimed) return false;
+    let providerCreationStarted = false;
     try {
       const mounts = await this.prepareStorage(claimed);
-      if (!this.context.deps.secretResolver && JSON.stringify(claimed.templateSnapshot.spec).includes('"secretRef:')) {
-        throw new Error("secret.unavailable: no deployment secret resolver configured");
-      }
-      const runtimeSecrets = this.context.deps.secretResolver
-        ? await this.context.deps.secretResolver.resolve(claimed)
-        : [];
+      const runtimeSecrets = await this.resolveRuntimeSecrets(claimed);
+      providerCreationStarted = true;
       const ref = await driver.create({
         workspace: claimed,
         input,
@@ -160,17 +178,19 @@ export class SchedulerAdmission {
         secrets: runtimeSecrets,
       });
       await store.updateWorkspace(row.id, { providerKind: driver.kind, providerRef: ref }, this.context.now());
+      await this.prepareRuntime({ ...claimed, providerKind: driver.kind, providerRef: ref });
       return true;
     } catch (err) {
       this.context.report(`launch.${row.id}`, err);
       const at = this.context.now();
+      if (!(await this.cleanupFailedLaunch(claimed, providerCreationStarted))) return false;
       if (claimed.launchAttempts < this.context.deps.limits.maxLaunchAttempts) {
         // No provider object was created; the bounded requeue is legal.
         await store.transition(row.id, {
           from: ["provisioning"],
           to: "queued",
           at,
-          patch: { registrationDigest: null, registrationExpiresAt: null },
+          patch: { providerKind: null, providerRef: null, registrationDigest: null, registrationExpiresAt: null },
         });
       } else {
         const failurePatch = await this.context.captureLaunchFailure(row.id, err, at);
@@ -192,7 +212,46 @@ export class SchedulerAdmission {
     }
   }
 
+  private async prepareRuntime(workspace: WorkspaceRow) {
+    if (!workspace.templateSnapshot.manifest) return;
+    const { store, driver, workloadLimits } = this.context.deps;
+    await prepareWaitingRuntime(
+      { store, driver, workloadLimits },
+      workspace,
+      workloadSnapshotOf(parseWorkloadTemplate(workspace.templateSnapshot.manifest)),
+    );
+  }
+
+  private async resolveRuntimeSecrets(row: WorkspaceRow) {
+    const spec = row.templateSnapshot.spec;
+    if (spec.setup.some((step) => Object.values(step.env).some((value) => value.startsWith("secretRef:"))))
+      throw new Error("secret.unavailable: setup environment credentials are not supported");
+    if (runtimeCredentialReferences(spec).length && !this.context.deps.revokeWorkspaceLeases)
+      throw new Error("secret.unavailable: no runtime issuer configured");
+    return [];
+  }
+
+  private async cleanupFailedLaunch(row: WorkspaceRow, providerCreationStarted: boolean) {
+    if (!providerCreationStarted) return true;
+    try {
+      await cleanupUncommittedProvider(
+        this.context.deps.store,
+        this.context.deps.driver,
+        row,
+        this.context.graceSeconds(row),
+      );
+      return true;
+    } catch (error) {
+      // Registration expiry retries cleanup without declaring the failed launch settled.
+      this.context.report(`launch.cleanup.${row.id}`, error);
+      return false;
+    }
+  }
+
   async prepareStorage(row: WorkspaceRow): Promise<RuntimeMountRef[]> {
+    if (this.context.deps.transferRuntime) {
+      return this.context.deps.transferRuntime.prepareStorage(row);
+    }
     const mounts = row.templateSnapshot.spec.persistence.mounts;
     if (mounts.length === 0) return [];
     const storageDriver = this.context.deps.storageDriver;

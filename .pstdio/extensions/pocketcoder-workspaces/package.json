@@ -1,0 +1,27 @@
+{
+  "name": "pocketcoder-workspaces",
+  "version": "0.1.0",
+  "displayName": "PocketCoder Workspaces",
+  "description": "Use a configured PocketCoder deployment as a Prompt Studio workspace provider.",
+  "publisher": "pocketcoder",
+  "main": "./extension.ts",
+  "engines": {
+    "pstdio": "^0.1.1"
+  },
+  "pstdio": {
+    "scope": "user"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/sdk": "0.40.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}

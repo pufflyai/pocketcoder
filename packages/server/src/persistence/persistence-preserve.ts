@@ -6,10 +6,26 @@ import {
   parseDurationMs,
   type ReasonCode,
 } from "@pstdio/pocketcoder-contracts";
-import type { PrincipalRow, WorkspaceCheckpointRow, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
+import type {
+  PrincipalRow,
+  WorkspaceCheckpointRow,
+  WorkspaceOperationRow,
+  WorkspaceRow,
+} from "@pstdio/pocketcoder-runtime-core";
 
-import type { PersistenceContext } from "./persistence-base";
+import { checkpointProvider, type PersistenceContext } from "./persistence-base";
 import type { PersistencePreserveRunner } from "./persistence-preserve-runner";
+
+function admissionBytes(context: PersistenceContext, workspace: WorkspaceRow) {
+  // Transfers reserve their measured archive after capture; this check admits the checkpoint count only.
+  if (context.deps.checkpointTransfers) return 0;
+  return workspace.templateSnapshot.spec.persistence.mounts.reduce((sum, mount) => sum + mount.maxBytes, 0);
+}
+
+function policyOperationReason(reason: ReasonCode) {
+  if (reason === "preserved_by_policy") return reason;
+  return null;
+}
 
 export class PreservePersistenceService {
   constructor(
@@ -53,7 +69,7 @@ export class PreservePersistenceService {
     ) {
       throw new ApiError("validation.invalid", "retention may not exceed the template checkpoint policy");
     }
-    this.context.storageDriver();
+    this.context.requirePersistence();
     const checkpointId = randomUUID();
     const operationId = randomUUID();
     const now = this.context.now();
@@ -67,7 +83,7 @@ export class PreservePersistenceService {
       workspaceId,
       checkpointId: null,
       resultWorkspaceId: null,
-      reasonCode: null,
+      reasonCode: policyOperationReason(transitionReason),
       attemptCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -92,10 +108,7 @@ export class PreservePersistenceService {
       };
     }
     try {
-      await this.context.assertPreserveAdmission(
-        principal.id,
-        workspace.templateSnapshot.spec.persistence.mounts.reduce((sum, mount) => sum + mount.maxBytes, 0),
-      );
+      await this.context.assertPreserveAdmission(principal.id, admissionBytes(this.context, workspace));
     } catch (error) {
       await this.context.failOperation(operationId, "checkpoint_quota_exceeded");
       throw error;
@@ -116,7 +129,7 @@ export class PreservePersistenceService {
       parentCheckpointId: workspace.latestCheckpointId,
       state: "creating",
       reasonCode: null,
-      providerKind: this.context.storageDriver().kind,
+      providerKind: checkpointProvider(this.context),
       providerRef: null,
       templateSnapshot: workspace.templateSnapshot,
       templateDigest: workspace.templateDigest,
@@ -151,9 +164,11 @@ export class PreservePersistenceService {
       await this.context.failOperation(operationId, "operation_conflict");
       throw new ApiError("operation.conflict", "Another workspace lifecycle operation won.");
     }
-    void this.preserveRunner.runPreserve(preserving.id, checkpoint.id, operationId).catch((error) => {
-      this.context.deps.log?.(`preserve ${operationId}: ${String(error)}`);
-    });
+    this.context.track(
+      this.preserveRunner.runPreserve(preserving.id, checkpoint.id, operationId).catch((error) => {
+        this.context.deps.log?.(`preserve ${operationId}: ${String(error)}`);
+      }),
+    );
     return {
       workspaceId,
       checkpoint,

@@ -1,0 +1,98 @@
+# Publishes each account Ingress host to DigitalOcean DNS. TXT ownership records keep
+# retries from duplicating records; sync policy removes them with the Ingress.
+# v0.20.0 is the last release with the DigitalOcean provider (removed in v0.21.0).
+# Its filters select whole zones. Only pocketcoder Ingress hosts are published, and
+# the TXT registry never changes records this owner did not create.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pocketcoder-dns
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-dns
+  namespace: pocketcoder-dns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pocketcoder-dns
+rules:
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pocketcoder-dns
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pocketcoder-dns
+subjects:
+  - kind: ServiceAccount
+    name: external-dns
+    namespace: pocketcoder-dns
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+  namespace: pocketcoder-dns
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-dns
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: external-dns
+    spec:
+      serviceAccountName: external-dns
+      nodeSelector:
+        pocketcoder.dev/pool: system
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: external-dns
+          image: registry.k8s.io/external-dns/external-dns:v0.20.0@sha256:ddc7f4212ed09a21024deb1f470a05240837712e74e4b9f6d1f2632ff10672e7
+          args:
+            - --source=ingress
+            - --ingress-class=pocketcoder
+            - --provider=digitalocean
+            - --domain-filter=datazine.app
+            - --domain-filter=kaset.dev
+            - --policy=sync
+            - --registry=txt
+            - --txt-owner-id=pocketcoder-ams3-1
+            - --txt-wildcard-replacement=wildcard
+            - --interval=1m
+          env:
+            - name: DO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: digitalocean-dns
+                  key: token
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+              ephemeral-storage: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

@@ -13,9 +13,37 @@ fields. The caller must own the workspace. The response is an operation with
 
 Admission commits a permanent deletion fence with the operation. New provider
 admission, relay, uploads, preserve, restore, and content writes are blocked.
-Already admitted copies finish before deletion. The controller drains an active
-launch, proves provider termination, removes the owned storage, and checks the
-backend inventory before marking the operation `succeeded`.
+With filesystem checkpoints, already admitted copies finish before deletion.
+The controller drains an active launch, proves provider termination, removes the
+owned storage, and checks the backend inventory before marking the operation
+`succeeded`.
+
+### Purge during a checkpoint transfer
+
+With Docker checkpoint transfers, purge does not wait for an active transfer to
+reach its deadline. It cancels the source upload and every restore download of
+the workspace's checkpoints, then waits for that work to stop. The canceled
+preserve fails and the source is stopped. A restore that was copying from the
+purged workspace can never become ready, so its destination fails with
+`restore_failed`. Purging a restore destination cancels only its own download;
+the source keeps its checkpoint. A restore that finished before the purge is an
+independent workspace and keeps its own files.
+
+Partial and final archives stay charged until their files are removed. If a
+removal fails, the operation stays `pending` with `purge_storage_unavailable`
+and the bytes stay charged. After the problem is fixed, the next scheduler pass
+or a controller restart retries the same operation. Late uploads, old download
+grants and restores of the purged checkpoint are rejected.
+
+To check the flow against real Docker, run:
+
+```sh
+bun run example:e2e:docker-checkpoint-purge
+```
+
+It purges during a held upload, purges a source and then a destination during
+held restore downloads, then blocks archive deletion, restarts the controller, and checks that the retry removes the files
+and releases their charge.
 
 Storage and provider errors keep the operation `pending`, with no completion
 time. The controller retries it each scheduler interval and after restart. Its
@@ -99,23 +127,29 @@ by a successful live purge.
 | `POST /v1/principals/{principalId}/workspaces/{id}/purge` | `workspaces:recover` |
 | `GET /v1/principals/{principalId}/operations/{id}` | `workspaces:recover` |
 
-Every endpoint also requires the exact target principal ID in the calling key's
-`managed_principal_ids`. There is no implicit cross-principal admin bypass.
-Bootstrap that grant locally using an operator principal with `admin` authority:
+A delegated recovery key must name the exact target in `managed_principal_ids`.
+Purge and recovery-operation routes always require that exact grant. For key
+inventory and issuance, explicit owner admin also permits bounded administration;
+an ordinary key issuer can only manage targets within its current grants.
+
+With a running server and a bounded owner key in `POCKETCODER_KEY`, create a
+dedicated recovery principal, then use its returned ID:
 
 ```sh
-pcd principals create --name cleanup-operator --scopes admin
-pcd keys issue --principal cleanup-operator \
+pcd principals create --name cleanup-operator \
   --scopes keys:read,keys:write,workspaces:recover \
-  --manage-principals "$TENANT_PRINCIPAL_ID" \
+  --templates "$TENANT_TEMPLATE" --json
+pcd keys issue --principal-id "$RECOVERY_PRINCIPAL_ID" \
+  --scopes keys:read,keys:write,workspaces:recover \
+  --templates "$TENANT_TEMPLATE" --manage-principals "$TENANT_PRINCIPAL_ID" \
   --request-id "$OPERATOR_ISSUANCE_ID" --expires "$SHORT_EXPIRY" --json
 ```
 
 Keep this expiring key in the operator backend, outside every workspace. It has
-no workload creation or relay scope. Public issuance cannot create an admin key
-or another delegated operator. Inventory and recovery keys do not need a database
-URL or the authentication pepper. Local bootstrap commands use those controller
-secrets only in the operator environment.
+no workload creation or relay scope. Delegated issuance cannot create admin or
+recovery authority. Explicit owner issuance can create those grants with a bounded
+expiry. Inventory and recovery commands only need the server URL and machine key;
+they do not open the data folder or read the authentication pepper.
 
 Public issuance accepts `request_id`, nonempty `scopes`, and a future
 `expires_at`. Request identity, normalized input digest, and key metadata commit
@@ -134,20 +168,27 @@ The independent operator remains able to reconcile and purge the disabled target
 
 ## Backup replay and rollout
 
-1. Upgrade the controller first and run `pcd db migrate`. This release adds one
-   forward migration; it preserves existing allocations and credentials.
-2. Pin compatible reviewed CLI/controller and SDK artifacts. The existing
-   workspace protocol is unchanged; no new workspace credential is introduced.
-3. Restore database and storage backups into an isolated environment. Keep normal
-   client traffic and admission closed. Restore the independent deletion journal.
-4. Disable ordinary target-principal access before starting normal service.
-   Bootstrap a separate, explicitly constrained recovery operator if needed.
-5. Use `client.recovery.purge(principalId, workspaceId, freshExecutionId)` for each
-   journal entry. Poll `client.recovery.operation(principalId, operationId)`.
-   A historical successful receipt is never proof about restored physical data.
-6. Verify live content removal, reconcile authoritative keys, and call
-   `client.keys.revokeAll(principalId)` as authorized. Do not reactivate tenant
-   access to obtain cleanup authority. Open service only after all journals pass.
+The controller records every purge, checkpoint deletion, conversation deletion, key revocation,
+principal disable or scope narrowing, secret retirement or replacement and template retirement in
+its deletion journal before the database changes. The journal lives outside the data folder and
+is never part of a backup.
+
+1. Upgrade the controller first. Startup applies known forward migrations.
+2. Pin compatible reviewed CLI/controller and SDK artifacts. The workspace protocol is unchanged.
+3. Restore with `pcd backup restore` into a new folder. The restored controller starts in recovery
+   with only its private admin socket open, so client traffic and admission stay closed.
+4. Run `pcd recovery complete`. It requires the original journal to reach the backup's position,
+   repeats every journaled revocation and retirement, fails and removes the runtimes the backup
+   lists as running, revokes their issuer leases, and runs every journaled purge and deletion
+   again with operation keys that belong to this recovery. A historical successful receipt is
+   never proof about restored physical data.
+5. Completion moves the journal's writer claim to the restored folder, so the old folder cannot
+   start again. Restart `pcd serve` to open service. If any step fails, recovery stays closed;
+   fix the cause and run `pcd recovery complete` again.
+
+Consumers that keep their own deletion journal can still repeat purges after service opens with
+`client.recovery.purge(principalId, workspaceId, freshExecutionId)` and
+`client.recovery.operation(principalId, operationId)`.
 
 Kito K-2 owns downstream integration and hosted acceptance. Its capacity, shared
 storage, external retention, and live Kubernetes failure gates remain separate

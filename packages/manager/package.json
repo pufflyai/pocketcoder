@@ -1,0 +1,43 @@
+{
+  "name": "@pstdio/pocketcoder-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "nx": {
+    "tags": [
+      "scope:manager",
+      "type:app"
+    ]
+  },
+  "exports": {
+    ".": "./src/app.ts",
+    "./store": "./src/database/store.ts",
+    "./kubernetes": "./src/kubernetes/accounts.ts",
+    "./backup": "./src/backup/config.ts",
+    "./purge": "./src/purge.ts",
+    "./recovery": "./src/recovery/manager-backup.ts",
+    "./upgrades": "./src/upgrade/releases.ts",
+    "./monitoring": "./src/monitoring/index.ts"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --target bun --outdir dist",
+    "test": "bun test",
+    "typecheck": "tsc --project ./tsconfig.json --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "bun scripts/build-seed.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@pstdio/pocketcoder-contracts": "workspace:*",
+    "@pstdio/pocketcoder-db": "workspace:*",
+    "@pstdio/pocketcoder-drivers": "workspace:*",
+    "@pstdio/pocketcoder-server": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
+    "hono": "^4.8.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "1.0.0-rc.4"
+  }
+}

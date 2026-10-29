@@ -1,8 +1,16 @@
 export type {
+  AcceptedInputManifest,
+  AgentInterruptResponse,
+  BrowserAction,
   CheckpointResource,
   CheckpointState,
   ConversationMessageIdentity,
+  ConversationMessageInput,
   ConversationRequestIdentity,
+  CredentialSlot,
+  ExportObjectReference,
+  InputObjectReference,
+  InstalledWorkload,
   KeyIssueRequest,
   KeyIssueResponse,
   KeyListResponse,
@@ -14,18 +22,36 @@ export type {
   OperationState,
   OutputResource,
   PreserveRequest,
+  PrincipalCreateRequest,
+  PrincipalResource,
+  PrincipalUpdateRequest,
   RestoreRequest,
+  ScreenshotResource,
+  SecretPutRequest,
+  SecretResource,
   ServerTerminalMessage,
   StorageState,
   TerminalSession,
+  ViewSessionOptions,
+  WorkloadAcceptance,
+  WorkloadCancel,
+  WorkloadCapability,
+  WorkloadDeployment,
+  WorkloadExecutionReference,
+  WorkloadExportReference,
+  WorkloadInputObject,
+  WorkloadInputProperty,
+  WorkloadLimits,
+  WorkloadOperation,
+  WorkloadTemplate,
+  WorkloadTemplateSnapshot,
   WorkspaceResource,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 export { PocketCoderClient } from "./client";
 export { AdministrationApi } from "./resources/admin/admin";
+export { AgentApi, type AgentMessageInput } from "./resources/agent/agent";
 export {
-  AgentApi,
-  type AgentMessageInput,
   type AttachmentDescriptor,
   AttachmentsApi,
   type AttachmentUploadInput,
@@ -36,6 +62,8 @@ export type { ConversationMessage, ConversationPage } from "./resources/conversa
 export { ConversationsApi } from "./resources/conversations/conversations";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
+export { PrincipalsApi } from "./resources/principals/principals";
+export { SecretsApi } from "./resources/secrets/secrets";
 export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,

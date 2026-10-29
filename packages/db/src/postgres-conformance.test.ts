@@ -1,66 +1,50 @@
 import { describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { registerStoreContract } from "@pstdio/pocketcoder-testkit";
-import { SQL } from "bun";
-import { getMigrationStatus, migrateDatabase } from "./migrations/migrator";
-import { PostgresStore } from "./store";
-import { TEST_DATABASE_URL } from "./test-fixtures";
+import { createPostgresContext } from "./database/postgres-context";
+import { postgresSqlClient } from "./database/sql-client";
+import { getMigrationStatus } from "./migrations/migrator";
+import { createPostgresTestDatabase, TEST_DATABASE_URL } from "./postgres-test-schema";
+import { DatabaseStore } from "./store";
 
 registerStoreContract("PostgreSQL", {
   enabled: Boolean(TEST_DATABASE_URL),
   async create() {
-    const url = TEST_DATABASE_URL as string;
-    const schema = `pkt_contract_${randomUUID().slice(0, 8)}`;
-    const sql = new SQL(url);
-    await migrateDatabase(sql, schema);
-    const store = new PostgresStore(url, schema);
-    await store.init();
+    const database = await createPostgresTestDatabase("pc_contract");
+    const store = await DatabaseStore.openPostgres(database);
     return {
       store,
       async dispose() {
         await store.close();
-        await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-        await sql.end();
+        await database.drop();
       },
     };
   },
 });
 
-describe.skipIf(!TEST_DATABASE_URL)("postgres store lifecycle", () => {
-  test("store startup checks migrations without applying them", async () => {
-    const url = TEST_DATABASE_URL as string;
-    const schema = `pkt_init_${randomUUID().slice(0, 8)}`;
-    const sql = new SQL(url);
-    const store = new PostgresStore(url, schema);
+describe.skipIf(!TEST_DATABASE_URL)("PostgreSQL store lifecycle", () => {
+  test("startup refuses pending migrations instead of applying them", async () => {
+    const database = await createPostgresTestDatabase("pc_pending", { migrate: false });
     try {
-      await expect(store.init()).rejects.toThrow("pending migrations");
-      expect((await getMigrationStatus(sql, schema)).every((migration) => migration.appliedAt === null)).toBe(true);
-      await migrateDatabase(sql, schema);
-      await store.init();
+      await expect(createPostgresContext(database)).rejects.toThrow("run pcd db migrate");
+      const status = await getMigrationStatus(postgresSqlClient(database.admin), database.schema);
+      expect(status.every((row) => row.appliedAt === null)).toBe(true);
     } finally {
-      await store.close();
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await sql.end();
+      await database.drop();
     }
   });
 
-  test("allows only one PostgreSQL coordinator per schema", async () => {
-    const url = TEST_DATABASE_URL as string;
-    const schema = `pkt_lease_${randomUUID().slice(0, 8)}`;
-    const sql = new SQL(url);
-    const first = new PostgresStore(url, schema);
-    const second = new PostgresStore(url, schema);
+  test("allows one coordinator per schema across connections", async () => {
+    const database = await createPostgresTestDatabase("pc_lease");
+    const first = await DatabaseStore.openPostgres({ url: database.url, schema: database.schema });
+    const second = await DatabaseStore.openPostgres({ url: database.url, schema: database.schema });
     try {
-      await migrateDatabase(sql, schema);
-      await Promise.all([first.init(), second.init()]);
       const release = await first.acquireCoordinatorLease();
       await expect(second.acquireCoordinatorLease()).rejects.toThrow("already active");
       await release();
       await expect(second.acquireCoordinatorLease()).resolves.toBeFunction();
     } finally {
       await Promise.all([first.close(), second.close()]);
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await sql.end();
+      await database.drop();
     }
   });
 });

@@ -2,6 +2,15 @@
 
 A lightweight control plane for coding agents in isolated workspaces.
 
+The development `pocketcoder` executable embeds PGlite, its seed and migrations.
+It needs no Bun install or source checkout. With Docker running, `pocketcoder
+serve` starts at `127.0.0.1:8090` and keeps private state in `./pc_data`.
+Follow the [commit-pinned download and workspace round trip](docs/getting-started.md#standalone-development-download).
+See [candidate installation](docs/candidate-installation.md) for all three targets and Node package consumers.
+CI measures startup, peak memory and executable size. Development builds are
+Actions artifacts named by full commit; they do not publish stable releases or
+change `latest`.
+
 - a **template** is a reviewed, versioned definition of a coding-agent
   environment;
 - a **workspace** is one isolated instance of a template and the lifecycle
@@ -48,28 +57,25 @@ release, but cannot be mixed with `agent`.
 
 ```sh
 bun install
-bun test                       # full suite (in-memory store; no Docker needed)
+bun test                       # full suite, using memory and disk PGlite
 
-# In-memory control plane with no durable state:
-POCKETCODER_STORE=memory bun run pcd -- server start --foreground
 ```
 
 The manifests in `examples/templates` intentionally contain placeholder image
 and gateway values. Validate them offline, but do not use that directory as a
 runnable server catalog.
 
-With PostgreSQL (dedicated database or an existing one; pocketcoder only
-touches its own schema, default `pocketcoder`):
+Set a private data folder on local disk or a block volume.
+The fixed `pocketcoder` schema migrates automatically. Local admin commands
+run while the server is stopped and hold the same folder lock.
 
 ```sh
-docker compose -f deploy/compose/docker-compose.yaml up -d
-export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
-export POCKETCODER_DATABASE_SCHEMA=pocketcoder
-export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
+export POCKETCODER_DIR="$PWD/pc_data"
+export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
+# Keep the pepper in private operator configuration for later restarts.
 
-bun run pcd db migrate
 bun run pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read --templates '*'
-bun run pcd keys issue --principal my-backend --expires never   # shown once
+bun run pcd keys issue --principal my-backend --expires "$(bun -e 'console.log(new Date(Date.now() + 86_400_000).toISOString())')"   # shown once
 
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
 bun run pcd -- server start
@@ -95,7 +101,7 @@ start|status|stop`; see the [getting-started guide](docs/getting-started.md).
 Then add the machine key to `.env` in the repository root:
 
 ```dotenv
-POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_URL=http://127.0.0.1:8090
 POCKETCODER_KEY=pkt_…
 ```
 
@@ -119,9 +125,10 @@ curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
 
-The OpenAPI document is served at `/v1/openapi.json`. CI publishes the
-`server`, `workspace`, and `egress` images under `ghcr.io/<owner>/<repo>/` on
-pushes to `main` and version tags (see `.github/workflows/images.yml`).
+The OpenAPI document is served at `/v1/openapi.json`. The candidate workflow
+publishes six image roles under `ghcr.io/<owner>/<repo>/` after native scans and
+role smoke pass. Tags identify the full source commit. See
+[candidate images](docs/candidate-images.md); it does not publish stable or version tags.
 
 ## Commands
 
@@ -154,9 +161,10 @@ Lerna coordinates tasks across `packages/*` and the private
 `examples/harnesses/*` packages; its Nx integration
 provides the project graph and task cache configured in `nx.json`.
 
-Two suites need external services and skip themselves otherwise:
-`POCKETCODER_TEST_DATABASE_URL=postgres://…` runs the PostgreSQL store suite
-(migrations, schema isolation, store behavior), and
+The PGlite memory and disk suites run without an external database. Linux
+database tests also require `strace` for the real seed durability ordering
+regression. That Linux-only regression is skipped on Darwin. Docker suites
+require a running daemon, and
 `POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
 
 Harness and client integrations live under [`examples/`](examples/). The
@@ -221,14 +229,12 @@ trusted publisher. Do not keep a publish token in the repository.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DATABASE_URL` | required (postgres store) | PostgreSQL server/database |
-| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | Runtime schema (dedicated or shared DB) |
-| `POCKETCODER_STORE` | `postgres` | `memory` for tests/single-process development |
-| `POCKETCODER_AUTH_PEPPER` | required (postgres store) | Keyed digest secret for machine keys |
+| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
+| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
-| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1:7080` | Listen address |
+| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1:8090` | Listen address |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |

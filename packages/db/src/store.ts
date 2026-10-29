@@ -1,26 +1,97 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
-import { createDatabaseContext, createLifecycle } from "./database/context";
+import { type BackupOptions, writeBackup } from "./backup/write-backup";
+import { createLifecycle, type DatabaseContext, type DatabaseOpenOptions } from "./database/context";
+import { createPGliteContext } from "./database/pglite-context";
+import { createPostgresContext, type PostgresOptions } from "./database/postgres-context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
+import type { JournalSnapshot } from "./journal/acknowledgement";
+import { createJournalAcknowledgement } from "./journal/acknowledgement";
 import { createAuth } from "./modules/auth/repository";
+import { convertLegacyConversations } from "./modules/conversations/legacy-conversion";
 import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
 import { createNetworkAudit } from "./modules/network-audit/repository";
 import { createOutbox } from "./modules/outbox/repository";
+import { createBinaryOutputs } from "./modules/outputs/binary-outputs";
 import { createOutputs } from "./modules/outputs/repository";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
 import { createContentPurge } from "./modules/persistence/content";
+import { createInputManifests } from "./modules/persistence/inputs/manifests";
+import { createInputObjects } from "./modules/persistence/inputs/objects";
 import { createOperations } from "./modules/persistence/operations";
+import { createStorageReservations } from "./modules/persistence/reservations";
 import { createStorage } from "./modules/persistence/storage";
+import { createCheckpointTransfers } from "./modules/persistence/transfers";
+import { createWorkspaceLeases } from "./modules/secrets/leases";
+import { createSecrets } from "./modules/secrets/repository";
 import { createTemplates } from "./modules/templates/repository";
 import { createTerminals } from "./modules/terminals/repository";
 import { createWarmPools } from "./modules/warm-pools/repository";
 import { createAdmission } from "./modules/workspaces/admission";
+import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
+import { createExecutionDispatch } from "./modules/workspaces/execution-dispatch";
+import { createFiniteProcesses } from "./modules/workspaces/finite-process";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
+import { createRecovery } from "./recovery/recovery";
+import { createRecordReplay } from "./recovery/replay-records";
 
-export class PostgresStore implements Store {
-  constructor(databaseUrl: string, schema = "pocketcoder", options: { max?: number } = {}) {
-    const context = createDatabaseContext(databaseUrl, schema, options);
+export class DatabaseStore implements Store {
+  readonly executions: Store["executions"];
+  readonly inputs: Store["inputs"];
+  readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
+  readonly binaryOutputs: ReturnType<typeof createBinaryOutputs>;
+  readonly storageReservations: ReturnType<typeof createStorageReservations>;
+  readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
+  readonly recovery: ReturnType<typeof createRecovery>;
+
+  static async openPGlite(dataDir?: string, options?: DatabaseOpenOptions) {
+    const context = await createPGliteContext(dataDir, options);
+    try {
+      await convertLegacyConversations(context);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
+  }
+
+  // A database restore can roll back revocations and deletions. Journal records name exact
+  // targets, so replaying all of them on every start keeps those changes in force.
+  static async openPostgres(options: PostgresOptions) {
+    const context = await createPostgresContext(options);
+    try {
+      await convertLegacyConversations(context, { onProgress: options.onConversionProgress });
+      const replay = createRecordReplay(context);
+      for (const record of context.journal?.records() ?? []) await replay(record.event);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return new DatabaseStore(context);
+  }
+
+  readonly driver: DatabaseContext["driver"];
+  // Test fixtures and operator commands reach the raw connection through this.
+  readonly context: DatabaseContext;
+
+  constructor(context: DatabaseContext) {
+    this.driver = context.driver;
+    this.context = context;
+    const journal = createJournalAcknowledgement(context);
+    this.acknowledgeJournal = journal.acknowledge;
+    this.journalStatus = journal.status;
+    this.journalSnapshot = () => {
+      if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
+      return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
+    };
+    this.executions = createExecutionDispatch(context);
+    this.inputs = { ...createInputObjects(context), ...createInputManifests(context) };
+    this.checkpointTransfers = createCheckpointTransfers(context);
+    this.binaryOutputs = createBinaryOutputs(context);
+    this.storageReservations = createStorageReservations(context);
+    this.backup = (options) => writeBackup(context, options);
+    this.recovery = createRecovery(context);
     const lifecycle = createLifecycle(context);
     const content = createContentPurge(context);
     this.listWorkspaceStorage = content.listWorkspaceStorage;
@@ -32,9 +103,32 @@ export class PostgresStore implements Store {
     this.upsertTemplate = templates.upsertTemplate;
     this.listTemplates = templates.listTemplates;
     this.getTemplate = templates.getTemplate;
-    this.setTemplateStatus = templates.setTemplateStatus;
+    this.publishTemplate = templates.publishTemplate;
+    this.retireTemplate = journal.after(templates.retireTemplate);
+    const leases = createWorkspaceLeases(context);
+    this.requestWorkspaceLease = leases.requestWorkspaceLease;
+    this.getWorkspaceLease = leases.getWorkspaceLease;
+    this.listWorkspaceLeases = leases.listWorkspaceLeases;
+    this.listPendingWorkspaceLeases = leases.listPendingWorkspaceLeases;
+    this.recordWorkspaceLeaseIssued = leases.recordWorkspaceLeaseIssued;
+    this.recordWorkspaceLeaseDelivered = leases.recordWorkspaceLeaseDelivered;
+    this.requestWorkspaceLeaseRevocation = leases.requestWorkspaceLeaseRevocation;
+    this.fenceWorkspaceLeases = leases.fenceWorkspaceLeases;
+    this.hasWorkspaceLeaseFence = leases.hasWorkspaceLeaseFence;
+    this.recordWorkspaceLeaseRevoked = leases.recordWorkspaceLeaseRevoked;
+    this.recordWorkspaceLeaseExpired = leases.recordWorkspaceLeaseExpired;
+    const secrets = createSecrets(context);
+    this.writeSecret = journal.after(secrets.writeSecret);
+    this.listSecrets = secrets.listSecrets;
+    this.retireSecret = journal.after(secrets.retireSecret);
+    this.readSecret = secrets.readSecret;
+    this.readSecretVersion = secrets.readSecretVersion;
     const auth = createAuth(context);
+    this.bootstrapOwnerKey = journal.after(auth.bootstrapOwnerKey);
     this.createPrincipal = auth.createPrincipal;
+    this.createManagedPrincipal = auth.createManagedPrincipal;
+    this.updateManagedPrincipal = journal.after(auth.updateManagedPrincipal);
+    this.applyConfiguredPrincipal = journal.after(auth.applyConfiguredPrincipal);
     this.getPrincipalByName = auth.getPrincipalByName;
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
@@ -42,22 +136,29 @@ export class PostgresStore implements Store {
     this.getPrincipal = auth.getPrincipal;
     this.issueMachineKey = auth.issueMachineKey;
     this.listMachineKeys = auth.listMachineKeys;
-    this.revokePrincipalKeys = auth.revokePrincipalKeys;
+    this.listActiveMachineKeys = auth.listActiveMachineKeys;
+    this.revokePrincipalKeys = journal.after(auth.revokePrincipalKeys);
     this.insertMachineKey = auth.insertMachineKey;
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
-    this.revokeMachineKey = auth.revokeMachineKey;
+    this.revokeMachineKey = journal.after(auth.revokeMachineKey);
     this.touchMachineKey = auth.touchMachineKey;
+    const processes = createFiniteProcesses(context);
+    this.bindWorkspaceRuntime = processes.bindWorkspaceRuntime;
+    this.markWorkspaceRuntimeReady = processes.markWorkspaceRuntimeReady;
+    this.recordFiniteProcess = processes.recordFiniteProcess;
+    this.endWorkspaceRuntime = processes.endWorkspaceRuntime;
     const workspaces = createWorkspaces(context);
     this.insertWorkspace = workspaces.insertWorkspace;
     this.getWorkspaceByIdempotency = workspaces.getWorkspaceByIdempotency;
     this.getWorkspace = workspaces.getWorkspace;
     this.listWorkspaces = workspaces.listWorkspaces;
     const admission = createAdmission(context);
-    this.listQueuedHeads = admission.listQueuedHeads;
+    this.readAdmissionSnapshot = createAdmissionSnapshot(context);
     this.listNonterminal = admission.listNonterminal;
     this.countActive = admission.countActive;
     this.countQueued = admission.countQueued;
     this.claimWorkspaceAdmission = admission.claimWorkspaceAdmission;
+    this.setQueuedAdmissionReason = admission.setQueuedAdmissionReason;
     const transitions = createTransitions(context);
     this.updateWorkspace = transitions.updateWorkspace;
     this.transition = transitions.transition;
@@ -73,7 +174,7 @@ export class PostgresStore implements Store {
     this.listCheckpoints = checkpoints.listCheckpoints;
     this.updateCheckpoint = checkpoints.updateCheckpoint;
     const operations = createOperations(context);
-    this.insertOperation = operations.insertOperation;
+    this.insertOperation = journal.after(operations.insertOperation);
     this.getOperation = operations.getOperation;
     this.getOperationByIdempotency = operations.getOperationByIdempotency;
     this.listIncompleteOperations = operations.listIncompleteOperations;
@@ -98,11 +199,18 @@ export class PostgresStore implements Store {
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
     this.acceptConversationRequest = conversations.acceptConversationRequest;
-    this.appendConversationMessage = conversations.appendConversationMessage;
-    this.readConversation = conversations.readConversation;
+    this.isAcceptedTurn = conversations.isAcceptedTurn;
+    this.commitConversationTurn = conversations.commitConversationTurn;
+    this.appendWorkspaceMessage = conversations.appendWorkspaceMessage;
+    this.readWorkspaceConversation = conversations.readWorkspaceConversation;
+    this.listConversations = conversations.listConversations;
+    this.getConversation = conversations.getConversation;
+    this.readConversationMessages = conversations.readConversationMessages;
+    this.readConversationRecords = conversations.readConversationRecords;
     this.getConversationState = conversations.getConversationState;
-    this.setConversationExpiry = conversations.setConversationExpiry;
-    this.deleteConversation = conversations.deleteConversation;
+    this.deleteConversation = journal.after(conversations.deleteConversation);
+    this.deleteConversationById = journal.after(conversations.deleteConversationById);
+    this.recordInterruptedTurns = conversations.recordInterruptedTurns;
     this.pruneExpiredConversations = conversations.pruneExpiredConversations;
     const terminals = createTerminals(context);
     this.openTerminalSession = terminals.openTerminalSession;
@@ -116,15 +224,43 @@ export class PostgresStore implements Store {
     this.appendEvent = outbox.appendEvent;
     this.waitForWorkspaceChange = createWorkspaceWaiter(context, workspaces.getWorkspace);
   }
+  readonly markWorkspaceRuntimeReady: Store["markWorkspaceRuntimeReady"];
+  readonly bindWorkspaceRuntime: Store["bindWorkspaceRuntime"];
+  readonly recordFiniteProcess: Store["recordFiniteProcess"];
+  readonly endWorkspaceRuntime: Store["endWorkspaceRuntime"];
   readonly listWorkspaceStorage: Store["listWorkspaceStorage"];
   readonly purgeWorkspaceContent: Store["purgeWorkspaceContent"];
+  readonly writeSecret: Store["writeSecret"];
+  readonly listSecrets: Store["listSecrets"];
+  readonly retireSecret: Store["retireSecret"];
+  readonly readSecret: Store["readSecret"];
+  readonly readSecretVersion: Store["readSecretVersion"];
+  readonly requestWorkspaceLease: Store["requestWorkspaceLease"];
+  readonly getWorkspaceLease: Store["getWorkspaceLease"];
+  readonly listWorkspaceLeases: Store["listWorkspaceLeases"];
+  readonly listPendingWorkspaceLeases: Store["listPendingWorkspaceLeases"];
+  readonly recordWorkspaceLeaseIssued: Store["recordWorkspaceLeaseIssued"];
+  readonly recordWorkspaceLeaseDelivered: Store["recordWorkspaceLeaseDelivered"];
+  readonly requestWorkspaceLeaseRevocation: Store["requestWorkspaceLeaseRevocation"];
+  readonly fenceWorkspaceLeases: Store["fenceWorkspaceLeases"];
+  readonly hasWorkspaceLeaseFence: Store["hasWorkspaceLeaseFence"];
+  readonly recordWorkspaceLeaseRevoked: Store["recordWorkspaceLeaseRevoked"];
+  readonly recordWorkspaceLeaseExpired: Store["recordWorkspaceLeaseExpired"];
   readonly init: Store["init"];
+  readonly acknowledgeJournal: () => Promise<void>;
+  readonly journalStatus: Store["journalStatus"];
+  readonly journalSnapshot: () => JournalSnapshot;
   readonly close: Store["close"];
   readonly acquireCoordinatorLease: Store["acquireCoordinatorLease"];
   readonly upsertTemplate: Store["upsertTemplate"];
   readonly listTemplates: Store["listTemplates"];
   readonly getTemplate: Store["getTemplate"];
-  readonly setTemplateStatus: Store["setTemplateStatus"];
+  readonly publishTemplate: Store["publishTemplate"];
+  readonly retireTemplate: Store["retireTemplate"];
+  readonly createManagedPrincipal: Store["createManagedPrincipal"];
+  readonly updateManagedPrincipal: Store["updateManagedPrincipal"];
+  readonly applyConfiguredPrincipal: Store["applyConfiguredPrincipal"];
+  readonly bootstrapOwnerKey: Store["bootstrapOwnerKey"];
   readonly createPrincipal: Store["createPrincipal"];
   readonly getPrincipalByName: Store["getPrincipalByName"];
   readonly listPrincipals: Store["listPrincipals"];
@@ -133,6 +269,7 @@ export class PostgresStore implements Store {
   readonly getPrincipal: Store["getPrincipal"];
   readonly issueMachineKey: Store["issueMachineKey"];
   readonly listMachineKeys: Store["listMachineKeys"];
+  readonly listActiveMachineKeys: Store["listActiveMachineKeys"];
   readonly revokePrincipalKeys: Store["revokePrincipalKeys"];
   readonly insertMachineKey: Store["insertMachineKey"];
   readonly getMachineKeyWithPrincipal: Store["getMachineKeyWithPrincipal"];
@@ -142,11 +279,12 @@ export class PostgresStore implements Store {
   readonly getWorkspaceByIdempotency: Store["getWorkspaceByIdempotency"];
   readonly getWorkspace: Store["getWorkspace"];
   readonly listWorkspaces: Store["listWorkspaces"];
-  readonly listQueuedHeads: Store["listQueuedHeads"];
+  readonly readAdmissionSnapshot: Store["readAdmissionSnapshot"];
   readonly listNonterminal: Store["listNonterminal"];
   readonly countActive: Store["countActive"];
   readonly countQueued: Store["countQueued"];
   readonly claimWorkspaceAdmission: Store["claimWorkspaceAdmission"];
+  readonly setQueuedAdmissionReason: Store["setQueuedAdmissionReason"];
   readonly updateWorkspace: Store["updateWorkspace"];
   readonly transition: Store["transition"];
   readonly listStateHistory: Store["listStateHistory"];
@@ -178,11 +316,18 @@ export class PostgresStore implements Store {
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
   readonly acceptConversationRequest: Store["acceptConversationRequest"];
-  readonly appendConversationMessage: Store["appendConversationMessage"];
-  readonly readConversation: Store["readConversation"];
+  readonly isAcceptedTurn: Store["isAcceptedTurn"];
+  readonly commitConversationTurn: Store["commitConversationTurn"];
+  readonly appendWorkspaceMessage: Store["appendWorkspaceMessage"];
+  readonly readWorkspaceConversation: Store["readWorkspaceConversation"];
+  readonly listConversations: Store["listConversations"];
+  readonly getConversation: Store["getConversation"];
+  readonly readConversationMessages: Store["readConversationMessages"];
+  readonly readConversationRecords: Store["readConversationRecords"];
   readonly getConversationState: Store["getConversationState"];
-  readonly setConversationExpiry: Store["setConversationExpiry"];
   readonly deleteConversation: Store["deleteConversation"];
+  readonly deleteConversationById: Store["deleteConversationById"];
+  readonly recordInterruptedTurns: Store["recordInterruptedTurns"];
   readonly pruneExpiredConversations: Store["pruneExpiredConversations"];
   readonly openTerminalSession: Store["openTerminalSession"];
   readonly getTerminalSession: Store["getTerminalSession"];

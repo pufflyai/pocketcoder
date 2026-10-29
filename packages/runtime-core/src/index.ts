@@ -1,3 +1,20 @@
+export type {
+  InputBackingRef,
+  InputByteWriter,
+  InputClaim,
+  InputLimits,
+  InputManifestRow,
+  InputProjectionRef,
+  InputProjectionStorage,
+  InputStorageDriver,
+  InputStore,
+  PublishedInputProjection,
+  ReadStorageCapacity,
+  StoredInput,
+  WorkspaceLeasePurpose,
+  WorkspaceLeaseRow,
+  WorkspaceLeaseStore,
+} from "@pstdio/pocketcoder-runtime-contracts";
 export {
   type ActiveCounts,
   type AllocatedStorage,
@@ -5,15 +22,22 @@ export {
   buildEventEnvelope,
   type CheckpointRef,
   type CheckpointUsage,
+  type ConversationDocumentRow,
   type ConversationMessageRow,
+  type ConversationRecordRow,
+  type ConversationRetention,
   type ConversationStateRow,
   type ConversationStore,
+  type ConversationTurnCommit,
   type DiscoveredCheckpoint,
   type DiscoveredProvider,
   type DiscoveredStorage,
   type DiscoveredWarmProvider,
+  deadlinePreservationExpiry,
+  type EncryptedSecret,
   type LogRow,
   type LogStore,
+  MAX_CHECKPOINT_PRESERVATION_MS,
   type MachineKeyRow,
   type NetworkAuditStore,
   type NetworkEventRow,
@@ -28,9 +52,12 @@ export {
   type RuntimeMountRef,
   type RuntimeMountSource,
   type RuntimeSecretRef,
+  type SecretMetadata,
+  type SecretStore,
   type SnapshotResult,
   type StateHistoryRow,
   type StorageAllocation,
+  type StorageCapacity,
   type StorageRef,
   type Store,
   type StoreLifecycle,
@@ -55,6 +82,7 @@ export {
   type WorkspaceAdmissionClaim,
   type WorkspaceCheckpointPatch,
   type WorkspaceCheckpointRow,
+  type WorkspaceConversationMessage,
   type WorkspaceDriver,
   type WorkspaceInsert,
   type WorkspaceInsertResult,
@@ -70,8 +98,19 @@ export {
   type WorkspaceStoragePatch,
   type WorkspaceStorageRow,
   type WorkspaceStore,
+  type WorkspaceTransferRuntime,
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
+export { rotatePrincipalKey, successorExpiry } from "./keys/key-rotation";
+export { bootstrapLocalOwnerKey, bootstrapLocalRecoveryKey } from "./keys/local-bootstrap";
+export {
+  assertAuthorityScope,
+  assertKeyIssueAuthority,
+  assertPrincipalWithinAuthority,
+  intersectTemplateGrants,
+  keyAuthority,
+  principalWithinAuthority,
+} from "./keys/principal-authority";
 export { type MetricLabels, type MetricSink, RuntimeMetrics } from "./observability/metrics";
 export { type OutboxDeps, OutboxDispatcher } from "./outbox/outbox";
 export { type PersistenceReconcileDeps, reconcilePersistence } from "./reconciliation/persistence-reconcile";
@@ -82,6 +121,7 @@ export {
   loadTemplateSource,
   type RegistryLoadResult,
 } from "./registry/registry";
+export { ExecutionDispatcher, type ExecutionTransport } from "./scheduler/execution-dispatcher";
 export { stopWorkspaceProvider } from "./scheduler/provider-termination";
 export {
   type AdmissionLimits,
@@ -92,6 +132,7 @@ export {
   type SchedulerDeps,
   type SecretFactory,
 } from "./scheduler/scheduler";
+export { prepareWaitingRuntime } from "./scheduler/waiting-runtime";
 export {
   type ResolvedWarmPool,
   resolveWarmPools,
@@ -104,3 +145,4 @@ export {
   type WarmPoolMetrics,
   warmPoolFingerprint,
 } from "./warm-pool/warm-pool";
+export { cleanupWarmProvider } from "./warm-pool/warm-provider-cleanup";

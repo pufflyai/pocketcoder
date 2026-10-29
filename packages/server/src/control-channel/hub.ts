@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  type CheckpointPrepared,
   type ClientTerminalMessage,
   PROTOCOL_VERSION,
+  type PrepareCheckpointArchive,
   type ProtocolVersion,
   type ProxyRequest,
   type ProxyResponse,
@@ -16,43 +18,30 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { ConnectionHub } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
-import { type RelayStreamChannel, RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
+import { PreviewSocketBridge } from "../previews/socket-bridge";
+import { RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "../terminals/terminal-bridge";
-import { type AttachmentChannel, type AttachmentEvent, AttachmentRegistry } from "./hub-attachments";
+import { bufferedRelay, MAX_INFLIGHT_RELAY } from "./buffered-relay";
+import type { LiveConnection } from "./hub-connection";
+
+export type { LiveConnection } from "./hub-connection";
+
+import { type AttachmentEvent, AttachmentRegistry } from "./hub-attachments";
+import { CheckpointRegistry } from "./hub-checkpoints";
 
 // In-memory registry of live supervisor connections. Exactly one connection
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
-// durable; PostgreSQL only records epoch metadata.
+// durable; PGlite only records epoch metadata.
 
-export interface LiveConnection {
-  workspaceId: string;
-  connectionId: string;
-  epoch: number;
-  ws: WSContext;
-  lastSeqIn: number;
-  seqOut: number;
-  inflight: Map<string, PendingRelay>;
-  streams: Map<string, RelayStreamChannel>;
-  registered: boolean;
-  protocolVersion: ProtocolVersion;
-  checkpoints: Map<string, PendingCheckpoint>;
-  attachments: Map<string, AttachmentChannel>;
-}
-
-interface PendingRelay {
-  resolve: (res: ProxyResponse) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-interface PendingCheckpoint {
-  resolve: (quiesced: boolean) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-export const MAX_INFLIGHT_RELAY = 16;
+export { MAX_INFLIGHT_RELAY } from "./buffered-relay";
 
 export class Hub implements ConnectionHub {
+  readonly previewSockets = new PreviewSocketBridge((conn, payload) => this.send(conn, "preview_socket", payload));
   private readonly byWorkspace = new Map<string, LiveConnection>();
+  private readonly archiveCheckpoints = new CheckpointRegistry(
+    (connection) => this.byWorkspace.get(connection.workspaceId) === connection,
+    (connection, type, payload) => this.send(connection, type, payload),
+  );
   private readonly attachments = new AttachmentRegistry<LiveConnection>(
     (connection) => this.byWorkspace.get(connection.workspaceId) === connection,
   );
@@ -89,10 +78,13 @@ export class Hub implements ConnectionHub {
       epoch,
       ws,
       lastSeqIn: -1,
+      lastHeartbeatAt: new Date(),
       seqOut: 0,
       inflight: new Map(),
       streams: new Map(),
       registered: false,
+      restoreInstalled: false,
+      harnessRunning: false,
       protocolVersion,
       checkpoints: new Map(),
       attachments: new Map(),
@@ -162,6 +154,14 @@ export class Hub implements ConnectionHub {
     }
   }
 
+  prepareCheckpointArchive(workspaceId: string, payload: PrepareCheckpointArchive) {
+    return this.archiveCheckpoints.prepare(this.byWorkspace.get(workspaceId), payload);
+  }
+
+  resolveCheckpointArchive(connection: LiveConnection, declaration: CheckpointPrepared) {
+    this.archiveCheckpoints.prepared(connection, declaration);
+  }
+
   prepareCheckpoint(workspaceId: string, operationId: string, deadlineMs: number): Promise<boolean> {
     const conn = this.byWorkspace.get(workspaceId);
     if (!conn?.registered || conn.protocolVersion < 2) return Promise.resolve(false);
@@ -179,6 +179,7 @@ export class Hub implements ConnectionHub {
   }
 
   resolveCheckpoint(conn: LiveConnection, operationId: string, phase: "quiescing" | "quiesced" | "failed"): void {
+    if (phase === "failed") this.archiveCheckpoints.failed(conn, operationId);
     const current = this.byWorkspace.get(conn.workspaceId);
     if (current !== conn || phase === "quiescing") return;
     const pending = conn.checkpoints.get(operationId);
@@ -189,32 +190,29 @@ export class Hub implements ConnectionHub {
   }
 
   relay(workspaceId: string, request: Omit<ProxyRequest, "request_id">): Promise<ProxyResponse> {
-    const conn = this.byWorkspace.get(workspaceId);
-    if (!conn?.registered) {
-      return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "unreachable" });
-    }
-    if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
-      return Promise.resolve({ request_id: randomUUID(), headers: {}, error_code: "deadline" });
-    }
-    const requestId = randomUUID();
-    return new Promise<ProxyResponse>((resolve) => {
-      const timer = setTimeout(() => {
-        conn.inflight.delete(requestId);
-        resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
-      }, request.deadline_ms);
-      conn.inflight.set(requestId, { resolve, timer });
-      this.send(conn, "proxy_request", { ...request, request_id: requestId });
-    });
+    return bufferedRelay(this.byWorkspace.get(workspaceId), request, (conn, type, payload) =>
+      this.send(conn, type, payload),
+    );
+  }
+
+  relayExecutionCancel(workspaceId: string, request: Omit<ProxyRequest, "request_id">) {
+    return bufferedRelay(
+      this.byWorkspace.get(workspaceId),
+      request,
+      (conn, type, payload) => this.send(conn, type, payload),
+      true,
+    );
   }
 
   relayStream(
     workspaceId: string,
     request: Omit<ProxyRequest, "request_id">,
     maxResponseBytes: number,
+    signal?: AbortSignal,
   ): Promise<RelayStreamResponse> {
     const conn = this.byWorkspace.get(workspaceId);
     const requestId = randomUUID();
-    if (!conn?.registered) {
+    if (!conn?.registered || signal?.aborted) {
       return Promise.resolve({ request_id: requestId, headers: {}, error_code: "unreachable" });
     }
     if (conn.protocolVersion < STREAMING_MIN_PROTOCOL_VERSION) {
@@ -227,7 +225,7 @@ export class Hub implements ConnectionHub {
     if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
       return Promise.resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
     }
-    const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms);
+    const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms, signal);
     this.send(conn, "proxy_request", { ...request, request_id: requestId });
     return response;
   }
@@ -348,6 +346,7 @@ export class Hub implements ConnectionHub {
   }
 
   private dropPending(conn: LiveConnection, errorCode: "unreachable"): void {
+    this.previewSockets.drop(conn);
     for (const [id, pending] of conn.inflight) {
       clearTimeout(pending.timer);
       pending.resolve({ request_id: id, headers: {}, error_code: errorCode });
@@ -361,5 +360,6 @@ export class Hub implements ConnectionHub {
     }
     conn.checkpoints.clear();
     this.attachments.drop(conn);
+    this.archiveCheckpoints.drop(conn);
   }
 }

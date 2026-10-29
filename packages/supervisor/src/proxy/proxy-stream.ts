@@ -4,6 +4,8 @@ import {
   type ProxyRequest,
   type ProxyStreamAck,
   type ProxyStreamCancel,
+  previewCookies,
+  previewResponseHeaders,
   type TemplateService,
   type TemplateServiceRoute,
 } from "@pstdio/pocketcoder-contracts";
@@ -77,13 +79,17 @@ export class ProxyStreamCoordinator {
         headers: request.headers,
         ...(request.body_b64 ? { body: Buffer.from(request.body_b64, "base64") } : {}),
         signal: controller.signal,
+        redirect: "manual",
       });
       if (stream.canceled) return;
       if (
         !this.send("proxy_stream_start", {
           request_id: request.request_id,
           status: response.status,
-          headers: responseHeaders(response),
+          headers: request.service.startsWith("pc-preview:")
+            ? previewResponseHeaders(response.headers)
+            : responseHeaders(response),
+          ...(request.service.startsWith("pc-preview:") ? { cookies: previewCookies(response.headers) } : {}),
         })
       ) {
         stream.canceled = true;

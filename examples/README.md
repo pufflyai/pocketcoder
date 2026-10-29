@@ -16,6 +16,9 @@ real harnesses.
   terminal state.
 - [`harnesses/echo/`](harnesses/echo/) is deterministic and credential-free.
   It is the default local smoke test.
+- [`e2e/docker-checkpoint.ts`](e2e/docker-checkpoint.ts) preserves an edited Docker
+  workspace and restores exact file bytes into a new workspace before a harness
+  response. See the [checkpoint runbook](../docs/docker-checkpoint-round-trip.md).
 - [`harnesses/pi/`](harnesses/pi/) runs the Pi CLI behind AgentAPI, which owns
   PocketCoder's three-route conversation contract. It uses the same E2E runner
   with an OpenAI-compatible model gateway.
@@ -32,7 +35,7 @@ real harnesses.
 
 ## Persistent local Pi workflow
 
-With PostgreSQL, a migrated PocketCoder schema, and an issued machine key
+With a private PGlite data folder and an issued machine key
 already configured:
 
 ```sh
@@ -82,13 +85,13 @@ From the repository root:
 bun run example:e2e:local
 ```
 
-The command creates a temporary PostgreSQL container, builds a locally
+The command creates a temporary PGlite data folder, builds a locally
 content-addressed echo workspace image, starts PocketCoder on the host, and
 proves:
 
 ```text
 REST create
-  → PostgreSQL queue
+  → PGlite queue
   → Docker driver
   → workspace container
   → pocketcoder-supervisor over WSS
@@ -158,7 +161,7 @@ example never selects a provider model implicitly.
 When PocketCoder and a template are already deployed:
 
 ```sh
-POCKETCODER_URL=http://127.0.0.1:7080 \
+POCKETCODER_URL=http://127.0.0.1:8090 \
 POCKETCODER_KEY=pkt_... \
 POCKETCODER_EXAMPLE_TEMPLATE=my-harness \
 bun run example:e2e

@@ -110,6 +110,15 @@ jobs:
         id: setup
         with:
           cache: unit-${{ matrix.shard }}
+      - name: Prepare runner storage before embedded database tests
+        run: |
+          time sync
+          cat packages/db/assets/pglite.wasm.zst packages/db/assets/pglite.data.zst packages/db/assets/core-seed.tar.zst > /dev/null
+      - name: Prepare and verify the Kubernetes client
+        if: contains(fromJSON(needs.plan.outputs.projects), '@pstdio/pocketcoder-manager')
+        run: |
+          timeout 30s cat "$(command -v kubectl)" > /dev/null
+          timeout 30s kubectl version --client --output=json
       - name: Run affected unit and route tests
         env:
           CI_PROJECTS: ${{ needs.plan.outputs.projects }}
@@ -120,18 +129,34 @@ jobs:
           cache: unit-${{ matrix.shard }}
           nx-hit: ${{ steps.setup.outputs.nx-hit }}
           bun-hit: ${{ steps.setup.outputs.bun-hit }}
-    services: &a1
+  stores:
+    needs: plan
+    if: needs.plan.outputs.hasProjects == 'true'
+    runs-on: ubuntu-latest
+    # New job: the store, server and upgrade suites on PostgreSQL.
+    timeout-minutes: 15
+    services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: pocketcoder
           POSTGRES_PASSWORD: pocketcoder
           POSTGRES_DB: pocketcoder
         ports:
           - 5432:5432
-        options: --health-cmd "pg_isready -U pocketcoder" --health-interval 5s --health-timeout 3s --health-retries 10
-    env: &a2
-      POCKETCODER_TEST_DATABASE_URL: postgres://pocketcoder:pocketcoder@127.0.0.1:5432/pocketcoder
+        options: --health-cmd "pg_isready -U pocketcoder" --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The upgrade harness seeds databases with earlier releases from their tags.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+        with:
+          cache: stores
+      - name: Run the store suites on PostgreSQL
+        env:
+          POCKETCODER_TEST_DATABASE_URL: postgres://pocketcoder:pocketcoder@127.0.0.1:5432/pocketcoder
+        run: bun run test:postgres
   smoke:
     needs: plan
     if: needs.plan.outputs.smoke == 'true'
@@ -144,8 +169,6 @@ jobs:
           cache: smoke
       - name: Run a real local echo workspace
         run: bun run example:e2e:local
-    services: *a1
-    env: *a2
   full:
     needs: plan
     if: needs.plan.outputs.mode == 'full'
@@ -169,6 +192,7 @@ jobs:
       - quality
       - types
       - units
+      - stores
       - smoke
       - full
       - build

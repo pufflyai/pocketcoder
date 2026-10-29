@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { markReadyThroughAgent } from "../testing/test-server.test";
 import { assertSupportedResume, insertReadyCheckpoint, server, waitFor } from "./persistence-support.test";
 
+const createStore = createTestStoreFactory();
+
 describe("persistent workspace REST workflow", () => {
   test("reserves persistence operation capacity across concurrent requests", async () => {
-    const testServer = await server({ maxConcurrentOperations: 1 });
+    const testServer = await server(await createStore(), { maxConcurrentOperations: 1 });
     const checkpointId = await insertReadyCheckpoint(testServer);
     let releaseVerification = () => {};
     const verificationGate = new Promise<void>((resolve) => {
@@ -37,7 +40,7 @@ describe("persistent workspace REST workflow", () => {
   });
 
   test("replays the original terminal error for a failed verification", async () => {
-    const testServer = await server();
+    const testServer = await server(await createStore());
     const checkpointId = await insertReadyCheckpoint(testServer);
     testServer.storageDriver.verifyCheckpoint = async () => {
       throw new Error("corrupt fixture");
@@ -64,7 +67,7 @@ describe("persistent workspace REST workflow", () => {
 
 describe("persistent workspace preservation", () => {
   test("preserves, verifies, restores, and keeps forks independent", async () => {
-    const testServer = await server();
+    const testServer = await server(await createStore());
     const createdResponse = await testServer.request("/v1/workspaces", {
       method: "POST",
       headers: { "idempotency-key": "create-persistent" },
@@ -255,7 +258,7 @@ describe("persistent workspace preservation", () => {
 
 describe("persistent workspace outputs", () => {
   test("persists only declared, bounded output metadata", async () => {
-    const testServer = await server();
+    const testServer = await server(await createStore());
     const createdResponse = await testServer.request("/v1/workspaces", {
       method: "POST",
       headers: { "idempotency-key": "output-workspace" },

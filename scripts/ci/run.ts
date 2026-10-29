@@ -13,7 +13,8 @@ if (target === "unit" || target === "typecheck") {
     "run-many",
     `--target=${target === "unit" ? "test" : target}`,
     `--projects=${projects.join(",")}`,
-    "--parallel=2",
+    // Four runners shard the tests; each keeps the original single-package CPU and disk budget.
+    `--parallel=${target === "unit" ? 1 : 2}`,
     "--outputStyle=stream",
   ];
   if (target === "unit") {
@@ -32,12 +33,16 @@ if (target === "unit" || target === "typecheck") {
     for (const path of [
       "examples/resume/tsconfig.json",
       "examples/native/tsconfig.json",
+      "examples/e2e/tsconfig.shared.json",
       "scripts/tsconfig.images.json",
       "scripts/tsconfig.monitoring.json",
       "scripts/tsconfig.recovery.json",
       "scripts/tsconfig.ci.json",
     ]) {
       if (existsSync(path)) await command(["bun", "x", "tsc", "--project", path]);
+    }
+    for (const extension of ["pocketcoder", "pocketcoder-workspaces"]) {
+      await command(["bun", "run", "--cwd", `.pstdio/extensions/${extension}`, "typecheck"]);
     }
   }
 } else {

@@ -1,0 +1,50 @@
+# Product traffic: only a controller that is admitting work.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pocketcoder-server
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "pocketcoder.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+---
+# Bootstrap jobs and admission hooks wait on /livez and read principals here while
+# /readyz fails. Otherwise readiness would wait on the hook, and the hook on readiness.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pocketcoder-server-live
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "pocketcoder.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+---
+# Workspaces reconnect while the controller is live but not ready, such as during an admission outage.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pocketcoder-agent
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "pocketcoder.selector" . | nindent 4 }}
+  ports:
+    - name: agent
+      port: {{ .Values.service.agentPort }}
+      targetPort: agent

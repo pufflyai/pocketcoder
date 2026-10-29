@@ -4,16 +4,23 @@ import { join } from "node:path";
 import type {
   DiscoveredProvider,
   DiscoveredWarmProvider,
+  InputProjectionRef,
   ProviderRef,
   ProviderState,
   WarmRuntimeLaunch,
   WorkspaceDriver,
   WorkspaceLaunch,
 } from "@pstdio/pocketcoder-runtime-core";
-import { type EgressDriverOptions, egressConfig, poolInput, workspaceInput } from "../egress/egress";
+import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
+import type { ProjectionScope } from "../filesystem/input-projection";
+import type { RegistryResolver } from "../registry/registry";
 import { appendSecurityOptions, appendWorkspaceMounts } from "./docker-args";
 import { resolveDockerImage, runDocker } from "./docker-command";
 import { createDockerEgress } from "./docker-egress";
+import { type DockerInputProjectionOptions, DockerInputs, PROJECTION_LABEL } from "./docker-inputs";
+import { pullPrivateImage } from "./docker-registry";
+import { createWarmDocker, listWarmDocker } from "./docker-warm";
+import { DockerWorkloads } from "./docker-workloads";
 
 export { resolveDockerImage } from "./docker-command";
 
@@ -30,20 +37,39 @@ export interface DockerDriverOptions extends EgressDriverOptions {
   // Private directory for temporary provider input files, removed on
   // termination and after registration.
   inputDir?: string;
+  inputProjection?: DockerInputProjectionOptions;
   // Docker network to attach; defaults to the docker default bridge.
   network?: string;
   // Adds host.docker.internal:host-gateway so workspaces can reach a
   // pocketcoder-server running on the host during development.
   addHostGateway?: boolean;
   dockerBin?: string;
+  resolveRegistry?: RegistryResolver;
 }
+
+export type ResolvedDockerOptions = Required<
+  Omit<DockerDriverOptions, keyof EgressDriverOptions | "resolveRegistry" | "inputProjection">
+> &
+  EgressDriverOptions &
+  Pick<DockerDriverOptions, "resolveRegistry">;
 
 export class DockerDriver implements WorkspaceDriver {
   readonly kind = "docker";
-  private readonly opts: Required<Omit<DockerDriverOptions, keyof EgressDriverOptions>> & EgressDriverOptions;
+  private readonly inputs?: DockerInputs;
+  private readonly opts: ResolvedDockerOptions;
+  private readonly workloads: DockerWorkloads;
 
   constructor(options: DockerDriverOptions = {}) {
+    this.inputs = options.inputProjection
+      ? new DockerInputs(
+          options.dockerBin ?? "docker",
+          options.inputProjection,
+          options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
+        )
+      : undefined;
+    this.workloads = new DockerWorkloads(options.dockerBin ?? "docker");
     this.opts = {
+      ...(options.resolveRegistry ? { resolveRegistry: options.resolveRegistry } : {}),
       inputDir: options.inputDir ?? join(tmpdir(), "pocketcoder-inputs"),
       network: options.network ?? "",
       addHostGateway: options.addHostGateway ?? true,
@@ -62,8 +88,26 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
+    const projection = await this.inputs?.prepare(launch);
+    try {
+      return await this.createWorkspace(launch, projection);
+    } catch (error) {
+      if (projection) await this.inputs?.discard(projection);
+      throw error;
+    }
+  }
+
+  private async createWorkspace(launch: WorkspaceLaunch, projection?: ProjectionScope): Promise<ProviderRef> {
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
+    if (spec.imagePullSecret) {
+      if (!this.opts.resolveRegistry) throw new Error("Stored registry credentials are unavailable");
+      await pullPrivateImage(
+        this.opts.dockerBin,
+        spec.image,
+        await this.opts.resolveRegistry(spec.imagePullSecret, spec.image),
+      );
+    }
     await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
     await chmod(this.opts.inputDir, 0o700);
     const inputFile = this.inputPath(workspace.id);
@@ -112,6 +156,7 @@ export class DockerDriver implements WorkspaceDriver {
       "-v",
       `${inputFile}:/run/pocketcoder/input:ro`,
     ];
+    if (projection && this.inputs) args.push(...this.inputs.args(projection));
     appendWorkspaceMounts(args, launch);
     appendSecurityOptions(args, spec);
     if (egressId) {
@@ -130,12 +175,16 @@ export class DockerDriver implements WorkspaceDriver {
 
     try {
       const containerId = await runDocker(this.opts.dockerBin, args);
-      return {
+      const ref = {
         kind: this.kind,
+        ...this.workloads.reference(workspace),
         id: containerId,
+        ...(projection ? { workspaceId: workspace.id, inputProjectionId: projection.projectionId } : {}),
         name: `pocketcoder-ws-${workspace.id}`,
         ...(egressId ? { egressId, egressName } : {}),
       };
+      await this.verifyCreatedProjection(ref, projection);
+      return ref;
     } catch (err) {
       await rm(inputFile, { force: true });
       await rm(egressFile, { force: true });
@@ -144,76 +193,30 @@ export class DockerDriver implements WorkspaceDriver {
     }
   }
 
+  private async verifyCreatedProjection(ref: ProviderRef, projection?: ProjectionScope) {
+    if (projection && this.inputs) {
+      try {
+        await this.inputs.inspect(ref);
+      } catch (error) {
+        await runDocker(this.opts.dockerBin, ["rm", "-f", ref.id]);
+        throw error;
+      }
+    }
+  }
+
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
-    const spec = launch.template.spec;
-    await mkdir(this.opts.inputDir, { recursive: true, mode: 0o700 });
-    await chmod(this.opts.inputDir, 0o700);
-    const inputFile = this.inputPath(`pool-${launch.runtimeId}`);
-    const restricted = spec.network.mode === "restricted";
-    const egressName = `pocketcoder-egress-pool-${launch.runtimeId}`;
-    const egressFile = this.egressInputPath(`pool-${launch.runtimeId}`);
-    let egressId: string | null = null;
-    if (restricted) {
-      await writeFile(
-        egressFile,
-        JSON.stringify(egressConfig(this.opts, launch.input, spec.network, launch.expiresAt)),
-        { mode: 0o600 },
-      );
-      egressId = await createDockerEgress(
-        this.opts,
-        egressName,
-        `pocketcoder.egress-pool=${launch.runtimeId}`,
-        DIGEST_LABEL,
-        launch.template.digest,
-        egressFile,
-      );
-    }
-    await writeFile(inputFile, JSON.stringify(restricted ? poolInput(launch.input) : launch.input), {
-      mode: 0o644,
-    });
-    const name = `pocketcoder-pool-${launch.runtimeId}`;
-    const args = [
-      "run",
-      "--detach",
-      "--name",
-      name,
-      "--label",
-      `${POOL_RUNTIME_LABEL}=${launch.runtimeId}`,
-      "--label",
-      `${DIGEST_LABEL}=${launch.template.digest}`,
-      "--restart=no",
-      "--user",
-      `${spec.security.uid}:${spec.security.gid}`,
-      "--security-opt",
-      "no-new-privileges",
-      "--cpus",
-      spec.resources.cpu.endsWith("m") ? String(Number(spec.resources.cpu.slice(0, -1)) / 1000) : spec.resources.cpu,
-      "--memory",
-      spec.resources.memory.replace("Mi", "m").replace("Gi", "g"),
-      "-v",
-      `${inputFile}:/run/pocketcoder/input:ro`,
-    ];
-    appendSecurityOptions(args, spec);
-    if (egressId) args.push("--network", `container:${egressId}`);
-    else if (this.opts.network) args.push("--network", this.opts.network);
-    if (!egressId && this.opts.addHostGateway) args.push("--add-host", "host.docker.internal:host-gateway");
-    for (const [key, value] of Object.entries(spec.env)) args.push("-e", `${key}=${value}`);
-    args.push(await resolveDockerImage(this.opts.dockerBin, spec.image), ...spec.command);
-    try {
-      const id = await runDocker(this.opts.dockerBin, args);
-      return {
-        kind: this.kind,
-        id,
-        name,
-        poolRuntimeId: launch.runtimeId,
-        ...(egressId ? { egressId, egressName } : {}),
-      };
-    } catch (error) {
-      await rm(inputFile, { force: true });
-      await rm(egressFile, { force: true });
-      if (egressId) await runDocker(this.opts.dockerBin, ["rm", "-f", egressId]).catch(() => {});
-      throw error;
-    }
+    if (this.inputs)
+      throw new Error("Immutable input projections require a fresh workspace; warm pools are unsupported.");
+    return createWarmDocker(this.opts, launch);
+  }
+
+  async publishInputs(ref: ProviderRef, input: InputProjectionRef) {
+    if (!this.inputs) throw new Error("Docker daemon-host immutable input storage is not configured.");
+    return this.inputs.publish(ref, input);
+  }
+  async releaseInputProjection(ref: ProviderRef, manifestId: string) {
+    if (!this.inputs) throw new Error("Docker daemon-host immutable input storage is not configured.");
+    await this.inputs.release(ref, manifestId);
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
@@ -221,16 +224,29 @@ export class DockerDriver implements WorkspaceDriver {
       const out = await runDocker(this.opts.dockerBin, [
         "inspect",
         "--format",
-        "{{.State.Running}} {{.State.ExitCode}}",
+        "{{.State.Running}} {{.State.ExitCode}} {{.Id}} {{.State.StartedAt}}",
         ref.id,
       ]);
-      const [running, exitCode] = out.split(" ");
-      return {
+      const [running, exitCode, containerId, startedAt] = out.split(" ");
+      const state: ProviderState = {
         exists: true,
+        // A manual restart keeps the container ID and can keep RestartCount at zero.
+        containerIdentity: `${containerId}@${startedAt}`,
         running: running === "true",
         exitCode: running === "true" ? null : Number(exitCode),
       };
-    } catch {
+      if (this.inputs && ref.inputProjectionId) {
+        try {
+          state.inputStorage = await this.inputs.inspect(ref);
+        } catch (error) {
+          state.detail = String(error);
+        }
+      }
+      state.workload = await this.workloads.inspect(ref, state, state.inputStorage);
+      return state;
+    } catch (error) {
+      // A daemon outage is not evidence that the runtime disappeared.
+      if (!(error instanceof Error) || !/No such (object|container)/i.test(error.message)) throw error;
       return { exists: false, running: false, exitCode: null };
     }
   }
@@ -255,6 +271,7 @@ export class DockerDriver implements WorkspaceDriver {
     if (typeof ref.egressId === "string") {
       await runDocker(this.opts.dockerBin, ["rm", "-f", ref.egressId]).catch(() => {});
     }
+    if (this.inputs && ref.inputProjectionId) await this.inputs.remove(ref);
     const name = typeof ref.name === "string" ? ref.name : "";
     const poolRuntimeId = typeof ref.poolRuntimeId === "string" ? ref.poolRuntimeId : "";
     if (poolRuntimeId) {
@@ -270,6 +287,7 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async purgeInput(workspaceId: string): Promise<void> {
+    await this.inputs?.purge(workspaceId);
     await rm(this.inputPath(workspaceId), { force: true });
     await rm(this.egressInputPath(workspaceId), { force: true });
   }
@@ -289,14 +307,15 @@ export class DockerDriver implements WorkspaceDriver {
     const out = await runDocker(this.opts.dockerBin, [
       "ps",
       "--all",
+      "--no-trunc",
       "--filter",
       `label=${WORKSPACE_LABEL}`,
       "--format",
-      `{{.ID}}\t{{.Label "${WORKSPACE_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}`,
+      `{{.ID}}\t{{.Label "${WORKSPACE_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}\t{{.Label "${PROJECTION_LABEL}"}}`,
     ]);
     if (!out) return [];
     return out.split("\n").map((line) => {
-      const [id = "", workspaceId = "", templateDigest = ""] = line.split("\t");
+      const [id = "", workspaceId = "", templateDigest = "", projectionId = ""] = line.split("\t");
       return {
         workspaceId,
         templateDigest,
@@ -304,6 +323,7 @@ export class DockerDriver implements WorkspaceDriver {
           kind: this.kind,
           id,
           name: `pocketcoder-ws-${workspaceId}`,
+          ...(projectionId ? { workspaceId, inputProjectionId: projectionId } : {}),
           egressId: `pocketcoder-egress-${workspaceId}`,
           egressName: `pocketcoder-egress-${workspaceId}`,
         },
@@ -312,29 +332,6 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async listWarm(): Promise<DiscoveredWarmProvider[]> {
-    const out = await runDocker(this.opts.dockerBin, [
-      "ps",
-      "--all",
-      "--filter",
-      `label=${POOL_RUNTIME_LABEL}`,
-      "--format",
-      `{{.ID}}\t{{.Label "${POOL_RUNTIME_LABEL}"}}\t{{.Label "${DIGEST_LABEL}"}}`,
-    ]);
-    if (!out) return [];
-    return out.split("\n").map((line) => {
-      const [id = "", runtimeId = "", templateDigest = ""] = line.split("\t");
-      return {
-        runtimeId,
-        templateDigest,
-        ref: {
-          kind: this.kind,
-          id,
-          name: `pocketcoder-pool-${runtimeId}`,
-          poolRuntimeId: runtimeId,
-          egressId: `pocketcoder-egress-pool-${runtimeId}`,
-          egressName: `pocketcoder-egress-pool-${runtimeId}`,
-        },
-      };
-    });
+    return listWarmDocker(this.opts.dockerBin);
   }
 }

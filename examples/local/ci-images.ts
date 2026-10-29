@@ -18,3 +18,10 @@ export async function readCiImage(context: string, dockerfile?: string) {
   const images: CiImage[] = await Bun.file(path).json();
   return selectCiImage(images, process.env.GITHUB_SHA ?? "", context, dockerfile);
 }
+
+export async function readKubernetesCiImage(role: string, hostBundled = false) {
+  if (role === "browser" || hostBundled) return null;
+  const context = role === "server" ? "." : "deploy/image";
+  const dockerfile = role === "server" ? "deploy/image/server.Dockerfile" : undefined;
+  return readCiImage(context, dockerfile);
+}

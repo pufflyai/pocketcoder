@@ -6,7 +6,7 @@
     "description": "Pi coding agent through a bounded session gateway"
   },
   "spec": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "image": "REPLACE_PI_IMAGE_REPOSITORY@sha256:REPLACE_PI_IMAGE_DIGEST",
     "setup": [
       {
@@ -19,6 +19,7 @@
     "agent": {
       "type": "custom",
       "command": ["/usr/local/bin/run-pi"],
+      "interruptKeys": "\u001b",
       "cwd": "/workspace",
       "env": {
         "PI_GATEWAY_URL": "http://pocketcoder-pi-gateway:8080/v1",
@@ -40,7 +41,11 @@
     "env": {
       "HOME": "/home/agent"
     },
-    "resources": { "cpu": "1", "memory": "1Gi" },
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi",
+      "ephemeralStorage": "2Gi"
+    },
     "timeouts": {
       "start": "5m",
       "maxAge": "1h",

@@ -1,54 +1,138 @@
 import { describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { migrateDatabase, PostgresStore } from "@pstdio/pocketcoder-db";
-import { fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
-import { SQL } from "bun";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createPostgresTestDatabase, TEST_DATABASE_URL } from "@pstdio/pocketcoder-db/testing";
+import { fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "./lifecycle";
 
-const databaseUrl = process.env.POCKETCODER_TEST_DATABASE_URL;
-const dockerAvailable =
-  Bun.which("docker") !== null &&
-  Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+type Running = Awaited<ReturnType<typeof startPocketCoderServer>>;
 
-describe.skipIf(!databaseUrl || !dockerAvailable)("PostgreSQL server lifecycle", () => {
-  test.each([false, true])("starts and drains shutdown work (legacy=%s)", async (legacy) => {
-    const schema = `startup_${randomUUID().slice(0, 8)}`;
-    const sql = new SQL(databaseUrl as string);
-    const store = new PostgresStore(databaseUrl as string, schema);
-    const messages: string[] = [];
-    let running: Awaited<ReturnType<typeof startPocketCoderServer>> | undefined;
-    try {
-      await migrateDatabase(sql, schema);
-      await store.init();
-      const parsed = fixtureTemplatePersistent();
-      await store.upsertTemplate({
-        name: parsed.manifest.metadata.name,
-        version: parsed.manifest.spec.version,
-        digest: parsed.digest,
-        description: null,
-        spec: parsed.manifest.spec,
-      });
-      if (legacy)
-        await sql.unsafe(`UPDATE "${schema}".templates SET spec = $1::jsonb`, [JSON.stringify(parsed.manifest.spec)]);
-      const config = {
-        ...loadConfig({ POCKETCODER_DATABASE_URL: databaseUrl, POCKETCODER_AUTH_PEPPER: "disposable-test-pepper" }),
-        databaseSchema: schema,
-        listenHost: "127.0.0.1",
-        listenPort: 0,
-      };
-      for (let attempt = 0; attempt < 2; attempt++) {
-        running = await startPocketCoderServer(config, { log: (message) => messages.push(message) });
-        expect((await fetch(`${running.url}/readyz`)).status).toBe(200);
-        await running.stop();
-        running = undefined;
-      }
-      expect(messages.filter((message) => message.includes("failed"))).toEqual([]);
-    } finally {
+async function postgresController() {
+  const database = await createPostgresTestDatabase("pc_server");
+  const directory = await mkdtemp(join(tmpdir(), "pc-postgres-controller-"));
+  const config = {
+    ...loadConfig({
+      POCKETCODER_DATABASE_URL: database.url,
+      POCKETCODER_AUTH_PEPPER: "disposable-postgres-pepper",
+      POCKETCODER_JOURNAL_DIR: database.journalDir,
+      POCKETCODER_DIR: directory,
+    }),
+    listenPort: 0,
+    agentPort: 0,
+  };
+  const owner = async () => {
+    const response = await fetch("http://localhost/v1/owner", {
+      unix: join(directory, "admin.sock"),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        request_id: crypto.randomUUID(),
+        automation: true,
+        expires_at: new Date(Date.now() + 600_000).toISOString(),
+      }),
+    });
+    expect(response.status).toBe(201);
+    return (await response.json()) as { token: string; key: { id: string; principal_id: string } };
+  };
+  return {
+    database,
+    config,
+    owner,
+    async dispose(running?: Running) {
       await running?.stop();
-      await store.close();
-      await sql.unsafe(`DROP SCHEMA "${schema}" CASCADE`);
-      await sql.end();
+      await database.drop();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+describe.skipIf(!TEST_DATABASE_URL)("controller on PostgreSQL", () => {
+  test("serves from PostgreSQL and keeps its data across restarts", async () => {
+    const controller = await postgresController();
+    let running: Running | undefined;
+    try {
+      const logs: string[] = [];
+      running = await startPocketCoderServer(controller.config, { log: (line) => logs.push(line) });
+      expect(logs).toContain(`store: postgres (schema pocketcoder)`);
+      const { token } = await controller.owner();
+      const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+      const template = fixtureTemplateEcho();
+      const published = await fetch(`${running.url}/v1/templates`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ manifest: template.manifest }),
+      });
+      expect(published.status).toBe(201);
+      await running.stop();
+      running = await startPocketCoderServer(controller.config, { log: () => {} });
+      const catalog = await fetch(`${running.url}/v1/templates`, { headers });
+      expect(await catalog.json()).toMatchObject({ items: [{ digest: template.digest }] });
+    } finally {
+      await controller.dispose(running);
     }
-  });
+  }, 60_000);
+
+  test("a database restore cannot bring back a revoked key", async () => {
+    const controller = await postgresController();
+    let running: Running | undefined;
+    try {
+      running = await startPocketCoderServer(controller.config, { log: () => {} });
+      const kept = await controller.owner();
+      const revoked = await controller.owner();
+      const revoke = await fetch(`${running.url}/v1/principals/${revoked.key.principal_id}/keys/${revoked.key.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${kept.token}` },
+      });
+      expect(revoke.status).toBe(200);
+      await running.stop();
+      running = undefined;
+      // A point-in-time restore from before the revocation brings the key row back.
+      await controller.database.admin.unsafe(
+        `UPDATE "pocketcoder"."machine_keys" SET revoked_at = NULL WHERE id = '${revoked.key.id}'`,
+      );
+      running = await startPocketCoderServer(controller.config, { log: () => {} });
+      const denied = await fetch(`${running.url}/v1/templates`, {
+        headers: { authorization: `Bearer ${revoked.token}` },
+      });
+      expect(denied.status).toBe(401);
+      const allowed = await fetch(`${running.url}/v1/templates`, {
+        headers: { authorization: `Bearer ${kept.token}` },
+      });
+      expect(allowed.status).toBe(200);
+    } finally {
+      await controller.dispose(running);
+    }
+  }, 60_000);
+
+  test("a second controller on the same database refuses to start", async () => {
+    const controller = await postgresController();
+    let running: Running | undefined;
+    const otherDirectory = await mkdtemp(join(tmpdir(), "pc-postgres-second-"));
+    const otherJournal = await mkdtemp(join(tmpdir(), "pc-postgres-second-journal-"));
+    try {
+      running = await startPocketCoderServer(controller.config, { log: () => {} });
+      await expect(
+        startPocketCoderServer(
+          {
+            ...controller.config,
+            dataDir: otherDirectory,
+            journalDir: controller.database.journalDir,
+          },
+          { log: () => {} },
+        ),
+      ).rejects.toThrow("Deletion journal is in use");
+      await expect(
+        startPocketCoderServer(
+          { ...controller.config, dataDir: otherDirectory, journalDir: otherJournal },
+          { log: () => {} },
+        ),
+      ).rejects.toThrow("Deletion journal is missing");
+    } finally {
+      await controller.dispose(running);
+      await rm(otherDirectory, { recursive: true, force: true });
+      await rm(otherJournal, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

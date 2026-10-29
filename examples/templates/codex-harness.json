@@ -10,6 +10,7 @@
     "image": "example.invalid/pocketcoder-oss@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
     "agent": {
       "type": "codex",
+      "model": "pocketcoder-test",
       "command": ["/usr/local/bin/run-codex"],
       "cwd": "/workspace",
       "env": {

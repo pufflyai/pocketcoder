@@ -7,9 +7,24 @@ import {
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type QueryContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import type { DeletionJournal } from "../../journal/journal";
+
+function journalOperation(journal: DeletionJournal | undefined, input: WorkspaceOperationRow) {
+  const at = input.createdAt.toISOString();
+  if (input.kind === "purge" && input.workspaceId)
+    journal?.append({ kind: "workspace_purged", principalId: input.principalId, workspaceId: input.workspaceId, at });
+  if (input.kind === "delete" && input.checkpointId)
+    journal?.append({
+      kind: "checkpoint_deleted",
+      principalId: input.principalId,
+      checkpointId: input.checkpointId,
+      at,
+    });
+}
 
 export function createOperations({
   db,
+  journal,
   schema,
   tables: { workspaceOperations: operations, workspaceCheckpoints: checkpoints, workspaces },
 }: DatabaseContext) {
@@ -17,6 +32,24 @@ export function createOperations({
   async function countIncomplete(tx: QueryContext = db) {
     const [row] = await tx.select({ n: count() }).from(operations).where(incomplete);
     return requiredRow(row).n;
+  }
+  async function admitIntent(tx: QueryContext, input: WorkspaceOperationRow) {
+    if (input.workspaceId) {
+      const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, input.workspaceId)).for("update");
+      if (workspace?.purgeRequestedAt && input.kind !== "purge")
+        throw new ApiError("operation.conflict", "Workspace content is being purged.");
+      if (input.kind === "purge")
+        await tx
+          .update(workspaces)
+          .set({ purgeRequestedAt: workspace?.purgeRequestedAt ?? input.createdAt })
+          .where(eq(workspaces.id, input.workspaceId));
+    }
+    if (input.kind === "delete" && input.checkpointId) {
+      await tx
+        .update(checkpoints)
+        .set({ state: "deleting", updatedAt: input.createdAt })
+        .where(and(eq(checkpoints.id, input.checkpointId), eq(checkpoints.principalId, input.principalId)));
+    }
   }
   return {
     async insertOperation(input: WorkspaceOperationRow, options: { maxIncompleteOperations?: number } = {}) {
@@ -34,27 +67,14 @@ export function createOperations({
           );
         if (existing)
           return { operation: existing, created: false, conflict: existing.requestDigest !== input.requestDigest };
-        if (input.workspaceId) {
-          const [workspace] = await tx
-            .select()
-            .from(workspaces)
-            .where(eq(workspaces.id, input.workspaceId))
-            .for("update");
-          if (workspace?.purgeRequestedAt && input.kind !== "purge") {
-            throw new ApiError("operation.conflict", "Workspace content is being purged.");
-          }
-          if (input.kind === "purge") {
-            await tx
-              .update(workspaces)
-              .set({ purgeRequestedAt: workspace?.purgeRequestedAt ?? input.createdAt })
-              .where(eq(workspaces.id, input.workspaceId));
-          }
-        }
+        await admitIntent(tx, input);
         if (
           options.maxIncompleteOperations !== undefined &&
           (await countIncomplete(tx)) >= options.maxIncompleteOperations
         )
           throw new OperationCapacityExceededError();
+        // Journal first, so a restore repeats every purge or checkpoint deletion that was admitted.
+        journalOperation(journal, input);
         const [row] = await tx.insert(operations).values(input).returning();
         return { operation: requiredRow(row), created: true, conflict: false };
       });

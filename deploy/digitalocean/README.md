@@ -1,329 +1,242 @@
-# PocketCoder on DigitalOcean Kubernetes
+# DigitalOcean Kubernetes example
 
-This example deploys one PocketCoder server to DigitalOcean Kubernetes (DOKS).
-It uses DigitalOcean Managed PostgreSQL and Network File Storage (NFS). The
-default Service is private. The test workspace uses the credential-free
-`persistent-echo` harness. A second flow runs the real Pi coding agent through
-a private, single-session model gateway.
+Run one controller with embedded PGlite and checkpoint archives on its own
+`do-block-storage` volume. Workspace Jobs use bounded `emptyDir` mounts. They
+never mount the controller volume. No shared workspace storage is required.
 
-The example configures Kubernetes resources. It does not create or delete
-DigitalOcean cloud resources.
+This is a synthetic deployment recipe. Hosted gVisor and production recovery
+acceptance are tracked in PC-84 and the later hosted tickets.
 
-## Before you start
+The [PC-84 pilot plan](pilot/README.md) contains the separate cluster scope,
+current cost estimate, approval boundary and remaining hosted validation.
 
-Use an operator machine with Bash, Bun 1.4.2, `doctl`, and `kubectl`. Keep
-`doctl` credentials on that machine. Never run `doctl auth init` in a
-PocketCoder workspace.
+## Prepare the deployment
 
-Prepare these resources in one DigitalOcean project:
+Use a DOKS cluster with enough CPU, memory and ephemeral storage for the declared
+workspace limits. Install the selected RuntimeClass handler on the workspace
+node pool. Set `POCKETCODER_KUBERNETES_RUNTIME_CLASS` in the deployment patch;
+PocketCoder requests that exact class without a fallback.
 
-- A DOKS cluster on Kubernetes 1.33 or newer.
-- A DigitalOcean NFS share reachable by that cluster. Use the same VPC and
-  region. Record its private host, export path, size, and tier.
-- A DigitalOcean Managed PostgreSQL database. Restrict its trusted sources to
-  the DOKS cluster and use a private connection URL with `sslmode=require`.
-- Exact server and workspace image references from one release.
-- Exact Pi and Pi gateway image references if you will run the coding-agent
-  flow.
-- A registry pull Secret if either image is private.
+Build and publish immutable server and workspace images. Replace every
+`REPLACE_` image and model field in `server`, `bootstrap` and `pi-gateway`.
+The persistent echo and Pi template examples include pod storage budgets. Keep
+mount limits plus at least 64 MiB for the writable layer and logs within each
+budget. Transfer staging also needs enough workspace memory.
 
-DigitalOcean NFS enforces root squashing. The server therefore runs as uid/gid
-10001. The NFS example follows DigitalOcean's static `ReadWriteMany` PV/PVC
-setup and uses `nconnect=8`. See the [DigitalOcean NFS guide](https://docs.digitalocean.com/products/kubernetes/how-to/use-nfs-storage/).
+Render the storage and server resources:
 
-Managed PostgreSQL requires TLS. `sslmode=require` encrypts traffic but does not
-verify the server identity. Standard Edition can use `verify-full` with its CA,
-but this example does not claim that mode until it is tested with Bun SQL and a
-mounted CA. See [DigitalOcean database security](https://docs.digitalocean.com/products/databases/postgresql/how-to/secure/).
-
-DOKS, PostgreSQL, NFS, a registry, and an optional load balancer are billed
-separately. Check current prices before creating them.
-
-## Prepare an ignored working copy
-
-Do not put deployment secrets in this directory. It holds only non-secret
-render inputs.
-
-```bash
-mkdir -p .pocketcoder
-cp -R deploy/kubernetes .pocketcoder/kubernetes
-cp -R deploy/digitalocean .pocketcoder/digitalocean
+```sh
+kubectl apply -k deploy/digitalocean/storage
+kubectl kustomize deploy/digitalocean/server > /tmp/pocketcoder-server.yaml
+kubectl kustomize deploy/digitalocean/bootstrap > /tmp/pocketcoder-admin.yaml
+bun run example:digitalocean:check /tmp/pocketcoder-server.yaml /tmp/pocketcoder-admin.yaml
+kubectl apply -f /tmp/pocketcoder-server.yaml
+kubectl -n pocketcoder rollout status deployment/pocketcoder-server
 ```
 
-Edit these files under `.pocketcoder/`:
+The private controller generates and stores its keys once. Its data and deletion
+journal stay on the private block volume. Never mount that volume in a workspace.
+Run one controller replica with the Recreate strategy. A block volume does not
+replace the controller writer lock. Fence a failed node before moving its volume.
 
-- `digitalocean/storage/nfs.yaml`: replace the NFS host and export path. Set
-  both storage sizes to the NFS share size.
-- `digitalocean/server/pvc-patch.yaml`: set the same PVC size.
-- `digitalocean/migrate/kustomization.yaml`: replace the server repository and
-  digest.
-- `digitalocean/server/kustomization.yaml`: use the same server repository and
-  digest.
-- `digitalocean/server/templates/persistent-echo.json`: replace the workspace
-  repository and digest.
-- `digitalocean/server/templates/pi-harness.json`: replace the Pi repository,
-  digest, and allowed model.
-- `digitalocean/pi-gateway/kustomization.yaml`: replace the gateway repository
-  and digest.
-- `digitalocean/pi-gateway/gateway.yaml`: set the same allowed model.
+## Claim finite owner authority
 
-Every image must use `repo@sha256:<64 lowercase hex>`. Mutable tags, repeated
-placeholder digests, unresolved `REPLACE_` values, and mismatched migration and
-server images fail preflight.
+After the controller is ready, use its local administration socket through an
+operator-only `kubectl exec`:
 
-Render and check every phase before applying anything:
-
-```bash
-kubectl kustomize .pocketcoder/digitalocean/storage >/tmp/pocketcoder-storage.yaml
-kubectl kustomize .pocketcoder/digitalocean/migrate >/tmp/pocketcoder-migrate.yaml
-kubectl kustomize .pocketcoder/digitalocean/server >/tmp/pocketcoder-server.yaml
-kubectl kustomize .pocketcoder/digitalocean/pi-gateway >/tmp/pocketcoder-pi-gateway.yaml
-bun run example:digitalocean:check \
-  /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-migrate.yaml \
-  /tmp/pocketcoder-server.yaml \
-  /tmp/pocketcoder-pi-gateway.yaml
+```sh
+kubectl -n pocketcoder exec deployment/pocketcoder-server --   pcd superuser create --dir /var/lib/pocketcoder-controller/pc_data   --automation --expires '<UTC timestamp at most 24 hours ahead>'   --request-id '<new UUID>' --json
 ```
 
-The rendered files contain no secret values.
+The token is returned once. Store it only in the operator's process or private
+credential store. Repeating the same request reconciles the issued key without
+returning its plaintext. Replace a lost key through the explicit local admin
+replacement path. Never put owner or operator authority in a workspace Secret.
 
-## Apply storage
+Port-forward the operator Service to localhost. Publish reviewed templates with
+`pcd templates import`, create an echo workspace, preserve it, and restore its
+checkpoint after moving scheduling to a different node. Readiness requires the
+verified restore and a working agent. The local equivalent is
+`bun run example:e2e:kubernetes-checkpoint`.
 
-Connect `kubectl` to the intended cluster and confirm its version and nodes:
+## Optional Pi gateway and public HTTPS
 
-```bash
-doctl kubernetes cluster kubeconfig save <cluster-name>
-kubectl version
-kubectl get nodes
-kubectl apply -k .pocketcoder/digitalocean/storage
-kubectl -n pocketcoder wait pvc/pocketcoder-workspaces \
-  --for=jsonpath='{.status.phase}'=Bound --timeout=120s
-```
+The `pi-gateway` manifests keep provider credentials outside workspace pods. Mint
+a separate workspace-scoped gateway bearer with a finite expiry before launch.
+The bearer must expire with that workspace; never reuse a standing session
+bearer across workspaces. Restricted egress and the selected RuntimeClass must
+be tested together on the actual cell.
 
-The PV uses `Retain`. Removing the Kubernetes object does not delete the NFS
-share.
+The public Service overlay requires a real DigitalOcean certificate and narrow
+`loadBalancerSourceRanges`. Review it before applying. It serves one controller.
+Managed accounts use the shared edge below instead.
 
-## Create server secrets
+## Managed account hosts and public views
 
-Use an external secret manager when one is available. This local alternative
-uses hidden input and a mode-0700 temporary directory. Values do not enter shell
-history or the repository.
+The manager gives each account two HTTPS hosts. `ACCOUNT` is the account UUID
+without hyphens:
 
-```bash
-secret_directory="$(mktemp -d)"
-chmod 0700 "$secret_directory"
-read -r -s -p "Private PostgreSQL URL: " database_url
-printf '\n'
-printf '%s' "$database_url" >"$secret_directory/database-url"
-unset database_url
-openssl rand -base64 32 >"$secret_directory/auth-pepper"
-kubectl -n pocketcoder create secret generic pocketcoder-server \
-  --from-file=database-url="$secret_directory/database-url" \
-  --from-file=auth-pepper="$secret_directory/auth-pepper"
-rm -r -- "$secret_directory"
-unset secret_directory
-```
+| Host | Serves |
+| --- | --- |
+| `ACCOUNT.pocketcoder.datazine.app` | The account controller API |
+| `*.ACCOUNT.embed.kaset.dev` | That account's webapp, desktop and browser views |
 
-If the Secret already exists, update it through the same trusted process. Do
-not copy its values into a manifest, ConfigMap, template, log, or report.
+The API and views use different registrable domains. The manager API stays
+private. For each account, the manager creates a cert-manager `Certificate` and
+an `Ingress` in the account namespace. external-dns publishes both hosts to
+DigitalOcean DNS with TXT ownership records, so retries reuse the same records.
+[Account purge](../../packages/manager/purge.md) deletes the namespace, which
+removes the route, certificate and Secret. external-dns then deletes the records
+it owns, and purge waits until DigitalOcean lists none for the account. Give the
+purge token `domain:read` in addition to its volume access.
 
-For private images, create one namespace pull Secret from a Docker config held
-outside the repository, then attach it to both service accounts:
+The edge has three parts in [`edge`](edge):
 
-```bash
-kubectl -n pocketcoder create secret generic pocketcoder-registry \
-  --type=kubernetes.io/dockerconfigjson \
-  --from-file=.dockerconfigjson=/path/outside/repository/config.json
-kubectl -n pocketcoder patch serviceaccount pocketcoder-controller \
-  -p '{"imagePullSecrets":[{"name":"pocketcoder-registry"}]}'
-kubectl -n pocketcoder patch serviceaccount pocketcoder-workspace \
-  -p '{"imagePullSecrets":[{"name":"pocketcoder-registry"}]}'
-```
+- `traefik.yaml`: one HTTPS entry point behind a DigitalOcean load balancer.
+  Access logs stay off because one-time view URLs carry tokens.
+- `external-dns.yaml`: DNS records for account Ingress hosts. It is pinned to
+  v0.20.0, the last release with the DigitalOcean provider. It selects the whole
+  `datazine.app` and `kaset.dev` zones, but publishes only `pocketcoder` Ingress
+  hosts and never changes records without its `pocketcoder-ams3-1` ownership record.
+- `issuer.yaml`: Let's Encrypt DNS validation for both zones.
 
-The kubelet reads this Secret. Workspace containers do not mount it, have no
-service-account token, and have no controller RBAC.
+Account controllers trust forwarded HTTPS hosts only from the configured pod
+range. Their network policy lets only the `pocketcoder-edge` namespace reach the
+controller listener, so keep nothing but Traefik in that namespace. Processes on
+the node itself can also reach pods and may use an address in the pod range.
+They gain nothing a direct client lacks: every request still needs a key or view session.
 
-## Migrate, then start the server
+### Known pilot risks
 
-The migration Job uses the exact server digest. It receives the database URL
-through one Secret reference and has no service-account token.
+- **The DNS token reaches every team domain.** DigitalOcean `domain` scopes cover
+  all domains in the team, including other production zones. Moving
+  `datazine.app` and `kaset.dev`, or delegated sub-zones, to a separate team
+  limits what a leaked token can change.
+- **Traefik can read every Secret in the cluster.** It needs each account's TLS
+  Secret, and Kubernetes cannot grant that per label. A Traefik compromise exposes
+  the DNS token, the ACME account key and account Secrets. Keep it pinned and patched.
+- **All accounts share the `kaset.dev` site.** A page on one view host can set a
+  cookie for `kaset.dev`, and browsers send it to every other account's view
+  hosts. PocketCoder's own session cookie is host-only and is not affected, but
+  workspace apps are. Before customer use, list `embed.kaset.dev` on the
+  [Public Suffix List](https://publicsuffix.org/) or use another isolation
+  boundary. Until then, keep the pilot synthetic.
 
-```bash
-kubectl -n pocketcoder delete job pocketcoder-migrate --ignore-not-found
-kubectl apply -k .pocketcoder/digitalocean/migrate
-kubectl -n pocketcoder wait job/pocketcoder-migrate \
-  --for=condition=complete --timeout=5m
-kubectl -n pocketcoder logs job/pocketcoder-migrate
-kubectl apply -k .pocketcoder/digitalocean/server
-kubectl -n pocketcoder rollout status deployment/pocketcoder-server --timeout=5m
-```
+### Bring up the edge
 
-Keep one server replica with the `Recreate` strategy. Server startup checks the
-schema but never applies migrations.
+This changes cloud DNS and creates a load balancer (about $12/month). It needs
+the same approval and finite write access as the PC-84 cluster. Create one
+DigitalOcean token with only `domain` read, create, update and delete scopes and
+a 30-day expiry. Certificates renew about every 60 days, so rotate the token
+before it expires: store the new token in both Secrets, restart
+`deployment/external-dns`, then revoke the old token. Keep it out of shell history, this repository and every account
+namespace. Store it in the two system namespaces that use it:
 
-Start a private port forward:
-
-```bash
-kubectl -n pocketcoder port-forward service/pocketcoder-server 7080:7080
-```
-
-In another terminal:
-
-```bash
-curl --fail http://127.0.0.1:7080/livez
-curl --fail http://127.0.0.1:7080/readyz
-```
-
-## Issue a one-hour operator key
-
-Create a principal with only the scopes used by this recipe. The server command
-prints the key once. Keep it only in the operator shell.
-
-```bash
-kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
-  pcd principals create \
-  --name digitalocean-example \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,services:relay,conversations:read,terminal:attach,terminal:read \
-  --templates persistent-echo,pi-harness
-
-key_expiry="$(bun -e 'console.log(new Date(Date.now() + 3_600_000).toISOString())')"
-export POCKETCODER_KEY="$(
-  kubectl -n pocketcoder exec deployment/pocketcoder-server -- \
-    pcd keys issue --principal digitalocean-example --expires "$key_expiry" | tail -n 1
-)"
-unset key_expiry
-export POCKETCODER_URL=http://127.0.0.1:7080
-```
-
-Never use `--expires never` for this example.
-
-## Run the echo and persistence checks
-
-First prove launch, relay, response, cancellation, and terminal state:
-
-```bash
-POCKETCODER_EXAMPLE_TEMPLATE=persistent-echo \
-POCKETCODER_EXAMPLE_EXPECT='pocketcoder example ok' \
-bun run example:e2e
-```
-
-Then create a second workspace and exercise NFS checkpoint restore. Every
-identifier below comes from JSON output, not human-formatted text.
-
-```bash
-workspace_id="$(
-  bun run pcd -- workspaces create \
-    --template persistent-echo \
-    --external-id digitalocean-persistence-check \
-    --wait --json | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.id)'
-)"
-preserve_json="$(bun run pcd -- workspaces preserve --id "$workspace_id")"
-checkpoint_id="$(
-  printf '%s' "$preserve_json" | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.checkpoint.id)'
-)"
-unset preserve_json
-
-for attempt in $(seq 1 60); do
-  checkpoint_state="$(
-    bun run pcd -- checkpoints get --id "$checkpoint_id" | \
-    bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.state)'
-  )"
-  [ "$checkpoint_state" = ready ] && break
-  [ "$checkpoint_state" = failed ] && exit 1
-  sleep 2
+```sh
+kubectl create namespace pocketcoder-dns
+bun run example:digitalocean:cert-manager > /tmp/cert-manager.yaml
+kubectl create -f /tmp/cert-manager.yaml
+kubectl -n cert-manager rollout status deployment/cert-manager-webhook
+read -rs DIGITALOCEAN_DNS_TOKEN
+for namespace in cert-manager pocketcoder-dns; do
+  printf %s "$DIGITALOCEAN_DNS_TOKEN" | kubectl -n "$namespace" create secret generic \
+    digitalocean-dns --from-file=token=/dev/stdin
 done
-[ "$checkpoint_state" = ready ]
-bun run pcd -- checkpoints verify --id "$checkpoint_id"
-
-restored_workspace_id="$(
-  bun run pcd -- workspaces restore \
-    --checkpoint "$checkpoint_id" \
-    --external-id digitalocean-persistence-restore | \
-  bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.workspace.id)'
-)"
-
-for attempt in $(seq 1 60); do
-  restored_state="$(
-    bun run pcd -- workspaces get --id "$restored_workspace_id" | \
-    bun -e 'const value = await new Response(Bun.stdin.stream()).json(); console.log(value.state)'
-  )"
-  [ "$restored_state" = ready ] && break
-  sleep 2
-done
-[ "$restored_state" = ready ]
-bun run pcd -- workspaces cancel --id "$restored_workspace_id"
-bun run pcd -- checkpoints delete --id "$checkpoint_id"
+unset DIGITALOCEAN_DNS_TOKEN
 ```
 
-The evidence to record is the workspace id, ready time, echo response, terminal
-state, checkpoint id, and restored workspace id. Redact the machine key and
-database URL.
+Replace `REPLACE_LOAD_BALANCER_NAME` and `REPLACE_ALLOWED_SOURCE_CIDR` in
+`edge/traefik.yaml`. The pilot is synthetic, so allow only the operator's test
+addresses. Then apply the edge and wait for its address:
 
-## Run DOKS/NFS conformance
+The cert-manager webhook can refuse the issuer for a few seconds after its
+rollout, so repeat the apply until it succeeds:
 
-Use a digest-pinned small image that contains POSIX `sh`, `stat`, and core file
-tools. This opt-in test creates server-owned opaque paths, mounts only one
-workspace `subPath`, writes as uid 10001, checks that a sibling path cannot be
-read, checks checkpoint I/O, and cleans up its Job, Pods, allocations, and
-checkpoint path even after failure.
-
-```bash
-POCKETCODER_KUBERNETES_CONFORMANCE=1 \
-POCKETCODER_KUBERNETES_NAMESPACE=pocketcoder \
-POCKETCODER_KUBERNETES_WORKSPACE_CLAIM=pocketcoder-workspaces \
-POCKETCODER_KUBERNETES_WORKSPACE_SUBPATH=workspaces \
-POCKETCODER_KUBERNETES_CONFORMANCE_IMAGE='registry.example/conformance@sha256:<64-hex-digest>' \
-POCKETCODER_DIGITALOCEAN_REGION='<region>' \
-POCKETCODER_DIGITALOCEAN_NFS_TIER='<tier>' \
-bun test packages/drivers/src/kubernetes/kubernetes-conformance.test.ts
+```sh
+until kubectl apply -k deploy/digitalocean/edge; do sleep 5; done
+kubectl -n pocketcoder-edge rollout status deployment/traefik
+kubectl -n pocketcoder-edge get service traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl wait --for=condition=Ready clusterissuer/pocketcoder-dns --timeout=120s
 ```
 
-Save its JSON output with the DOKS version, region, NFS tier, path modes, and
-probe result. This real-cluster result is required before calling the example
-supported.
+Start the manager with the public host settings. `trustedIngress` is the
+cluster pod range; DOKS uses `10.244.0.0/16` unless the cluster sets another one.
 
-## Run Pi remotely
-
-Follow the [Pi session guide](./PI.md) to create the short-lived gateway
-Secret, start one bounded gateway, launch Pi, connect a terminal or remote Pi
-client, and tear the session down.
-
-## Optional public HTTPS
-
-Public access is outside the default apply path. Edit
-`digitalocean/public-https/kustomization.yaml` in the ignored copy. Provide a
-real DigitalOcean certificate name and explicit source CIDRs. Preflight rejects
-unresolved certificates and `0.0.0.0/0` or `::/0`.
-
-```bash
-kubectl kustomize .pocketcoder/digitalocean/public-https \
-  >/tmp/pocketcoder-public.yaml
-bun run example:digitalocean:check \
-  /tmp/pocketcoder-storage.yaml \
-  /tmp/pocketcoder-migrate.yaml \
-  /tmp/pocketcoder-public.yaml
-kubectl apply -k .pocketcoder/digitalocean/public-https
-curl --fail https://<pocketcoder-host>/readyz
+```sh
+export POCKETCODER_MANAGER_PUBLIC_HOSTS='{"apiOrigin":"https://pocketcoder.datazine.app","viewOrigin":"https://embed.kaset.dev","issuer":"pocketcoder-dns","ingressClassName":"pocketcoder","ingressNamespace":"pocketcoder-edge","trustedIngress":["10.244.0.0/16"]}'
 ```
 
-DigitalOcean terminates TLS on port 443 and forwards HTTP inside the cluster.
-Machine-key authentication still applies. See the [DOKS load balancer settings](https://docs.digitalocean.com/products/kubernetes/how-to/configure-load-balancers/).
+Create an account with the parent applications that may embed its views:
 
-## Cleanup
-
-Unset the short-lived key first:
-
-```bash
-unset POCKETCODER_KEY POCKETCODER_URL
-kubectl delete -k .pocketcoder/digitalocean/pi-gateway --ignore-not-found
-kubectl -n pocketcoder delete secret pocketcoder-pi-gateway-session --ignore-not-found
-kubectl delete namespace pocketcoder
-kubectl delete persistentvolume pocketcoder-digitalocean-nfs
+```sh
+curl -H "Authorization: Bearer $OPERATOR_TOKEN" -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: synthetic-one' \
+  -d '{"name":"synthetic one","parents":["https://app.example.org"]}' \
+  http://127.0.0.1:8092/v1/accounts
 ```
 
-The retained NFS share, managed PostgreSQL database, DOKS cluster, registry,
-and load balancer can continue to incur cost. Review each one in DigitalOcean
-and delete it only through a separate, explicit operator action. Back up and
-restore PostgreSQL and NFS together; NFS alone is not disaster recovery.
+The operation succeeds after the controller is ready and its certificate is
+issued. DNS validation can take minutes; the manager keeps retrying the same
+operation. The account response contains `api_origin` and `view_origin`.
+Claim the owner key as before, then call the API at `api_origin`. View sessions
+use `top_level` or `embedded` mode, as described in [the API guide](../../docs/api.md#hosted-account-sessions).
+
+Check DNS and HTTPS from the operator machine:
+
+```sh
+dig +short "$ACCOUNT.pocketcoder.datazine.app"
+dig +short "check.$ACCOUNT.embed.kaset.dev"
+curl -fsS "https://$ACCOUNT.pocketcoder.datazine.app/readyz"
+```
+
+Each account uses one Let's Encrypt certificate. Let's Encrypt allows 50 new
+certificates per registered domain each week; plan customer growth with that limit.
+
+### Remove the edge
+
+Remove every account's hosts before the edge. Otherwise its DNS records keep
+pointing at a released load balancer address that someone else could receive.
+Purge each account through the manager and wait until its operation succeeds.
+Without a purge configuration, remove each synthetic account by hand:
+
+1. Cancel its workspaces through the account API and wait until they are
+   `canceled`. Workspace pods keep a finalizer that only the controller removes.
+2. `kubectl delete namespace pc-account-ACCOUNT`, then
+   `kubectl delete clusterrole,clusterrolebinding pc-account-ACCOUNT-nodes`.
+3. Wait until `doctl compute domain records list kaset.dev` and
+   `doctl compute domain records list datazine.app` show no record containing
+   `ACCOUNT`, including the `a-` ownership TXT records.
+
+After manual removal the manager database still lists the removed accounts.
+Then remove the edge and the DNS token:
+
+```sh
+kubectl delete -k deploy/digitalocean/edge
+kubectl -n cert-manager delete secret digitalocean-dns pocketcoder-acme-account
+kubectl delete -f /tmp/cert-manager.yaml
+doctl compute domain records list kaset.dev
+doctl compute domain records list datazine.app
+```
+
+Revoke the DNS token in the DigitalOcean control panel. Confirm that no
+`pocketcoder-ams3-1` ownership records remain and the load balancer is gone.
+
+The local equivalent runs the same edge manifests in kind with a local CA and
+PowerDNS instead of Let's Encrypt and DigitalOcean DNS:
+
+```sh
+bun run example:e2e:managed-public-views
+```
+
+## Backup and cleanup
+
+Use `pcd backup create` to freeze and capture the controller database, keys and
+referenced archives together. Keep the deletion journal outside the backup
+rollback boundary. Encrypt off-node archives with a separately held key and
+include retained versions in account purge. Test fresh-volume restore before
+using customer data.
+
+Delete owned workspace data through the API and wait for successful operations
+before removing the controller. Deleting a namespace or PVC is not proof that
+retained backups are gone. Remove the deployment and retained block volume only
+when its current deletion and backup inventory proves cleanup.

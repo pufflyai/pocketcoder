@@ -12,11 +12,24 @@ PocketCoder launches AgentAPI and owns its loopback HTTP lifecycle (`GET
 consumer-owned AgentAPI wrapper or PocketCoder-specific Pi HTTP adapter.
 
 The image pins Pi to `0.83.0` and AgentAPI to `0.12.2`. The Dockerfile verifies
-AgentAPI's downloaded checksum for both supported Linux architectures.
+the pinned AgentAPI source checksum, applies the repeated-reply patch, and builds
+the binary for each supported Linux architecture.
 AgentAPI does not yet include a native Pi terminal profile, so
 `agentapi-compat.ts` displays a `>` immediately above Pi's editor for
 AgentAPI's generic input-readiness detector. It does not implement HTTP routes,
 store messages, or invoke Pi.
+
+The compatibility extension hides Pi's changing footer and adds a unique reply
+label before each turn. AgentAPI's generic screen reader can otherwise mistake
+a repeated answer for old screen text and keep only the footer. Reply labels
+appear in the rendered conversation but stay out of the model's context.
+The deterministic E2E checks four identical file replies in AgentAPI and durable
+history.
+
+The template declares Escape as `agent.interruptKeys`, so
+`POST /v1/workspaces/{id}/agent/interrupt` stops Pi's current turn. `run-pi`
+sets Pi's `doubleEscapeAction` to `none`: a repeated interrupt on an idle Pi
+would otherwise open its `/tree` menu.
 
 The image also stores a test fixture at `/opt/pocketcoder-fixtures/test.txt`.
 The template's `setup` step copies it into the tmpfs-backed
@@ -42,7 +55,9 @@ bun run example:e2e:pi
 This starts a tiny OpenAI-compatible fake gateway on the host. The gateway
 requests Pi's real `read` tool, Pi reads `/workspace/test.txt`, and the test
 verifies the returned fixture text. AgentAPI still drives Pi through its
-terminal and serves the conversation API.
+terminal and serves the conversation API. Before that, the run starts a turn
+whose reply never finishes, closes an event stream to show the turn keeps
+running, interrupts it, and checks that Pi accepts the next message.
 
 To test a real OpenAI connection without opening the interactive UI:
 
@@ -78,6 +93,10 @@ shows how to deploy it for one short-lived workspace session. A shared or paid
 service still needs durable identity, usage, revocation, and budget controls.
 
 ## Open the workspace agent in local Pi
+
+The [Pi client runbook](../../../docs/pi-client-runbook.md) covers reconnect,
+attachments, preserve/resume and cleanup. For a deterministic interactive UI
+without a provider key, run `bun examples/e2e/local.ts --harness pi --ui`.
 
 From the repository root:
 

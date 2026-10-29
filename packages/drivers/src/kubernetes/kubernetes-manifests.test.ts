@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import type { WarmRuntimeLaunch, WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 import { warmJobManifest, workspaceJobManifest } from "./kubernetes-manifests";
 
 function templateSpec(ephemeralStorage?: string) {
-  return {
-    image: "registry.example/workspace@sha256:fixture",
+  const spec = {
+    version: "1.0.0",
+    image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
+    harness: { command: ["/bin/sleep", "3600"] },
     command: ["/bin/sleep", "3600"],
     env: {},
     resources: {
@@ -23,6 +26,12 @@ function templateSpec(ephemeralStorage?: string) {
     },
     network: { mode: "unrestricted" },
   };
+  return parseTemplateManifest({
+    apiVersion: "pocketcoder.dev/v1alpha1",
+    kind: "Template",
+    metadata: { name: "manifest-fixture" },
+    spec,
+  }).manifest.spec;
 }
 
 function workspaceLaunch(ephemeralStorage?: string) {
@@ -46,10 +55,10 @@ function warmLaunch(ephemeralStorage?: string) {
 
 const options = {
   imagePullPolicy: "IfNotPresent" as const,
-  nodeSelector: { "onefin.com/workload": "agent-workspace" },
+  nodeSelector: { "example.com/workload": "agent-workspace" },
   tolerations: [
     {
-      key: "onefin.com/workload",
+      key: "example.com/workload",
       operator: "Equal" as const,
       value: "agent-workspace",
       effect: "NoSchedule" as const,
@@ -62,6 +71,26 @@ function podSpec(manifest: ReturnType<typeof workspaceJobManifest> | ReturnType<
 }
 
 describe("Kubernetes Job manifests", () => {
+  test("checks private egress health inside cold and warm sidecars", () => {
+    const cold = workspaceLaunch();
+    const warm = warmLaunch();
+    cold.workspace.templateSnapshot.spec.network = { mode: "restricted", allow: [] };
+    warm.template.spec.network = { mode: "restricted", allow: [] };
+    const manifests = [
+      workspaceJobManifest(cold, "workspace", "input", "egress", options),
+      warmJobManifest(warm, "warm", "input", "egress", options),
+    ];
+    for (const manifest of manifests) {
+      const sidecar = podSpec(manifest).initContainers?.find((container) => container.name === "pocketcoder-egress");
+      if (!sidecar || !("startupProbe" in sidecar)) throw new Error("Restricted sidecar lacks a startup probe");
+      expect(sidecar.startupProbe).toEqual({
+        exec: { command: ["/usr/local/bin/pocketcoder-egress", "health"] },
+        periodSeconds: 1,
+        failureThreshold: 30,
+      });
+    }
+  });
+
   test("adds scheduling fields to workspace and warm Jobs", () => {
     const manifests = [
       workspaceJobManifest(workspaceLaunch(), "workspace", "input", "egress", options),

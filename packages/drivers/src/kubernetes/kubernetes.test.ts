@@ -29,10 +29,11 @@ async function fakeKubectl(): Promise<{ bin: string; log: string }> {
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
-const input = args.includes("apply") ? await Bun.stdin.text() : "";
+const input = (args.includes("apply") || args.includes("create")) ? await Bun.stdin.text() : "";
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input }) + "\\n");
 if (args.includes("get") && args.includes("job")) console.log(JSON.stringify({ status: { active: 1 } }));
 if (args.includes("get") && args.includes("jobs")) console.log(JSON.stringify({ items: [] }));
+if (args.includes("create")) console.log(JSON.stringify({ metadata: { uid: "secret-uid", resourceVersion: "1" } }));
 if (args.includes("version")) console.log(JSON.stringify({ serverVersion: { major: "1", minor: "33" } }));
 `,
     { mode: 0o755 },
@@ -53,11 +54,12 @@ function fixtureWorkspace(): WorkspaceRow {
       image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
       harness: { command: ["/bin/sleep", "3600"] },
       env: { SAFE_VALUE: "yes", TOKEN: "secretRef:model/key" },
-      resources: { cpu: "1", memory: "512Mi" },
+      resources: { cpu: "1", memory: "512Mi", ephemeralStorage: "128Mi" },
+      timeouts: { terminateGrace: "17s" },
       security: {
         uid: 12_345,
         gid: 23_456,
-        writableMemoryPaths: ["/tmp", "/home/onefin"],
+        writableMemoryPaths: ["/tmp", "/home/worker"],
       },
       persistence: {
         mounts: [
@@ -74,6 +76,9 @@ function fixtureWorkspace(): WorkspaceRow {
   const now = new Date();
   const id = randomUUID();
   return {
+    runtimeRegistration: null,
+    finiteProcess: null,
+    processExecution: null,
     id,
     principalId: randomUUID(),
     externalId: "kubernetes-fixture",
@@ -150,13 +155,14 @@ describe("Kubernetes workspace driver", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string });
     const manifests = calls
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map(
         (call) =>
           JSON.parse(call.input) as {
             kind: string;
             stringData?: Record<string, string>;
             metadata: { labels: Record<string, string> };
+            spec?: { template: { spec: { terminationGracePeriodSeconds: number } } };
           },
       );
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Job"]);
@@ -166,6 +172,7 @@ describe("Kubernetes workspace driver", () => {
     const jobLabels = manifests[1]?.metadata.labels ?? {};
     expect(jobLabels["pocketcoder.pool-runtime"]).toBe(runtimeId);
     expect(jobLabels["pocketcoder.workspace"]).toBeUndefined();
+    expect(manifests[1]?.spec?.template.spec.terminationGracePeriodSeconds).toBe(17);
   });
   test("projects the portable launch contract into a namespaced Job", async () => {
     const fake = await fakeKubectl();
@@ -192,9 +199,8 @@ describe("Kubernetes workspace driver", () => {
           name: "worktree",
           target: "/workspace",
           source: {
-            kind: "pvc",
-            claimName: "workspace-data",
-            subPath: `workspaces/${workspace.id}/worktree`,
+            kind: "empty-dir",
+            maxBytes: 1024,
           },
         },
       ],
@@ -216,7 +222,7 @@ describe("Kubernetes workspace driver", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string });
     const manifests = calls
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map((call) => JSON.parse(call.input) as Record<string, unknown>);
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Job"]);
     const job = manifests[1] as {
@@ -225,6 +231,7 @@ describe("Kubernetes workspace driver", () => {
           spec: {
             serviceAccountName: string;
             automountServiceAccountToken: boolean;
+            terminationGracePeriodSeconds: number;
             securityContext: {
               fsGroup: number;
               fsGroupChangePolicy: string;
@@ -242,6 +249,7 @@ describe("Kubernetes workspace driver", () => {
     };
     expect(job.spec.template.spec.serviceAccountName).toBe("workspace");
     expect(job.spec.template.spec.automountServiceAccountToken).toBe(false);
+    expect(job.spec.template.spec.terminationGracePeriodSeconds).toBe(17);
     expect(job.spec.template.spec.securityContext).toEqual({
       fsGroup: 23_456,
       fsGroupChangePolicy: "OnRootMismatch",
@@ -259,9 +267,9 @@ describe("Kubernetes workspace driver", () => {
       "/run/pocketcoder/secrets/model-key",
     );
     expect(job.spec.template.spec.containers[0]?.volumeMounts.map((mount) => mount.mountPath)).toContain(
-      "/home/onefin",
+      "/home/worker",
     );
-    expect(job.spec.template.spec.volumes).toHaveLength(5);
+    expect(job.spec.template.spec.volumes).toHaveLength(6);
   });
 
   test("places NET_ADMIN and audit credentials only in a restartable native sidecar", async () => {
@@ -292,7 +300,7 @@ describe("Kubernetes workspace driver", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { args: string[]; input: string })
-      .filter((call) => call.args.includes("apply"))
+      .filter((call) => call.args.includes("apply") || call.args.includes("create"))
       .map((call) => JSON.parse(call.input) as Record<string, unknown>);
     expect(manifests.map((manifest) => manifest.kind)).toEqual(["Secret", "Secret", "Job"]);
     const providerSecret = manifests[0] as { stringData: Record<string, string> };

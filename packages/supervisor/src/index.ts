@@ -1,3 +1,4 @@
+import { prepareStorage } from "./bootstrap/prepare-storage";
 import { supervise } from "./supervisor";
 
 // pocketcoder-supervisor CLI. `supervise` is the PID 1 entrypoint declared by
@@ -11,6 +12,10 @@ function usage(): never {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === "prepare-storage") {
+    prepareStorage(JSON.parse(rest[0] ?? "null"));
+    return;
+  }
   if (command !== "supervise") usage();
   let inputPath = "/run/pocketcoder/input";
   for (let i = 0; i < rest.length; i += 1) {

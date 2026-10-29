@@ -27,3 +27,7 @@ test("full qualification is required even when the change has no affected packag
 test("protected branch pushes must finish their build and package checks", () => {
   expect(expectedJobs("fast", false, false, true)).toContain("build");
 });
+
+test("affected packages also run the store suites on PostgreSQL", () => {
+  expect(expectedJobs("fast", true, false)).toContain("stores");
+});

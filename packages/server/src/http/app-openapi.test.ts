@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { createTestServer } from "../testing/test-server.test";
 
+const createStore = createTestStoreFactory();
+
 describe("openapi", () => {
   test("serves the generated document", async () => {
-    const { app } = await createTestServer();
+    const { app } = await createTestServer(await createStore());
     const res = await app.request("/v1/openapi.json");
     expect(res.status).toBe(200);
     const doc = (await res.json()) as {
@@ -31,6 +34,10 @@ describe("openapi", () => {
     };
     expect(Object.keys(doc.paths)).toContain("/v1/workspaces");
     expect(Object.keys(doc.paths)).toContain("/v1/templates");
+    expect(doc.paths["/v1/workspaces/{id}/execution-runtime"]?.get?.operationId).toBe("getExecutionRuntime");
+    expect(doc.paths["/v1/workspaces/{id}/executions"]?.post?.operationId).toBe("startExecution");
+    expect(doc.paths["/v1/workspaces/{id}/executions/{requestId}"]?.get?.operationId).toBe("observeExecution");
+    expect(doc.paths["/v1/workspaces/{id}/executions/{requestId}/cancel"]?.post?.operationId).toBe("cancelExecution");
     expect(doc.paths["/v1/workspaces"]?.post?.parameters).toContainEqual(
       expect.objectContaining({
         name: "Idempotency-Key",
@@ -69,7 +76,7 @@ describe("openapi", () => {
 
 describe("typed client conformance", () => {
   test("validates real Hono responses without a parallel DTO layer", async () => {
-    const server = await createTestServer({ globalActiveWorkspaces: 0 });
+    const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const fetchImpl = ((input: string | URL | Request, init?: RequestInit) =>
       server.app.request(input, init)) as typeof fetch;
     const client = new PocketCoderClient({ baseUrl: "http://pocketcoder.test", apiKey: server.token }, fetchImpl);

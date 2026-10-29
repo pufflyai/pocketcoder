@@ -18,17 +18,39 @@ export type {
   WorkspaceLaunch,
   WorkspaceSecretResolver,
   WorkspaceStorageDriver,
+  WorkspaceTransferRuntime,
 } from "./drivers/driver";
+export type {
+  InputBackingRef,
+  InputByteWriter,
+  InputProjectionRef,
+  InputProjectionStorage,
+  InputStorageDriver,
+  PublishedInputProjection,
+} from "./drivers/inputs";
 export { buildEventEnvelope } from "./events/events";
+export * from "./stores/binary-outputs";
+export { deadlinePreservationExpiry, MAX_CHECKPOINT_PRESERVATION_MS } from "./stores/checkpoint-preservation";
+export * from "./stores/checkpoint-transfers";
+export * from "./stores/executions";
+export type { InputClaim, InputLimits, InputManifestRow, InputStore, StoredInput } from "./stores/inputs";
+export * from "./stores/leases";
+export * from "./stores/secrets";
+export * from "./stores/storage-reservations";
+export type { WorkspaceRuntimeRegistration } from "./stores/workspaces";
 export {
   type ActiveCounts,
   type AuthStore,
   type CheckpointUsage,
+  type ConversationDocumentRow,
   type ConversationMessageRow,
+  type ConversationRecordRow,
   type ConversationRequestResult,
   type ConversationRequestRow,
+  type ConversationRetention,
   type ConversationStateRow,
   type ConversationStore,
+  type ConversationTurnCommit,
   type KeyListFilter,
   type LogRow,
   type LogStore,
@@ -41,6 +63,7 @@ export {
   type OutboxStore,
   type OutputStore,
   type PersistenceStore,
+  type PrincipalPatch,
   type PrincipalRow,
   purgedContentPatch,
   type StateHistoryRow,
@@ -66,6 +89,7 @@ export {
   type WorkspaceAdmissionClaim,
   type WorkspaceCheckpointPatch,
   type WorkspaceCheckpointRow,
+  type WorkspaceConversationMessage,
   type WorkspaceInsert,
   type WorkspaceInsertResult,
   type WorkspaceListFilter,

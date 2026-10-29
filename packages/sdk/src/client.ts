@@ -1,9 +1,14 @@
 import { AdministrationApi } from "./resources/admin/admin";
-import { AgentApi, AttachmentsApi } from "./resources/attachments/attachments";
+import { AgentApi } from "./resources/agent/agent";
+import { AttachmentsApi } from "./resources/attachments/attachments";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
+import { DisplaysApi } from "./resources/displays/displays";
 import { KeysApi, RecoveryApi } from "./resources/keys/keys";
+import { PreviewsApi } from "./resources/previews/previews";
+import { PrincipalsApi } from "./resources/principals/principals";
+import { SecretsApi } from "./resources/secrets/secrets";
 import { TemplatesApi } from "./resources/templates/templates";
 import { TerminalsApi } from "./resources/terminals/terminals";
 import { WorkspacesApi } from "./resources/workspaces/workspaces";
@@ -11,8 +16,11 @@ import { type PocketCoderClientConfig, PocketCoderTransport } from "./transport/
 
 export class PocketCoderClient {
   private readonly transport: PocketCoderTransport;
+  readonly secrets: SecretsApi;
   readonly templates: TemplatesApi;
   readonly workspaces: WorkspacesApi;
+  readonly previews: PreviewsApi;
+  readonly displays: DisplaysApi;
   readonly attachments: AttachmentsApi;
   readonly agent: AgentApi;
   readonly conversations: ConversationsApi;
@@ -23,13 +31,17 @@ export class PocketCoderClient {
   readonly outputs: OutputsApi;
   readonly administration: AdministrationApi;
   readonly terminals: TerminalsApi;
+  readonly principals: PrincipalsApi;
   readonly keys: KeysApi;
   readonly recovery: RecoveryApi;
 
   constructor(config: PocketCoderClientConfig, fetchImpl: typeof fetch = fetch) {
     this.transport = new PocketCoderTransport(config, fetchImpl);
+    this.secrets = new SecretsApi(this.transport);
     this.templates = new TemplatesApi(this.transport);
     this.workspaces = new WorkspacesApi(this.transport);
+    this.previews = new PreviewsApi(this.transport);
+    this.displays = new DisplaysApi(this.transport);
     this.attachments = new AttachmentsApi(this.transport);
     this.agent = new AgentApi(this.transport, this.workspaces);
     this.conversations = new ConversationsApi(this.transport);
@@ -40,6 +52,7 @@ export class PocketCoderClient {
     this.outputs = new OutputsApi(this.transport);
     this.administration = new AdministrationApi(this.transport);
     this.terminals = new TerminalsApi(this.transport);
+    this.principals = new PrincipalsApi(this.transport);
     this.keys = new KeysApi(this.transport);
     this.recovery = new RecoveryApi(this.transport);
   }

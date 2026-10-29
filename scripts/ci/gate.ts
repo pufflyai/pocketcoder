@@ -2,7 +2,7 @@ type JobResults = Record<string, { result?: string }>;
 
 export function expectedJobs(mode: string, hasProjects: boolean, smoke: boolean, postmerge = false) {
   const jobs = ["plan", "quality"];
-  if (hasProjects) jobs.push("types", "units");
+  if (hasProjects) jobs.push("types", "units", "stores");
   if (smoke) jobs.push("smoke");
   if (mode === "full") jobs.push("full");
   if (postmerge) jobs.push("build");

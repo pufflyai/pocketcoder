@@ -10,8 +10,26 @@ import {
   AttachmentStartPayload,
 } from "../attachments/attachment";
 import { ConversationMessageInputSchema } from "../conversations/conversation";
-import { CONVERSATION_RESTORE_CAPABILITIES, LAUNCH_MODES, SourceDescriptorSchema } from "../persistence/persistence";
-import { HarnessSchema, ServiceSchema, SetupStepSchema, TimeoutsSchema } from "../templates/template";
+import { ScreenshotCapturePayload } from "../displays/screenshot";
+import { CONVERSATION_RESTORE_CAPABILITIES } from "../persistence/persistence";
+import { PreviewSocketPayload } from "../previews/preview";
+import {
+  FiniteProcessFactSchema,
+  ProcessCancelPayload,
+  ProcessCancelResultPayload,
+  ProcessStartPayload,
+  ProcessTargetPayload,
+} from "../workspaces/finite-process";
+import { ExecSpecSchema } from "./protocol-exec";
+
+export {
+  type ExecSpec,
+  ExecSpecSchema,
+  type RestoreMode,
+  RestoreModeSchema,
+  SOURCE_CREDENTIAL_MAX_BYTES,
+} from "./protocol-exec";
+
 import {
   TerminalClosedPayload,
   TerminalClosePayload,
@@ -21,6 +39,24 @@ import {
   TerminalOutputPayload,
   TerminalResizePayload,
 } from "../terminals/terminal";
+import {
+  CheckpointInstalledPayload,
+  CheckpointPreparedPayload,
+  CheckpointUploadPayload,
+  CheckpointUploadStatusPayload,
+  PrepareCheckpointArchivePayload,
+} from "./protocol-checkpoint";
+
+export * from "./protocol-checkpoint";
+export * from "./protocol-credentials";
+
+import {
+  CredentialInstalledPayload,
+  CredentialRenewedPayload,
+  CredentialRenewPayload,
+  WorkspaceCredentialSchema,
+} from "./protocol-credentials";
+
 import {
   ProxyStreamAckPayload,
   ProxyStreamCancelPayload,
@@ -51,11 +87,27 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 13;
+export const EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION = 13;
+export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 12;
+export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
-export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 6;
-export const SOURCE_CREDENTIAL_MAX_BYTES = 65_536;
-export const SUPPORTED_PROTOCOL_VERSIONS = [LEGACY_PROTOCOL_VERSION, 2, 3, 4, 5, PROTOCOL_VERSION] as const;
+export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
+export const SUPPORTED_PROTOCOL_VERSIONS = [
+  LEGACY_PROTOCOL_VERSION,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  PROTOCOL_VERSION,
+] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
 export const MAX_FRAME_BYTES = 1_048_576;
@@ -75,6 +127,13 @@ const EnvelopeBase = z.object({
     z.literal(3),
     z.literal(4),
     z.literal(5),
+    z.literal(6),
+    z.literal(7),
+    z.literal(8),
+    z.literal(9),
+    z.literal(10),
+    z.literal(11),
+    z.literal(12),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -98,12 +157,12 @@ export const RegisteredPayload = z.object({
 });
 
 export const HeartbeatPayload = z.object({
-  child: z.enum(["starting", "setup", "running", "exited", "terminating"]),
+  child: z.enum(["starting", "setup", "waiting", "running", "exited", "terminating"]),
   agentapi_state: z.enum(["unknown", "stable", "running"]).optional(),
 });
 
 export const ProcessStatePayload = z.object({
-  phase: z.enum(["starting", "setup", "running", "exited", "terminating"]),
+  phase: z.enum(["starting", "setup", "waiting", "running", "exited", "terminating"]),
   exit_code: z.number().int().nullable().optional(),
   setup_step: z.string().optional(),
   detail: z.string().max(512).optional(),
@@ -168,6 +227,14 @@ export const RestoreStatusPayload = z.object({
 export const ConversationMessagePayload = ConversationMessageInputSchema;
 
 export const AgentFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("runtime_ready"), payload: z.object({ incarnationId: z.string().min(1) }) }),
+  EnvelopeBase.extend({ type: z.literal("finite_process"), payload: FiniteProcessFactSchema }),
+  EnvelopeBase.extend({ type: z.literal("process_absent"), payload: ProcessTargetPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_cancel_result"), payload: ProcessCancelResultPayload }),
+  EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
   EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
   EnvelopeBase.extend({ type: z.literal("process_state"), payload: ProcessStatePayload }),
@@ -185,6 +252,9 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("termination_ack"), payload: TerminationAckPayload }),
   EnvelopeBase.extend({ type: z.literal("source_resolved"), payload: SourceResolvedPayload }),
   EnvelopeBase.extend({ type: z.literal("checkpoint_status"), payload: CheckpointStatusPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_prepared"), payload: CheckpointPreparedPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_installed"), payload: CheckpointInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_upload_status"), payload: CheckpointUploadStatusPayload }),
   EnvelopeBase.extend({ type: z.literal("output_published"), payload: OutputPublishedPayload }),
   EnvelopeBase.extend({ type: z.literal("restore_status"), payload: RestoreStatusPayload }),
   EnvelopeBase.extend({
@@ -203,81 +273,8 @@ export type AgentFrame = z.infer<typeof AgentFrameSchema>;
 
 // --- Server -> Agent frames ---
 
-// The exec spec delivers the template-owned setup commands, harness command,
-// service allowlist, and timeouts to the supervisor at registration time, so
-// custom setup and custom harnesses require no image rebuild.
-export const ExecSpecSchema = z.object({
-  agentapi_native: z.boolean().default(false),
-  setup: z.array(SetupStepSchema),
-  harness: HarnessSchema,
-  env: z.record(z.string(), z.string()),
-  services: z.record(z.string(), ServiceSchema),
-  terminal: z
-    .object({
-      command: z.array(z.string().min(1)).min(1),
-      cwd: z.string().optional(),
-      env: z.record(z.string(), z.string()),
-      max_sessions: z.number().int().min(1).max(8),
-      idle_timeout_seconds: z.number().int().positive(),
-      replay_buffer_bytes: z.number().int().positive(),
-    })
-    .nullable()
-    .default(null),
-  timeouts: TimeoutsSchema,
-  security: z
-    .object({
-      writable_memory_paths: z.array(z.string()),
-    })
-    .default({ writable_memory_paths: [] }),
-  network: z
-    .discriminatedUnion("mode", [
-      z.object({ mode: z.literal("unrestricted") }),
-      z.object({
-        mode: z.literal("restricted"),
-        proxy_url: z.url(),
-        health_url: z.url(),
-      }),
-    ])
-    .default({ mode: "unrestricted" }),
-  launch_mode: z.enum(LAUNCH_MODES).default("create"),
-  source: SourceDescriptorSchema.extend({
-    url: z.url(),
-    destination: z.string(),
-    credential: z
-      .string()
-      .min(1)
-      .max(SOURCE_CREDENTIAL_MAX_BYTES)
-      .refine((value) => !value.includes("\0"), "credential must not contain NUL bytes")
-      .nullable()
-      .default(null),
-  })
-    .nullable()
-    .default(null),
-  restore: z
-    .object({
-      checkpoint_id: z.uuid(),
-      origin_workspace_id: z.uuid(),
-    })
-    .nullable()
-    .default(null),
-  persistence: z.object({
-    mounts: z.array(z.object({ name: z.string(), target: z.string() })),
-    conversation_restore: z.enum(CONVERSATION_RESTORE_CAPABILITIES),
-  }),
-  checkpoint_hook: z
-    .object({
-      command: z.array(z.string().min(1)).min(1),
-      timeout_seconds: z.number().int().positive(),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string().optional(),
-    })
-    .nullable(),
-  outputs: z.record(z.string(), z.unknown()),
-});
-
-export type ExecSpec = z.infer<typeof ExecSpecSchema>;
-
 export const RegisteredAckPayload = z.object({
+  credentials: z.array(WorkspaceCredentialSchema).max(64).default([]),
   epoch: z.number().int().positive(),
   reconnect_credential: z.string().optional(),
   limits: z.object({
@@ -292,7 +289,7 @@ export const RegisteredAckPayload = z.object({
 export const ProxyRequestPayload = z.object({
   request_id: z.uuid(),
   service: z.string(),
-  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
   path: z.string(),
   query: z.record(z.string(), z.string()).default({}),
   headers: z.record(z.string(), z.string()).default({}),
@@ -318,6 +315,15 @@ export const PrepareCheckpointPayload = z.object({
 });
 
 export const ServerFrameSchema = z.discriminatedUnion("type", [
+  EnvelopeBase.extend({ type: z.literal("process_start"), payload: ProcessStartPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_lookup"), payload: ProcessTargetPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_cancel"), payload: ProcessCancelPayload }),
+  EnvelopeBase.extend({ type: z.literal("process_ack"), payload: ProcessTargetPayload }),
+  EnvelopeBase.extend({ type: z.literal("screenshot_capture"), payload: ScreenshotCapturePayload }),
+  EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_renewed"), payload: CredentialRenewedPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_installed_ack"), payload: CredentialInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("setup_complete_ack"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_stream_ack"), payload: ProxyStreamAckPayload }),
@@ -336,6 +342,8 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
     type: z.literal("prepare_checkpoint"),
     payload: PrepareCheckpointPayload,
   }),
+  EnvelopeBase.extend({ type: z.literal("prepare_checkpoint_archive"), payload: PrepareCheckpointArchivePayload }),
+  EnvelopeBase.extend({ type: z.literal("checkpoint_upload"), payload: CheckpointUploadPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_start"), payload: AttachmentStartPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_chunk"), payload: AttachmentChunkPayload }),
   EnvelopeBase.extend({ type: z.literal("attachment_finish"), payload: AttachmentFinishPayload }),

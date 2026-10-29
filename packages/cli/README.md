@@ -8,7 +8,9 @@ deployment without writing control-plane API calls by hand.
 
 ## Install
 
-pcd requires Bun 1.4.2 or newer:
+pcd requires Node 22.19.0 or newer on Apple Silicon macOS, or on Linux on ARM64
+or x64. Intel Macs are not supported. The package includes all three native
+executables. Bun is not needed to run it.
 
 ```sh
 bun add --global @pstdio/pocketcoder-cli
@@ -16,8 +18,11 @@ pcd --version
 pcd --help
 ```
 
-Database and administrative commands use `POCKETCODER_DATABASE_URL` and
-`POCKETCODER_DATABASE_SCHEMA`. Workspace and diagnostics commands use
+For commit-pinned candidate tarballs and standalone downloads, see the
+[candidate installation guide](https://github.com/pufflyai/pocketcoder/blob/feature/pocketcoder-1-0/docs/candidate-installation.md).
+
+Local administrative commands use `POCKETCODER_DIR` (default `./pc_data`)
+while the server is stopped. Startup applies migrations automatically. Workspace and diagnostics commands use
 `POCKETCODER_URL` and `POCKETCODER_KEY`.
 
 The CLI automatically loads the nearest `.env` file without overriding values

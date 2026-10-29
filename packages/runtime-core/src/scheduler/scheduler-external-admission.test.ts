@@ -1,15 +1,22 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { FakeDriver, fixtureTemplateEcho } from "@pstdio/pocketcoder-testkit";
 import { DEFAULT_LIMITS, Scheduler } from "../index";
 
+const createStore = createTestStoreFactory();
+
 // Policy callbacks are the external authorization boundary, not scheduler internals.
-test.each(["create", "restore"] as const)(
-  "external denial blocks %s before provisioning and retries safely",
-  async (launchMode) => {
-    const store = new MemoryStore();
+test.each([
+  ["create", "admission_actor_capacity"],
+  ["restore", "admission_actor_capacity"],
+  ["create", "admission_policy_global_capacity"],
+  ["restore", "admission_policy_global_capacity"],
+] as const)(
+  "external denial blocks %s with %s before provisioning and retries safely",
+  async (launchMode, denialReason) => {
+    const store = await createStore();
     const driver = new FakeDriver();
     const principal = await store.createPrincipal("backend", ["admin"], ["*"]);
     const fixture = fixtureTemplateEcho();
@@ -51,7 +58,8 @@ test.each(["create", "restore"] as const)(
         expect(row.principalId).toBe(principal.id);
         expect(row.metadata).toEqual({ actor: "approved-user" });
         if (decision === "error") throw new Error("policy unavailable");
-        return decision === "allow";
+        if (decision === "deny") return { allowed: false, reason: denialReason };
+        return true;
       },
     });
     for (const next of ["deny", "error"] as const) {
@@ -59,10 +67,17 @@ test.each(["create", "restore"] as const)(
       await scheduler.tick();
       expect(driver.inputFor(id)).toBeUndefined();
       expect((await store.getWorkspace(id))?.state).toBe("queued");
+      expect((await store.getWorkspace(id))?.reasonCode).toBe(next === "deny" ? denialReason : "admission_unavailable");
+      const cursor = (await store.getWorkspace(id))?.changeSeq;
+      const updatedAt = (await store.getWorkspace(id))?.updatedAt;
+      await scheduler.tick();
+      expect((await store.getWorkspace(id))?.changeSeq).toBe(cursor);
+      expect((await store.getWorkspace(id))?.updatedAt).toEqual(updatedAt);
     }
     decision = "allow";
     await scheduler.tick();
     expect(driver.inputFor(id)?.workspace_id).toBe(id);
-    expect(observed).toEqual([id, id, id]);
+    expect((await store.getWorkspace(id))?.reasonCode).toBeNull();
+    expect(observed).toEqual([id, id, id, id, id]);
   },
 );

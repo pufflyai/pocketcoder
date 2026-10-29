@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ApiError, digestOf, type RestoreRequest } from "@pstdio/pocketcoder-contracts";
 import type { PrincipalRow, StorageRef, WorkspaceOperationRow } from "@pstdio/pocketcoder-runtime-core";
 
+import { conversationRetention } from "../conversations/conversation-retention";
 import type { PersistenceContext } from "./persistence-base";
 import { cleanupPreservedStorage } from "./persistence-cleanup";
 
@@ -14,6 +15,7 @@ export class PersistenceMaintenanceService {
     unknown_storage: string[];
     unknown_checkpoints: string[];
   }> {
+    if (this.context.deps.checkpointTransfers) return this.context.deps.checkpointTransfers.inventory();
     const driver = this.context.storageDriver();
     const [storage, checkpoints] = await Promise.all([driver.listStorage(), driver.listCheckpoints()]);
     const unknownStorage: string[] = [];
@@ -39,7 +41,10 @@ export class PersistenceMaintenanceService {
 
   async pruneExpired(): Promise<{ deleted: number; skipped: number; transcriptsDeleted: number }> {
     const now = this.context.now();
-    const transcriptsDeleted = await this.context.deps.store.pruneExpiredConversations(now);
+    const transcriptsDeleted = await this.context.deps.store.pruneExpiredConversations(
+      now,
+      conversationRetention(this.context.limits().conversationRetention),
+    );
     let deleted = 0;
     let skipped = 0;
     for (const principal of await this.context.deps.store.listPrincipals()) {
@@ -111,6 +116,7 @@ export class PersistenceMaintenanceService {
       "Changed delete request.",
     );
     if (replay) {
+      await this.context.deps.store.acknowledgeJournal?.();
       if (replay.state === "succeeded") {
         const checkpoint = await this.context.deps.store.getCheckpoint(checkpointId);
         if (checkpoint) await cleanupPreservedStorage(this.context, checkpoint.storageId);
@@ -129,26 +135,32 @@ export class PersistenceMaintenanceService {
       id: randomUUID(),
       principalId: principal.id,
       kind: "delete",
-      state: "running",
+      state: "pending",
       idempotencyKey,
       requestDigest,
       workspaceId: checkpoint.workspaceId,
       checkpointId,
       resultWorkspaceId: null,
       reasonCode: null,
-      attemptCount: 1,
+      attemptCount: 0,
       createdAt: now,
       updatedAt: now,
       completedAt: null,
     });
     if (inserted.conflict) throw new ApiError("idempotency.conflict", "Changed delete request.");
     if (!inserted.created) return inserted.operation;
+    await this.context.deps.store.acknowledgeJournal?.();
+    await this.context.deps.store.updateOperation(inserted.operation.id, { state: "running", attemptCount: 1 }, now);
     await this.context.deps.store.updateCheckpoint(checkpoint.id, { state: "deleting" }, now);
     const deleting = await this.context.deps.store.getCheckpoint(checkpoint.id);
     if (deleting) await this.context.emitCheckpointEvent("checkpoint.deleting", deleting);
     try {
       if (checkpoint.providerRef) {
-        await this.context.storageDriver().deleteCheckpoint(checkpoint.providerRef as StorageRef);
+        if (checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers) {
+          await this.context.deps.checkpointTransfers.delete(checkpoint);
+        } else {
+          await this.context.storageDriver().deleteCheckpoint(checkpoint.providerRef as StorageRef);
+        }
       }
       const done = this.context.now();
       await this.context.deps.store.updateCheckpoint(checkpoint.id, { state: "deleted", deletedAt: done }, done);

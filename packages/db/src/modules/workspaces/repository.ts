@@ -8,7 +8,6 @@ import type { SQL } from "drizzle-orm";
 import { and, count, desc, eq, gte, lt, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
-import { structuredJsonValue } from "../../schema/structured-json";
 import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
 
@@ -102,7 +101,7 @@ export function createWorkspaces(context: DatabaseContext) {
             filter.state ? eq(workspaces.state, filter.state) : undefined,
             filter.template ? eq(workspaces.templateName, filter.template) : undefined,
             filter.metadata
-              ? sql`${structuredJsonValue(workspaces.metadata)} @> ${sql.param(filter.metadata, workspaces.metadata)}::jsonb`
+              ? sql`${workspaces.metadata} @> ${sql.param(filter.metadata, workspaces.metadata)}::jsonb`
               : undefined,
             filter.createdAfter ? gte(workspaces.createdAt, filter.createdAfter) : undefined,
             filter.createdBefore ? lt(workspaces.createdAt, filter.createdBefore) : undefined,

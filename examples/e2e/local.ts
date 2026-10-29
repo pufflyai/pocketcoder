@@ -3,10 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OSS_FIXTURE_CONTENT, startFakeOssGateway } from "../harnesses/oss/fake-gateway";
-import { PI_FIXTURE_CONTENT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
+import { PI_FIXTURE_CONTENT, PI_INTERRUPT_PROMPT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
+import { bootstrapExampleOwner, issueExampleAccess } from "./administration";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
 import { piStartupCommand, runDoctorCheck } from "./doctor-check";
 import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
@@ -46,9 +47,7 @@ if (
 
 const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const tempDir = await mkdtemp(resolve(tmpdir(), "pocketcoder-example-"));
-const postgresName = `pocketcoder-example-postgres-${runId}`;
 const localImage = `pocketcoder-example-${harness}:${runId}`;
-let postgresId = "";
 let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
 let localPiProcess: ReturnType<typeof Bun.spawn> | null = null;
 let modelGateway: ReturnType<typeof Bun.serve> | null = null;
@@ -69,7 +68,6 @@ async function cleanup(): Promise<void> {
     serverProcess.kill("SIGTERM");
     await Promise.race([serverProcess.exited, Bun.sleep(5000)]).catch(() => {});
   }
-  if (postgresId) await bestEffort(["docker", "rm", "--force", postgresId]);
   await bestEffort(["docker", "image", "rm", "--force", localImage]);
   await rm(tempDir, { recursive: true, force: true });
 }
@@ -82,43 +80,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   await command(["docker", "version", "--format", "{{.Server.Version}}"], { quiet: true });
-  postgresId = (
-    await command(
-      [
-        "docker",
-        "run",
-        "--detach",
-        "--name",
-        postgresName,
-        "--env",
-        "POSTGRES_USER=pocketcoder",
-        "--env",
-        "POSTGRES_PASSWORD=pocketcoder",
-        "--env",
-        "POSTGRES_DB=pocketcoder",
-        "--publish",
-        "127.0.0.1::5432",
-        "postgres:16-alpine",
-      ],
-      { quiet: true },
-    )
-  ).stdout;
-
-  const postgresPortOutput = await command(["docker", "port", postgresId, "5432/tcp"], {
-    quiet: true,
-  });
-  const postgresPort = Number(postgresPortOutput.stdout.split(":").at(-1));
-  if (!postgresPort) throw new Error("could not resolve the temporary PostgreSQL port");
-
-  await waitFor(
-    async () =>
-      (await command(["docker", "exec", postgresId, "pg_isready", "-U", "pocketcoder"], {
-        quiet: true,
-      }).catch(() => null)) !== null,
-    30_000,
-    "PostgreSQL",
-  );
-
   if (harness === "echo") {
     await command([
       "bun",
@@ -146,7 +107,7 @@ try {
   const template = JSON.parse(await readFile(templatePath, "utf8")) as {
     spec: {
       image: string;
-      agent?: { command: string[]; env?: Record<string, string> };
+      agent?: { command: string[]; model?: string; env?: Record<string, string> };
       harness?: { env?: Record<string, string> };
     };
   };
@@ -168,13 +129,14 @@ try {
       usesFakeGateway = true;
     }
     if (!template.spec.agent) throw new Error("Pi template must use spec.agent");
+    template.spec.agent.model = process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test");
     if (usesFakeGateway) {
       template.spec.agent.command = piStartupCommand(template.spec.agent.command);
     }
     template.spec.agent.env = {
       ...template.spec.agent.env,
       PI_GATEWAY_URL: process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
-      PI_GATEWAY_MODEL: process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test"),
+      PI_GATEWAY_MODEL: template.spec.agent.model,
       PI_GATEWAY_PROVIDER:
         process.env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
       PI_GATEWAY_API: process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
@@ -199,52 +161,16 @@ try {
   await mkdir(templateDir, { recursive: true });
   await writeFile(resolve(templateDir, `${harness}.json`), JSON.stringify(template, null, 2));
 
-  const databaseUrl = `postgres://pocketcoder:pocketcoder@127.0.0.1:${postgresPort}/pocketcoder`;
   const pepper = randomBytes(32).toString("base64url");
   const adminEnv = {
-    POCKETCODER_DATABASE_URL: databaseUrl,
+    POCKETCODER_DIR: resolve(tempDir, "pc_data"),
     POCKETCODER_AUTH_PEPPER: pepper,
   };
-  await command(["bun", "packages/cli/src/index.ts", "db", "migrate"], {
-    env: adminEnv,
-  });
-  await command(
-    [
-      "bun",
-      "packages/cli/src/index.ts",
-      "principals",
-      "create",
-      "--name",
-      `example-${runId}`,
-      "--scopes",
-      LOCAL_PI_PRINCIPAL_SCOPES.join(","),
-      "--templates",
-      "*",
-    ],
-    { env: adminEnv },
-  );
-  const issued = await command(
-    [
-      "bun",
-      "packages/cli/src/index.ts",
-      "keys",
-      "issue",
-      "--principal",
-      `example-${runId}`,
-      // Bounded to the template's maxAge: an ephemeral run must not
-      // mint credentials that outlive it (docs/security.md).
-      "--expires",
-      new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-    ],
-    { env: adminEnv, quiet: true },
-  );
-  const key = issued.stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .find((line) => line.startsWith("pkt_"));
-  if (!key) throw new Error("pcd did not return a machine key");
+  const keyExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  const ownerKey = await bootstrapExampleOwner(adminEnv.POCKETCODER_DIR, pepper, keyExpiry);
 
   const serverPort = freePort();
+  const agentPort = freePort();
   const serverProcessOutput = serverOutput({
     interactive: localPiUi,
     debug: process.env.POCKETCODER_EXAMPLE_DEBUG === "1",
@@ -258,9 +184,10 @@ try {
       // so the E2E server must listen beyond the host loopback interface.
       POCKETCODER_HOST: "0.0.0.0",
       POCKETCODER_PORT: String(serverPort),
+      POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
       POCKETCODER_TEMPLATE_DIR: templateDir,
       POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
-      POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${serverPort}`,
+      POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
     },
     ...serverProcessOutput,
   });
@@ -277,6 +204,13 @@ try {
     30_000,
     "pocketcoder-server",
   );
+
+  const key = await issueExampleAccess(baseUrl, ownerKey, {
+    name: `example-${runId}`,
+    scopes: [...LOCAL_PI_PRINCIPAL_SCOPES],
+    templates: ["*"],
+    expiresAt: keyExpiry,
+  });
 
   let defaultPrompt = `Reply with exactly: ${OSS_FIXTURE_CONTENT}`;
   if (harness === "echo") defaultPrompt = "hello from the local E2E";
@@ -343,9 +277,16 @@ try {
       readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
       messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
       expectedLiveUpdates: usesFakeGateway ? 2 : undefined,
+      interruptPrompt: harness === "pi" && usesFakeGateway ? PI_INTERRUPT_PROMPT : undefined,
     });
     console.log("PocketCoder local harness E2E passed:");
     console.log(JSON.stringify(report, null, 2));
+    if (harness === "pi" && usesFakeGateway) {
+      await command(["bun", "test", "examples/harnesses/pi/agentapi-compat.test.ts"], {
+        env: { POCKETCODER_PI_TEST_URL: baseUrl, POCKETCODER_PI_TEST_KEY: key },
+      });
+      console.log("Pi repeated-reply regression passed: four stable and durable file replies.");
+    }
   }
 } finally {
   await cleanup();

@@ -9,17 +9,20 @@ interface RunCliOptions {
   cwd?: string;
   env?: Record<string, string | undefined>;
   keepStdinOpen?: boolean;
+  input?: string;
 }
 
 const pocketcoderEnvironment = [
   "POCKETCODER_AUTH_PEPPER",
-  "POCKETCODER_DATABASE_SCHEMA",
   "POCKETCODER_DATABASE_URL",
+  "POCKETCODER_DATABASE_SCHEMA",
+  "POCKETCODER_JOURNAL_DIR",
+  "POCKETCODER_STORE",
+  "POCKETCODER_DIR",
   "POCKETCODER_HOST",
   "POCKETCODER_KEY",
   "POCKETCODER_PORT",
   "POCKETCODER_STATE_DIR",
-  "POCKETCODER_STORE",
   "POCKETCODER_TEMPLATE_DIR",
   "POCKETCODER_URL",
 ];
@@ -39,10 +42,14 @@ export async function runCli(args: readonly string[], options: RunCliOptions = {
   const child = Bun.spawn([process.execPath, "--no-env-file", resolve(import.meta.dir, "../index.ts"), ...args], {
     cwd: options.cwd ?? resolve(import.meta.dir, "../.."),
     env,
-    ...(options.keepStdinOpen ? { stdin: "pipe" } : {}),
+    ...(options.keepStdinOpen || options.input !== undefined ? { stdin: "pipe" as const } : {}),
     stdout: "pipe",
     stderr: "pipe",
   });
+  if (options.input !== undefined && child.stdin) {
+    child.stdin.write(options.input);
+    child.stdin.end();
+  }
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),

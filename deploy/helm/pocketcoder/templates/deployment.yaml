@@ -1,0 +1,236 @@
+{{- $image := printf "%s@%s" .Values.image.repository .Values.image.digest }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pocketcoder-server
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+spec:
+  # One controller: it holds the coordinator lease, and the data volume is ReadWriteOnce.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pocketcoder.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pocketcoder.selector" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/templates: {{ .Values.templates.files | toJson | sha256sum }}
+        checksum/principals: {{ .Values.principals.config | toJson | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if or (and (eq .Values.store.kind "postgres") .Values.store.migrate) .Values.initContainers }}
+      initContainers:
+        {{- if and (eq .Values.store.kind "postgres") .Values.store.migrate }}
+        # Migrates and converts history from earlier releases before a controller starts.
+        - name: migrate
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["pcd", "db", "migrate"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            {{- include "pocketcoder.databaseEnv" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- include "pocketcoder.databaseMounts" . | nindent 12 }}
+        {{- end }}
+        {{- with .Values.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ $image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+            - name: agent
+              containerPort: {{ .Values.service.agentPort }}
+          env:
+            {{- include "pocketcoder.databaseEnv" . | nindent 12 }}
+            - name: POCKETCODER_HTTP
+              value: {{ printf "0.0.0.0:%v" .Values.service.port | quote }}
+            - name: POCKETCODER_AGENT_HTTP
+              value: {{ printf "0.0.0.0:%v" .Values.service.agentPort | quote }}
+            - name: POCKETCODER_DIR
+              value: /var/lib/pocketcoder/data
+            - name: POCKETCODER_JOURNAL_DIR
+              value: /var/lib/pocketcoder-journal/journal
+            {{- if .Values.keys.secretName }}
+            - name: POCKETCODER_AUTH_PEPPER
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.keys.secretName }}, key: auth-pepper }
+            - name: POCKETCODER_EVENT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.keys.secretName }}, key: event-signing-key, optional: true }
+            - name: POCKETCODER_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.keys.secretName }}, key: secret-key, optional: true }
+            {{- end }}
+            - name: POCKETCODER_DRIVER
+              value: kubernetes
+            - name: POCKETCODER_KUBERNETES_NAMESPACE
+              value: {{ include "pocketcoder.workspaceNamespace" . | quote }}
+            - name: POCKETCODER_KUBERNETES_SERVICE_ACCOUNT
+              value: {{ .Values.workspace.serviceAccount.name | quote }}
+            {{- with .Values.workspace.runtimeClassName }}
+            - name: POCKETCODER_KUBERNETES_RUNTIME_CLASS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.workspace.nodeSelector }}
+            - name: POCKETCODER_KUBERNETES_NODE_SELECTOR
+              value: {{ . | toJson | quote }}
+            {{- end }}
+            {{- with .Values.workspace.tolerations }}
+            - name: POCKETCODER_KUBERNETES_TOLERATIONS
+              value: {{ . | toJson | quote }}
+            {{- end }}
+            - name: POCKETCODER_WORKSPACE_SERVER_URL
+              value: {{ default (printf "http://pocketcoder-agent.%s.svc:%v" .Release.Namespace .Values.service.agentPort) .Values.workspace.serverUrl | quote }}
+            - name: POCKETCODER_STORAGE_BACKEND
+              value: {{ .Values.checkpoints.backend | quote }}
+            {{- if ne .Values.checkpoints.backend "disabled" }}
+            - name: POCKETCODER_CHECKPOINT_DIR
+              value: /var/lib/pocketcoder/checkpoints
+            {{- end }}
+            - name: POCKETCODER_SECRET_PROVIDER
+              value: kubernetes
+            - name: POCKETCODER_TEMPLATE_DIR
+              value: /etc/pocketcoder/templates
+            {{- if .Values.principals.config }}
+            - name: POCKETCODER_PRINCIPALS_FILE
+              value: /etc/pocketcoder/principals/principals.json
+            {{- end }}
+            {{- with .Values.eventSink.url }}
+            - name: POCKETCODER_EVENT_SINK_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.launchPolicy.url }}
+            - name: POCKETCODER_LAUNCH_POLICY_URL
+              value: {{ .Values.launchPolicy.url | quote }}
+            - name: POCKETCODER_LAUNCH_POLICY_TOKEN_FILE
+              value: /etc/pocketcoder/launch-policy/token
+            {{- end }}
+            {{- with .Values.conversations.retention }}
+            - name: POCKETCODER_CONVERSATION_RETENTION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.conversations.maxRetention }}
+            - name: POCKETCODER_MAX_CONVERSATION_RETENTION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # Liveness means the process is up. Readiness means it admits work; bootstrap
+          # jobs and hooks use the live Service and /livez instead.
+          livenessProbe:
+            httpGet: { path: /livez, port: http }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pocketcoder
+            - name: journal
+              mountPath: /var/lib/pocketcoder-journal
+            - name: templates
+              mountPath: /etc/pocketcoder/templates
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.principals.config }}
+            - name: principals
+              mountPath: /etc/pocketcoder/principals
+              readOnly: true
+            {{- end }}
+            {{- if .Values.launchPolicy.url }}
+            - name: launch-policy
+              mountPath: /etc/pocketcoder/launch-policy
+              readOnly: true
+            {{- end }}
+            {{- include "pocketcoder.databaseMounts" . | nindent 12 }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "pocketcoder.dataClaim" . }}
+        - name: journal
+          persistentVolumeClaim:
+            claimName: {{ include "pocketcoder.journalClaim" . }}
+        - name: templates
+          configMap:
+            name: {{ include "pocketcoder.templatesConfigMap" . }}
+            optional: true
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Mi
+        {{- if .Values.principals.config }}
+        - name: principals
+          configMap:
+            name: {{ .Release.Name }}-principals
+        {{- end }}
+        {{- if .Values.launchPolicy.url }}
+        - name: launch-policy
+          secret:
+            secretName: {{ .Values.launchPolicy.tokenSecret.name }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.launchPolicy.tokenSecret.key }}
+                path: token
+        {{- end }}
+        {{- if and (eq .Values.store.kind "postgres") .Values.store.database.caConfigMap.name }}
+        - name: database-ca
+          configMap:
+            name: {{ .Values.store.database.caConfigMap.name }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

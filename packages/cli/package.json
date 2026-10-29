@@ -22,31 +22,32 @@
     "LICENSE"
   ],
   "bin": {
-    "pcd": "dist/index.js"
+    "pcd": "dist/bin.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "node": ">=22.19.0"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target bun && bun ../../scripts/copy-db-migrations.ts ./dist",
-    "compile": "bun build ./src/index.ts --compile --outfile ./dist/pcd && bun ../../scripts/copy-db-migrations.ts ./dist",
+    "build": "bun scripts/build.ts",
+    "compile": "bun build ./src/index.ts --compile --minify --format=cjs --outfile ../../out/native/pocketcoder",
     "start": "bun ./src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
-  "dependencies": {
-    "dotenv": "^17.4.2",
-    "yargs": "^17.7.2"
-  },
   "devDependencies": {
-    "@pstdio/pocketcoder-sdk": "workspace:*",
-    "@pstdio/pocketcoder-server": "workspace:*",
+    "dotenv": "^17.4.2",
+    "yargs": "^17.7.2",
+    "@pstdio/pocketcoder-drivers": "workspace:*",
+    "@pstdio/pocketcoder-auth": "workspace:*",
     "@pstdio/pocketcoder-contracts": "workspace:*",
     "@pstdio/pocketcoder-db": "workspace:*",
     "@pstdio/pocketcoder-runtime-core": "workspace:*",
+    "@pstdio/pocketcoder-sdk": "workspace:*",
+    "@pstdio/pocketcoder-server": "workspace:*",
+    "@pstdio/pocketcoder-testkit": "workspace:*",
     "@types/yargs": "^17.0.35"
   }
 }

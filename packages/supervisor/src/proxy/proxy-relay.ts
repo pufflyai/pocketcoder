@@ -5,6 +5,7 @@ import type {
   TemplateService,
   TemplateServiceRoute,
 } from "@pstdio/pocketcoder-contracts";
+import { previewTarget } from "@pstdio/pocketcoder-contracts";
 
 type SendFrame = (type: AgentFrame["type"], payload: unknown) => boolean;
 
@@ -20,6 +21,7 @@ export async function relayProxyRequest(
   },
 ) {
   const exec = callbacks.exec();
+  if (request.service.startsWith("pc-preview:")) return relayPreview(request, callbacks);
   const service = exec?.services[request.service];
   const route = service?.routes.find(
     (candidate) => candidate.method === request.method && candidate.path === request.path,
@@ -81,4 +83,28 @@ export async function relayProxyRequest(
       error_code: error instanceof Error && error.name === "TimeoutError" ? "deadline" : "unreachable",
     });
   }
+}
+
+async function relayPreview(request: ProxyRequest, callbacks: Parameters<typeof relayProxyRequest>[1]) {
+  const exec = callbacks.exec();
+
+  const preview = exec?.previews?.[request.service.slice(11)];
+  if (!preview || callbacks.isQuiescing()) {
+    callbacks.send("proxy_stream_end", { request_id: request.request_id, error_code: "unreachable" });
+    return;
+  }
+  const url = previewTarget(preview.port, request.path);
+  await callbacks.relayStream(
+    request,
+    { baseUrl: url.origin, required: false, healthPath: "/", routes: [] },
+    {
+      method: "GET",
+      path: url.pathname,
+      query: [],
+      responseMode: "stream",
+      maxRequestBytes: 65536,
+      maxResponseBytes: 16 * 1024 * 1024,
+      deadlineSeconds: 300,
+    },
+  );
 }

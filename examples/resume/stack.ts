@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { loadConfig } from "@pstdio/pocketcoder-server/config";
 import { startPocketCoderServer } from "@pstdio/pocketcoder-server/lifecycle";
-import { freePort, waitFor } from "../e2e/local-process";
+import { bootstrapExampleOwner, issueExampleAccess } from "../e2e/administration";
+import { freePort } from "../e2e/local-process";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { removeRunDirectory } from "./cleanup";
@@ -54,7 +55,6 @@ export class IsolatedStack {
     const directory = await mkdtemp(join(tmpdir(), "pocketcoder-resume-"));
     this.cleanups.push(() => removeRunDirectory(directory));
     const id = randomBytes(6).toString("hex");
-    const postgres = `pocketcoder-resume-db-${id}`;
     console.log("Building the remote client...");
     await this.run(["bun", "run", "build"]);
     console.log("Building the Pi workspace image...");
@@ -67,80 +67,23 @@ export class IsolatedStack {
       dockerfile: "examples/harnesses/pi/Dockerfile",
       command: (args) => this.run(args),
     });
-    console.log("Starting the isolated database...");
-    this.cleanups.push(() => run(["docker", "rm", "--force", postgres]));
-    await this.run([
-      "docker",
-      "run",
-      "--detach",
-      "--name",
-      postgres,
-      "--env",
-      "POSTGRES_USER=pocketcoder",
-      "--env",
-      "POSTGRES_PASSWORD=pocketcoder",
-      "--env",
-      "POSTGRES_DB=pocketcoder",
-      "--publish",
-      "127.0.0.1::5432",
-      "postgres:16-alpine",
-    ]);
-    const port = (await this.run(["docker", "port", postgres, "5432/tcp"])).stdout.split(":").at(-1);
-    await waitFor(
-      async () => {
-        try {
-          await this.run(["docker", "exec", postgres, "pg_isready", "-h", "127.0.0.1", "-U", "pocketcoder"]);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      30_000,
-      "isolated PostgreSQL",
-    );
     const adminEnv = {
-      POCKETCODER_DATABASE_URL: `postgres://pocketcoder:pocketcoder@127.0.0.1:${port}/pocketcoder`,
-      POCKETCODER_DATABASE_SCHEMA: "pocketcoder",
+      POCKETCODER_DIR: join(directory, "pc_data"),
       POCKETCODER_AUTH_PEPPER: randomBytes(32).toString("base64url"),
     };
-    await Bun.write(join(directory, ".env"), "");
-    const cli = ["bun", "--no-env-file", "packages/cli/src/index.ts", "--env-file", join(directory, ".env")];
-    console.log("Preparing the database and API credentials...");
-    await this.run([...cli, "db", "migrate"], adminEnv);
-    await this.run(
-      [
-        ...cli,
-        "principals",
-        "create",
-        "--name",
-        id,
-        "--scopes",
-        [
-          ...LOCAL_PI_PRINCIPAL_SCOPES,
-          "workspaces:preserve",
-          "workspaces:restore",
-          "checkpoints:read",
-          "checkpoints:delete",
-        ].join(","),
-        "--templates",
-        "pi-resume",
-      ],
-      adminEnv,
-    );
     const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
-    // The host still needs authority to cancel workspaces and delete checkpoints
-    // after model access ends. This key never enters a workspace.
+    // Cleanup authority stays in this host process after model access ends.
     const cleanupExpiresAt = new Date(expiresAt.getTime() + 5 * 60 * 1000);
-    const issued = await this.run(
-      [...cli, "keys", "issue", "--principal", id, "--expires", cleanupExpiresAt.toISOString()],
-      adminEnv,
+    const ownerKey = await bootstrapExampleOwner(
+      adminEnv.POCKETCODER_DIR,
+      adminEnv.POCKETCODER_AUTH_PEPPER,
+      cleanupExpiresAt,
     );
-    const key = issued.stdout.split("\n").find((line) => line.startsWith("pkt_"));
-    if (!key) throw new Error("Machine key was not issued");
     const templates = join(directory, "templates");
     await mkdir(templates);
     await Bun.write(join(templates, "pi-resume.json"), JSON.stringify(resumeTemplate(image, idleSeconds)));
     const serverPort = freePort();
+    const agentPort = freePort();
     const logFile = Bun.file(join(directory, "server.log")).writer();
     this.cleanups.push(async () => {
       await logFile.end();
@@ -150,9 +93,10 @@ export class IsolatedStack {
         ...adminEnv,
         POCKETCODER_HOST: "0.0.0.0",
         POCKETCODER_PORT: String(serverPort),
+        POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
         POCKETCODER_TEMPLATE_DIR: templates,
         POCKETCODER_INPUT_DIR: join(directory, "inputs"),
-        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${serverPort}`,
+        POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
         POCKETCODER_STORAGE_BACKEND: "filesystem",
         POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "workspaces"),
         POCKETCODER_CHECKPOINT_DIR: join(directory, "checkpoints"),
@@ -165,6 +109,18 @@ export class IsolatedStack {
     );
     this.cleanups.push(() => server.stop());
     const baseUrl = `http://127.0.0.1:${serverPort}`;
+    const key = await issueExampleAccess(baseUrl, ownerKey, {
+      name: id,
+      scopes: [
+        ...LOCAL_PI_PRINCIPAL_SCOPES,
+        "workspaces:preserve",
+        "workspaces:restore",
+        "checkpoints:read",
+        "checkpoints:delete",
+      ],
+      templates: ["pi-resume"],
+      expiresAt: cleanupExpiresAt,
+    });
     const client = new PocketCoderClient({ baseUrl, apiKey: key });
     console.log(`Isolated API: ${baseUrl}`);
     console.log(`Temporary storage: ${directory}`);

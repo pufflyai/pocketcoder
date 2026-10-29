@@ -6,12 +6,14 @@ const WORKSPACE = randomUUID();
 
 function descriptor(id: string, name = "report.pdf") {
   return {
-    id,
+    workspaceId: WORKSPACE,
+    fileId: id,
+    objectVersion: `sha256:${"a".repeat(64)}`,
     name,
-    path: `/home/pocketcoder/.pcd/attachments/${id}/${name}`,
-    media_type: "application/pdf",
-    size_bytes: 11,
-    sha256: "a".repeat(64),
+    mediaType: "application/pdf",
+    sizeBytes: 11,
+    digest: `sha256:${"a".repeat(64)}`,
+    visibility: "ready",
   };
 }
 
@@ -22,6 +24,7 @@ function readyWorkspace() {
     id: WORKSPACE,
     external_id: "attachments",
     template: { name: "pi", version: "1", digest: "sha256:pi" },
+    agent: { type: "custom", model: null },
     state: "ready",
     reason_code: null,
     agent_state: "stable",
@@ -76,11 +79,14 @@ describe("attachments.upload", () => {
       body: "hello bytes",
       sizeBytes: 11,
     });
-    expect(uploaded.id).toBe(attachmentId);
+    expect(uploaded.fileId).toBe(attachmentId);
 
     const request = requests[0] as Request;
     expect(request.method).toBe("PUT");
     expect(new URL(request.url).pathname).toBe(`/v1/workspaces/${WORKSPACE}/attachments/${attachmentId}`);
+    expect(request.headers.get("x-content-sha256")).toBe(
+      new Bun.CryptoHasher("sha256").update("hello bytes").digest("hex"),
+    );
     expect(request.headers.get("content-type")).toBe("application/pdf");
     expect(request.headers.get("content-disposition")).toBe('attachment; filename="report.pdf"');
     expect(request.headers.get("authorization")).toBe("Bearer pkt_example");
@@ -99,7 +105,7 @@ describe("attachments.upload", () => {
       body: "hello bytes",
       sizeBytes: 11,
     });
-    expect(uploaded.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(uploaded.fileId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   test("encodes non-ASCII filenames with RFC 5987", async () => {

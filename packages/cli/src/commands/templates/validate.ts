@@ -1,4 +1,5 @@
-import { loadTemplateFile } from "@pstdio/pocketcoder-runtime-core";
+import { parseVersionedTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { loadTemplateSource } from "@pstdio/pocketcoder-runtime-core";
 import type { Argv } from "yargs";
 import { type Flags, fail } from "../../command/cli-context";
 import { addAction } from "../command";
@@ -24,7 +25,7 @@ export function addValidateCommand(parser: Argv) {
       let valid = true;
       for (const file of files) {
         try {
-          const parsed = await loadTemplateFile(file);
+          const parsed = parseVersionedTemplateManifest(await loadTemplateSource(file));
           console.log(
             `${file}: ok (${parsed.manifest.metadata.name}@${parsed.manifest.spec.version}, ${parsed.digest.slice(0, 19)}...)`,
           );

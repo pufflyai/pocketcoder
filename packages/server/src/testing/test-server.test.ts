@@ -6,7 +6,6 @@ import {
   HEADER_WORKSPACE,
   PROTOCOL_VERSION,
 } from "@pstdio/pocketcoder-contracts";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
 import { DEFAULT_LIMITS, type Store } from "@pstdio/pocketcoder-runtime-core";
 import {
   FakeDriver,
@@ -14,8 +13,9 @@ import {
   fixtureTemplateSleep,
   fixtureTemplateTerminal,
 } from "@pstdio/pocketcoder-testkit";
-import { type BuiltServer, buildServer } from "../app";
+import { type BuildDeps, type BuiltServer, buildServer } from "../app";
 import type { Readiness } from "../observability/health";
+import { registerServerTestCleanup } from "./test-server-cleanup";
 
 export const SERVER_TEST_PEPPER = "test-pepper";
 
@@ -35,8 +35,12 @@ export function createTestBody(externalId: string = randomUUID()) {
   });
 }
 
-export async function createTestServer(limits = {}, readiness?: Readiness): Promise<TestServer> {
-  const store = new MemoryStore();
+export async function createTestServer(
+  store: Store,
+  limits = {},
+  readiness?: Readiness,
+  options: Pick<BuildDeps, "publicViews" | "screenshotOptions"> = {},
+): Promise<TestServer> {
   const driver = new FakeDriver();
   const principal = await store.createPrincipal(
     "test-backend",
@@ -91,6 +95,7 @@ export async function createTestServer(limits = {}, readiness?: Readiness): Prom
     });
   }
   const built = buildServer({
+    ...options,
     store,
     driver,
     pepper: SERVER_TEST_PEPPER,
@@ -98,6 +103,7 @@ export async function createTestServer(limits = {}, readiness?: Readiness): Prom
     workspaceServerUrl: "http://127.0.0.1:0",
     ...(readiness ? { readiness } : {}),
   });
+  registerServerTestCleanup(store, built);
   return {
     ...built,
     store,
@@ -120,7 +126,7 @@ export function authed(token: string, init: RequestInit = {}): RequestInit {
 }
 
 export async function markReadyThroughAgent(
-  testServer: Pick<TestServer, "app" | "websocket" | "store" | "driver">,
+  testServer: Pick<TestServer, "agentApp" | "websocket" | "store" | "driver">,
   workspaceId: string,
 ): Promise<void> {
   const input = testServer.driver.inputFor(workspaceId);
@@ -128,7 +134,7 @@ export async function markReadyThroughAgent(
   const listener = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: testServer.app.fetch,
+    fetch: testServer.agentApp.fetch,
     websocket: testServer.websocket,
   });
   const connectionId = randomUUID();

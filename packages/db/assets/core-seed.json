@@ -1,0 +1,103 @@
+{
+  "app": "pocketcoder",
+  "pgliteVersion": "0.5.8",
+  "postgresVersion": "18.3",
+  "checksum": "e69752964bcc63d98054f31799b69a26bdf430b2bc7d4ab6335f19751513d9e9",
+  "sourceChecksum": "52345b7c0b071a3873c160c4198994d9f5cf45a4e81b065d10f3e0218373c4d7",
+  "engine": {
+    "wasm": {
+      "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
+      "sourceChecksum": "356b89f6fcb2ab3a397bec4128327b67b7137ec2a900b13251dade81bcbc0ef0"
+    },
+    "data": {
+      "checksum": "69f61a068cd3d40cbd537c81d6a53689225ecddf15e9073120c1c92a463e90c9",
+      "sourceChecksum": "c574cc331d96e33311470ec57bf58c579d972c111dbd9c0ab54bb42d79ec4c0d"
+    }
+  },
+  "migrations": [
+    {
+      "name": "20260730103433_initial",
+      "hash": "72be0c8fe059ee14ff1b1dfee18acd3821f7b3e0e8d352b0cd82763ebc174f52"
+    },
+    {
+      "name": "20260730113243_regular_pretty_boy",
+      "hash": "eb711305e4362580a81e14d66e95546e0af6fa4c1acf6cb429c4c1ef1e957a64"
+    },
+    {
+      "name": "20260730132750_workspace-change-diagnostics",
+      "hash": "264f0fd7cfb421f9ae88b564d14877a7e09b31d0554b4a783690eb4f94adb242"
+    },
+    {
+      "name": "20260803081501_warm-workspace-pool",
+      "hash": "d6558e3880b13c12fdfbcdafdf1197e97e42eee11d03472ae7bce0f3380bd2f3"
+    },
+    {
+      "name": "20260803092834_durable-conversations",
+      "hash": "653afcd2a38a1ab2b2f764a1ce1e74411f2c7faace8ba313bcbb9295ed6bf462"
+    },
+    {
+      "name": "20260804093525_petite_morlun",
+      "hash": "5c49feb64558ef728228f2ed07917a51518b6d3e3e38cea98b928e0ee17bd092"
+    },
+    {
+      "name": "20260805123328_sloppy_brother_voodoo",
+      "hash": "4e302762168fabdcc0ccb9775abb3333c986022410f47487a4d0789a9914df54"
+    },
+    {
+      "name": "20260922062201_brave_the_spike",
+      "hash": "1c918bc027e6af6be581400607beaf8547a2fba53dffca74e1490b79177b1a0a"
+    },
+    {
+      "name": "20261005163843_tan_galactus",
+      "hash": "6ebb210423167072a49617739b25bf5755593ce1e86456c024d3f356b6885155"
+    },
+    {
+      "name": "20261007210918_abnormal_outlaw_kid",
+      "hash": "88f1798d438de732a450ba343a6efaf482816b3bd69991756f1021c050b751cd"
+    },
+    {
+      "name": "20261009085152_cheerful_the_spike",
+      "hash": "0e96f2f636d4df623abdbf2330067ae1a00dfbc5a49f66ebf920fa9668c8a31f"
+    },
+    {
+      "name": "20261009112418_lumpy_obadiah_stane",
+      "hash": "9ac297ad91c74f6b473434f6d45b7805d94e90f8ea0210bb503c113f43752716"
+    },
+    {
+      "name": "20261009131616_small_purple_man",
+      "hash": "06804295e4b48cef7c2c837daeec546b76617e9e7144bd21893da2022f22ac7e"
+    },
+    {
+      "name": "20261010004423_puzzling_jigsaw",
+      "hash": "7c1239881affddc9b9a2015526c2f501b44cb56bc0a8db836ce4180c38293c0f"
+    },
+    {
+      "name": "20261010094755_colorful_kabuki",
+      "hash": "bdb660da6005208bcbff5073657f8af8bb3b0859ad57a6e8a14634a01f102cf1"
+    },
+    {
+      "name": "20261014100009_marvelous_praxagora",
+      "hash": "61c66d8648c79c3d8ca5e67f8b9d4c8c500ee1bfdb1991bc7b315cf920ab3a82"
+    },
+    {
+      "name": "20261015170552_swift_sleeper",
+      "hash": "1ffd66ebf743e285da36f250c1d10c2bc4396c46de371f436682b30e054798fd"
+    },
+    {
+      "name": "20261016070130_blue_robbie_robertson",
+      "hash": "f7067387b87b7728ed93f599a780c2d3b913aec73448387507b2f9cfce65c8f7"
+    },
+    {
+      "name": "20261016132629_friendly_killmonger",
+      "hash": "d3119fcc6bc4a35b5760adcfcf2dd0290af1f39590de5367827018c57f853f40"
+    },
+    {
+      "name": "20261029002853_bumpy_darkstar",
+      "hash": "b59b27f020997e6776fb75cc35d1c23c7070a4c8f18350028f56dfdd56d003ed"
+    },
+    {
+      "name": "20261029064631_flashy_obadiah_stane",
+      "hash": "2ddc93a716e182d8f7855134ccdbd3b4ae0d53fcc7fd7403cf89728a82ab4d81"
+    }
+  ]
+}

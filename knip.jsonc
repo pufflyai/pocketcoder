@@ -6,19 +6,49 @@
       "entry": [
         "scripts/ci/*.ts",
         "deploy/image/echo-harness.ts",
+        "deploy/image/desktop-harness.ts",
+        "deploy/image/browser-harness.ts",
+        "deploy/digitalocean/production/run-access.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
+        "scripts/native-startup-runner.ts",
+        "scripts/upgrade/seed-previous-release.ts",
+        "examples/e2e/managed-interruption-child.ts",
+        "examples/e2e/managed-purge-bootstrap-child.ts",
+        "examples/e2e/kind-purge-rbac.ts",
+        "examples/e2e/kubernetes-shared-probe.ts",
         "examples/**/*.test.ts"
       ]
     },
     ".pstdio/extensions/*": {
-      "entry": ["src/view.ts", "**/*.test.ts"]
+      "entry": ["extension.ts", "**/*.test.ts"]
+    },
+    "packages/db": {
+      "entry": [
+        "src/database/crash-fixture.ts",
+        "src/database/seed-sync-fixture.ts",
+        "src/migrations/crash-fixture.ts",
+        "src/backup/memory-fixture.ts"
+      ]
     },
     "packages/server": {
-      "entry": ["src/**/*.test.ts"]
+      "entry": [
+        "src/**/*.test.ts",
+        "src/lifecycle/startup-discovery-fixture.ts",
+        "src/attachments/input-crash-worker.ts",
+        "src/lifecycle/startup-docker-fixture.ts",
+        "src/persistence/checkpoint-transfer-crash-fixture.ts",
+        "src/control-channel/ws-purge-race-child.ts",
+        "src/backup/off-node-crash-fixture.ts",
+        "src/displays/client/desktop-viewer.ts",
+        "src/displays/client/browser-viewer.ts"
+      ]
     },
     "packages/remote": {
       "entry": ["src/**/*.test.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/bin.ts", "src/**/*.test.ts"]
     },
     "examples/harnesses/*": {
       "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]

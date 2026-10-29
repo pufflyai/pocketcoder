@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { createConfiguredPrincipals } from "./configured-principals";
+import { createKeyExpiry } from "./key-expiry";
 import { createKeyInventory } from "./key-inventory";
+import { createKeyRevocation } from "./key-revocation";
+import { createOwnerBootstrap } from "./owner-bootstrap";
+import { createPrincipalAdministration } from "./principal-administration";
 
 export function createAuth(context: DatabaseContext) {
   const {
@@ -10,7 +15,12 @@ export function createAuth(context: DatabaseContext) {
     tables: { principals, machineKeys },
   } = context;
   return {
+    ...createConfiguredPrincipals(context),
+    ...createKeyExpiry(context),
     ...createKeyInventory(context),
+    ...createKeyRevocation(context),
+    bootstrapOwnerKey: createOwnerBootstrap(context),
+    ...createPrincipalAdministration(context),
     async getPrincipal(id: string) {
       const [row] = await db.select().from(principals).where(eq(principals.id, id));
       return row ?? null;
@@ -46,14 +56,6 @@ export function createAuth(context: DatabaseContext) {
         .innerJoin(principals, eq(principals.id, machineKeys.principalId))
         .where(eq(machineKeys.id, keyId));
       return row ?? null;
-    },
-    async revokeMachineKey(keyId: string, at: Date) {
-      const rows = await db
-        .update(machineKeys)
-        .set({ revokedAt: at })
-        .where(and(eq(machineKeys.id, keyId), isNull(machineKeys.revokedAt)))
-        .returning({ id: machineKeys.id });
-      return rows.length > 0;
     },
     async touchMachineKey(keyId: string, at: Date) {
       await db

@@ -1,7 +1,16 @@
 import { digestOpaque, generateOpaqueSecret } from "@pstdio/pocketcoder-auth";
-import { type AgentFrame, AgentFrameSchema, isTerminal, MAX_FRAME_BYTES } from "@pstdio/pocketcoder-contracts";
+import {
+  type AgentFrame,
+  AgentFrameSchema,
+  type ExecSpec,
+  isTerminal,
+  MAX_FRAME_BYTES,
+} from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext, WSEvents } from "hono/ws";
+import { activeConnectionWorkspace } from "./connection-authority";
 import { type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";
+import { workspaceCredentialsFor } from "./workspace-credentials";
 import { execSpecOf, sourceCredentialFor } from "./ws-auth";
 import { handleConnectedFrame } from "./ws-frame-handler";
 import type { CloseProtocol, WsAuth, WsDeps } from "./ws-types";
@@ -9,7 +18,34 @@ import type { CloseProtocol, WsAuth, WsDeps } from "./ws-types";
 const HEARTBEAT_SECONDS = 15;
 const LOG_CHUNK_BYTES = 65_536;
 
+function interruptedRestore(deps: WsDeps, auth: WsAuth, row: Awaited<ReturnType<WsDeps["store"]["getWorkspace"]>>) {
+  return (
+    auth.mode === "reconnect" && deps.checkpointTransfers && row?.launchMode === "restore" && row.state === "connected"
+  );
+}
+
 type RegisteredFrame = Extract<AgentFrame, { type: "registered" }>;
+
+async function restoreExec(
+  deps: WsDeps,
+  connection: LiveConnection,
+  row: WorkspaceRow,
+  exec: ExecSpec,
+  ws: WSContext,
+  closeProtocol: CloseProtocol,
+) {
+  if (!deps.checkpointTransfers || row.launchMode !== "restore" || row.state === "ready") return true;
+  const current = await deps.store.getWorkspace(row.id);
+  const transfer = current && (await deps.checkpointTransfers.restoreGrant(connection, current));
+  if (!transfer || !exec.restore || deps.hub.get(row.id) !== connection) {
+    deps.hub.detach(connection);
+    await deps.checkpointTransfers.disconnected?.(connection);
+    closeProtocol(ws, "restore transfer unavailable");
+    return false;
+  }
+  exec.restore.transfer = transfer;
+  return true;
+}
 
 async function registerConnection(
   deps: WsDeps,
@@ -23,13 +59,22 @@ async function registerConnection(
     closeProtocol(ws, "workspace ended");
     return null;
   }
+  if (auth.mode === "register" && row.state !== "provisioning") {
+    closeProtocol(ws, "registration no longer valid");
+    return null;
+  }
   if (frame.payload.template.digest !== row.templateDigest) {
     closeProtocol(ws, "template digest mismatch");
     return null;
   }
+  if (interruptedRestore(deps, auth, row)) {
+    await deps.scheduler.beginTermination(row, "failed", "restore_failed", new Date());
+    closeProtocol(ws, "restore interrupted before readiness");
+    return null;
+  }
   const epoch = row.connectionEpoch + 1;
   let reconnectCredential: string | undefined;
-  let sourceCredential: string | null = null;
+  let sourceCredential: Awaited<ReturnType<typeof sourceCredentialFor>> = null;
   if (auth.mode === "register") {
     try {
       sourceCredential = await sourceCredentialFor(deps, row);
@@ -65,22 +110,41 @@ async function registerConnection(
       new Date(),
     );
   }
+  await deps.assertAccountAllowed?.();
   const connection = deps.hub.attach(row.id, frame.connection_id, epoch, ws, auth.protocolVersion);
   connection.lastSeqIn = frame.seq;
   connection.registered = true;
-  deps.hub.send(connection, "registered_ack", {
-    epoch,
-    ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
-    limits: {
-      max_frame_bytes: MAX_FRAME_BYTES,
-      max_inflight_relay: MAX_INFLIGHT_RELAY,
-      log_chunk_bytes: LOG_CHUNK_BYTES,
-      heartbeat_seconds: HEARTBEAT_SECONDS,
-    },
-    exec: execSpecOf(row, sourceCredential),
-  });
-  deps.hub.resumeTerminals(connection);
-  return connection;
+  try {
+    const restoreMode = deps.checkpointTransfers ? "controller_archive" : "provider_installed";
+    const credentials = await workspaceCredentialsFor(deps, row);
+    if (!(await activeConnectionWorkspace(deps, connection))) {
+      closeProtocol(ws, "workspace ended during credential delivery");
+      return null;
+    }
+    const exec = execSpecOf(row, sourceCredential?.credential ?? null, restoreMode);
+    if (exec.source) exec.source.credential_expires_at = sourceCredential?.lease.issuerExpiresAt?.toISOString() ?? null;
+    if (!(await restoreExec(deps, connection, row, exec, ws, closeProtocol))) return null;
+    await deps.assertAccountAllowed?.();
+    deps.hub.send(connection, "registered_ack", {
+      epoch,
+      credentials,
+      ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
+      limits: {
+        max_frame_bytes: MAX_FRAME_BYTES,
+        max_inflight_relay: MAX_INFLIGHT_RELAY,
+        log_chunk_bytes: LOG_CHUNK_BYTES,
+        heartbeat_seconds: HEARTBEAT_SECONDS,
+      },
+      exec,
+    });
+    deps.hub.resumeTerminals(connection);
+    return connection;
+  } catch (error) {
+    await deps.scheduler.finalize(row, "failed", "secret_resolution_failed", new Date());
+    deps.hub.detach(connection);
+    await deps.checkpointTransfers?.disconnected?.(connection);
+    throw error;
+  }
 }
 
 function parseFrame(
@@ -132,6 +196,7 @@ async function processMessage(
   ws: WSContext,
   closeProtocol: CloseProtocol,
 ): Promise<LiveConnection | null> {
+  await deps.assertAccountAllowed?.();
   const frame = parseFrame(data, auth, connection, ws, closeProtocol);
   if (!frame) return connection;
   if (!connection) {
@@ -145,9 +210,15 @@ async function processMessage(
 async function detachConnection(deps: WsDeps, auth: WsAuth, connection: LiveConnection | null): Promise<void> {
   if (!connection) return;
   const wasLive = deps.hub.detach(connection);
+  await deps.checkpointTransfers?.disconnected?.(connection);
   connection.registered = false;
   if (!wasLive) return;
   const row = await deps.store.getWorkspace(auth.workspaceId);
+  if (row && deps.checkpointTransfers && row.launchMode === "restore" && row.state === "connected") {
+    // Installation cannot be replayed safely over a mount that setup may have changed.
+    await deps.scheduler.beginTermination(row, "failed", "restore_failed", new Date());
+    return;
+  }
   if (row && !isTerminal(row.state) && !["terminating", "preserving"].includes(row.state)) {
     await deps.store.updateWorkspace(row.id, { disconnectedAt: new Date() }, new Date());
   }
@@ -158,6 +229,7 @@ export function agentWsEvents(deps: WsDeps) {
   return (c: { get: (key: string) => unknown }): WSEvents => {
     const auth = c.get("wsAuth") as WsAuth;
     let conn: LiveConnection | null = null;
+    let closed = false;
     let pipeline: Promise<void> = Promise.resolve();
 
     const closeProtocol = (ws: WSContext, message: string) => {
@@ -167,24 +239,33 @@ export function agentWsEvents(deps: WsDeps) {
 
     return {
       onMessage: (event, ws) => {
-        pipeline = pipeline.then(async () => {
-          try {
-            conn = await processMessage(
-              deps,
-              auth,
-              conn,
-              event.data as string | ArrayBuffer | Uint8Array,
-              ws,
-              closeProtocol,
-            );
-          } catch (error) {
-            deps.log?.(`ws ${auth.workspaceId}: ${String(error)}`);
-            closeProtocol(ws, "internal error");
-          }
-        });
+        if (closed) return;
+        const previous = pipeline;
+        const process = () =>
+          previous.then(async () => {
+            try {
+              conn = await processMessage(
+                deps,
+                auth,
+                conn,
+                event.data as string | ArrayBuffer | Uint8Array,
+                ws,
+                closeProtocol,
+              );
+              if (closed) await detachConnection(deps, auth, conn);
+            } catch (error) {
+              deps.log?.(`ws ${auth.workspaceId}: ${String(error)}`);
+              closeProtocol(ws, "internal error");
+            }
+          });
+        pipeline = (deps.activity ? deps.activity.run(process) : process()).catch(() =>
+          closeProtocol(ws, "account fenced"),
+        );
       },
       onClose: () => {
-        void detachConnection(deps, auth, conn);
+        closed = true;
+        const detach = () => detachConnection(deps, auth, conn);
+        void (deps.activity ? deps.activity.track(detach) : detach()).catch(() => {});
       },
     };
   };

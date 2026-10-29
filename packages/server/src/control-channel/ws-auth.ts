@@ -1,6 +1,7 @@
 import { verifyOpaque } from "@pstdio/pocketcoder-auth";
 import {
   agentApiHarness,
+  CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
   type ExecSpec,
   errorEnvelope,
   HEADER_PROTOCOL,
@@ -11,12 +12,16 @@ import {
   isTerminal,
   type ProtocolVersion,
   parseDurationMs,
-  SOURCE_CREDENTIAL_MAX_BYTES,
+  type RestoreMode,
+  RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
+  runtimeCredentialPath,
+  runtimeCredentialReferences,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
-  secretMountPath,
   snapshotServices,
   TERMINAL_REPLAY_BUFFER_BYTES,
+  WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
+  waitingExecSpec,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { MiddlewareHandler } from "hono";
@@ -32,7 +37,7 @@ interface WsCredentials {
 
 type WsAuthResult = { auth: WsAuth } | { error: string };
 
-function sourceCredentialReference(row: WorkspaceRow): string | null {
+export function sourceCredentialReference(row: WorkspaceRow): string | null {
   if (row.launchMode !== "create" || !row.sourceDescriptor) return null;
   return row.templateSnapshot.spec.source?.repositories[row.sourceDescriptor.repository]?.credential ?? null;
 }
@@ -55,6 +60,40 @@ function validReconnect(deps: WsDeps, row: WorkspaceRow, secret: string): boolea
   );
 }
 
+function waitingProtocolRejected(row: WorkspaceRow, protocol: number) {
+  return Boolean(
+    row.runtimeRegistration?.endedAt ||
+      ((row.runtimeRegistration || row.templateSnapshot.manifest) && protocol < WAITING_RUNTIME_MIN_PROTOCOL_VERSION),
+  );
+}
+
+async function authenticateRegistration(
+  deps: WsDeps,
+  credentials: WsCredentials,
+  initial: WorkspaceRow,
+  secret: string,
+): Promise<WsAuthResult> {
+  let row: WorkspaceRow | null = initial;
+  if (!validRegistration(deps, row, secret)) {
+    return { error: "Invalid or expired registration secret." };
+  }
+  // The driver verifies the live image and mount after create returns. Keep
+  // the one-use registration pending until that owner has bound its evidence.
+  while (row.templateSnapshot.manifest && !row.runtimeRegistration) {
+    await Bun.sleep(50);
+    row = await deps.store.getWorkspace(credentials.workspaceId);
+    if (!row || row.purgeRequestedAt || !validRegistration(deps, row, secret))
+      return { error: "Runtime preparation failed or registration expired." };
+  }
+  return {
+    auth: {
+      workspaceId: credentials.workspaceId,
+      mode: "register",
+      protocolVersion: credentials.protocolVersion as ProtocolVersion,
+    },
+  };
+}
+
 async function authenticateConnection(deps: WsDeps, credentials: WsCredentials): Promise<WsAuthResult> {
   if (!SUPPORTED_PROTOCOL_VERSIONS.includes(credentials.protocolVersion as ProtocolVersion)) {
     return { error: "Unsupported agent protocol version." };
@@ -63,22 +102,26 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     return { error: "Missing workspace credentials." };
   }
   const row = await deps.store.getWorkspace(credentials.workspaceId);
+  if (
+    row &&
+    runtimeCredentialReferences(row.templateSnapshot.spec).length &&
+    credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
+  )
+    return { error: "Runtime credentials require agent protocol version 9." };
+  if (row && waitingProtocolRejected(row, credentials.protocolVersion))
+    return { error: "Waiting runtime is ended or requires protocol version 12." };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
+  if (
+    deps.checkpointTransfers &&
+    row.launchMode === "restore" &&
+    credentials.protocolVersion < CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION
+  ) {
+    return { error: "Checkpoint restore requires agent protocol version 7." };
+  }
   if (sourceCredentialReference(row) && credentials.protocolVersion < SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION) {
-    return { error: "Source credentials require agent protocol version 6." };
+    return { error: "Source credentials require agent protocol version 8." };
   }
-  if (credentials.registration) {
-    if (!validRegistration(deps, row, credentials.registration)) {
-      return { error: "Invalid or expired registration secret." };
-    }
-    return {
-      auth: {
-        workspaceId: credentials.workspaceId,
-        mode: "register",
-        protocolVersion: credentials.protocolVersion as ProtocolVersion,
-      },
-    };
-  }
+  if (credentials.registration) return authenticateRegistration(deps, credentials, row, credentials.registration);
   if (!validReconnect(deps, row, credentials.reconnect ?? "")) {
     return { error: "Invalid reconnect credential." };
   }
@@ -107,7 +150,27 @@ export function agentConnectValidator(deps: WsDeps): MiddlewareHandler<AppEnv> {
   };
 }
 
-export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): ExecSpec {
+export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, restoreMode: RestoreMode): ExecSpec {
+  if (row.runtimeRegistration?.template) {
+    const exec = waitingExecSpec(
+      row.runtimeRegistration.template,
+      row.runtimeRegistration.incarnationId,
+      row.launchMode,
+      row.launchInput,
+    );
+    return {
+      ...exec,
+      restore:
+        row.restoredFromCheckpointId && row.originWorkspaceId
+          ? {
+              mode: restoreMode,
+              checkpoint_id: row.restoredFromCheckpointId,
+              origin_workspace_id: row.originWorkspaceId,
+              transfer: null,
+            }
+          : null,
+    };
+  }
   const spec = row.templateSnapshot.spec;
   const sourceSpec = spec.source;
   const sourceRepository =
@@ -123,6 +186,8 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): 
     harness: { ...harness, env: materializeSecretEnv(harness.env) },
     env: materializeSecretEnv(spec.env),
     services: snapshotServices(row.templateSnapshot),
+    previews: spec.previews,
+    display: spec.display,
     terminal: spec.terminal
       ? {
           command: spec.terminal.command,
@@ -150,14 +215,19 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): 
             ...row.sourceDescriptor,
             url: sourceRepository.url,
             destination: sourceMount.target,
+            max_bytes: sourceMount.maxBytes,
+            max_files: sourceMount.maxFiles,
             credential: sourceCredential,
+            credential_expires_at: null,
           }
         : null,
     restore:
       row.restoredFromCheckpointId && row.originWorkspaceId
         ? {
+            mode: restoreMode,
             checkpoint_id: row.restoredFromCheckpointId,
             origin_workspace_id: row.originWorkspaceId,
+            transfer: null,
           }
         : null,
     persistence: {
@@ -177,20 +247,23 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null): 
   };
 }
 
-export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow): Promise<string | null> {
+export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow) {
   const reference = sourceCredentialReference(row);
   if (!reference) return null;
-  if (!deps.secretResolver) throw new Error("no deployment secret resolver configured");
-  const credential = await deps.secretResolver.resolveSourceCredential(row);
-  if (!credential) throw new Error("source credential resolved to an empty value");
-  if (credential.includes("\0") || Buffer.byteLength(credential) > SOURCE_CREDENTIAL_MAX_BYTES) {
-    throw new Error("source credential is not a bounded environment value");
-  }
-  return credential;
+  if (!deps.workspaceLeases) throw new Error("No setup issuer is configured.");
+  const previous = (await deps.store.listPendingWorkspaceLeases(row.id)).find(
+    (lease) => lease.secretName === reference.slice(10),
+  );
+  return previous
+    ? deps.workspaceLeases.replay(row.id, previous.id)
+    : deps.workspaceLeases.issue(row.id, reference.slice(10), "setup-issuer");
 }
 
 function materializeSecretEnv(env: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(env).map(([key, value]) => [key, value.startsWith("secretRef:") ? secretMountPath(value) : value]),
+    Object.entries(env).map(([key, value]) => [
+      key,
+      value.startsWith("secretRef:") ? runtimeCredentialPath(value) : value,
+    ]),
   );
 }

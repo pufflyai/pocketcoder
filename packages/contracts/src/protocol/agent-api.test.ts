@@ -136,6 +136,27 @@ describe("AgentAPI transport", () => {
     expect(() => parseTemplateManifest(acp)).toThrow("termWidth is only valid for PTY transport");
   });
 
+  test("accepts interrupt keys only for PTY transport", () => {
+    const manifest = nativeManifest();
+    (manifest.spec as { agent: Record<string, unknown> }).agent.interruptKeys = "\u001b";
+    expect(parseTemplateManifest(manifest).manifest.spec.agent?.interruptKeys).toBe("\u001b");
+
+    for (const interruptKeys of ["", "x".repeat(17)]) {
+      const invalid = nativeManifest();
+      (invalid.spec as { agent: Record<string, unknown> }).agent.interruptKeys = interruptKeys;
+      expect(() => parseTemplateManifest(invalid)).toThrow();
+    }
+
+    const acp = nativeManifest();
+    (acp.spec as { agent: Record<string, unknown> }).agent = {
+      type: "opencode",
+      transport: "acp",
+      interruptKeys: "\u001b",
+      command: ["opencode", "acp"],
+    };
+    expect(() => parseTemplateManifest(acp)).toThrow("interruptKeys is only valid for PTY transport");
+  });
+
   test("derives ACP transport for a native coding agent", () => {
     const manifest = nativeManifest();
     (manifest.spec as { agent: Record<string, unknown> }).agent = {

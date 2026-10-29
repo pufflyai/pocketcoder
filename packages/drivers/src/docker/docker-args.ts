@@ -1,9 +1,18 @@
+import { credentialMemoryPaths } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 
 type WorkspaceSpec = WorkspaceLaunch["workspace"]["templateSnapshot"]["spec"];
 
 export function appendWorkspaceMounts(args: string[], launch: WorkspaceLaunch): void {
   for (const mount of launch.mounts) {
+    if (mount.source.kind === "tmpfs") {
+      const { maxBytes, uid, gid } = mount.source;
+      args.push(
+        "--tmpfs",
+        `${mount.target}:${mount.readOnly ? "ro" : "rw"},noexec,nosuid,nodev,size=${maxBytes},uid=${uid},gid=${gid},mode=0700`,
+      );
+      continue;
+    }
     if (mount.source.kind !== "host-path") {
       throw new Error(
         `docker driver cannot consume ${mount.source.kind} storage; configure a host-path storage backend`,
@@ -22,7 +31,7 @@ export function appendWorkspaceMounts(args: string[], launch: WorkspaceLaunch): 
 export function appendSecurityOptions(args: string[], spec: WorkspaceSpec): void {
   for (const cap of spec.security.dropCapabilities) args.push("--cap-drop", cap);
   if (spec.security.readOnlyRoot) args.push("--read-only");
-  for (const path of spec.security.writableMemoryPaths) {
+  for (const path of credentialMemoryPaths(spec)) {
     args.push(
       "--tmpfs",
       `${path}:rw,noexec,nosuid,size=256m,uid=${spec.security.uid},gid=${spec.security.gid},mode=0700`,

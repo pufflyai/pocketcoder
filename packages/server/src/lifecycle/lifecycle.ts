@@ -1,159 +1,97 @@
 import { signEvent } from "@pstdio/pocketcoder-auth";
-import { PostgresStore } from "@pstdio/pocketcoder-db";
-import {
-  DockerDriver,
-  FileSecretResolver,
-  FilesystemStorageDriver,
-  KubernetesDriver,
-  KubernetesPvcStorageDriver,
-  KubernetesSecretResolver,
-} from "@pstdio/pocketcoder-drivers";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
-import {
-  loadTemplateDir,
-  OutboxDispatcher,
-  RuntimeMetrics,
-  reconcilePersistence,
-  reconcileProviders,
-  resolveWarmPools,
-  type Store,
-} from "@pstdio/pocketcoder-runtime-core";
+import { OutboxDispatcher, RuntimeMetrics, resolveWarmPools, type Store } from "@pstdio/pocketcoder-runtime-core";
+import { startLocalAdmin } from "../administration/local-admin";
 import { buildServer } from "../app";
-import { configSummary, loadConfig, type ServerConfig } from "../config/config";
+import { composeBackups } from "../backup/backup-composition";
+import { startManagedPrincipals } from "../bootstrap/managed-principals/startup";
+import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
+import { recordInterruptedTurns } from "../conversations/live-turns";
+import { composeAccountLifecycle } from "../maintenance/account-composition";
+import { AccountPurgeRequiredError, accountPurgeFence, requireNormalController } from "../maintenance/account-purge";
+import { accountState } from "../maintenance/account-state";
+import { createMaintenance } from "../maintenance/maintenance";
+import { configuredPurgeCleanup } from "../maintenance/purge-cleanup";
+import { controllerHealth } from "../observability/controller-health";
 import { Readiness } from "../observability/health";
-import { createStructuredLogger } from "../observability/observability";
+import { createStructuredLogger, type StructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
+import { createRegistryResolver } from "../secrets/registry-resolver";
+import { createSecretVault } from "../secrets/secret-vault";
+import { startBackgroundTimers } from "./background-timers";
+import { checkpointTransferOptions } from "./checkpoint-transfer-config";
+import { inputStorageOptions } from "./input-storage-config";
 import { loadLaunchPolicy } from "./launch-policy";
+import {
+  configuredIssuer,
+  createSecretResolver,
+  createStorageDriver,
+  createWorkspaceDriver,
+  loadConfiguredTemplates,
+  reconcileCheckpointPreserves,
+  reconcileStartup,
+  requireEgressImageForRestrictedTemplates,
+} from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
+import { startPurgingController } from "./purging-controller";
+import { RecoveryRequiredError, startRecoveryController } from "./recovery-controller";
+import { screenshotOptions } from "./screenshot-config";
+import { initializeStartupController } from "./startup-discovery";
+
+export { RecoveryRequiredError, startRecoveryController };
+
+import { reconcileSetupLeases } from "./setup-lease-reconciliation";
 
 export type ServerLog = (message: string) => void;
 
 export interface RunningPocketCoderServer {
   config: ServerConfig;
   url: string;
+  agentUrl: string;
   stop(): Promise<void>;
 }
 
 const defaultLog: ServerLog = (message) => console.log(`[pocketcoder-server] ${message}`);
 
-async function initializeStore(config: ServerConfig, log: ServerLog): Promise<Store> {
-  const store: Store =
-    config.storeKind === "postgres"
-      ? new PostgresStore(config.databaseUrl as string, config.databaseSchema)
-      : new MemoryStore();
-  await store.init();
-  log(`store: ${config.storeKind}${config.storeKind === "postgres" ? ` (schema ${config.databaseSchema})` : ""}`);
-  return store;
+function cleanupState(pending: number) {
+  return pending > 0 ? "pending" : "ok";
 }
 
-async function loadConfiguredTemplates(store: Store, templateDir: string | null, log: ServerLog): Promise<void> {
-  if (!templateDir) return;
-  const result = await loadTemplateDir(store, templateDir);
-  for (const row of result.loaded) {
-    log(`template loaded: ${row.name}@${row.version} (${row.digest.slice(0, 19)}...)`);
-  }
-  for (const error of result.errors) {
-    console.error(`[pocketcoder-server] template error in ${error.file}: ${error.message}`);
-  }
-  if (result.errors.length > 0) {
-    throw new Error("refusing to start with invalid template files");
-  }
+function serverOutbox(config: ServerConfig, store: Store, log: ServerLog, metrics: RuntimeMetrics) {
+  return new OutboxDispatcher({
+    store,
+    sinkUrl: config.eventSinkUrl,
+    sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
+    onError: (context, error) => log(`${context}: ${String(error)}`),
+    metrics,
+  });
 }
 
-async function requireEgressImageForRestrictedTemplates(store: Store, config: ServerConfig) {
-  const restricted = (await store.listTemplates(null)).some(
-    (template) => template.status === "active" && template.spec.network.mode === "restricted",
-  );
-  if (restricted && !config.egressImage) {
-    throw new Error("POCKETCODER_EGRESS_IMAGE is required when an active template uses restricted networking");
-  }
-}
-
-function createWorkspaceDriver(config: ServerConfig) {
-  const egress = {
-    ...(config.egressImage ? { egressImage: config.egressImage } : {}),
-    egressSigningKey: config.eventSigningKey,
-  };
-  if (config.driverKind === "kubernetes") {
-    return new KubernetesDriver({
-      ...egress,
-      namespace: config.kubernetesNamespace,
-      captureTerminationEvidence: Boolean(config.launchPolicy),
-      nodeSelector: config.kubernetesNodeSelector ?? undefined,
-      tolerations: config.kubernetesTolerations,
-      ...(config.kubernetesServiceAccount ? { serviceAccountName: config.kubernetesServiceAccount } : {}),
-    });
-  }
-  return new DockerDriver({ ...(config.inputDir ? { inputDir: config.inputDir } : {}), ...egress });
-}
-
-function createStorageDriver(config: ServerConfig) {
-  if (config.storageBackend === "kubernetes-pvc") {
-    return new KubernetesPvcStorageDriver({
-      workspaceRoot: config.workspaceDataDir as string,
-      checkpointRoot: config.checkpointDir as string,
-      workspaceClaimName: config.kubernetesWorkspaceClaim as string,
-      workspaceClaimSubPath: config.kubernetesWorkspaceSubPath,
-    });
-  }
-  if (config.storageBackend === "filesystem") {
-    return new FilesystemStorageDriver({
-      workspaceRoot: config.workspaceDataDir as string,
-      checkpointRoot: config.checkpointDir as string,
-    });
-  }
-  return undefined;
-}
-
-function createSecretResolver(config: ServerConfig) {
-  if (config.secretProvider === "kubernetes") {
-    return new KubernetesSecretResolver({ namespace: config.kubernetesNamespace });
-  }
-  if (config.secretProvider === "file") {
-    return new FileSecretResolver({ root: config.secretRoot as string });
-  }
-  return undefined;
-}
-
-async function reconcileStartup(
-  store: Store,
-  driver: ReturnType<typeof createWorkspaceDriver>,
-  storageDriver: ReturnType<typeof createStorageDriver>,
-  log: ServerLog,
-  metrics: RuntimeMetrics,
-): Promise<boolean> {
+function logStartupCleanup(log: ServerLog) {
   try {
-    await reconcileProviders({
-      store,
-      driver,
-      ...(storageDriver ? { storageDriver } : {}),
-      log,
-      metrics,
-    });
-    await reconcilePersistence({ store, driver, storageDriver, log, metrics });
-    return true;
-  } catch (error) {
-    log(`startup reconciliation failed: ${String(error)}`);
-    return false;
+    log("startup cleanup started");
+  } catch {
+    // A broken sink must not replace the original error or interrupt owned cleanup.
   }
 }
 
-function startExclusiveTimer(
-  intervalMs: number,
-  task: () => Promise<void>,
-  errorContext: string,
-  log: ServerLog,
-): ReturnType<typeof setInterval> {
-  let busy = false;
-  return setInterval(() => {
-    if (busy) return;
-    busy = true;
-    task()
-      .catch((error) => log(`${errorContext}: ${String(error)}`))
-      .finally(() => {
-        busy = false;
-      });
-  }, intervalMs);
+async function startupWarmPools(store: Store, config: ServerConfig, driver: ReturnType<typeof createWorkspaceDriver>) {
+  const warmPools = await resolveWarmPools(store, config.warmPools, driver.kind, config.limits.globalActiveWorkspaces);
+  const warmPoolContinuously =
+    warmPools.length > 0 || (await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
+  return { warmPools, warmPoolContinuously };
+}
+
+// Templates and principals come from operator files; both must be in place before serving.
+async function loadDeclaredState(config: ServerConfig, store: Store, log: ServerLog, logger: StructuredLogger) {
+  await loadConfiguredTemplates(store, config.templateDir, log);
+  await requireEgressImageForRestrictedTemplates(store, config);
+  return startManagedPrincipals({ config: config.principals, store, pepper: config.pepper, logger });
+}
+
+function configuredRegistry(config: ServerConfig, store: Store) {
+  return config.secretKey
+    ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
+    : undefined;
 }
 
 export async function startPocketCoderServer(
@@ -165,114 +103,148 @@ export async function startPocketCoderServer(
   const logger = createStructuredLogger((record) => log(JSON.stringify(record)));
   const metrics = new RuntimeMetrics();
   log(`config: ${JSON.stringify(configSummary(config))}`);
-  const store = await initializeStore(config, log);
+  const { initialized, discovery } = await initializeStartupController(config, log);
+  config = initialized.config;
+  const { store, directory } = initialized;
+  let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
+  let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
+    await requireNormalController(initialized);
+    if (await store.recovery.recoveryState()) throw new RecoveryRequiredError();
+    const assertAccountAllowed = initialized.accountPurge ? accountPurgeFence(initialized.accountPurge) : undefined;
+    const maintenance = createMaintenance();
+    const transferOptions = checkpointTransferOptions(config);
+    await store.acknowledgeJournal();
     await store.acquireCoordinatorLease();
-    log("coordinator lease acquired");
-    await loadConfiguredTemplates(store, config.templateDir, log);
-    await requireEgressImageForRestrictedTemplates(store, config);
-    const driver = createWorkspaceDriver(config);
-    const warmPools = await resolveWarmPools(
-      store,
-      config.warmPools,
-      driver.kind,
-      config.limits.globalActiveWorkspaces,
-    );
-    const warmPoolContinuously =
-      warmPools.length > 0 || (await store.listWarmPoolRuntimes()).some((runtime) => runtime.state !== "failed");
+    const durableAccountState = await accountState(directory);
+    if (durableAccountState.state.state !== "ready") maintenance.fence();
+    await recordInterruptedTurns(store, log, "coordinator lease acquired");
+    const managedPrincipals = await loadDeclaredState(config, store, log, logger);
+    const resolveRegistry = configuredRegistry(config, store);
     const storageDriver = createStorageDriver(config);
+    const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
+    const driver = createWorkspaceDriver(config, resolveRegistry, sharedStorage);
+    const { warmPools, warmPoolContinuously } = await startupWarmPools(store, config, driver);
     const secretResolver = createSecretResolver(config);
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
     const policyReconciliation = loadPolicyReconciliation(store, config.launchPolicy);
     if (policyReconciliation) readiness.set("policy-reconciliation", "pending");
-    const { app, websocket, scheduler, persistence, warmPool } = buildServer({
+    const built = buildServer({
+      assertAccountAllowed,
+      publicViews: config.publicViews,
+      screenshotOptions: screenshotOptions(config),
+      inputStorageOptions: inputStorageOptions(config),
+      issuerClient: configuredIssuer(config),
       ...(authorizeLaunch ? { authorizeLaunch } : {}),
       store,
       driver,
       ...(storageDriver ? { storageDriver } : {}),
       ...(secretResolver ? { secretResolver } : {}),
       pepper: config.pepper,
+      ...(config.secretKey ? { secretKey: config.secretKey } : {}),
       eventSigningKey: config.eventSigningKey,
+      egressImage: config.egressImage,
       limits: config.limits,
+      workloadLimits: config.workloadLimits,
       workspaceServerUrl: config.workspaceServerUrl,
       persistenceLimits: config.persistenceLimits,
+      checkpointTransferOptions: transferOptions,
       ...(options.instanceId ? { instanceId: options.instanceId } : {}),
       logger,
       metrics,
       warmPools,
       readiness,
+      maintenance,
     });
+    const { app, agentApp, websocket, scheduler, persistence, warmPool, workspaceLeases, screenshots } = built;
+    // Backups settle admitted work; the scheduler settles before preserves it can start.
+    maintenance.settleWith(() => scheduler.drain());
+    maintenance.settleWith(() => built.executionDispatcher.drain());
+    maintenance.settleWith(() => persistence.drain());
+    maintenance.settleWith(() => screenshots?.drain() ?? Promise.resolve());
+    await store.binaryOutputs.prune(new Date());
+    await built.inputs?.reconcile();
 
+    const pendingSetup = await reconcileSetupLeases(store, workspaceLeases, scheduler, true);
+    const pendingTransfers = await reconcileCheckpointPreserves(
+      store,
+      persistence.reconcileCheckpointOperation,
+      built.checkpointTransfers,
+      true,
+    );
+    readiness.set("cleanup", cleanupState(pendingSetup + pendingTransfers));
     readiness.set(
       "reconciliation",
-      (await reconcileStartup(store, driver, storageDriver, log, metrics)) ? "ok" : "failed",
+      (await reconcileStartup(
+        store,
+        driver,
+        storageDriver,
+        log,
+        metrics,
+        persistence.reconcileCheckpointOperation,
+        discovery.providers,
+      ))
+        ? "ok"
+        : "failed",
     );
-
-    const outbox = new OutboxDispatcher({
+    const accountLifecycle = composeAccountLifecycle({
+      state: durableAccountState,
+      maintenance,
       store,
-      sinkUrl: config.eventSinkUrl,
-      sign: (timestamp, body) => signEvent(config.eventSigningKey, timestamp, body),
-      onError: (context, error) => log(`${context}: ${String(error)}`),
+      driver,
+      storageDriver,
+      log,
+      metrics,
+      readiness,
+      runtime: { scheduler, persistence, workspaceLeases, checkpointTransfers: built.checkpointTransfers },
+    });
+
+    const purgeCleanup = await configuredPurgeCleanup(initialized, driver, maintenance, built);
+
+    const outbox = serverOutbox(config, store, log, metrics);
+
+    const timers = startBackgroundTimers({
+      config,
+      managedPrincipals,
+      maintenance,
+      log,
+      outbox,
+      policyReconciliation,
+      ...(warmPool && warmPoolContinuously ? { warmPool } : {}),
+      store,
+      scheduler,
+      persistence,
+      workspaceLeases,
+      checkpointTransfers: built.checkpointTransfers,
+      inputs: built.inputs,
+      liveTurns: built.liveTurns,
+      executionDispatcher: built.executionDispatcher,
+      readiness,
       metrics,
     });
 
-    const schedulerTimer = startExclusiveTimer(
-      config.schedulerIntervalMs,
-      async () => {
-        try {
-          await scheduler.tick();
-          const pendingPurges = await persistence.retryPurges();
-          readiness.set("cleanup", pendingPurges > 0 ? "pending" : "ok");
-          metrics.observe("purge.pending", pendingPurges);
-          readiness.set("coordinator", "ok");
-        } catch (error) {
-          readiness.set("coordinator", "failed");
-          throw error;
-        }
-      },
-      "scheduler tick failed",
-      log,
-    );
-    const outboxTimer = startExclusiveTimer(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed", log);
-    const policyTimer = policyReconciliation
-      ? startExclusiveTimer(
-          config.schedulerIntervalMs,
-          async () => {
-            try {
-              await policyReconciliation.tick();
-              readiness.set("policy-reconciliation", "ok");
-            } catch (error) {
-              readiness.set("policy-reconciliation", "failed");
-              throw error;
-            }
-          },
-          "policy reconciliation failed",
-          log,
-        )
-      : null;
-    const warmPoolTimer =
-      warmPool && warmPoolContinuously
-        ? startExclusiveTimer(
-            config.schedulerIntervalMs,
-            () => warmPool.reconcile(),
-            "warm pool reconciliation failed",
-            log,
-          )
-        : null;
-    const retentionTimer = startExclusiveTimer(
-      60_000,
-      async () => {
-        const { deleted, skipped } = await persistence.pruneExpired();
-        if (deleted > 0 || skipped > 0) {
-          log(`retention: deleted=${deleted} skipped=${skipped}`);
-        }
-      },
-      "retention sweep failed",
-      log,
-    );
-
     let server: ReturnType<typeof Bun.serve>;
     try {
+      admin = await startLocalAdmin({
+        monitoring: () => controllerHealth({ store, hub: built.hub, directory, readiness }),
+        purgeCleanup,
+        accountPurge: initialized.accountPurge,
+        assertAccountAllowed,
+        directory: directory,
+        store,
+        pepper: config.pepper,
+        principalsFile: config.principals?.file,
+        accountLifecycle,
+        maintenance,
+        ...composeBackups(initialized, maintenance, transferOptions?.directory, durableAccountState),
+      });
+      agentServer = Bun.serve({
+        hostname: config.agentHost,
+        port: config.agentPort,
+        idleTimeout: SERVER_IDLE_TIMEOUT_SECONDS,
+        fetch: agentApp.fetch,
+        websocket,
+      });
       server = Bun.serve({
         hostname: config.listenHost,
         port: config.listenPort,
@@ -281,38 +253,37 @@ export async function startPocketCoderServer(
         websocket,
       });
     } catch (error) {
-      clearInterval(schedulerTimer);
-      clearInterval(outboxTimer);
-      clearInterval(retentionTimer);
-      if (policyTimer) clearInterval(policyTimer);
-      await policyReconciliation?.drain();
-      if (warmPoolTimer) clearInterval(warmPoolTimer);
+      await timers.stop();
       throw error;
     }
 
-    const healthHost = config.listenHost === "0.0.0.0" || config.listenHost === "::" ? "127.0.0.1" : config.listenHost;
-    const url = `http://${healthHost}:${server.port}`;
-    log(`listening on http://${config.listenHost}:${server.port}`);
+    const url = listenerOrigin(config.listenHost, server.port);
+    const agentUrl = listenerOrigin(config.agentHost, agentServer.port);
+    log(`listening on ${url}`);
     log(`workspaces reach this server at ${config.workspaceServerUrl}`);
-    const initialWarmPool = warmPool
-      ?.reconcile()
-      .catch((error) => log(`warm pool initial reconcile failed: ${String(error)}`));
+    const initialWarmPool = (warmPool ? maintenance.pausable(() => warmPool.reconcile())() : undefined)?.catch(
+      (error) => log(`warm pool initial reconcile failed: ${String(error)}`),
+    );
 
     let stopPromise: Promise<void> | null = null;
     return {
       config,
       url,
+      agentUrl,
       stop() {
         if (stopPromise) return stopPromise;
         stopPromise = (async () => {
           log("shutting down");
-          clearInterval(schedulerTimer);
-          clearInterval(outboxTimer);
-          clearInterval(retentionTimer);
-          if (policyTimer) clearInterval(policyTimer);
-          await policyReconciliation?.drain();
-          if (warmPoolTimer) clearInterval(warmPoolTimer);
+          await timers.stop();
+          await purgeCleanup?.drain();
+          await accountLifecycle.drain();
+          await screenshots?.close();
+          await built.checkpointTransfers?.close();
+          await persistence.drain();
+          await scheduler.drain();
           await server.stop(true);
+          await agentServer?.stop(true);
+          await admin?.stop();
           // Initial reconciliation still owns store queries after listen succeeds.
           await initialWarmPool;
           await store.close();
@@ -321,6 +292,10 @@ export async function startPocketCoderServer(
       },
     };
   } catch (error) {
+    logStartupCleanup(log);
+    await discovery.settle();
+    await agentServer?.stop(true);
+    await admin?.stop();
     await store.close().catch(() => {});
     throw error;
   }
@@ -330,7 +305,11 @@ export async function runPocketCoderServerUntilSignal(
   config: ServerConfig = loadConfig(),
   options: { log?: ServerLog; instanceId?: string } = {},
 ): Promise<void> {
-  const running = await startPocketCoderServer(config, options);
+  const running = await startPocketCoderServer(config, options).catch((error) => {
+    if (error instanceof AccountPurgeRequiredError) return startPurgingController(config, options);
+    if (!(error instanceof RecoveryRequiredError)) throw error;
+    return startRecoveryController(config, options);
+  });
   await new Promise<void>((resolve, reject) => {
     let stopping = false;
     const shutdown = () => {

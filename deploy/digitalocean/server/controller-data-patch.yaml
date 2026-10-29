@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pocketcoder-data
+spec:
+  storageClassName: do-block-storage
+  accessModes: ["ReadWriteOnce"]

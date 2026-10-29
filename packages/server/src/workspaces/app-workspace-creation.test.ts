@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 describe("workspace creation", () => {
   test("creates queued workspace and is idempotent on the same key and body", async () => {
-    const { app, store, token } = await createTestServer();
+    const { app, store, token } = await createTestServer(await createStore());
     const body = createTestBody("task-1");
     const first = await app.request(
       "/v1/workspaces",
@@ -31,7 +34,7 @@ describe("workspace creation", () => {
   });
 
   test("replays an existing workspace even after the queue becomes full", async () => {
-    const { app, token } = await createTestServer({
+    const { app, token } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -61,7 +64,7 @@ describe("workspace creation", () => {
   });
 
   test("reserves queue capacity atomically across concurrent creates", async () => {
-    const { app, token, store } = await createTestServer({
+    const { app, token, store } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -83,7 +86,7 @@ describe("workspace creation", () => {
   });
 
   test("does not advertise a next page at an exact collection boundary", async () => {
-    const { app, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+    const { app, token } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     for (const id of ["page-boundary-a", "page-boundary-b"]) {
       expect(
         (
@@ -106,7 +109,7 @@ describe("workspace creation", () => {
   });
 
   test("conflicting body under the same idempotency key returns 409", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -128,7 +131,7 @@ describe("workspace creation", () => {
   });
 
   test("missing Idempotency-Key is a validation error", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request("/v1/workspaces", authed(token, { method: "POST", body: createTestBody() }));
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
@@ -139,7 +142,7 @@ describe("workspace creation", () => {
 
 describe("workspace creation diagnostics", () => {
   test("long-polls a durable workspace change cursor", async () => {
-    const { app, store, token } = await createTestServer({ globalActiveWorkspaces: 0 });
+    const { app, store, token, scheduler } = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
     const createdRes = await app.request(
       "/v1/workspaces",
       authed(token, {
@@ -149,17 +152,21 @@ describe("workspace creation diagnostics", () => {
       }),
     );
     const created = (await createdRes.json()) as { id: string; change_cursor: number };
+    await scheduler.admit();
+    const latestRes = await app.request(`/v1/workspaces/${created.id}`, authed(token));
+    const latest = (await latestRes.json()) as { change_cursor: number; reason_code: string };
+    expect(latest.reason_code).toBe("admission_global_capacity");
     const noChange = await app.request(
-      `/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=0`,
+      `/v1/workspaces/${created.id}/changes?after=${latest.change_cursor}&wait=0`,
       authed(token),
     );
     expect(noChange.status).toBe(200);
     expect((await noChange.json()) as unknown).toMatchObject({
-      cursor: created.change_cursor,
+      cursor: latest.change_cursor,
       changed: false,
     });
 
-    const waitUrl = `/v1/workspaces/${created.id}/changes?after=${created.change_cursor}&wait=1`;
+    const waitUrl = `/v1/workspaces/${created.id}/changes?after=${latest.change_cursor}&wait=1`;
     const waiting = [app.request(waitUrl, authed(token)), app.request(waitUrl, authed(token))] as const;
     await new Promise((resolve) => setTimeout(resolve, 20));
     await store.transition(created.id, {
@@ -177,7 +184,7 @@ describe("workspace creation diagnostics", () => {
       workspace: { state: string; change_cursor: number };
     };
     expect(body.changed).toBe(true);
-    expect(body.cursor).toBeGreaterThan(created.change_cursor);
+    expect(body.cursor).toBeGreaterThan(latest.change_cursor);
     expect(body.workspace.state).toBe("canceled");
     expect(body.workspace.change_cursor).toBe(body.cursor);
     expect((await secondChanged.json()) as unknown).toMatchObject({
@@ -188,7 +195,7 @@ describe("workspace creation diagnostics", () => {
   });
 
   test("returns a bounded log tail with a failed workspace", async () => {
-    const server = await createTestServer();
+    const server = await createTestServer(await createStore());
     const createdRes = await server.app.request(
       "/v1/workspaces",
       authed(server.token, {
@@ -211,7 +218,7 @@ describe("workspace creation diagnostics", () => {
         stream: "stderr",
         occurredAt: new Date(),
         content: new TextEncoder().encode(
-          "Authorization: Bearer should-not-leak\nTraceback (most recent call last):\nPermissionError: /home/onefin/.pi\n",
+          "Authorization: Bearer should-not-leak\nTraceback (most recent call last):\nPermissionError: /home/worker/.pi\n",
         ),
       },
     ]);
@@ -228,7 +235,7 @@ describe("workspace creation diagnostics", () => {
       };
     };
     expect(body.failure.reason_code).toBe("child_exit_failure");
-    expect(body.failure.log_tail).toContain("PermissionError: /home/onefin/.pi");
+    expect(body.failure.log_tail).toContain("PermissionError: /home/worker/.pi");
     expect(body.failure.log_tail).not.toContain("should-not-leak");
     expect(body.failure.log_tail).toContain("[redacted]");
     expect(body.failure.log_tail_truncated).toBe(true);
@@ -238,7 +245,7 @@ describe("workspace creation diagnostics", () => {
   test("unauthorized template returns 403, unknown 404, full queue 429", async () => {
     // globalActiveWorkspaces: 0 keeps admission from draining the queue
     // so the queue-full path is deterministic.
-    const { app, token } = await createTestServer({
+    const { app, token } = await createTestServer(await createStore(), {
       maxQueuedWorkspaces: 1,
       globalActiveWorkspaces: 0,
     });
@@ -271,7 +278,7 @@ describe("workspace creation diagnostics", () => {
   });
 
   test("oversized launch_input is rejected by the template limit", async () => {
-    const { app, token } = await createTestServer();
+    const { app, token } = await createTestServer(await createStore());
     const res = await app.request(
       "/v1/workspaces",
       authed(token, {

@@ -1,18 +1,25 @@
-import type { ProtocolVersion } from "@pstdio/pocketcoder-contracts";
-import type { Scheduler, Store, WorkspaceSecretResolver } from "@pstdio/pocketcoder-runtime-core";
+import type { CheckpointInstalled, ProtocolVersion, RestoreTransferSpec } from "@pstdio/pocketcoder-contracts";
+import type { Scheduler, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext } from "hono/ws";
 import type { PersistenceService } from "../persistence/persistence";
-import type { Hub } from "./hub";
+import type { createWorkspaceLeaseService } from "../secrets/lease-service";
+import type { ControlActivity } from "./activity";
+import type { Hub, LiveConnection } from "./hub";
 
 export interface WsDeps {
+  executionDispatcher?: import("@pstdio/pocketcoder-runtime-core").ExecutionDispatcher;
+  assertAccountAllowed?: () => Promise<void>;
+  activity?: ControlActivity;
   store: Store;
+  liveTurns: import("../conversations/live-turns").LiveTurns;
   hub: Hub;
   scheduler: Scheduler;
   pepper: string;
-  secretResolver?: WorkspaceSecretResolver;
+  workspaceLeases?: ReturnType<typeof createWorkspaceLeaseService>;
   cleanupInput?: (workspaceId: string) => Promise<void>;
   log?: (msg: string) => void;
   persistence?: PersistenceService;
+  checkpointTransfers?: CheckpointTransferService;
 }
 
 export interface WsAuth {
@@ -22,3 +29,10 @@ export interface WsAuth {
 }
 
 export type CloseProtocol = (ws: WSContext, message: string) => void;
+
+export interface CheckpointTransferService {
+  restoreGrant(connection: LiveConnection, row: WorkspaceRow): Promise<RestoreTransferSpec | null>;
+  installed(connection: LiveConnection, payload: CheckpointInstalled): Promise<boolean>;
+  ready(connection: LiveConnection): Promise<boolean>;
+  disconnected?(connection: LiveConnection): Promise<void>;
+}

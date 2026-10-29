@@ -1,0 +1,23 @@
+{{- if and (not .Values.templates.configMap) .Values.templates.files }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pocketcoder.templatesConfigMap" . }}
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+data:
+  {{- range $file, $manifest := .Values.templates.files }}
+  {{ $file }}: {{ $manifest | toJson | quote }}
+  {{- end }}
+{{- end }}
+{{- if .Values.principals.config }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-principals
+  labels:
+    {{- include "pocketcoder.labels" . | nindent 4 }}
+data:
+  principals.json: {{ .Values.principals.config | toJson | quote }}
+{{- end }}

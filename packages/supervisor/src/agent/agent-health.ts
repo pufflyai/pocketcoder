@@ -22,6 +22,9 @@ async function waitForSync(pending: Promise<void>, signal?: AbortSignal) {
 export class AgentHealthMonitor {
   private currentState: AgentState = "unknown";
   private stateRevision = 0;
+  // The state revision whose settled history was read completely. AgentAPI has no
+  // incremental read, so an idle agent is not read again until its state changes.
+  private settledRevision = -1;
   private lastMessageId = -1;
   private readonly eventRevisions = new Map<string, number>();
   private transcriptSync: Promise<void> | null = null;
@@ -76,7 +79,8 @@ export class AgentHealthMonitor {
         const body = (await response.json().catch(() => null)) as { status?: string } | null;
         if (body?.status === "running" || body?.status === "stable") {
           this.setAgentState(body.status);
-          if (exec.agentapi_native) void this.syncMessages().catch(() => {});
+          if (exec.agentapi_native && (this.currentState === "running" || this.settledRevision !== this.stateRevision))
+            void this.syncMessages().catch(() => {});
         }
       }
     } catch {
@@ -160,6 +164,7 @@ export class AgentHealthMonitor {
         if (!this.callbacks.send("conversation_message", message)) throw new Error("workspace connection closed");
         this.lastMessageId = id;
       }
+      if (completeTail) this.settledRevision = revision;
     } catch (error) {
       this.callbacks.log(
         `AgentAPI transcript sync failed: ${error instanceof Error ? error.message : "unknown error"}`,

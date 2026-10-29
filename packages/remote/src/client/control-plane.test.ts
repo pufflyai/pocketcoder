@@ -17,6 +17,7 @@ function workspace(overrides: Partial<WorkspaceSummary> = {}): WorkspaceSummary 
     change_cursor: 3,
     reason_code: null,
     template: { name: "pi-harness", version: "1", digest: "sha256:template" },
+    agent: { type: "custom", model: null },
     provider_kind: "docker",
     provisioning_mode: "cold",
     network: { state: "ready" },

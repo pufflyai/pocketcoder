@@ -1,0 +1,39 @@
+{
+  "app": "pocketcoder-manager",
+  "pgliteVersion": "0.5.8",
+  "migrations": [
+    {
+      "name": "20261010112639_exotic_wallop",
+      "hash": "62aa9d642a8050ebdf14aa8b1be413a3e31228a4c9ff8ee5661783a42603e4f5"
+    },
+    {
+      "name": "20261010203908_slow_human_robot",
+      "hash": "a188ab86aa7b610b5ad66f9627a6bc5c0a4f79fcee734195b8e985285482a527"
+    },
+    {
+      "name": "20261010225630_dark_joseph",
+      "hash": "bbcdf0b1253b465678aa355bf19ea97a6c46ec4e4dfb7582c613ee9d66f2c49f"
+    },
+    {
+      "name": "20261011002416_slim_living_lightning",
+      "hash": "4786f12e801a26de935f4808a5755499b79acf158b5343158062548c651895a8"
+    },
+    {
+      "name": "20261011043715_tearful_war_machine",
+      "hash": "fb96f8239061d234784ccb7d4a72b972b1994633df778b7f6819f549e34bdd08"
+    },
+    {
+      "name": "20261012001801_military_thunderbolt_ross",
+      "hash": "5f30bd4ad4f861a8fae73eb409595bb6f42e3ad3674d82a1e084bea8ab7aacd7"
+    },
+    {
+      "name": "20261012073717_melodic_celestials",
+      "hash": "cc43186365c15c5a3f0f4f7a3fd0dd30612aefba852f52b565b0be64142e9373"
+    },
+    {
+      "name": "20261012112752_tearful_gorilla_man",
+      "hash": "c2375c18fc9cd9a860a82d6c5da3b019d6494b961aee7cba156efa478ecc5e37"
+    }
+  ],
+  "checksum": "d01b9dd953a3a928cc397d02d8c0f18993c3d2c96e19f05b8b0488efc3ed01a4"
+}

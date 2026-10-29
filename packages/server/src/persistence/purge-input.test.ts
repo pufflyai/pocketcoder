@@ -2,8 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { DockerDriver } from "@pstdio/pocketcoder-drivers";
 import { failedAllocation } from "./purge-support.test";
+
+const createStore = createTestStoreFactory();
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -11,7 +14,7 @@ afterEach(async () => {
 });
 
 async function fixture() {
-  const app = await failedAllocation();
+  const app = await failedAllocation(await createStore());
   const inputDir = await mkdtemp(join(tmpdir(), "pc-purge-input-"));
   roots.push(inputDir);
   const docker = new DockerDriver({ inputDir });

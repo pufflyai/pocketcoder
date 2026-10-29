@@ -1,0 +1,27 @@
+{
+  "name": "pocketcoder",
+  "version": "0.1.0",
+  "displayName": "PocketCoder Lab",
+  "description": "Test PocketCoder templates, local instances and agent machines.",
+  "publisher": "pocketcoder",
+  "main": "./extension.ts",
+  "engines": {
+    "pstdio": "^0.1.1"
+  },
+  "pstdio": {
+    "scope": "repo"
+  },
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pstdio/sdk": "0.40.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "typescript": "5.9.3"
+  }
+}

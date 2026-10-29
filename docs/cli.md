@@ -7,15 +7,16 @@ repo root, run `bun packages/cli/src/index.ts`, use a compiled binary
 (`bun run --filter '@pstdio/pocketcoder-cli' compile`), or invoke `pcd` inside
 the server container.
 
-Commands use one of two access paths:
+The installed package uses Node 22.19.0 or newer and includes native executables
+for Apple Silicon macOS and for Linux on ARM64 and x64. It runs without Bun. See
+[candidate installation](candidate-installation.md) for commit-pinned tarballs.
 
-- **Database commands** (migrations, principals, keys, `templates
-  list-database`) need `POCKETCODER_DATABASE_URL`,
-  `POCKETCODER_DATABASE_SCHEMA` (default `pocketcoder`), and for key issuance
-  `POCKETCODER_AUTH_PEPPER`.
-- **REST commands** (workspaces, checkpoints, storage, pools, `templates list`,
-  doctor) need `POCKETCODER_URL` (default `http://127.0.0.1:7080`) and
-  `POCKETCODER_KEY` (a machine key).
+Principal and key commands use HTTP against the running server. Set
+`POCKETCODER_URL` (default `http://127.0.0.1:8090`) and `POCKETCODER_KEY`.
+Workspaces, checkpoints, storage, pools, template catalog and doctor commands
+use the same settings. `templates import <directory>` publishes immutable versions
+over HTTP. `superuser create` and `backup create` use the private local socket in
+`POCKETCODER_DIR`.
 
 `pcd --version` prints the installed `@pstdio/pocketcoder-cli` version, and
 `pcd --help` lists the command tree. Neither needs credentials.
@@ -43,6 +44,37 @@ copied to `.env`, which is already ignored by Git.
 ## Server process
 
 ```sh
+pcd serve --dir ./pc_data --http 127.0.0.1:8090
+pcd superuser create --dir ./pc_data --json
+pcd superuser create --dir ./pc_data --automation --expires <future-ISO8601> --json
+```
+
+`serve` runs in the foreground. An empty folder gets private controller keys.
+Owner keys default to 24 hours and plaintext is shown once. Save a
+`--request-id` to retry a lost response without issuing another key.
+`--replace` revokes earlier owner keys. Only the fixed `owner` principal is
+supported here. The agent listener defaults to `0.0.0.0:8091`; configure it
+with `POCKETCODER_AGENT_HTTP` and point `POCKETCODER_WORKSPACE_SERVER_URL`
+at that listener. Operator and agent routes are separate.
+
+
+```sh
+pcd backup create --dir ./pc_data --out <new-archive> [--timeout 30]
+pcd backup verify <archive>
+pcd backup restore <archive> --dir <new-data-folder> [--checkpoint-dir <empty-folder>]
+pcd recovery status [--dir <data-folder>]
+pcd recovery complete [--dir <data-folder>]
+```
+
+`backup create` writes a private archive of the running controller: its database,
+keys and the checkpoint archives the database refers to, all from one point in time.
+`backup verify` checks an archive without the data folder or a running server.
+`backup restore` writes a verified archive into a new folder that starts in recovery. `recovery
+complete` replays the deletion journal, fences the old runtimes and grants, and moves the journal's
+writer claim to the restored folder; restart `serve` afterwards. See
+[getting started](getting-started.md#back-up-the-controller).
+
+```sh
 pcd server start [--foreground] [--timeout-seconds 30]
 pcd server status [--json]
 pcd server stop [--timeout-seconds 15]
@@ -51,61 +83,89 @@ pcd server stop [--timeout-seconds 15]
 These commands manage only the PocketCoder server process. `start` reads the
 normal server environment and starts the same implementation as `bun run
 start`; it does not build images, generate templates, start a model gateway,
-migrate a database, create credentials, or launch a workspace.
+create credentials, or launch a workspace.
 
 Background starts record an identity-protected PID and log path under
 `POCKETCODER_STATE_DIR`. `stop` refuses to signal a process whose identity does
 not match that record. Use `--foreground` to keep the server attached and stop
 it with Ctrl-C.
 
-## Database and migrations
+## Data folder and migrations
 
-```sh
-pcd db migrate     # apply pending migrations (schema-scoped advisory lock)
-pcd db status      # per-migration applied/pending/DRIFTED
-```
+The server loads a migrated seed and applies pending migrations on startup.
+Unknown histories and checksum drift stop startup. Use `POCKETCODER_DIR` to
+select the private data folder. Use local disk or a block volume, never NFS.
 
 ## Principals and machine keys
 
+Use an explicit owner admin key, or a key with `principals:admin` and enough
+scope and template grants for the target. The server hides stronger principals
+and rejects self-edit. Principal IDs and names remain immutable.
+
 ```sh
 pcd principals create --name example-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,services:relay,attachments:write,logs:read \
-  --templates echo-harness,pi-harness    # or '*' for all templates
-pcd principals update --name example-backend \
-  --scopes templates:read,workspaces:create,workspaces:read,services:relay,attachments:write,logs:read
-pcd principals list
+  --scopes templates:read,workspaces:create,workspaces:read \
+  --templates echo-harness --json
+pcd principals list --json
+pcd principals get --id <principal-id> --json
+pcd principals update --id <principal-id> --scopes workspaces:read --json
+pcd principals update --id <principal-id> --disabled --json
+pcd principals update --id <principal-id> --disabled=false --json
+pcd principals plan                      # dry run of the mounted principal file
+pcd principals admission-map --file principals.json
 
-pcd keys issue --principal example-backend [--scopes a,b] [--expires never|<ISO8601>]
-pcd keys revoke --id <key-id>
-pcd keys issue --principal-id <id> --request-id <id> --scopes a,b --expires <ISO8601>
-pcd keys list --principal-id <id> [--request-id <id>] [--limit 50] [--cursor <id>]
-pcd keys revoke --principal-id <id> --id <key-id>
-pcd keys revoke-all --principal-id <id>
-pcd workspaces purge --id <workspace-id> --request-id <id> [--principal-id <recovery-target>]
+pcd keys issue --principal-id <principal-id> --request-id <operation-id> \
+  --scopes workspaces:read --templates echo-harness --expires <ISO8601> --json
+pcd keys list --principal-id <principal-id> --request-id <operation-id>
+pcd keys revoke --principal-id <principal-id> --id <key-id>
+pcd keys revoke-all --principal-id <principal-id>
+pcd keys rotate --principal-id <principal-id> --id <key-id> --request-id <operation-id> --json
+pcd keys expiring --within-hours 168
 ```
 
-Prefer a bounded `--expires` plus rotation; reserve `never` for deliberate
-operational choices ([security model](security.md)).
+`keys rotate` issues a successor with the same grants and leaves the old key valid.
+Revoke the old key once the consumer uses the successor. See
+[rotating machine keys](security.md#rotating-machine-keys). `keys expiring` lists
+active keys that expire within the window, soonest first.
 
-Public key commands use `POCKETCODER_URL` and `POCKETCODER_KEY` with an explicit
-target grant. Local issuance also accepts `--request-id`, `--manage-principals`,
-and `--json`. Persist the request ID before issuing a key. See
-[verifiable cleanup](cleanup.md) for one-time secrets and delegated recovery.
+Issuance requires explicit scopes, a request ID and a future expiry within the
+calling key's remaining lifetime. Requested grants must fit both caller and
+target. Template grants also intersect the principal's live allowlist on every
+request. Omitting `--templates` during issuance snapshots the target's current
+grants. Omitting it during a principal update preserves the current grants.
+Disabling a principal revokes all its keys before returning. Re-enabling it does
+not revive those keys.
 
-Scopes: `templates:read`, `workspaces:create`, `workspaces:read`,
-`workspaces:cancel`, `workspaces:preserve`, `workspaces:restore`, `workspaces:purge`,
-`workspaces:recover`, `keys:read`, `keys:write`,
-`checkpoints:read`, `checkpoints:delete`, `outputs:read`, `conversations:read`,
-`conversations:delete`, `services:relay`, `attachments:write`, `logs:read`,
-`network:read`, `terminal:attach`, `terminal:read`, `admin`. A key issued
-without `--scopes` inherits its principal's
-current scopes, including later changes made by `principals update`. Passing
-`--scopes` creates a permanently narrower key whose effective scopes are the
-intersection of that restriction and its principal's current scopes. Omitting
-`--templates` from `principals update` preserves the current allowlist. Keys are
-displayed once and stored as keyed digests; revocation applies on the next request.
-Keys issued by older releases retain their stored restriction; reissue them once
-without `--scopes` to opt into live inheritance.
+An explicit admin key can issue recovery keys on a dedicated recovery principal with
+`--scopes keys:read,keys:write,workspaces:recover`,
+`--manage-principals <target-uuid,...>`, `--templates`, `--expires` and
+`--request-id`. Delegated keys only manage their exact targets. They can list
+and revoke credentials for disabled targets. They cannot issue administrative
+credentials or credentials for administrative targets.
+
+Persist the request ID before issuing. The secret is returned once and is never
+stored for replay. If the response is lost, list by request ID, revoke that key,
+then issue with a fresh request ID. See [verifiable cleanup](cleanup.md).
+Never give a workspace an operator or owner key.
+
+Scopes include `principals:admin`, `templates:read`, workspace, checkpoint,
+conversation, attachment, output, relay, log, network and terminal scopes, plus
+explicit owner `admin`. See the generated OpenAPI schemas for the complete list.
+
+## Controller secrets
+
+```sh
+pocketcoder secrets put <name> --file <protected-json-file>
+pocketcoder secrets put <name> --file=-  # read JSON from stdin
+pocketcoder secrets list [--json]
+pocketcoder secrets retire <name>
+```
+
+These commands use HTTP and require `secrets:write` or `admin`. Input is bounded
+at 64 KiB. Responses contain metadata only. Keep the input outside workspace
+files and mounts. Supported types are `registry` and `setup-issuer`. See the
+[private-image recipe](templates.md#private-images) and
+[private-source setup](private-source.md).
 
 ## Templates
 
@@ -114,7 +174,7 @@ pcd templates validate examples/templates/*.json # validate manifests offline, n
 pcd templates render <manifest> --image <repo@sha256:digest> --out <directory> \
   [--set '<json-pointer>=<json-value>']...
 pcd templates list [--json]                      # versions the key may launch, through the REST API
-pcd templates list-database                      # every loaded version, straight from PostgreSQL
+pcd templates import <directory>                 # publish reviewed versions over HTTP
 ```
 
 `templates render` reads JSON or YAML, replaces a placeholder image with an
@@ -234,3 +294,40 @@ declared writable memory path can create, sync, read, and remove a sentinel.
 The probe is canceled on success, failure, or timeout; failures print the
 workspace log tail. Exit code 0 means the entire path — API, store, driver,
 container, writable mounts, supervisor, harness, and relay — works.
+
+### Open or forward a workspace webapp
+
+The template must declare the preview port. Use a controller on loopback and an
+owner key with `previews:open` outside the workspace:
+
+```sh
+pocketcoder workspaces preview --id <workspace-id> --name web --open
+pocketcoder workspaces forward --id <workspace-id> --name web --port 3001
+```
+
+`preview` prints a one-time browser URL; `--open` opens the default browser.
+`forward` binds only to `127.0.0.1` and prints its local URL. Omitting `--port`
+selects a free local port. It forwards HTTP and WebSockets for that declared
+preview only. Stop it with Ctrl-C. A revoked or expired session needs a fresh
+command. Forwarding rejects foreign Host and Origin headers.
+
+SDK callers can use `client.previews.list(workspaceId)` and
+`client.previews.open(workspaceId, "web")`. The returned URL must be opened within
+60 seconds. Keep it out of logs and share only with its intended user.
+
+Run the real Docker demo from the repository root:
+
+```sh
+bun examples/e2e/preview.ts
+```
+
+Add `--browser` to pause with a fresh URL for a browser check. Press Enter to
+finish cleanup. The demo checks HTML, CSS, live reload, token replay, loopback
+forwarding and workspace shutdown.
+# Workspace desktop
+
+`pocketcoder workspaces display --id <workspace> --open` opens a trusted desktop
+viewer for a template with `display.mode` set to `desktop`. Add `--control` for
+keyboard and pointer control. The key needs `display:view`, and control also
+needs `display:control`. The URL is single-use and lasts 60 seconds. The viewer
+session ends within one hour, the key expiry or the workspace deadline.

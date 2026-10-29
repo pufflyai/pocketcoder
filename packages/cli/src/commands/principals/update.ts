@@ -1,19 +1,35 @@
 import type { Argv } from "yargs";
-import { fail, need, valueList, withStore } from "../../command/cli-context";
+import { controlPlaneClient, need, valueList } from "../../command/cli-context";
 import { addAction } from "../command";
 import { parseScopes } from "../scopes";
-import { principalOptions } from "./options";
+import { principalGrantOptions } from "./options";
 
 export function addUpdateCommand(parser: Argv) {
-  return addAction(parser, "update", "Update a principal", principalOptions, async (flags) => {
-    await withStore(async (store) => {
-      const name = need(flags, "name");
-      const principal = await store.getPrincipalByName(name);
-      if (!principal) fail(`unknown principal: ${name}`);
-      const templates = typeof flags.templates === "string" ? valueList(flags.templates) : principal.templateNames;
-      const updated = await store.updatePrincipal(principal.id, parseScopes(need(flags, "scopes")), templates);
-      if (!updated) fail(`unknown principal: ${name}`);
-      console.log(`updated principal ${updated.name} (${updated.id})`);
-    });
-  });
+  return addAction(
+    parser,
+    "update",
+    "Update a principal's grants or disabled status",
+    (command) =>
+      principalGrantOptions(command)
+        .option("id", { type: "string", demandOption: true, description: "Principal ID" })
+        .option("disabled", {
+          type: "boolean",
+          description: "Disable this principal and revoke its keys; false re-enables it",
+        })
+        .check((flags) => {
+          if (flags.scopes === undefined && flags.templates === undefined && flags.disabled === undefined)
+            throw new Error("Provide --scopes, --templates or --disabled");
+          return true;
+        }),
+    async (flags) => {
+      const principal = await controlPlaneClient().principals.update(need(flags, "id"), {
+        ...(typeof flags.scopes === "string" ? { scopes: parseScopes(flags.scopes) } : {}),
+        ...(typeof flags.templates === "string" ? { templates: valueList(flags.templates) } : {}),
+        ...(typeof flags.disabled === "boolean" ? { disabled: flags.disabled } : {}),
+      });
+      console.log(
+        flags.json ? JSON.stringify(principal, null, 2) : `updated principal ${principal.name} (${principal.id})`,
+      );
+    },
+  );
 }

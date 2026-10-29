@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
 import { KubernetesDriver } from "./kubernetes";
 
@@ -22,8 +23,10 @@ async function fakeKubectl() {
     script,
     `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
-const input = await Bun.stdin.text();
-appendFileSync(${JSON.stringify(log)}, input + "\\n");
+const args = process.argv.slice(2);
+const input = (args.includes("create") || args.includes("apply")) ? await Bun.stdin.text() : "";
+if (input) appendFileSync(${JSON.stringify(log)}, input + "\\n");
+if (args.includes("create")) console.log(JSON.stringify({ metadata: { uid: "secret-uid", resourceVersion: "1" } }));
 `,
     { mode: 0o755 },
   );
@@ -34,28 +37,24 @@ appendFileSync(${JSON.stringify(log)}, input + "\\n");
 }
 
 function launch(): WorkspaceLaunch {
+  const parsed = parseTemplateManifest({
+    apiVersion: "pocketcoder.dev/v1alpha1",
+    kind: "Template",
+    metadata: { name: "scheduling-fixture" },
+    spec: {
+      version: "1.0.0",
+      image: `registry.example/workspace@sha256:${"a".repeat(64)}`,
+      command: ["sleep", "3600"],
+      harness: { command: ["sleep", "3600"] },
+      resources: { cpu: "1", memory: "512Mi" },
+      security: { writableMemoryPaths: [] },
+    },
+  });
   return {
     workspace: {
       id: randomUUID(),
-      templateDigest: "sha256:template",
-      templateSnapshot: {
-        spec: {
-          image: "registry.example/workspace@sha256:fixture",
-          command: ["sleep", "3600"],
-          env: {},
-          resources: { cpu: "1", memory: "512Mi" },
-          security: {
-            uid: 10_001,
-            gid: 10_001,
-            writableMemoryPaths: [],
-            readOnlyRoot: true,
-            allowPrivilegeEscalation: false,
-            dropCapabilities: ["ALL"],
-            seccomp: "RuntimeDefault",
-          },
-          network: { mode: "unrestricted" },
-        },
-      },
+      templateDigest: parsed.digest,
+      templateSnapshot: snapshotOf(parsed),
     },
     input: {},
     mounts: [],

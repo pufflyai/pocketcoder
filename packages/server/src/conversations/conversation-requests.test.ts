@@ -1,12 +1,15 @@
 import { expect, test } from "bun:test";
 import { ConversationRequestReceiptSchema } from "@pstdio/pocketcoder-contracts";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { authed, createTestBody, createTestServer } from "../testing/test-server.test";
+
+const createStore = createTestStoreFactory();
 
 // API wiring and authorization: retries return the same durable receipt, and
 // history projections retain identities rather than guessing from message text.
 test("reconciles an owned request through the API and returns explicit legacy history", async () => {
-  const server = await createTestServer({ globalActiveWorkspaces: 0 });
+  const server = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
   const created = await server.app.request(
     "/v1/workspaces",
     authed(server.token, {
@@ -48,21 +51,33 @@ test("reconciles an owned request through the API and returns explicit legacy hi
     sequence: 1,
     revision: 1,
   };
-  for (const [messageId, identified] of [
-    ["answer", true],
-    ["older-message", false],
-  ] as const) {
-    await server.store.appendConversationMessage({
-      workspaceId: id,
-      messageId,
-      role: "assistant",
-      content: "Answer",
-      occurredAt: at,
-      metadata: {},
-      createdAt: at,
-      ...(identified ? { identity: messageIdentity } : {}),
-    });
-  }
+  await server.store.commitConversationTurn({
+    workspaceId: id,
+    identity,
+    status: "completed",
+    reason: null,
+    messages: [
+      {
+        messageId: "answer",
+        role: "assistant",
+        content: "Answer",
+        occurredAt: at,
+        metadata: {},
+        identity: messageIdentity,
+      },
+    ],
+    startedAt: at,
+    endedAt: at,
+  });
+  await server.store.appendWorkspaceMessage({
+    workspaceId: id,
+    messageId: "older-message",
+    role: "assistant",
+    content: "Answer",
+    occurredAt: at,
+    metadata: {},
+    createdAt: at,
+  });
   const history = await server.app.request(`/v1/workspaces/${id}/conversation`, authed(server.token));
   const body = (await history.json()) as { items: { identity: unknown }[] };
   expect(body.items.map((item) => item.identity)).toEqual([messageIdentity, null]);

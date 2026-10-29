@@ -1,193 +1,118 @@
-name: images
+name: candidate images
 on:
-  workflow_run:
-    workflows:
-      - ci
-    types:
-      - completed
-  workflow_dispatch: {}
-  push:
-    tags:
-      - v*
-permissions:
-  contents: read
-  actions: read
+  workflow_dispatch:
+    inputs:
+      operator-release:
+        description: Build and publish only the tested synthetic operator bundle
+        type: boolean
+        default: false
+      native-diagnostics:
+        description: Run isolated native startup diagnostics without image builds or publication
+        type: boolean
+        default: false
+      affected-startup-diagnostics:
+        description: Diagnose first instrumented Linux x64 and ARM startup without acceptance or publication
+        type: boolean
+        default: false
+      normal-startup-diagnostics:
+        description: Diagnose original Linux artifacts with version prelude and one start without publication
+        type: boolean
+        default: false
+permissions: {}
 env:
   BUN_VERSION: 1.4.2
+  CANDIDATE_COMMIT: ${{ github.sha }}
 jobs:
-  images:
-    runs-on: ubuntu-latest
+  test:
+    if: github.event_name != 'pull_request' && !inputs.operator-release && !inputs.native-diagnostics &&
+      !inputs.affected-startup-diagnostics && !inputs.normal-startup-diagnostics
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+  diagnostics:
+    if: (inputs.native-diagnostics || inputs.affected-startup-diagnostics) && !inputs.normal-startup-diagnostics
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-startup-diagnostic.yml
+    with:
+      affected-only: ${{ inputs.affected-startup-diagnostics || false }}
+  normal-startup-diagnostics:
+    if: github.event_name == 'workflow_dispatch' && inputs.normal-startup-diagnostics
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/native-normal-startup-diagnostic.yml
+  publish:
+    if: github.event_name != 'pull_request' && !inputs.native-diagnostics && !inputs.affected-startup-diagnostics &&
+      !inputs.normal-startup-diagnostics
+    needs: test
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
-      actions: read
-    outputs:
-      server-digest: ${{ steps.server-build.outputs.digest }}
-      workspace-digest: ${{ steps.workspace-build.outputs.digest }}
-      egress-digest: ${{ steps.egress-build.outputs.digest }}
-      publish: ${{ steps.revision.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0
+          ref: ${{ env.CANDIDATE_COMMIT }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
-      - name: Verify the exact successful CI revision
-        id: revision
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CI_PUBLISH_BRANCH: main
-        run: bun --no-env-file scripts/ci/publication.ts
-      - name: Bundle the workspace supervisor for the workspace image
-        run: |
-          bun install --frozen-lockfile
-          bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
-        if: steps.revision.outputs.publish == 'true'
-      - uses: docker/setup-qemu-action@v3
-        if: steps.revision.outputs.publish == 'true'
+          bun-version: ${{ env.BUN_VERSION }}
       - uses: docker/setup-buildx-action@v3
-        if: steps.revision.outputs.publish == 'true'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pocketcoder-image-*-${{ env.CANDIDATE_COMMIT }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/images
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-        if: steps.revision.outputs.publish == 'true'
-      - name: Server image metadata
-        id: server-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/server
-          tags: |-
-            type=raw,value=latest,enable=${{ steps.revision.outputs.latest }}
-            type=raw,value=sha-${{ steps.revision.outputs.sha }}
-            type=semver,pattern={{version}}
-          labels: org.opencontainers.image.revision=${{ steps.revision.outputs.sha }}
-        if: steps.revision.outputs.publish == 'true'
-      - name: Build and push server image
-        id: server-build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/image/server.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.server-meta.outputs.tags }}
-          labels: ${{ steps.server-meta.outputs.labels }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,scope=server,mode=max
-        if: steps.revision.outputs.publish == 'true'
-      - name: Workspace image metadata
-        id: workspace-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/workspace
-          tags: |-
-            type=raw,value=latest,enable=${{ steps.revision.outputs.latest }}
-            type=raw,value=sha-${{ steps.revision.outputs.sha }}
-            type=semver,pattern={{version}}
-          labels: org.opencontainers.image.revision=${{ steps.revision.outputs.sha }}
-        if: steps.revision.outputs.publish == 'true'
-      - name: Build and push workspace image
-        id: workspace-build
-        uses: docker/build-push-action@v6
-        with:
-          context: deploy/image
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.workspace-meta.outputs.tags }}
-          labels: ${{ steps.workspace-meta.outputs.labels }}
-          cache-from: type=gha,scope=workspace
-          cache-to: type=gha,scope=workspace,mode=max
-        if: steps.revision.outputs.publish == 'true'
-      - name: Egress image metadata
-        id: egress-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/egress
-          tags: |-
-            type=raw,value=latest,enable=${{ steps.revision.outputs.latest }}
-            type=raw,value=sha-${{ steps.revision.outputs.sha }}
-            type=semver,pattern={{version}}
-          labels: org.opencontainers.image.revision=${{ steps.revision.outputs.sha }}
-        if: steps.revision.outputs.publish == 'true'
-      - name: Build and push egress image
-        id: egress-build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: packages/egress/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.egress-meta.outputs.tags }}
-          labels: ${{ steps.egress-meta.outputs.labels }}
-          cache-from: type=gha,scope=egress
-          cache-to: type=gha,scope=egress,mode=max
-        if: steps.revision.outputs.publish == 'true'
-      - name: Record published digests
+      - name: Publish validated archives under candidate-only tags
         env:
-          SERVER_DIGEST: ${{ steps.server-build.outputs.digest }}
-          WORKSPACE_DIGEST: ${{ steps.workspace-build.outputs.digest }}
-          EGRESS_DIGEST: ${{ steps.egress-build.outputs.digest }}
-        run: |
-          {
-            echo "server=ghcr.io/${{ github.repository }}/server@${SERVER_DIGEST}"
-            echo "workspace=ghcr.io/${{ github.repository }}/workspace@${WORKSPACE_DIGEST}"
-            echo "egress=ghcr.io/${{ github.repository }}/egress@${EGRESS_DIGEST}"
-          } | tee "$RUNNER_TEMP/pocketcoder-image-digests.txt"
-          {
-            echo "## Published image digests"
-            echo
-            echo '```text'
-            cat "$RUNNER_TEMP/pocketcoder-image-digests.txt"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-        if: steps.revision.outputs.publish == 'true'
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion ==
-      'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository)
-  release-images:
-    if: startsWith(github.ref, 'refs/tags/v') && needs.images.outputs.publish == 'true' &&
-      needs.images.outputs.server-digest != '' && needs.images.outputs.workspace-digest != '' &&
-      needs.images.outputs.egress-digest != ''
-    needs: images
-    runs-on: ubuntu-latest
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+        run: bun run images:publish "$RUNNER_TEMP/images" "$CANDIDATE_COMMIT" "$IMAGE_REPOSITORY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-candidate-image-digests-${{ env.CANDIDATE_COMMIT }}
+          path: ${{ runner.temp }}/images/published.json
+          if-no-files-found: error
+  operator-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.operator-release
     permissions:
       contents: write
+    runs-on: ubuntu-24.04
     steps:
-      - name: Add image digests to tagged release
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Test the extracted release outside the source checkout
+        run: bun test deploy/digitalocean/production
+      - name: Build the exact committed operator release
+        run: bun run operator:bundle "$RUNNER_TEMP/operator"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketcoder-operator-${{ github.sha }}
+          path: ${{ runner.temp }}/operator
+          if-no-files-found: error
+      - name: Publish the checksum-pinned synthetic operator candidate
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-          SERVER_DIGEST: ${{ needs.images.outputs.server-digest }}
-          WORKSPACE_DIGEST: ${{ needs.images.outputs.workspace-digest }}
-          EGRESS_DIGEST: ${{ needs.images.outputs.egress-digest }}
-        run: |
-          {
-            echo "server=ghcr.io/${{ github.repository }}/server@${SERVER_DIGEST}"
-            echo "workspace=ghcr.io/${{ github.repository }}/workspace@${WORKSPACE_DIGEST}"
-            echo "egress=ghcr.io/${{ github.repository }}/egress@${EGRESS_DIGEST}"
-          } > "$RUNNER_TEMP/pocketcoder-image-digests.txt"
-          gh release view "$TAG" >/dev/null 2>&1 ||
-            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
-          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
-          sed '/<!-- pocketcoder-image-digests -->/,$d' \
-            "$RUNNER_TEMP/release-notes.md" > "$RUNNER_TEMP/release-notes-next.md"
-          {
-            echo
-            echo "<!-- pocketcoder-image-digests -->"
-            echo "## Container image digests"
-            echo
-            echo '```text'
-            cat "$RUNNER_TEMP/pocketcoder-image-digests.txt"
-            echo '```'
-          } >> "$RUNNER_TEMP/release-notes-next.md"
-          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes-next.md"
-          gh release upload "$TAG" \
-            "$RUNNER_TEMP/pocketcoder-image-digests.txt#pocketcoder-image-digests.txt" \
-            --clobber
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          tag="operator-candidate-$GITHUB_SHA"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release download "$tag" --pattern operator.json --dir "$RUNNER_TEMP/previous"
+            bun -e 'const a=await Bun.file(process.argv[1]).json(); const b=await Bun.file(process.argv[2]).json(); if(a.commit!==b.commit || a.sha256!==b.sha256) throw new Error("Existing candidate differs; refuse overwrite.");' "$RUNNER_TEMP/previous/operator.json" "$RUNNER_TEMP/operator/operator.json"
+          else
+            gh release create "$tag" "$RUNNER_TEMP/operator/operator.tar.gz" "$RUNNER_TEMP/operator/operator.json" \
+              --target "$GITHUB_SHA" --prerelease --title "Operator candidate $GITHUB_SHA" \
+              --notes "Checksum-pinned operator bundle for synthetic deployment and recovery validation."
+          fi
 concurrency:
-  group: main-image-publication
-  cancel-in-progress: false
+  group: candidate-images-${{ github.ref }}
+  cancel-in-progress: true

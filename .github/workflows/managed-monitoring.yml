@@ -1,0 +1,42 @@
+name: managed-monitoring
+on:
+  workflow_call: {}
+permissions: {}
+jobs:
+  managed-monitoring:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache: monitoring
+      - uses: ./.github/actions/load-fixtures
+        with:
+          fixture: service
+      - name: Install the pinned kind release
+        run: >
+          curl -fsSLo "$RUNNER_TEMP/kind"
+          https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+
+          printf 'aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  %s\n' "$RUNNER_TEMP/kind" |
+          sha256sum --check
+
+          chmod 0755 "$RUNNER_TEMP/kind"
+
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Verify signed storage faults and journal restart health
+        env:
+          RUN_S3_INTEGRATION: "1"
+        run: bun test packages/db/src/journal/acknowledgement.test.ts examples/e2e/monitoring-storage-fault.test.ts
+      - name: Scrape managed accounts and prove operator alert delivery and recovery
+        env:
+          POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
+        run: bun run example:e2e:managed-monitoring
+env:
+  BUN_VERSION: 1.4.2
+  NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
+  NX_LOAD_DOT_ENV_FILES: "false"
+  NX_DAEMON: "false"

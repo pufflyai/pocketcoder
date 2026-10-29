@@ -1,3 +1,5 @@
+export type { DatabaseOpenOptions } from "./database/context";
+export { postgresSqlClient, type SqlClient } from "./database/sql-client";
 export {
   advisoryLockKey,
   assertValidSchema,
@@ -8,6 +10,7 @@ export {
   type MigrationStatus,
   migrateDatabase,
 } from "./migrations/migrator";
+export type { RecoveryState } from "./recovery/state";
 export {
   conversationRequests,
   eventOutbox,
@@ -27,4 +30,4 @@ export {
   workspaces,
   workspaceTerminalSessions,
 } from "./schema/index";
-export { PostgresStore } from "./store";
+export { DatabaseStore } from "./store";

@@ -1,12 +1,11 @@
-import { parseDurationMs } from "@pstdio/pocketcoder-contracts";
-import type { StorageRef, WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
+import type { DiscoveredProvider, WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
 import type { MetricSink } from "../observability/metrics";
 import type { Store, WorkspaceRow } from "../types";
 import { measureReconciliation } from "./reconciliation-metrics";
 
-// Server-restart recovery: reconcile PostgreSQL state with provider objects.
+// Server-restart recovery: reconcile database state with provider objects.
 // Workspaces with a live provider wait for their supervisor to reconnect
-// inside the disconnect grace; workspaces whose provider vanished fail.
+// inside the disconnect grace; missing providers wait for proven cleanup before failure.
 
 export interface ReconcileDeps {
   store: Store;
@@ -15,10 +14,11 @@ export interface ReconcileDeps {
   now?: () => Date;
   log?: (msg: string) => void;
   metrics?: MetricSink;
+  discover?: () => Promise<DiscoveredProvider[] | undefined>;
 }
 
-async function reconcileProviderRow(
-  deps: ReconcileDeps,
+export async function reconcileProviderRow(
+  deps: Pick<ReconcileDeps, "store" | "storageDriver" | "log">,
   row: WorkspaceRow,
   found: Awaited<ReturnType<WorkspaceDriver["list"]>>[number] | undefined,
   now: Date,
@@ -31,12 +31,14 @@ async function reconcileProviderRow(
     deps.log?.(`reconcile: template digest mismatch for ${row.id}; failing workspace`);
   }
   const lost = !found || mismatched;
+  if (lost && row.runtimeRegistration)
+    await deps.store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, now);
   if (lost && (row.state === "connected" || row.state === "ready")) {
-    await settleLostStorage(deps, row, now);
     await deps.store.transition(row.id, {
       from: [row.state],
-      to: "failed",
+      to: "terminating",
       reason: "provider_lost",
+      patch: { terminalIntent: "failed" },
       at: now,
     });
     return;
@@ -52,7 +54,7 @@ async function reconcileProviderRow(
 async function reconcileProviderState(deps: ReconcileDeps): Promise<void> {
   const now = deps.now ? deps.now() : new Date();
   const rows = await deps.store.listNonterminal();
-  const discovered = await deps.driver.list();
+  const discovered = (await deps.discover?.()) ?? (await deps.driver.list());
   const byWorkspace = new Map(discovered.map((d) => [d.workspaceId, d]));
   const known = new Set(rows.map((r) => r.id));
 
@@ -71,33 +73,4 @@ async function reconcileProviderState(deps: ReconcileDeps): Promise<void> {
 
 export async function reconcileProviders(deps: ReconcileDeps): Promise<void> {
   await measureReconciliation(deps.metrics, "provider", false, () => reconcileProviderState(deps));
-}
-
-async function settleLostStorage(deps: ReconcileDeps, row: WorkspaceRow, now: Date): Promise<void> {
-  if (!deps.storageDriver) return;
-  const storage = await deps.store.getWorkspaceStorage(row.id);
-  if (!storage || ["deleted", "retained"].includes(storage.state)) return;
-  const failurePolicy = row.templateSnapshot.spec.persistence.checkpoint.onFailure;
-  if (failurePolicy !== "destroy") {
-    await deps.store.updateWorkspaceStorage(
-      storage.id,
-      {
-        state: "retained",
-        retainedUntil: new Date(
-          now.getTime() + parseDurationMs(row.templateSnapshot.spec.persistence.checkpoint.retention),
-        ),
-        lastErrorCode: "provider_lost",
-      },
-      now,
-    );
-    return;
-  }
-  try {
-    if (Object.keys(storage.providerRef).length > 0) {
-      await deps.storageDriver.deleteStorage(storage.providerRef as StorageRef);
-    }
-    await deps.store.updateWorkspaceStorage(storage.id, { state: "deleted", deletedAt: now }, now);
-  } catch {
-    await deps.store.updateWorkspaceStorage(storage.id, { lastErrorCode: "storage_cleanup_failed" }, now);
-  }
 }

@@ -22,6 +22,11 @@ runs:
         key: bun-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}
     - run: bun install --frozen-lockfile
       shell: bash
+    - name: Install pstdio extension dependencies
+      run: |
+        bun install --frozen-lockfile --cwd .pstdio/extensions/pocketcoder
+        bun install --frozen-lockfile --cwd .pstdio/extensions/pocketcoder-workspaces
+      shell: bash
     - uses: actions/cache/restore@v4
       id: nx
       with:

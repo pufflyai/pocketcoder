@@ -39,6 +39,15 @@ terminal.onMessage((message) => {
 authenticated terminal WebSocket. `client.terminals.list(id)` reads the
 metadata-only terminal audit history.
 
+`client.agent.interrupt(id)` stops the agent's current turn and keeps the
+workspace and conversation. It returns `{ status: "requested" }` when it sent
+the template's interrupt keys, or `{ status: "idle" }` when the agent was
+already waiting for input. Stable state reports input readiness rather than a completed model turn.
+For capable producers, observe the explicit terminal fact in
+[conversation history](../../docs/conversation-identities.md). Wait for
+`agent_state: "stable"` before the next
+message.
+
 Use `client.raw(path, init)` for endpoints not yet represented by a typed
 resource client. API failures throw `PocketCoderError`; expired or deleted
 conversation history throws the more specific `ConversationGoneError`.

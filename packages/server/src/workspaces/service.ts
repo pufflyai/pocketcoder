@@ -43,9 +43,11 @@ function conversationResume(
 }
 
 export function toResource(row: WorkspaceRow): WorkspaceResource {
+  const agent = row.templateSnapshot.spec.agent;
   return {
     id: row.id,
     external_id: row.externalId,
+    agent: agent ? { type: agent.type, model: agent.model ?? null } : null,
     template: {
       name: row.templateName,
       version: row.templateVersion,
@@ -165,6 +167,7 @@ export class WorkspaceService {
       digest: template.digest,
       spec: template.spec,
       services: templateServices(template.spec),
+      ...(template.manifest ? { manifest: template.manifest } : {}),
     };
     this.validateCreateInput(template, body);
     const now = this.now();
@@ -257,7 +260,8 @@ export class WorkspaceService {
         reason: "canceled_by_caller",
         at: now,
       });
-      return updated ?? (await this.getOwned(principal, id));
+      // Admission can win between the read and this write; then terminate what it admitted.
+      return updated ?? (await this.cancel(principal, id));
     }
     if (row.state === "terminating" || row.terminalAt) {
       // Cancellation is idempotent.

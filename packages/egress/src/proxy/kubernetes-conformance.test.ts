@@ -38,6 +38,8 @@ conformanceTest(
       audit_token: "conformance",
     });
     const auditScript = [
+      // A running container is not proof that the audit HTTP server accepts requests.
+      "await Bun.sleep(5_000);",
       "Bun.serve({hostname:'0.0.0.0',port:8080,async fetch(r){",
       "const u=new URL(r.url);if(r.method==='POST'&&u.pathname==='/events'){",
       "const b=await r.json();for(const e of b.events)console.log('EVENT '+JSON.stringify(e));",
@@ -76,6 +78,10 @@ conformanceTest(
                   image: "oven/bun:1.4.2-alpine",
                   command: ["bun", "-e", auditScript],
                   ports: [{ containerPort: 8080 }],
+                  readinessProbe: {
+                    httpGet: { path: "/allowed", port: 8080 },
+                    periodSeconds: 1,
+                  },
                 },
               ],
             },
@@ -88,67 +94,70 @@ conformanceTest(
         metadata: { name: "audit", namespace },
         spec: { selector: { app: "audit" }, ports: [{ port: 8080, targetPort: 8080 }] },
       },
-      {
-        apiVersion: "batch/v1",
-        kind: "Job",
-        metadata: { name: "workspace", namespace },
-        spec: {
-          backoffLimit: 0,
-          template: {
-            spec: {
-              restartPolicy: "Never",
-              volumes: [{ name: "egress", secret: { secretName: "egress" } }],
-              initContainers: [
-                {
-                  name: "egress",
-                  image,
-                  restartPolicy: "Always",
-                  securityContext: {
-                    runAsUser: 0,
-                    allowPrivilegeEscalation: false,
-                    readOnlyRootFilesystem: true,
-                    capabilities: {
-                      drop: ["ALL"],
-                      add: ["NET_ADMIN", "SETUID", "SETGID"],
-                    },
-                  },
-                  startupProbe: {
-                    httpGet: { path: "/readyz", port: 18082 },
-                    periodSeconds: 1,
-                    failureThreshold: 30,
-                  },
-                  volumeMounts: [
-                    {
-                      name: "egress",
-                      mountPath: "/run/pocketcoder/egress.json",
-                      subPath: "egress.json",
-                      readOnly: true,
-                    },
-                  ],
-                },
-              ],
-              containers: [
-                {
-                  name: "workspace",
-                  image: "curlimages/curl:8.16.0",
-                  command: ["sh", "-c", workloadScript],
-                  securityContext: {
-                    runAsNonRoot: true,
-                    allowPrivilegeEscalation: false,
-                    readOnlyRootFilesystem: true,
-                    capabilities: { drop: ["ALL"] },
+    ];
+    const workspace = {
+      apiVersion: "batch/v1",
+      kind: "Job",
+      metadata: { name: "workspace", namespace },
+      spec: {
+        backoffLimit: 0,
+        template: {
+          spec: {
+            restartPolicy: "Never",
+            volumes: [{ name: "egress", secret: { secretName: "egress" } }],
+            initContainers: [
+              {
+                name: "egress",
+                image,
+                restartPolicy: "Always",
+                securityContext: {
+                  runAsUser: 0,
+                  allowPrivilegeEscalation: false,
+                  readOnlyRootFilesystem: true,
+                  capabilities: {
+                    drop: ["ALL"],
+                    add: ["NET_ADMIN", "SETUID", "SETGID"],
                   },
                 },
-              ],
-            },
+                startupProbe: {
+                  exec: { command: ["/usr/local/bin/pocketcoder-egress", "health"] },
+                  periodSeconds: 1,
+                  failureThreshold: 30,
+                },
+                volumeMounts: [
+                  {
+                    name: "egress",
+                    mountPath: "/run/pocketcoder/egress.json",
+                    subPath: "egress.json",
+                    readOnly: true,
+                  },
+                ],
+              },
+            ],
+            containers: [
+              {
+                name: "workspace",
+                image: "curlimages/curl:8.16.0",
+                command: ["sh", "-c", workloadScript],
+                securityContext: {
+                  runAsNonRoot: true,
+                  runAsUser: 101,
+                  runAsGroup: 102,
+                  allowPrivilegeEscalation: false,
+                  readOnlyRootFilesystem: true,
+                  capabilities: { drop: ["ALL"] },
+                },
+              },
+            ],
           },
         },
       },
-    ];
+    };
 
     try {
       await kubectl(["apply", "-f", "-"], objects.map((item) => JSON.stringify(item)).join("\n---\n"));
       await kubectl(["rollout", "status", "deployment/audit", "-n", namespace, "--timeout=60s"]);
+      await kubectl(["apply", "-f", "-"], JSON.stringify(workspace));
       await kubectl(["wait", "--for=condition=complete", "job/workspace", "-n", namespace, "--timeout=60s"]);
       await Bun.sleep(500);
       const logs = await kubectl(["logs", "deployment/audit", "-n", namespace]);
@@ -156,6 +165,12 @@ conformanceTest(
       expect(logs.stdout).toContain('"path":"/allowed"');
       expect(logs.stdout).toContain('"decision":"deny"');
       expect(logs.stdout).not.toContain("credential=redacted");
+    } catch (error) {
+      console.error(await kubectl(["logs", "job/workspace", "-n", namespace, "-c", "workspace"], undefined, true));
+      console.error(await kubectl(["logs", "job/workspace", "-n", namespace, "-c", "egress"], undefined, true));
+      console.error(await kubectl(["logs", "deployment/audit", "-n", namespace], undefined, true));
+      console.error(await kubectl(["describe", "pods", "-n", namespace, "-l", "job-name=workspace"], undefined, true));
+      throw error;
     } finally {
       await kubectl(["delete", "namespace", namespace, "--wait=false"], undefined, true);
     }

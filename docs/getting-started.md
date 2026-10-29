@@ -1,50 +1,280 @@
 # Getting started
 
+## Standalone development download
+
+See [candidate installation](candidate-installation.md) for the four supported targets,
+package consumers, and the records kept by the download checks.
+
+Use Docker Engine, the authenticated [GitHub CLI](https://cli.github.com), and `jq`. The controller needs no Bun install, checkout, external database or SQL files.
+CI keeps development downloads as artifacts for a passing commit. They expire under GitHub's artifact retention policy and never update stable/latest.
+
+Copy the full 40-character commit from a passing PocketCoder PR. Run this in an empty directory. The prompt pins the download to that commit:
+
+```sh
+umask 077
+mkdir pc-native && cd pc-native
+printf 'Full commit from a passing PR: '
+read -r PC_COMMIT
+test "${#PC_COMMIT}" -eq 40 || exit 1
+case "$(uname -s)" in Darwin) PC_PLATFORM=darwin ;; Linux) PC_PLATFORM=linux ;; *) exit 1 ;; esac
+case "$(uname -m)" in arm64|aarch64) PC_ARCH=arm64 ;; x86_64) PC_ARCH=x64 ;; *) exit 1 ;; esac
+PC_RUN=$(gh run list --repo pufflyai/pocketcoder --workflow ci.yml \
+  --commit "$PC_COMMIT" --status success --json databaseId --jq '.[0].databaseId')
+test -n "$PC_RUN" && test "$PC_RUN" != null || exit 1
+gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
+  --name "pocketcoder-$PC_COMMIT-$PC_PLATFORM-$PC_ARCH" --dir .
+gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
+  --name "pocketcoder-fixture-$PC_COMMIT-$PC_ARCH" --dir fixture
+test "$(jq -r .commit native.json)" = "$PC_COMMIT" || exit 1
+test "$(jq -r .platform native.json)" = "$PC_PLATFORM" || exit 1
+test "$(jq -r .arch native.json)" = "$PC_ARCH" || exit 1
+PC_SHA=$(if command -v sha256sum >/dev/null; then sha256sum pocketcoder; else shasum -a 256 pocketcoder; fi)
+test "${PC_SHA%% *}" = "$(jq -r .sha256 native.json)" || exit 1
+chmod 755 pocketcoder
+test "$(./pocketcoder --version)" = "$(jq -r .version native.json)" || exit 1
+docker load --input fixture/echo-image.tar
+rm fixture/echo-image.tar
+PC_IMAGE_TAG=$(jq -r '.spec.image | split("@")[0]' fixture/templates/echo.json)
+PC_IMAGE_ID=$(docker image inspect "$PC_IMAGE_TAG" --format '{{.Id}}')
+jq --arg image "$PC_IMAGE_TAG@$PC_IMAGE_ID" '.spec.image = $image' \
+  fixture/templates/echo.json > fixture/echo.loaded.json
+mv fixture/echo.loaded.json fixture/templates/echo.json
+export POCKETCODER_STORAGE_BACKEND=filesystem
+export POCKETCODER_WORKSPACE_DATA_DIR="$PWD/live"
+export POCKETCODER_CHECKPOINT_DIR="$PWD/checkpoints"
+./pocketcoder serve
+```
+
+The second download contains the tested, credential-free echo runtime and its digest-pinned template. Docker loads that image locally.
+It uses bounded 1 MiB workspace storage and needs no registry or provider key. The operator API listens on `127.0.0.1:8090`; the separate agent listener uses port 8091.
+Docker image stores can assign a different digest when loading an archive. The recipe pins the loaded image's local digest before importing its template.
+
+In another terminal in `pc-native`, create a finite owner and run the round trip:
+
+```sh
+umask 077
+./pocketcoder superuser create --json > owner.json
+export POCKETCODER_URL=http://127.0.0.1:8090
+export POCKETCODER_KEY=$(jq -r .token owner.json)
+./pocketcoder templates import fixture/templates
+PC_WORKSPACE=$(./pocketcoder workspaces create --template echo-harness --wait --json | jq -r .id)
+./pocketcoder workspaces chat --id "$PC_WORKSPACE" --message 'hello from the native executable'
+docker exec "pocketcoder-ws-$PC_WORKSPACE" bun -e "await Bun.write('/work/remember.txt', 'kept across restart')"
+./pocketcoder workspaces preserve --id "$PC_WORKSPACE" > preserved.json
+pc_wait_operation() {
+  PC_STATE=running
+  while test "$PC_STATE" != succeeded; do
+    PC_RESULT=$(curl -fsS -H "Authorization: Bearer $POCKETCODER_KEY" \
+      "$POCKETCODER_URL/v1/operations/$1") || return 1
+    PC_STATE=$(printf '%s' "$PC_RESULT" | jq -r .state)
+    test "$PC_STATE" != failed || return 1
+    sleep 1
+  done
+}
+pc_wait_operation "$(jq -r .operation.id preserved.json)" || exit 1
+```
+
+Stop the controller with Ctrl+C in its terminal, then run `./pocketcoder serve` there again.
+Its exported storage settings, owner, keys, template and checkpoint remain. In the second terminal:
+
+```sh
+PC_CHECKPOINT=$(jq -r .checkpoint.id preserved.json)
+./pocketcoder checkpoints verify --id "$PC_CHECKPOINT"
+./pocketcoder workspaces restore --checkpoint "$PC_CHECKPOINT" \
+  --external-id native-resume > restored.json
+PC_RESUMED=$(jq -r .workspace.id restored.json)
+pc_wait_operation "$(jq -r .operation.id restored.json)" || exit 1
+./pocketcoder workspaces chat --id "$PC_RESUMED" --message 'hello after resume'
+docker exec "pocketcoder-ws-$PC_RESUMED" cat /work/remember.txt
+./pocketcoder workspaces cancel --id "$PC_RESUMED"
+```
+
+Both messages return an echo. The restored file contains `kept across restart`. Keep `owner.json` outside workspaces; the owner expires after 24 hours and its plaintext is returned once.
+Stop the controller before deleting this disposable demo directory, after `workspaces get --id "$PC_RESUMED"` shows `canceled`.
+Remove the echo image using the image reference in the template when finished.
+For a source-based check of binary size, readiness, peak memory, restart and exact restored bytes, run `bun run example:e2e:native`.
+
+### Back up the controller
+
+While the controller runs, write a backup from the second terminal in `pc-native`:
+
+```sh
+mkdir -m 700 -p backups
+./pocketcoder backup create --out backups/controller.tar
+./pocketcoder backup verify backups/controller.tar
+```
+
+`backup create` talks to the running controller through the private socket in `./pc_data`
+(use `--dir` for another folder). It needs no key. It prints the archive path, size,
+SHA-256 digest, snapshot ID and database log position.
+
+The backup describes one point in time:
+
+- It opens a short maintenance window. New API writes get `503 maintenance.active` with
+  `Retry-After: 1`, and background work such as the scheduler and retention pauses.
+  Reads, health checks and workspace heartbeats continue.
+- Requests, preserves and scheduler work that already started finish first.
+- The controller then copies its database while no query runs, and opens every checkpoint
+  archive that copy refers to. Reads and heartbeats wait during this copy. It is short: under
+  2 seconds for a 670 MB database on a laptop SSD. Writes resume right after.
+- It copies those checkpoint archives last. Deleting a checkpoint now does not change the backup.
+
+`--timeout` (default 30 seconds) limits the window. If writes do not settle in time, or the
+command stops early, no archive is written and writes resume. Backup needs the controller key
+bundle in the data folder; a controller started with keys from environment variables refuses it.
+
+The archive is a plain tar file with mode 0600:
+
+| Member | Content |
+| --- | --- |
+| `db/` | The embedded database files, without process lock files |
+| `keys/` | `auth-pepper`, `event-signing-key` and `secret-key` |
+| `checkpoints/` | Each checkpoint archive the database refers to |
+| `manifest.json` | Format, snapshot ID, time, engine, database log position, deletion journal position, migrations, checkpoints, and the size and SHA-256 of every member |
+
+The controller writes a hidden `.controller.tar.partial` file in the output folder and links it
+to the final name only when it is complete. It never replaces an existing file. The output must be
+outside the data folder and the checkpoint folder. If the process is killed, delete any leftover
+`.partial` file.
+
+`backup verify` reads only the archive. It checks every member against the manifest, opens the
+copied database in a temporary folder, checks that this build knows its migrations, and checks
+that the checkpoint archives match the database's references.
+
+The archive holds the controller keys, which can decrypt stored secrets. Keep it private and
+encrypt it before it leaves the host. Live workspace files, Docker images and Kubernetes volume
+checkpoints are not included; a backup refuses to run when the database refers to volume checkpoints.
+
+### The deletion journal
+
+The controller keeps a deletion journal next to its data folder, in `./pc_data-journal` by default
+(set `POCKETCODER_JOURNAL_DIR` to move it). Before a key revocation, principal disable or scope
+narrowing, secret retirement or replacement, template retirement, conversation deletion, workspace
+purge or checkpoint deletion changes the database, the controller appends it to this file and
+syncs it to disk. Re-enables and scope widenings are appended right after they commit, so a lost
+record can only leave a restored principal narrower. Each record names its exact keys, versions or
+workspaces. The journal also names the one data folder that may write. It is never part of a
+backup, so restoring an older backup cannot roll it back. Keep it on storage that survives losing
+the data folder, keep it private, and never copy it: a copy is a second journal.
+
+### Restore the controller
+
+Stop the controller, then restore the archive into a new folder and an empty checkpoint folder:
+
+```sh
+./pocketcoder backup restore backups/controller.tar --dir ./pc_restored --checkpoint-dir ./checkpoints-restored
+export POCKETCODER_DIR="$PWD/pc_restored" POCKETCODER_CHECKPOINT_DIR="$PWD/checkpoints-restored"
+./pocketcoder serve
+```
+
+`backup restore` verifies the whole archive first. It extracts it into a private staging folder,
+points the database at the new folders and renames the staging folder into place only when everything
+is written. The target must not exist. The restored folder finds the original deletion journal
+through its database; set `POCKETCODER_JOURNAL_DIR` if the journal moved.
+
+The first start is in recovery. It opens only the private admin socket: no operator or agent
+listener, no scheduler and no admission. In the second terminal:
+
+```sh
+./pocketcoder recovery status
+./pocketcoder recovery complete
+```
+
+`recovery complete` does the following, and you can run it again after any failure:
+
+1. Checks that the deletion journal reaches the backup's journal position. A missing or different
+   journal keeps recovery closed.
+2. Repeats every revocation, disable, retirement, scope change and conversation deletion in the
+   journal, in order.
+3. Fails every workspace the backup still lists as running, removes its runtime and revokes its
+   issuer leases. Old runtimes cannot reconnect. Warm pool runtimes are removed too.
+4. Resumes unfinished purges, then runs every purge and checkpoint deletion in the journal again
+   with operation keys that belong to this recovery. An old success in the restored database does
+   not prove that restored bytes are gone, so each one runs until the bytes are removed.
+5. Moves the journal's writer claim to the restored folder. After this, the old data folder refuses
+   to start. Only one controller can hold the journal at a time, so the two cannot both write while
+   they share it.
+
+Stop the old controller before you restore: it keeps serving until it stops, and recovery cannot
+take its journal while it runs.
+
+Then stop the controller with Ctrl+C and run `./pocketcoder serve` again to open service. The keys,
+checkpoints and template come back unchanged; restore a workspace from a checkpoint to continue its
+work. Runtimes started after the backup are not removed, because they may belong to another
+controller on the same Docker host; they cannot reconnect, and their workspace leases expire within
+minutes. `recovery complete` reports how many it found.
+
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.3+
+- [Bun](https://bun.sh) 1.4.2+
 - Docker (to actually run workspaces; the API works without it)
-- PostgreSQL (optional for development; required for production)
 
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun run test      # unit suites use the in-memory store; suites needing
-                  # PostgreSQL, Docker, or a cluster skip themselves
+bun run test      # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
 ```
 
 ## 1. Run the server
-
-Fastest path, no database (state dies with the process):
-
-```sh
-POCKETCODER_STORE=memory bun run pcd -- server start --foreground
-```
 
 The checked-in manifests under `examples/templates` are illustrative and use
 placeholder image/gateway values. Do not point a runnable server at that
 directory; materialize or deploy a digest-pinned runtime template first.
 
-With PostgreSQL (durable; the schema defaults to `pocketcoder` and may live in
-a dedicated database or an existing one):
+Start with an empty private folder. The controller creates and keeps its keys:
 
 ```sh
-docker compose -f deploy/compose/docker-compose.yaml up -d   # local postgres on :5433
-export POCKETCODER_DATABASE_URL=postgres://pocketcoder:pocketcoder@127.0.0.1:5433/pocketcoder
-export POCKETCODER_AUTH_PEPPER=$(openssl rand -base64 32)
-
-bun run pcd db migrate
-bun run pcd -- server start
-bun run pcd -- server status
+bun run pcd -- serve --dir ./pc_data --http 127.0.0.1:8090
 ```
 
-The server command starts only PocketCoder. It does not migrate the database,
-build an agent image, generate a template, or start a model gateway. The server
-logs which templates it loaded and refuses to start if any template file is
-invalid. The OpenAPI document is at
-`http://127.0.0.1:7080/v1/openapi.json`.
+The operator API uses port 8090. The agent listener uses port 8091. Set
+`POCKETCODER_AGENT_HTTP=0.0.0.0:<port>` to change its bind address, and
+`POCKETCODER_WORKSPACE_SERVER_URL` to the agent origin reachable from workspaces.
+Keep it separate from the operator port. The API contract is at
+`http://127.0.0.1:8090/v1/openapi.json`.
 
-For a persistent local Pi deployment, after configuring PostgreSQL, a principal
+In another terminal, create the owner key through the private local socket:
+
+```sh
+bun run pcd -- superuser create --dir ./pc_data --json
+# Automation must also pass --automation --expires <future-ISO8601>.
+```
+
+The key defaults to a 24-hour expiry and is returned once. Save it outside
+workspaces. A repeated `--request-id` returns metadata without the plaintext.
+Set `POCKETCODER_URL=http://127.0.0.1:8090` and `POCKETCODER_KEY` to the returned
+owner key, then publish a reviewed, digest-pinned template:
+
+```sh
+bun run pcd -- templates import <manifest-directory>
+```
+
+Publishing requires `templates:write` and a matching template name grant.
+Versions are immutable. Publishing identical content is safe to repeat. The
+SDK also supports `templates.publish(manifest)` and `templates.retire(name, version)`.
+
+For a complete local echo demonstration, run:
+
+```sh
+bun run example:e2e:local-echo
+```
+
+It builds the local image, starts an empty controller, creates a finite owner,
+publishes the template over HTTP, waits for a real Docker workspace, checks
+credential isolation, sends a message, removes the container, and restarts with
+the same keys and template. It prints image and template digests and cleans up
+its temporary data and image. It needs Bun and a running Docker Engine.
+
+Echo needs no runtime or registry secret. Its only workspace credentials are
+registration and reconnect credentials tied to that workspace. The supported
+path in this demonstration uses unrestricted networking and no persistent mount.
+A runtime that needs provider authority must use credentials scoped to its
+workspace that expire with it; never copy an owner, controller or registry key
+into a template or workspace. The issuer/private-pull matrix and controller restore
+remain separate development work. This command proves the local flow, not the
+full 0.9 release.
+
+For a persistent local Pi deployment, after configuring the data folder, a principal
 and machine key, run the optional repository convenience:
 
 ```sh
@@ -94,7 +324,7 @@ bun run example:pi:resume
 ```
 
 Docker must be running. The command builds the Pi image and remote client, then
-starts a separate PostgreSQL container, API, model gateways, and temporary storage.
+starts an isolated PGlite database, API, model gateways, and temporary storage.
 It does not use your existing PocketCoder server, machine key, or database.
 Startup prints each build and setup stage. Ctrl+C stops waiting while the server
 continues starting. Run the same command again to wait for that server. Each
@@ -140,30 +370,32 @@ directory when reconnecting or stopping it.
 
 ## 2. Create a principal and machine key
 
-There are no human accounts. Callers are **principals** (e.g. your backend)
-holding **machine keys** with explicit scopes and a template allowlist:
+The isolated examples above bootstrap their own bounded owner credentials. For
+an existing running server, use its bounded owner key in `POCKETCODER_KEY` and
+set `POCKETCODER_URL`. Principal and key commands use HTTP. Use the ID returned
+by create for later administration:
 
 ```sh
 bun run pcd principals create --name my-backend \
   --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
-  --templates '*'
-bun run pcd keys issue --principal my-backend --expires 2027-01-01T00:00:00Z
+  --templates '*' --json
+bun run pcd keys issue --principal-id <returned-id> --request-id <operation-id> \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
+  --templates '*' --expires <ISO8601-within-owner-expiry> --json
 ```
 
-Give keys a bounded expiry and rotate them; `--expires never` exists for
-deliberate operational choices, not defaults ([security model](security.md)).
-The key (`pkt_…`) is printed once. Store it; the database keeps only a keyed
-digest. Because it was issued without `--scopes`, it follows later scope changes
-made with `principals update`. Pass `keys issue --scopes ...` only when one key
-must be narrower than its principal. Revoke anytime with `keys revoke --id
-<key-id>` (takes effect on the next request).
+Choose scopes for the workload and an expiry within the owner's remaining
+lifetime. The key is returned once; the database keeps only its keyed digest.
+Scope and template grants intersect the principal's current grants. Revoke with
+`keys revoke --principal-id <principal-id> --id <key-id>`; it takes effect on the
+next request. Keep owner and backend keys outside every workspace.
 
 ## 3. Launch a workspace
 
 Add the issued key to `.env` in the project root:
 
 ```dotenv
-POCKETCODER_URL=http://127.0.0.1:7080
+POCKETCODER_URL=http://127.0.0.1:8090
 POCKETCODER_KEY=pkt_…
 ```
 

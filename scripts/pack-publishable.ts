@@ -63,9 +63,11 @@ for (const { directory: packageDir, manifest } of packages) {
 }
 
 const sdkDir = packageDirs.get("@pstdio/pocketcoder-sdk");
-if (sdkDir && !manifestsOnly) {
+const remoteDir = packageDirs.get("@pstdio/pocketcoder-remote");
+const cliDir = packageDirs.get("@pstdio/pocketcoder-cli");
+if (sdkDir && remoteDir && cliDir && !manifestsOnly) {
   try {
-    await checkSdkPackage(sdkDir, packageDirs.get("@pstdio/pocketcoder-remote"));
+    await checkSdkPackage(sdkDir, remoteDir, cliDir);
   } catch (error) {
     console.error(error);
     failed = true;

@@ -1,11 +1,9 @@
-import { type AttachmentDescriptor, AttachmentDescriptorSchema } from "@pstdio/pocketcoder-contracts";
-import { PocketCoderError, responseError } from "../../transport/errors";
+import {
+  type AttachmentDescriptor,
+  type InputObjectReference,
+  InputObjectReferenceSchema,
+} from "@pstdio/pocketcoder-contracts";
 import type { PocketCoderTransport } from "../../transport/transport";
-import type { WorkspacesApi } from "../workspaces/workspaces";
-
-// Long enough for a cold coding agent to paint its prompt, short enough that a
-// wedged workspace fails with a clear error instead of hanging.
-const DEFAULT_READY_TIMEOUT_MS = 120_000;
 
 export { splitAttachmentManifest } from "@pstdio/pocketcoder-contracts";
 export type { AttachmentDescriptor };
@@ -18,16 +16,9 @@ export interface AttachmentUploadInput {
   mediaType?: string;
   body: UploadBody;
   sizeBytes: number;
+  sha256?: string;
   signal?: AbortSignal;
   onProgress?: (uploadedBytes: number, totalBytes: number) => void;
-}
-
-export interface AgentMessageInput {
-  content: string;
-  attachmentIds?: string[];
-  signal?: AbortSignal;
-  // How long to wait for the agent to be ready for input before giving up.
-  readyTimeoutMs?: number;
 }
 
 function contentDisposition(name: string): string {
@@ -59,8 +50,16 @@ function progressStream(
 export class AttachmentsApi {
   constructor(private readonly transport: PocketCoderTransport) {}
 
-  async upload(workspaceId: string, input: AttachmentUploadInput): Promise<AttachmentDescriptor> {
+  async upload(workspaceId: string, input: AttachmentUploadInput): Promise<InputObjectReference> {
     const id = (input.id ?? crypto.randomUUID()).toLowerCase();
+    let sha256 = input.sha256;
+    if (!sha256) {
+      if (input.body instanceof ReadableStream)
+        throw new Error("Stream uploads require sha256 before body consumption.");
+      const digest = await crypto.subtle.digest("SHA-256", await new Response(input.body).arrayBuffer());
+      sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error("sha256 must be 64 lowercase hexadecimal characters.");
     const body = input.onProgress ? progressStream(input.body, input.sizeBytes, input.onProgress) : input.body;
     const init: RequestInit & { duplex?: "half" } = {
       method: "PUT",
@@ -69,56 +68,15 @@ export class AttachmentsApi {
         "content-type": input.mediaType ?? "application/octet-stream",
         "content-disposition": contentDisposition(input.name),
         "content-length": String(input.sizeBytes),
+        "x-content-sha256": sha256,
       },
       body,
       ...(body instanceof ReadableStream ? { duplex: "half" as const } : {}),
     };
     return await this.transport.request(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/attachments/${id}`,
-      AttachmentDescriptorSchema,
+      InputObjectReferenceSchema,
       init,
     );
-  }
-}
-
-export class AgentApi {
-  constructor(
-    private readonly transport: PocketCoderTransport,
-    private readonly workspaces: WorkspacesApi,
-  ) {}
-
-  // Sends an AgentAPI user message; resolves when the workspace accepted it.
-  // The harness response body is service-specific and deliberately not modeled.
-  async sendMessage(workspaceId: string, input: AgentMessageInput): Promise<void> {
-    // AgentAPI rejects a user message unless it is waiting for input, and the
-    // relay passes that rejection through as an opaque 500.
-    await this.workspaces.waitForAgentInput(
-      workspaceId,
-      input.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS,
-      input.signal ? { signal: input.signal } : {},
-    );
-    const response = await this.transport.raw(`/v1/workspaces/${encodeURIComponent(workspaceId)}/agent/message`, {
-      method: "POST",
-      ...(input.signal ? { signal: input.signal } : {}),
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "user",
-        content: input.content,
-        ...(input.attachmentIds?.length ? { attachment_ids: input.attachmentIds } : {}),
-      }),
-    });
-    if (response.ok) return;
-    const text = await response.text();
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      throw new PocketCoderError({
-        message: `PocketCoder returned a non-JSON response (${response.status})`,
-        code: "client.non_json_response",
-        status: response.status,
-      });
-    }
-    throw responseError(response, body);
   }
 }

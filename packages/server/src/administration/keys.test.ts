@@ -1,13 +1,16 @@
 import { expect, test } from "bun:test";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { MemoryStore } from "@pstdio/pocketcoder-memory-store";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { DEFAULT_LIMITS } from "@pstdio/pocketcoder-runtime-core";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
+import { registerServerTestCleanup } from "../testing/test-server-cleanup";
+
+const createStore = createTestStoreFactory();
 
 async function fixture() {
-  const store = new MemoryStore();
+  const store = await createStore();
   const target = await store.createPrincipal("tenant", ["workspaces:read", "workspaces:purge"], []);
   const other = await store.createPrincipal("other", ["workspaces:read"], []);
   const operator = await store.createPrincipal("operator", ["admin"], []);
@@ -23,13 +26,15 @@ async function fixture() {
     revokedAt: null,
     lastUsedAt: null,
   });
-  const { app } = buildServer({
+  const built = buildServer({
     store,
     driver: new FakeDriver(),
     pepper: "test-pepper",
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
   });
+  registerServerTestCleanup(store, built);
+  const { app } = built;
   const request = (path: string, init: RequestInit = {}) =>
     app.request(path, {
       ...init,
@@ -38,7 +43,7 @@ async function fixture() {
   const body = {
     request_id: "issue-1",
     scopes: ["workspaces:read"],
-    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    expires_at: new Date(Date.now() + 30_000).toISOString(),
   };
   const issue = (value = body) =>
     request(`/v1/principals/${target.id}/keys`, { method: "POST", body: JSON.stringify(value) });
@@ -117,3 +122,12 @@ test("SDK inventory, reconciliation and revocation use the real public server", 
     server.stop(true);
   }
 });
+
+test.each(["secrets:write", "workspaces:read"])(
+  "recovery delegation cannot issue %s for a registry administrator",
+  async (scope) => {
+    const f = await fixture();
+    await f.store.updatePrincipal(f.target.id, ["workspaces:read", "secrets:write"], []);
+    expect((await f.issue({ ...f.body, scopes: [scope] })).status).toBe(403);
+  },
+);

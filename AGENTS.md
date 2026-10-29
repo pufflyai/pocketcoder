@@ -58,7 +58,11 @@ Readability and structure matter most — we're happy to make bigger changes to 
 
 - **Branches**: `<category>/<kebab-description>` (`feature`, `bugfix`, `hotfix`, `test`, `chore`)
 - **Commits**: `<category>(<PC-XXX>): <statement>` (`feat`, `fix`, `refactor`, `chore`)
-- **PRs**: draft against `main`, named like commits. Write the body from `.github/pull_request_template.md`: keep its headings and fill in every section. `gh pr create --body` skips the template, so write the filled-in body to a file and pass it with `--body-file`.
+- **PRs**: draft against `main`, named like commits.
+- Before creating or updating a PR, read `.github/pull_request_template.md`. Keep its headings in order and fill in every section. Keep validation results, dependencies, and remaining work under the relevant headings.
+- Write the completed PR body to a file and pass it with `gh pr create --body-file` or `gh pr edit --body-file`. These commands replace the template, so the file must contain the full completed template.
+- After creating or updating a PR, read its saved body with `gh pr view --json body` and check that every template section is present and filled in.
+- When a branch requires a merge queue, use the queue and let its required checks pass. Do not bypass it with `--admin`.
 
 ## CI and Merges
 

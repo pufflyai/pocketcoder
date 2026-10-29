@@ -13,6 +13,8 @@ export {
   resolveDockerImage,
   WORKSPACE_LABEL,
 } from "./docker/docker";
+export { FilesystemInputStorage } from "./filesystem/filesystem-inputs";
+export { FilesystemInputPublisher } from "./filesystem/filesystem-projections";
 export {
   FilesystemStorageDriver,
   type FilesystemStorageDriverOptions,
@@ -24,17 +26,28 @@ export {
   KubernetesDriver,
   type KubernetesDriverOptions,
 } from "./kubernetes/kubernetes";
+export { hasNoPodAdmission } from "./kubernetes/kubernetes-empty-evidence";
+export {
+  captureTermination,
+  EVIDENCE_FINALIZER,
+  podHasStopped,
+  podTerminationProof,
+  readTerminationEvidence,
+} from "./kubernetes/kubernetes-evidence";
+export type { Resource as KubernetesEvidenceResource } from "./kubernetes/kubernetes-evidence-types";
+export { deleteResource, waitForDeletion } from "./kubernetes/kubernetes-identity";
+export { hasMatchingKubernetesTermination } from "./kubernetes/kubernetes-runtime-proof";
 export {
   type KubernetesSchedulingOptions,
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes/kubernetes-scheduling";
+export { applySecretValue, readSecretValue } from "./kubernetes/kubernetes-secret-values";
 export {
   KubernetesSecretResolver,
   type KubernetesSecretResolverOptions,
 } from "./kubernetes/kubernetes-secrets";
-export {
-  KubernetesPvcStorageDriver,
-  type KubernetesPvcStorageDriverOptions,
-} from "./kubernetes/kubernetes-storage";
+export type { KubernetesSharedStorageOptions } from "./kubernetes/kubernetes-shared-profile";
+export { KubernetesSharedStorage } from "./kubernetes/kubernetes-shared-storage";
+export type { RegistryResolver } from "./registry/registry";
 export { FileSecretResolver, type FileSecretResolverOptions } from "./secrets/file-secrets";

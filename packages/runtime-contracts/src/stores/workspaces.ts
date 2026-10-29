@@ -1,16 +1,34 @@
 import type {
+  AdmissionReason,
   AgentState,
   ConversationRestoreCapability,
+  FiniteProcessFact,
+  InstalledWorkload,
   LaunchMode,
   NetworkState,
   ReasonCode,
   ResolvedSource,
   SourceDescriptor,
   TemplateSnapshot,
+  WaitingRuntimeSpec,
+  WorkloadTemplateSnapshot,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 
+export interface WorkspaceRuntimeRegistration {
+  incarnationId: string;
+  containerIdentity: string;
+  profile: WaitingRuntimeSpec["profile"];
+  producer: InstalledWorkload | null;
+  template?: WorkloadTemplateSnapshot;
+  readyAt?: string;
+  endedAt?: string;
+}
+
 export interface WorkspaceRow {
+  runtimeRegistration: WorkspaceRuntimeRegistration | null;
+  finiteProcess: FiniteProcessFact | null;
+  processExecution: import("@pstdio/pocketcoder-contracts").ExecutionRecord | null;
   id: string;
   principalId: string;
   externalId: string;
@@ -167,17 +185,28 @@ export interface TransitionRequest {
   reason?: ReasonCode | null;
   at: Date;
   patch?: WorkspacePatch;
+  expectedConnectionEpoch?: number;
+  check?: () => void;
 }
 
 export interface WorkspaceStore {
+  bindWorkspaceRuntime(
+    id: string,
+    runtime: WorkspaceRuntimeRegistration,
+    providerRef: Record<string, unknown>,
+  ): Promise<boolean>;
+  markWorkspaceRuntimeReady(id: string, incarnationId: string, connectionEpoch: number, at: Date): Promise<boolean>;
+  recordFiniteProcess(id: string, connectionEpoch: number, fact: FiniteProcessFact): Promise<boolean>;
+  endWorkspaceRuntime(id: string, incarnationId: string, at: Date): Promise<void>;
   insertWorkspace(row: WorkspaceInsert, options?: { maxQueuedWorkspaces?: number }): Promise<WorkspaceInsertResult>;
   getWorkspaceByIdempotency(principalId: string, idempotencyKey: string): Promise<WorkspaceRow | null>;
   getWorkspace(id: string): Promise<WorkspaceRow | null>;
   listWorkspaces(principalId: string, filter: WorkspaceListFilter): Promise<WorkspaceRow[]>;
-  listQueuedHeads(): Promise<WorkspaceRow[]>;
+  readAdmissionSnapshot(): Promise<{ counts: ActiveCounts; queued: WorkspaceRow[]; queuedCount: number }>;
   listNonterminal(): Promise<WorkspaceRow[]>;
   countActive(): Promise<ActiveCounts>;
   countQueued(): Promise<number>;
+  setQueuedAdmissionReason(id: string, reason: AdmissionReason | null, at: Date): Promise<void>;
   claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim): Promise<WorkspaceRow | null>;
   updateWorkspace(id: string, patch: WorkspacePatch, at: Date): Promise<void>;
   waitForWorkspaceChange(id: string, afterSeq: number, timeoutMs: number, signal?: AbortSignal): Promise<void>;
@@ -190,6 +219,8 @@ export interface WorkspaceStore {
 export function purgedContentPatch() {
   return {
     launchInput: null,
+    processExecution: null,
+    finiteProcess: null,
     health: {},
     outputs: {},
     failureLogTail: null,

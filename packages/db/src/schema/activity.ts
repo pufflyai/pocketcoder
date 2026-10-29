@@ -23,7 +23,6 @@ import {
 } from "drizzle-orm/pg-core";
 import type { createAccessTables } from "./access";
 import { sqlValues, timestamptz } from "./columns";
-import { structuredJson } from "./structured-json";
 import type { createWorkspaceTables } from "./workspaces";
 
 export function createActivityTables(
@@ -39,7 +38,10 @@ export function createActivityTables(
         .references(() => principals.id),
       conversationId: uuid("conversation_id").notNull(),
       requestId: uuid("request_id").notNull(),
-      identity: structuredJson("identity").$type<ConversationRequestRow["identity"]>().notNull(),
+      // The workspace that accepted the request; a restart records its unfinished turn there.
+      workspaceId: uuid("workspace_id").references(() => workspaces.id),
+      identity: jsonb("identity").$type<ConversationRequestRow["identity"]>().notNull(),
+      execution: jsonb("execution").$type<NonNullable<ConversationRequestRow["execution"]>>(),
       acceptedAt: timestamptz("accepted_at").notNull(),
     },
     (table) => [primaryKey({ columns: [table.principalId, table.conversationId, table.requestId] })],
@@ -63,6 +65,8 @@ export function createActivityTables(
       .primaryKey()
       .references(() => workspaces.id),
     status: text("status").$type<NonNullable<ConversationStateRow["status"]>>().notNull(),
+    // Running total of the records this workspace wrote, checked against the workspace quota.
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
     expiresAt: timestamptz("expires_at"),
     deletedAt: timestamptz("deleted_at"),
     updatedAt: timestamptz("updated_at").notNull(),
@@ -79,11 +83,8 @@ export function createActivityTables(
       role: text("role").$type<NonNullable<ConversationMessageRow["role"]>>().notNull(),
       content: text("content").notNull(),
       occurredAt: timestamptz("occurred_at").notNull(),
-      metadata: structuredJson("metadata")
-        .$type<NonNullable<ConversationMessageRow["metadata"]>>()
-        .notNull()
-        .default({}),
-      identity: structuredJson("identity").$type<NonNullable<ConversationMessageRow["identity"]>>(),
+      metadata: jsonb("metadata").$type<NonNullable<ConversationMessageRow["metadata"]>>().notNull().default({}),
+      identity: jsonb("identity").$type<NonNullable<ConversationMessageRow["identity"]>>(),
       createdAt: timestamptz("created_at").notNull(),
     },
     (table) => [
