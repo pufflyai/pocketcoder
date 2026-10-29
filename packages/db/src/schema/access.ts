@@ -13,6 +13,7 @@ export function createAccessTables(table: PgTableFn<string | undefined> = pgTabl
       version: text("version").notNull(),
       digest: text("digest").notNull().unique(),
       description: text("description"),
+      manifest: jsonb("manifest").$type<NonNullable<TemplateRow["manifest"]>>(),
       spec: jsonb("spec").$type<NonNullable<TemplateRow["spec"]>>().notNull(),
       status: text("status").$type<NonNullable<TemplateRow["status"]>>().notNull(),
       createdAt: timestamptz("created_at").notNull(),

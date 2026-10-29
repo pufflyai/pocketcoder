@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type ParsedTemplate, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { runtimeTemplateDefinition } from "@pstdio/pocketcoder-contracts";
 import type { Store, TemplateRow } from "../types";
 
 // Template registry: loads reviewed template files from a deployment
@@ -28,8 +28,8 @@ export async function loadTemplateSource(path: string): Promise<unknown> {
   }
 }
 
-export async function loadTemplateFile(path: string): Promise<ParsedTemplate> {
-  return parseTemplateManifest(await loadTemplateSource(path));
+export async function loadTemplateFile(path: string) {
+  return runtimeTemplateDefinition(await loadTemplateSource(path));
 }
 
 export async function loadTemplateDir(store: Store, dir: string): Promise<RegistryLoadResult> {
@@ -50,7 +50,8 @@ export async function loadTemplateDir(store: Store, dir: string): Promise<Regist
         version: parsed.manifest.spec.version,
         digest: parsed.digest,
         description: parsed.manifest.metadata.description ?? null,
-        spec: parsed.manifest.spec,
+        spec: parsed.policy,
+        manifest: parsed.workload,
       });
       if (upsert.conflict) {
         result.errors.push({

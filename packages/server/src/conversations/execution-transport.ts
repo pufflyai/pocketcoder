@@ -13,6 +13,7 @@ import type { ExecutionTransport, Store, WorkspaceDriver, WorkspaceRow } from "@
 import type { InputStorage } from "../attachments/input-storage";
 import { prepareExecutionInputs } from "../control-channel/execution-inputs";
 import type { Hub } from "../control-channel/hub";
+import { finalizeServiceExecution } from "./execution-finalization";
 
 // Capable service adapters use fixed, template-declared endpoints. Plain AgentAPI
 // interruption remains workspace-scoped and is never used for operation cancellation.
@@ -20,7 +21,7 @@ export function conversationTransport(deps: {
   store: Store;
   hub: Hub;
   inputs?: InputStorage;
-  driver: Pick<WorkspaceDriver, "publishInputs">;
+  driver: Pick<WorkspaceDriver, "publishInputs" | "releaseInputProjection">;
 }): ExecutionTransport {
   async function call(
     record: ExecutionRecord,
@@ -79,6 +80,7 @@ export function conversationTransport(deps: {
     if (recorded && ["terminal", "canceled"].includes(fact.phase)) {
       await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), control);
       await deps.store.executions.acknowledge(fact.execution, fact.fingerprint, new Date());
+      await finalizeServiceExecution(deps, record, workspace);
     }
   }
   return {
@@ -110,6 +112,7 @@ export function conversationTransport(deps: {
     async acknowledge(record, workspace) {
       await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), Boolean(record.cancel));
       await deps.store.executions.acknowledge(record.acceptance.execution, record.acceptance.fingerprint, new Date());
+      await finalizeServiceExecution(deps, record, workspace);
     },
     async cancel(record, workspace) {
       if (!record.cancel) throw new Error("Cancel intent missing");

@@ -1,4 +1,5 @@
 import { redact } from "@pstdio/pocketcoder-auth";
+import type { WorkloadLimits } from "@pstdio/pocketcoder-contracts";
 import { type AdmissionDecision, parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type {
   StorageRef,
@@ -83,6 +84,7 @@ export interface SchedulerDeps {
   connections: ConnectionHub;
   secrets: SecretFactory;
   limits: AdmissionLimits;
+  workloadLimits?: WorkloadLimits;
   // URL workspaces use to reach this server (may differ from listen addr).
   workspaceServerUrl: string;
   warmPool?: WarmPoolManager;

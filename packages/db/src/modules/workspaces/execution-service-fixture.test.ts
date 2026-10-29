@@ -3,6 +3,7 @@ import type { WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
 
 export function serviceExecutionTemplate(source: WorkloadTemplate, port = 12345) {
   source.spec.profile = "service";
+  for (const operation of Object.values(source.spec.operations)) operation.outputRoots = [];
   const adapter = source.spec.adapters.main;
   if (!adapter) throw new Error("Fixture adapter missing");
   adapter.kind = "service";

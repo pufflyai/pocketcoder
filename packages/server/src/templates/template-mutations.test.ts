@@ -278,3 +278,31 @@ test("canonical G0 manifests cannot be published or imported into an alpha deplo
   expect(result.errors[0]?.message).toContain("unsupported template format");
   expect(await f.store.listTemplates(null)).toEqual([]);
 });
+
+test("publishes an authored service workload without changing its immutable format", async () => {
+  const f = await fixture(["templates:write"], ["*"], ["*"]);
+  const manifest = await Bun.file(join(import.meta.dir, "../../../../examples/workloads/finite-process.json")).json();
+  manifest.spec.profile = "service";
+  manifest.spec.operations.run.outputRoots = [];
+  manifest.spec.network = { mode: "unrestricted" };
+  manifest.spec.adapters.main = {
+    kind: "service",
+    digest: `sha256:${"a".repeat(64)}`,
+    protocol: "pocketcoder.execution/v1",
+    service: "agent",
+  };
+  manifest.spec.services = {
+    agent: { baseUrl: "http://127.0.0.1:3284", routes: [{ method: "GET", path: "/status" }] },
+  };
+  const invalid = await f.publish({
+    ...manifest,
+    spec: { ...manifest.spec, lifecycle: { timeouts: { maxAge: "1000000s" } } },
+  });
+  expect(invalid.status).toBe(400);
+  const response = await f.publish(manifest);
+  expect(response.status).toBe(201);
+  const stored = await f.store.getTemplate(manifest.metadata.name);
+  expect(stored?.manifest).toEqual(expect.objectContaining({ apiVersion: "pocketcoder.dev/v1" }));
+  expect(stored?.manifest?.spec.adapters.main).toMatchObject({ kind: "service", service: "agent" });
+  expect((await f.publish(manifest)).status).toBe(200);
+});

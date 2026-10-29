@@ -1,9 +1,9 @@
-import type { TemplateSpec } from "@pstdio/pocketcoder-contracts";
+import type { RuntimeTemplatePolicy } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef } from "@pstdio/pocketcoder-runtime-core";
 import { resourceRequirements } from "./kubernetes-scheduling";
 
 export function storageInitializer(
-  spec: TemplateSpec,
+  spec: RuntimeTemplatePolicy,
   mounts: RuntimeMountRef[],
   imagePullPolicy: "Always" | "IfNotPresent" | "Never",
 ) {
