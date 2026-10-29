@@ -226,9 +226,15 @@ describe("remote terminals", () => {
         bytesIn: 13,
         bytesOut: 13,
       });
-      const eventTypes = (await server.store.claimDueEvents(new Date(Date.now() + 1000), 100)).map(
-        (event) => event.eventType,
-      );
+      // The closed event follows the session close in its own write; with several database
+      // connections it can land just after the close is visible.
+      const eventTypes: string[] = [];
+      const eventDeadline = Date.now() + 1000;
+      while (!eventTypes.includes("workspace.terminal_closed") && Date.now() < eventDeadline) {
+        const claimed = await server.store.claimDueEvents(new Date(Date.now() + 1000), 100);
+        eventTypes.push(...claimed.map((event) => event.eventType));
+        await Bun.sleep(2);
+      }
       expect(eventTypes).toEqual(expect.arrayContaining(["workspace.terminal_opened", "workspace.terminal_closed"]));
     } finally {
       await listener.stop(true);
