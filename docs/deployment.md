@@ -276,6 +276,110 @@ setup contract and are cleared before the harness starts; runtime environment
 secrets remain read-only projected files. Secret names/values are not stored in
 checkpoint manifests.
 
+## GitOps bootstrap
+
+A new environment can come up from Git alone. Nobody needs to run
+`pcd superuser create`, exec into the controller pod or port-forward. Declare the
+principals in a principal file, mount it into the controller, and point
+`POCKETCODER_PRINCIPALS_FILE` at it. The controller reads the file once at
+startup, before it serves requests. If the file is invalid or a target cannot be
+written, the controller stops with an error naming the problem, and Kubernetes
+restarts it. Later failures during renewal are logged and retried.
+
+```json
+{
+  "principals": [
+    {
+      "name": "onefin-backend",
+      "scopes": ["templates:read", "workspaces:create", "workspaces:read"],
+      "templates": ["onefin-agent"],
+      "admission_template": "onefin-standard",
+      "key": {
+        "lifetime_hours": 720,
+        "renew_before_hours": 240,
+        "overlap_minutes": 60,
+        "target": {
+          "kind": "kubernetes-secret",
+          "namespace": "onefin",
+          "name": "pocketcoder-backend-key",
+          "key": "token"
+        }
+      }
+    }
+  ],
+  "admission_map": { "kind": "file", "path": "/var/run/pocketcoder-admission/map.json" }
+}
+```
+
+What the controller does with the file:
+
+- **Principals.** Each entry is a managed principal. Its ID is a UUID derived from
+  its name, so it is the same after every restart and in every environment. The
+  controller creates missing principals and updates scopes and templates to match
+  the file. A second start with the same file changes nothing.
+- **Only managed principals are touched.** A principal is managed when its ID is
+  the one derived from its name. Principals made with `pcd principals create`
+  keep random IDs and are never changed. If the file names such a principal, the
+  controller refuses to start and names it; rename or remove it first.
+- **Removal disables.** When an entry leaves the file, the controller disables
+  that principal and revokes its keys. It never deletes it. Put the entry back to
+  re-enable it; the controller then issues a new key.
+- **Keys.** For an entry with `key`, the controller issues a machine key and
+  writes the token once to `target`. Nothing in Git holds a token, and tokens
+  never appear in logs or process arguments. The controller never stores tokens;
+  on each pass it reads the target back and checks the token. It issues a new key
+  and rewrites the target when the token is missing, revoked, for other grants,
+  or less than `renew_before_hours` from expiry. The previous key stays valid for
+  `overlap_minutes`, then the controller revokes it. Passes run at startup and
+  every five minutes. Defaults: 720 hours lifetime, 240 hours renewal window,
+  60 minutes overlap. Managed principals cannot hold `admin`, and `owner` is
+  reserved.
+- **Pepper rotation.** After the pepper changes (for example on a restore with a
+  new pepper), no stored token verifies. The same pass detects this and re-issues
+  every managed key to its target.
+- **Admission map.** `admission_map` names a target for a JSON document that maps
+  each principal ID to its `admission_template`. An external admission hook reads
+  it from there. Because IDs derive from names, the hook can also get the map
+  without the controller: `pcd principals admission-map --file principals.json`
+  prints it, so a GitOps pipeline can render it into the hook's own config.
+
+Secret targets:
+
+| `kind` | Fields | Notes |
+|--------|--------|-------|
+| `file` | `path` (absolute) | Written atomically with mode 0600. Mount a volume the consumer can read. |
+| `kubernetes-secret` | `namespace`, `name`, `key` | Applied with `kubectl apply` from stdin. The controller needs `get`, `create` and `patch` on that Secret. |
+
+The consumer reads the token from its Secret or file and must pick up changes
+within the overlap window. A Secret mounted as a volume updates in place; a
+Secret read into an environment variable needs a restart, so give it a longer
+`overlap_minutes`.
+
+Preview changes before you roll them out:
+
+- set `POCKETCODER_PRINCIPALS_DRY_RUN=true` to log the plan at startup and apply
+  nothing (no principals, keys, targets or admission map are written); or
+- on a running controller, run `pcd principals plan`. It re-reads the mounted file
+  and prints what the next start would change, without changing anything.
+
+The plan is logged as `principals.change`, `principals.key` and
+`principals.admission_map` events. They carry names, IDs, actions and target
+locations, never tokens.
+
+GitOps setup for a new environment:
+
+1. Commit the principal file as a ConfigMap and mount it into the controller.
+2. Set `POCKETCODER_PRINCIPALS_FILE` to the mounted path.
+3. Grant the controller's service account `get`, `create` and `patch` on the
+   target Secrets in the consumer namespaces.
+4. Render the admission map with `pcd principals admission-map` into the
+   admission hook's config, or mount the `admission_map` target.
+5. Deploy. The consumer starts once its Secret exists; the admission hook does not
+   wait for the controller.
+
+See [rotating machine keys](security.md#rotating-machine-keys) for keys outside
+the principal file.
+
 ## Data folder
 
 `POCKETCODER_DIR` defaults to `./pc_data`. The server stores PGlite in its `db/`
@@ -314,6 +418,8 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
+| `POCKETCODER_PRINCIPALS_FILE` | none | Principal file read at startup; see [GitOps bootstrap](#gitops-bootstrap) |
+| `POCKETCODER_PRINCIPALS_DRY_RUN` | `false` | `true` logs the principal plan and applies nothing |
 | `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `8090` | Listen address |
 | `POCKETCODER_AGENT_HTTP` | `0.0.0.0:8091` | Separate agent listener |
 | `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:8091` | Agent origin reachable from workspaces; Kubernetes uses the private `pocketcoder-agent` Service |

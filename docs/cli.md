@@ -111,13 +111,22 @@ pcd principals get --id <principal-id> --json
 pcd principals update --id <principal-id> --scopes workspaces:read --json
 pcd principals update --id <principal-id> --disabled --json
 pcd principals update --id <principal-id> --disabled=false --json
+pcd principals plan                      # dry run of the mounted principal file
+pcd principals admission-map --file principals.json
 
 pcd keys issue --principal-id <principal-id> --request-id <operation-id> \
   --scopes workspaces:read --templates echo-harness --expires <ISO8601> --json
 pcd keys list --principal-id <principal-id> --request-id <operation-id>
 pcd keys revoke --principal-id <principal-id> --id <key-id>
 pcd keys revoke-all --principal-id <principal-id>
+pcd keys rotate --principal-id <principal-id> --id <key-id> --request-id <operation-id> --json
+pcd keys expiring --within-hours 168
 ```
+
+`keys rotate` issues a successor with the same grants and leaves the old key valid.
+Revoke the old key once the consumer uses the successor. See
+[rotating machine keys](security.md#rotating-machine-keys). `keys expiring` lists
+active keys that expire within the window, soonest first.
 
 Issuance requires explicit scopes, a request ID and a future expiry within the
 calling key's remaining lifetime. Requested grants must fit both caller and

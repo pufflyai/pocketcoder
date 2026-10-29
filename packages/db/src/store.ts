@@ -101,6 +101,7 @@ export class PGliteStore implements Store {
     this.createPrincipal = auth.createPrincipal;
     this.createManagedPrincipal = auth.createManagedPrincipal;
     this.updateManagedPrincipal = journal.after(auth.updateManagedPrincipal);
+    this.applyConfiguredPrincipal = journal.after(auth.applyConfiguredPrincipal);
     this.getPrincipalByName = auth.getPrincipalByName;
     this.listPrincipals = auth.listPrincipals;
     this.updatePrincipal = auth.updatePrincipal;
@@ -108,6 +109,7 @@ export class PGliteStore implements Store {
     this.getPrincipal = auth.getPrincipal;
     this.issueMachineKey = auth.issueMachineKey;
     this.listMachineKeys = auth.listMachineKeys;
+    this.listActiveMachineKeys = auth.listActiveMachineKeys;
     this.revokePrincipalKeys = journal.after(auth.revokePrincipalKeys);
     this.insertMachineKey = auth.insertMachineKey;
     this.getMachineKeyWithPrincipal = auth.getMachineKeyWithPrincipal;
@@ -223,6 +225,7 @@ export class PGliteStore implements Store {
   readonly retireTemplate: Store["retireTemplate"];
   readonly createManagedPrincipal: Store["createManagedPrincipal"];
   readonly updateManagedPrincipal: Store["updateManagedPrincipal"];
+  readonly applyConfiguredPrincipal: Store["applyConfiguredPrincipal"];
   readonly bootstrapOwnerKey: Store["bootstrapOwnerKey"];
   readonly createPrincipal: Store["createPrincipal"];
   readonly getPrincipalByName: Store["getPrincipalByName"];
@@ -232,6 +235,7 @@ export class PGliteStore implements Store {
   readonly getPrincipal: Store["getPrincipal"];
   readonly issueMachineKey: Store["issueMachineKey"];
   readonly listMachineKeys: Store["listMachineKeys"];
+  readonly listActiveMachineKeys: Store["listActiveMachineKeys"];
   readonly revokePrincipalKeys: Store["revokePrincipalKeys"];
   readonly insertMachineKey: Store["insertMachineKey"];
   readonly getMachineKeyWithPrincipal: Store["getMachineKeyWithPrincipal"];

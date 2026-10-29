@@ -13,6 +13,7 @@ export function startBackgroundTimers(
     inputs?: import("../attachments/input-storage").InputStorage;
     maintenance: Maintenance;
     log: ServerLog;
+    managedPrincipals?: () => Promise<void>;
     outbox: OutboxDispatcher;
     policyReconciliation: ReturnType<typeof loadPolicyReconciliation>;
     warmPool?: WarmPoolManager;
@@ -51,6 +52,9 @@ export function startBackgroundTimers(
         "policy reconciliation failed",
       ),
     );
+  // Renewal needs only minute precision: keys renew hours before they expire.
+  if (deps.managedPrincipals)
+    timers.push(start(300_000, deps.managedPrincipals, "managed principal reconciliation failed"));
   if (warmPool)
     timers.push(start(config.schedulerIntervalMs, () => warmPool.reconcile(), "warm pool reconciliation failed"));
   return {

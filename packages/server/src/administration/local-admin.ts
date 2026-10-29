@@ -13,6 +13,7 @@ import type { Maintenance } from "../maintenance/maintenance";
 import type { PurgeCleanup } from "../maintenance/purge-cleanup";
 import type { OffNodeRecovery } from "../recovery/off-node-recovery";
 import { startAdminSocket } from "./admin-socket";
+import { registerPrincipalPlan } from "./principal-plan-admin";
 import { registerPurgeAdmin } from "./purge-admin";
 import { registerPurgeKeyStatus } from "./purge-key-status";
 import { controllerRelease } from "./release";
@@ -38,6 +39,7 @@ export async function startLocalAdmin(deps: {
   accountLifecycle?: AccountLifecycle;
   maintenance?: Maintenance;
   monitoring?: () => Promise<unknown>;
+  principalsFile?: string;
 }) {
   const app = new Hono();
   const store = deps.store;
@@ -107,6 +109,7 @@ export async function startLocalAdmin(deps: {
     const monitoring = deps.monitoring;
     app.get("/v1/monitoring", async (context) => context.json(await monitoring()));
   }
+  if (deps.principalsFile) registerPrincipalPlan(app, { store, pepper: deps.pepper, file: deps.principalsFile });
   if (deps.purgeCleanup) registerPurgeAdmin(app, deps.purgeCleanup);
   if (deps.accountPurge) registerPurgeKeyStatus(app, store, deps.accountPurge);
   if (deps.accountLifecycle) {

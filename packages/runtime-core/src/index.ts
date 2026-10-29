@@ -96,6 +96,7 @@ export {
   type WorkspaceTransferRuntime,
 } from "./driver";
 export { issuePrincipalKey, keyResource } from "./keys/key-administration";
+export { rotatePrincipalKey, successorExpiry } from "./keys/key-rotation";
 export { bootstrapLocalOwnerKey, bootstrapLocalRecoveryKey } from "./keys/local-bootstrap";
 export {
   assertAuthorityScope,

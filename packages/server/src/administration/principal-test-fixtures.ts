@@ -23,5 +23,5 @@ export async function createPrincipalKeyServer(store: Store) {
     lastUsedAt: null,
   });
   const request = (path: string, init: RequestInit = {}) => app.app.request(path, authed(issued.token, init));
-  return { ...app, owner, customer, expiresAt, request };
+  return { ...app, owner, customer, expiresAt, request, ownerToken: issued.token };
 }
