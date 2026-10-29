@@ -41,6 +41,10 @@ admit. Return HTTP 403 with the following body to report capacity:
 their private text is not exposed. Malformed JSON, redirects, non-200/403 status,
 wrong positive identity and transport errors never grant admission.
 
+The hook can start after the controller: it reads principals and their templates
+from `GET /v1/principals` once `/livez` answers. See
+[health probes](deployment.md#health-probes).
+
 Programmatic `authorizeLaunch` callbacks may return true, false, or
 `{ allowed: false, reason: <one of the bounded policy codes> }`. Controller limit
 codes are reserved for local counters. Distinct policy codes keep retries from

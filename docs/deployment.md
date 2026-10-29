@@ -403,6 +403,51 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_OUTBOX_INTERVAL_MS` | `1000` | Event delivery tick |
 | `POCKETCODER_WARM_POOLS` | `[]` | Operator-only JSON array of stateless template pools |
 
+## Health probes
+
+The operator listener serves two unauthenticated probes:
+
+| Probe | Answers 200 when | Use it for |
+| --- | --- | --- |
+| `GET /livez` | The process is up and serving HTTP | Liveness probes, bootstrap code and external hooks |
+| `GET /readyz` | The controller is admitting work | Readiness probes and product traffic |
+
+`/readyz` answers 503 and lists every check with its state (`ok`, `pending`,
+`failed` or `disabled`), so the failing part is named. The checks are
+`database`, `schema`, `reconciliation`, `coordinator`, `execution-dispatch`,
+`cleanup` and `policy-reconciliation`. `policy-reconciliation` is the external
+admission hook set by `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while
+the hook is down, and while the hook cannot prove that a stopped workspace was
+terminated.
+
+Readiness does not gate the API. Once `/livez` answers, every `/v1` route
+answers too, including principal, key and other admin routes, and workspace and
+conversation reads. While the admission hook is down:
+
+- New launches are accepted and stay `queued` with `reason_code:
+  admission_unavailable`. They still expire at their queue deadline. The next
+  scheduler tick after the hook returns admits them, without a controller
+  restart.
+- Policy reconciliation stays fail-closed. A hook that is down, or answers
+  `termination-unproven`, never counts as a release. The controller keeps
+  retrying and `/readyz` stays 503 until the hook confirms every pending
+  workspace.
+
+Bootstrap code, such as principal enrollment and key issuance, and external
+hooks must wait on `/livez`, never on `/readyz`. Readiness waits on the hook, so
+a hook that waits on readiness never starts.
+
+An admission hook reads its configuration from `GET /v1/principals`. Each item
+carries the principal `id`, `name`, `scopes` and allowed `templates`, which are
+the fields the hook's launch requests refer to. The key needs
+`principals:admin`. It only sees principals whose scopes and templates fit
+within its own, so an `admin` key sees all of them.
+
+A Kubernetes Service only routes to ready pods. The example manifest therefore
+adds a second Service, `pocketcoder-server-live`, with
+`publishNotReadyAddresses: true`. Point bootstrap jobs and the admission hook at
+it, and keep product traffic on `pocketcoder-server`.
+
 ## Warm workspace pools
 
 Warm pools are disabled unless `POCKETCODER_WARM_POOLS` names an eligible template. Each entry resolves to an exact immutable template digest during startup:

@@ -4,8 +4,10 @@ Base path `/v1`, JSON only, UUIDv7-style identifiers, RFC 3339 UTC
 timestamps. The generated OpenAPI document is served unauthenticated at
 `GET /v1/openapi.json`; `GET /livez` is the process liveness probe and
 `GET /readyz` reports database, schema, reconciliation, and coordinator readiness.
-It also reports unresolved content cleanup. See [verifiable cleanup](cleanup.md)
-for workspace purge, principal-key administration, and isolated backup replay.
+It also reports unresolved content cleanup and the external admission hook. See
+[health probes](deployment.md#health-probes) for which probe to wait on, and
+[verifiable cleanup](cleanup.md) for workspace purge, principal-key
+administration, and isolated backup replay.
 
 ## Authentication
 
