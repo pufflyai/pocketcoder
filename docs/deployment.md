@@ -276,9 +276,68 @@ setup contract and are cleared before the harness starts; runtime environment
 secrets remain read-only projected files. Secret names/values are not stored in
 checkpoint manifests.
 
+## Store
+
+PocketCoder keeps its state in PostgreSQL or in embedded PGlite. Both use the
+same schema, migrations and queries.
+
+- **PostgreSQL** is the store for server deployments. Setting
+  `POCKETCODER_DATABASE_URL` selects it. Use your provider's managed backups,
+  point-in-time recovery and multi-AZ storage.
+- **PGlite** is the store for local, desktop and single-binary use. It is the
+  default when no database URL is set, or when `POCKETCODER_STORE=pglite`.
+
+With PostgreSQL:
+
+1. Run `pcd db migrate` once before controllers of a new release start. It
+   applies pending migrations under a schema-scoped advisory lock. A controller
+   refuses to start while migrations are pending, so startup never changes a
+   shared schema. `pcd db status` lists applied and pending migrations.
+2. Set `POCKETCODER_AUTH_PEPPER` from a secret. Machine key digests use it, so
+   an upgraded database must keep the pepper it was written with.
+3. Mount a small private volume at `POCKETCODER_JOURNAL_DIR` for the deletion
+   journal (see [restore](#restore-a-postgresql-database)). It is required.
+4. `POCKETCODER_DIR` still holds private controller files: the local admin
+   socket and account state. It holds no database.
+
+Only one controller runs per schema. It takes a PostgreSQL advisory lock at
+startup, and a second controller fails with "a PocketCoder coordinator is
+already active".
+
+Folder backups (`pcd backup`), off-node backups and folder recovery
+(`pcd recovery`) copy the PGlite data folder. With PostgreSQL they refuse with
+"Use your database's backups instead".
+
+### Restore a PostgreSQL database
+
+A database restore goes back in time. Without help it would bring back keys
+that were revoked, secrets that were retired, templates that were retired and
+conversations that were deleted after the backup.
+
+The deletion journal prevents that. Every revocation, retirement and deletion
+is written to the journal before the database commits it. The journal lives on
+its own volume, so a database restore does not roll it back. At every start the
+controller replays the whole journal. Each record names an exact key, secret,
+template or conversation, so replaying it again changes nothing that is still
+current.
+
+To restore:
+
+1. Stop the controller.
+2. Restore the database with your provider's tools, for example a point-in-time
+   restore into the same database URL.
+3. Keep the same `POCKETCODER_JOURNAL_DIR` volume. Do not restore it from a
+   backup. A database that was bound to a journal refuses to start with an
+   empty or different journal.
+4. Run `pcd db migrate` if the restored database is from an older release.
+5. Start the controller. It replays the journal before serving requests.
+
+Rotating the auth pepper also invalidates every machine key, but it does not
+cover secrets, templates or conversations. Use the journal for those.
+
 ## Data folder
 
-`POCKETCODER_DIR` defaults to `./pc_data`. The server stores PGlite in its `db/`
+`POCKETCODER_DIR` defaults to `./pc_data`. With PGlite, the server stores the database in its `db/`
 subdirectory, with the fixed `pocketcoder` schema. Use local disk or a block
 volume, never NFS or EFS. In a container, mount a private volume at `/pc_data`.
 Do not mount this folder into workspaces.
@@ -307,9 +366,12 @@ replay it so a restore cannot revive deleted data.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
-| `POCKETCODER_JOURNAL_DIR` | folder recorded in the database, else `<POCKETCODER_DIR>-journal` | Deletion journal outside the data folder; restores replay it |
-| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys and registration secrets |
+| `POCKETCODER_STORE` | `postgres` with a database URL, else `pglite` | Store driver: `postgres` or `pglite` |
+| `POCKETCODER_DATABASE_URL` | none | PostgreSQL connection URL; selects the PostgreSQL store |
+| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | PostgreSQL schema for all PocketCoder tables |
+| `POCKETCODER_DIR` | `./pc_data` | Private controller folder; with PGlite it also holds the database |
+| `POCKETCODER_JOURNAL_DIR` | PGlite: folder recorded in the database, else `<POCKETCODER_DIR>-journal`; PostgreSQL: required | Deletion journal outside the data folder; restores replay it |
+| `POCKETCODER_AUTH_PEPPER` | PGlite: generated key bundle; PostgreSQL: required | Keyed digest secret for machine keys and registration secrets |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_EGRESS_IMAGE` | required for restricted templates | Separately published `pocketcoder-egress` image as an immutable `repo@sha256:...` reference |
