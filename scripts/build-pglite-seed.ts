@@ -41,14 +41,15 @@ function engineFile(extension: string) {
 // dump as a crash: replay its WAL and fsync each file again. A stopped cluster opens directly.
 async function buildStoppedCluster(directory: string) {
   const { migrateDatabase, getMigrationStatus } = await import("../packages/db/src/migrations/migrator");
+  const { pgliteSqlClient } = await import("../packages/db/src/database/sql-client");
   const client = await PGlite.create({
     dataDir: directory,
     postgresqlconf: ["shared_buffers = 16MB"],
     relaxedDurability: false,
   });
   try {
-    await migrateDatabase(client);
-    const status = await getMigrationStatus(client);
+    await migrateDatabase(pgliteSqlClient(client));
+    const status = await getMigrationStatus(pgliteSqlClient(client));
     if (status.some((migration) => !migration.appliedAt || migration.drifted))
       throw new Error("seed migrations are invalid");
     const version = await client.query<{ server_version: string }>("SHOW server_version");

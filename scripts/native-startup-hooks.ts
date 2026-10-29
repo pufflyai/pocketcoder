@@ -34,7 +34,7 @@ const hooks: Record<string, Hook[]> = {
       'await startupPhase("seed-durability-barriers", () => seedPass(entries, syncSeedEntry));',
     ],
   ],
-  "packages/db/src/database/context.ts": [
+  "packages/db/src/database/pglite-context.ts": [
     ["await loadCoreAssets()", 'await startupPhase("assets-total", () => loadCoreAssets())'],
     [
       "await new Bun.Archive(assets.seedArchive()).extract(stage)",
@@ -50,7 +50,10 @@ const hooks: Record<string, Hook[]> = {
       ": await PGlite.create({ ...options, loadDataDir: assets.memorySeed() });",
       ": await PGlite.create({ ...options, loadDataDir: assets.memorySeed() }));",
     ],
-    ["await migrateDatabase(client)", 'await startupPhase("migrate", () => migrateDatabase(client))'],
+    [
+      "await migrateDatabase(pgliteSqlClient(client))",
+      'await startupPhase("migrate", () => migrateDatabase(pgliteSqlClient(client)))',
+    ],
     [
       "await bindCheckpointWriter(db, tables, folder)",
       'await startupPhase("checkpoint-writer", () => bindCheckpointWriter(db, tables, folder))',

@@ -1,6 +1,9 @@
 import migrations from "../../assets/migrations.json" with { type: "json" };
 import type { SqlClient } from "../database/sql-client";
 import { advisoryLockKey, assertValidSchema } from "../database-schema";
+import { FIRST_1_0_MIGRATION, normalizeLegacyJson } from "./legacy-json";
+import { RELEASE_081_MIGRATION } from "./release-081";
+import { planUpgrade } from "./upgrade";
 
 const SCHEMA = "pocketcoder";
 
@@ -49,16 +52,18 @@ export async function migrateDatabase(client: SqlClient, registry: MigrationRegi
     // PostgreSQL can have other controllers or operator commands connected to the same schema.
     await tx.query("SELECT pg_advisory_xact_lock($1)", [advisoryLockKey(schema).toString()]);
     // Check the full history before any schema writes, including new migration tables.
-    const applied = await appliedMigrations(tx, schema);
-    assertHistory(applied, registry);
-    const pending = registry.slice(applied.length);
+    const plan = planUpgrade(await appliedMigrations(tx, schema), registry);
+    assertHistory(plan.applied, plan.registry);
+    const pending = plan.registry.slice(plan.applied.length);
     if (!pending.length) return [];
+    const fromRelease0 = plan.applied.length > 0 && !plan.applied.some((row) => row.name === FIRST_1_0_MIGRATION);
     await tx.exec(`CREATE SCHEMA IF NOT EXISTS "${schema}";
       SET LOCAL search_path TO "${schema}";
       CREATE TABLE IF NOT EXISTS ${table} (
         id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint,
         name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
       );`);
+    if (plan.release081) await tx.query(`DELETE FROM ${table} WHERE name = $1`, [RELEASE_081_MIGRATION.name]);
     for (const migration of pending) {
       for (const statement of migration.sql) await tx.exec(statement);
       await tx.query(`INSERT INTO ${table} (hash, created_at, name) VALUES ($1, $2, $3)`, [
@@ -67,12 +72,13 @@ export async function migrateDatabase(client: SqlClient, registry: MigrationRegi
         migration.name,
       ]);
     }
+    if (fromRelease0) await normalizeLegacyJson(tx, schema);
     return pending.map((migration) => migration.name);
   });
 }
 
 export async function getMigrationStatus(client: SqlClient, schema = SCHEMA): Promise<MigrationStatus[]> {
-  const applied = await appliedMigrations(client, schema);
+  const { applied } = planUpgrade(await appliedMigrations(client, schema), migrations);
   assertHistory(applied, migrations);
   return migrations.map((migration, index) => ({
     name: migration.name,

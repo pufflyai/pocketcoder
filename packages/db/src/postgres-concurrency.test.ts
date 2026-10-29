@@ -102,10 +102,10 @@ describe.skipIf(!TEST_DATABASE_URL)("PostgreSQL concurrency", () => {
           }),
         ),
       );
-      const leased = claims.filter((claim) => claim?.runtime);
+      const leased = claims.flatMap((claim) => (claim && "runtime" in claim ? [claim] : []));
       expect(leased).toHaveLength(3);
-      expect(new Set(leased.map((claim) => claim?.runtime?.id))).toEqual(new Set(runtimes.map((row) => row.id)));
-      expect(new Set(leased.map((claim) => claim?.workspace?.id)).size).toBe(3);
+      expect(new Set(leased.map((claim) => claim.runtime.id))).toEqual(new Set(runtimes.map((row) => row.id)));
+      expect(new Set(leased.map((claim) => claim.workspace.id)).size).toBe(3);
     } finally {
       await db.dispose();
     }
