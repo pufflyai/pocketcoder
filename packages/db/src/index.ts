@@ -5,6 +5,7 @@ export {
   assertValidSchema,
   qualify,
 } from "./database-schema";
+export { bindKubernetesJob } from "./migrations/kubernetes-binding";
 export {
   getMigrationStatus,
   type MigrationStatus,

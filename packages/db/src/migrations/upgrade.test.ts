@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import migrations from "../../assets/migrations.json" with { type: "json" };
 import { pgliteSqlClient } from "../database/sql-client";
+import { bindKubernetesJob } from "./kubernetes-binding";
 import { getMigrationStatus, migrateDatabase } from "./migrator";
 import { RELEASE_081_MIGRATION } from "./release-081";
 
@@ -73,6 +74,47 @@ test("upgrading a 0.x database decodes JSON stored inside jsonb strings", async 
       "SELECT jsonb_typeof(spec) AS kind, spec FROM pocketcoder.templates WHERE name = 'legacy'",
     );
     expect(row).toEqual({ kind: "object", spec });
+  } finally {
+    await client.close();
+  }
+});
+
+test("a 0.8 upgrade waits for a verified original Kubernetes Job identity without changing history", async () => {
+  const { client, sql } = await previousRelease("0.8.0");
+  const id = crypto.randomUUID();
+  const ref = { kind: "kubernetes", id: `pocketcoder-ws-${id}`, namespace: "alpha" };
+  try {
+    await client.exec(`
+      INSERT INTO pocketcoder.principals (id, name, scopes, template_names, created_at)
+        VALUES ('${id}', 'legacy', '{}', '{}', now());
+      INSERT INTO pocketcoder.templates (id, name, version, digest, spec, status, created_at)
+        VALUES ('${id}', 'legacy', '1', 'sha256:legacy', '{}', 'active', now());
+    `);
+    await client.query(
+      `INSERT INTO pocketcoder.workspaces
+      (id, principal_id, external_id, idempotency_key, request_digest, template_id, template_name,
+       template_version, template_digest, template_snapshot, state, provider_kind, provider_ref, deadline_at, created_at, updated_at)
+      VALUES ($1, $1, 'legacy', 'legacy', 'legacy', $1, 'legacy', '1', 'sha256:legacy', '{}',
+        'terminating', 'kubernetes', $2::jsonb, now(), now(), now())`,
+      [id, JSON.stringify(JSON.stringify(ref))],
+    );
+    const before = await sql.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id");
+    await expect(migrateDatabase(sql)).rejects.toThrow(`workspace ${id}`);
+    expect(await sql.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id")).toEqual(before);
+    await bindKubernetesJob(
+      sql,
+      "pocketcoder",
+      { kind: "workspace", id, namespace: "alpha", jobUid: "verified-original" },
+      async (binding) => {
+        expect(binding.providerRef).toEqual(ref);
+      },
+    );
+    expect(await migrateDatabase(sql)).toEqual(migrations.slice(8).map((migration) => migration.name));
+    const [row] = await sql.query<{ provider_ref: unknown }>(
+      "SELECT provider_ref FROM pocketcoder.workspaces WHERE id = $1",
+      [id],
+    );
+    expect(row?.provider_ref).toEqual({ ...ref, jobUid: "verified-original" });
   } finally {
     await client.close();
   }
