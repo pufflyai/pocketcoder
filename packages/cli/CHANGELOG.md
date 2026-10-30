@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.9.1
+
+### Patch Changes
+
+- [#142](https://github.com/pufflyai/pocketcoder/pull/142) [`108c852`](https://github.com/pufflyai/pocketcoder/commit/108c8529e720041a82b632c3a37bc154bcc13d39) Thanks [@au-re](https://github.com/au-re)! - Check legacy Kubernetes Job identities before upgrading and let operators bind verified original UIDs for normal cleanup.
+
 ## 0.9.0
 
 ### Minor Changes
