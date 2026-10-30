@@ -16,6 +16,10 @@ function alive(pid: number) {
   }
 }
 
+async function recordedGroup(f: Awaited<ReturnType<typeof processDispatchFixture>>) {
+  return (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
+}
+
 test("cancel settles only after a TERM-ignoring descendant stops and leaves infrastructure running", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc129-cancel-group-"));
   const ready = join(root, "ready");
@@ -62,8 +66,12 @@ test("cancel settles only after a TERM-ignoring descendant stops and leaves infr
     await f.store.executions.accept(acceptance, new Date());
     await f.dispatcher.tick();
     await f.dispatcher.drain();
-    await f.waitFor(async () => (await Bun.file(ready).exists()) && (await Bun.file(servicePid).exists()));
-    group = (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
+    // The child can start before the controller records the supervisor's process group.
+    await f.waitFor(
+      async () =>
+        (await Bun.file(ready).exists()) && (await Bun.file(servicePid).exists()) && Boolean(await recordedGroup(f)),
+    );
+    group = await recordedGroup(f);
     if (!group) throw new Error("Process group missing");
     service = Number(await Bun.file(servicePid).text());
     const child = Number(await Bun.file(childPid).text());
@@ -122,8 +130,8 @@ test("ordinary leader exit cannot release pins while a descendant still writes",
     await f.store.executions.accept(a, new Date());
     await f.dispatcher.tick();
     await f.dispatcher.drain();
-    await f.waitFor(async () => await Bun.file(ready).exists());
-    group = (await f.store.getWorkspace(f.id))?.finiteProcess?.processGroupId;
+    await f.waitFor(async () => (await Bun.file(ready).exists()) && Boolean(await recordedGroup(f)));
+    group = await recordedGroup(f);
     expect((await f.store.inputs.getManifest(executionInputManifestId(a)))?.finalizedAt).toBeNull();
     await expect(f.store.executions.finalize(a.execution, new Date())).rejects.toThrow("Unsettled");
     await f.waitFor(async () => (await f.store.executions.get(a.execution))?.phase === "terminal");
