@@ -16,6 +16,7 @@ import {
   captureTermination,
   EVIDENCE_FINALIZER,
   readTerminationEvidence,
+  releaseRetainedPods,
   retainNodeIdentities,
 } from "./kubernetes-evidence";
 import {
@@ -26,6 +27,7 @@ import {
   removeReferencedJob,
 } from "./kubernetes-identity";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
+import { legacyKubernetesProvider } from "./kubernetes-legacy";
 import { workspaceJobManifest } from "./kubernetes-manifests";
 import { applyRegistrySecret } from "./kubernetes-registry";
 import {
@@ -233,6 +235,10 @@ export class KubernetesDriver implements WorkspaceDriver {
     );
   }
 
+  legacyProvider(ref: ProviderRef, owner: { id: string; templateDigest: string }) {
+    return legacyKubernetesProvider((args) => kubectl(this.kubectlBin, this.namespace, args), ref, owner);
+  }
+
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
     if (this.sharedStorage) throw new Error("Shared storage requires a cold workspace allocation");
     if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
@@ -282,6 +288,9 @@ export class KubernetesDriver implements WorkspaceDriver {
 
   async remove(ref: ProviderRef): Promise<void> {
     const run = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
+    // stop() leaves Pods retained when their Job is already being deleted.
+    if (this.captureEvidence && typeof ref.jobUid === "string" && ref.jobUid)
+      await releaseRetainedPods(run, ref.id, ref.jobUid);
     await removeReferencedJob(run, this.namespace, ref);
     await kubectl(this.kubectlBin, this.namespace, ["delete", "secret", `${ref.id}-registry`, "--ignore-not-found"]);
     const inputSecret = typeof ref.inputSecret === "string" ? ref.inputSecret : `${ref.id}-input`;

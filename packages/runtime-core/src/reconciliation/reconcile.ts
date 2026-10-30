@@ -1,6 +1,7 @@
 import type { DiscoveredProvider, WorkspaceDriver, WorkspaceStorageDriver } from "../driver";
 import type { MetricSink } from "../observability/metrics";
 import type { Store, WorkspaceRow } from "../types";
+import { recoverLegacyProviders } from "./legacy-providers";
 import { measureReconciliation } from "./reconciliation-metrics";
 
 // Server-restart recovery: reconcile database state with provider objects.
@@ -53,6 +54,7 @@ export async function reconcileProviderRow(
 
 async function reconcileProviderState(deps: ReconcileDeps): Promise<void> {
   const now = deps.now ? deps.now() : new Date();
+  await recoverLegacyProviders(deps, now);
   const rows = await deps.store.listNonterminal();
   const discovered = (await deps.discover?.()) ?? (await deps.driver.list());
   const byWorkspace = new Map(discovered.map((d) => [d.workspaceId, d]));

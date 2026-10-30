@@ -179,7 +179,7 @@ function notFound(error: unknown) {
   return error instanceof Error && error.message.includes("Error from server (NotFound)");
 }
 
-async function releasePods(run: Command, name: string, jobUid: string) {
+export async function releaseRetainedPods(run: Command, name: string, jobUid: string) {
   for (const pod of await podsFor(run, name)) {
     if (!owned(pod, jobUid) || !pod.metadata.finalizers?.includes(EVIDENCE_FINALIZER)) continue;
     try {
@@ -228,18 +228,19 @@ export async function captureTermination(
   if (!jobUid || job.metadata.uid !== jobUid) throw new Error("Termination provider changed");
   if (job.metadata.annotations?.[EVIDENCE_ANNOTATION]) {
     if (!matchingProof(job, job.metadata.uid)) throw new Error("Termination provider changed");
-    await releasePods(run, name, job.metadata.uid);
-    return;
+  } else {
+    try {
+      await captureJobTermination(run, name, graceSeconds, job, jobUid, namespace);
+    } catch (error) {
+      const disappeared =
+        error instanceof Error &&
+        ["Termination provider disappeared without evidence", "Termination provider changed"].includes(error.message);
+      if (!(notFound(error) || disappeared) || !(await retainedProof(run, name, job.metadata.uid))) throw error;
+    }
   }
-  try {
-    await captureJobTermination(run, name, graceSeconds, job, jobUid, namespace);
-  } catch (error) {
-    const disappeared =
-      error instanceof Error &&
-      ["Termination provider disappeared without evidence", "Termination provider changed"].includes(error.message);
-    if (!(notFound(error) || disappeared) || !(await retainedProof(run, name, job.metadata.uid))) throw error;
-    await releasePods(run, name, job.metadata.uid);
-  }
+  // A Job in foreground deletion, such as one past its TTL, disappears with its last
+  // Pod and takes the proof along. Its Pods wait for remove(), after the proof is saved.
+  if (!job.metadata.deletionTimestamp) await releaseRetainedPods(run, name, job.metadata.uid);
 }
 
 async function captureJobTermination(
@@ -252,10 +253,7 @@ async function captureJobTermination(
 ) {
   const initial = await podsFor(run, name);
   if (!initial.length) {
-    if (await retainedProof(run, name, jobUid)) {
-      await releasePods(run, name, jobUid);
-      return;
-    }
+    if (await retainedProof(run, name, jobUid)) return;
     if (!hasNoPodAdmission(job, EVIDENCE_FINALIZER)) throw new Error("Termination evidence unavailable");
   }
   if (initial.some((pod) => !owned(pod, jobUid))) throw new Error("Termination evidence unavailable");
@@ -306,7 +304,6 @@ async function captureJobTermination(
       await patch(run, "job", name, {
         metadata: { uid: job.metadata.uid, annotations: { [EVIDENCE_ANNOTATION]: JSON.stringify(proof) } },
       });
-      await releasePods(run, name, jobUid);
       return;
     }
     if (Date.now() >= deadline) throw new Error("Termination evidence unavailable");
