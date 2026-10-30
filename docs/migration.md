@@ -38,6 +38,10 @@ A 0.8.x PostgreSQL database upgrades in place. Keep the same database, schema an
 auth pepper. You do not need a fresh controller, new principals or new keys.
 
 1. Back up the database with your provider's tools.
+   For Kubernetes, drain active workspaces and warm runtimes with the old
+   controller first, or record and verify their original Job UIDs for the
+   binding step below. Old releases saved Job names without UIDs. The new
+   controller requires UIDs to avoid deleting a same-name replacement.
 2. Stop the 0.8.x controller.
 3. Run the new release's migration with the existing settings:
 
@@ -96,6 +100,45 @@ PGlite data folders from 0.9 candidates open with the 0.9 release directly; thei
 history converts the first time the store opens. See the
 [release checklist](release.md) for the rule that every release upgrades the
 previous one in place.
+
+### Kubernetes providers without Job UIDs
+
+`pcd db migrate` checks active workspace and warm-runtime references before
+changing the schema. It also checks an already upgraded database. If a saved
+reference has no Job UID, the command lists the affected resource IDs and stops.
+Terminal history remains readable and does not require a binding.
+
+If the providers were not drained before upgrading, stop every controller that
+uses the database. With the new CLI, the same database settings, and `kubectl`
+configured for the correct cluster, bind each verified original Job UID:
+
+```sh
+pcd db bind-kubernetes-job --kind workspace --id <workspace-id> \
+  --namespace <workspace-namespace> --job-uid <original-job-uid>
+pcd db bind-kubernetes-job --kind warm-runtime --id <warm-runtime-id> \
+  --namespace <workspace-namespace> --job-uid <original-job-uid>
+pcd db migrate
+```
+
+Use trusted launch records or Kubernetes audit evidence to verify that the UID
+belongs to the original Job. Looking up the current Job by name alone cannot
+establish that: a replacement can have the same name, labels and template digest.
+If the original identity cannot be established, or the Job has disappeared, stop
+and use the cluster operator's recovery procedure. Do not invent a UID or mark a
+workspace terminated without proving that its processes stopped.
+
+The binding command checks the live Job UID, name, namespace, owner label and
+template digest. It locks the database row, refuses to replace an existing UID,
+and refuses to run while a new controller holds its coordinator lease. Older
+controllers do not take that lease, so they must be stopped explicitly. For a
+leased warm runtime, bind both its warm-runtime row and its workspace row to
+the same original Job before restarting.
+
+Binding changes only the saved provider identity. It does not stop or delete
+Jobs, manufacture termination evidence, clear reservations, or make old
+checkpoints resumable. Restart the controller after migration and let normal
+termination collect its evidence. A separate termination-evidence failure still
+requires operator investigation.
 
 ## Alpha templates to canonical workloads
 
