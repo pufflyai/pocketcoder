@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.9.2
+
+### Patch Changes
+
+- [#144](https://github.com/pufflyai/pocketcoder/pull/144) [`3785013`](https://github.com/pufflyai/pocketcoder/commit/37850132aa4313637cd3e7e810db7121f6ab5b2e) Thanks [@au-re](https://github.com/au-re)! - Recover legacy Kubernetes Job identities at controller startup instead of blocking `pcd db migrate`, and keep termination proof for Jobs already being deleted. Removes `pcd db bind-kubernetes-job`.
+
 ## 0.9.1
 
 ### Patch Changes
