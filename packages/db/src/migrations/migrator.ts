@@ -1,7 +1,6 @@
 import migrations from "../../assets/migrations.json" with { type: "json" };
 import type { SqlClient } from "../database/sql-client";
 import { advisoryLockKey, assertValidSchema } from "../database-schema";
-import { assertKubernetesUpgradeReady } from "./kubernetes-upgrade";
 import { FIRST_1_0_MIGRATION, normalizeLegacyJson } from "./legacy-json";
 import { RELEASE_081_MIGRATION } from "./release-081";
 import { planUpgrade } from "./upgrade";
@@ -55,7 +54,6 @@ export async function migrateDatabase(client: SqlClient, registry: MigrationRegi
     // Check the full history before any schema writes, including new migration tables.
     const plan = planUpgrade(await appliedMigrations(tx, schema), registry);
     assertHistory(plan.applied, plan.registry);
-    await assertKubernetesUpgradeReady(tx, schema);
     const pending = plan.registry.slice(plan.applied.length);
     if (!pending.length) return [];
     const fromRelease0 = plan.applied.length > 0 && !plan.applied.some((row) => row.name === FIRST_1_0_MIGRATION);

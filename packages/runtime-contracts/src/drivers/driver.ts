@@ -64,6 +64,9 @@ export interface WorkspaceDriver {
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
   uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
   uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
+  // Adds the provider identity an older release did not save. Returns null when the
+  // reference needs nothing and throws when the identity cannot be proved.
+  legacyProvider?(ref: ProviderRef, owner: { id: string; templateDigest: string }): Promise<ProviderRef | null>;
   inspect(ref: ProviderRef): Promise<ProviderState>;
   // Resolves only after the selected pinned objects and ordered manifest are published and verified.
   // Dispatch owners must await this before sending an execution to the producer.

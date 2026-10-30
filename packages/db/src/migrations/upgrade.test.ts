@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import migrations from "../../assets/migrations.json" with { type: "json" };
 import { pgliteSqlClient } from "../database/sql-client";
-import { bindKubernetesJob } from "./kubernetes-binding";
 import { getMigrationStatus, migrateDatabase } from "./migrator";
 import { RELEASE_081_MIGRATION } from "./release-081";
 
@@ -79,7 +78,7 @@ test("upgrading a 0.x database decodes JSON stored inside jsonb strings", async 
   }
 });
 
-test("a 0.8 upgrade waits for a verified original Kubernetes Job identity without changing history", async () => {
+test("a 0.8 upgrade keeps a live name-only Kubernetes reference for the controller to recover", async () => {
   const { client, sql } = await previousRelease("0.8.0");
   const id = crypto.randomUUID();
   const ref = { kind: "kubernetes", id: `pocketcoder-ws-${id}`, namespace: "alpha" };
@@ -98,23 +97,12 @@ test("a 0.8 upgrade waits for a verified original Kubernetes Job identity withou
         'terminating', 'kubernetes', $2::jsonb, now(), now(), now())`,
       [id, JSON.stringify(JSON.stringify(ref))],
     );
-    const before = await sql.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id");
-    await expect(migrateDatabase(sql)).rejects.toThrow(`workspace ${id}`);
-    expect(await sql.query("SELECT * FROM pocketcoder.__drizzle_migrations ORDER BY id")).toEqual(before);
-    await bindKubernetesJob(
-      sql,
-      "pocketcoder",
-      { kind: "workspace", id, namespace: "alpha", jobUid: "verified-original" },
-      async (binding) => {
-        expect(binding.providerRef).toEqual(ref);
-      },
-    );
     expect(await migrateDatabase(sql)).toEqual(migrations.slice(8).map((migration) => migration.name));
     const [row] = await sql.query<{ provider_ref: unknown }>(
       "SELECT provider_ref FROM pocketcoder.workspaces WHERE id = $1",
       [id],
     );
-    expect(row?.provider_ref).toEqual({ ...ref, jobUid: "verified-original" });
+    expect(row?.provider_ref).toEqual(ref);
   } finally {
     await client.close();
   }

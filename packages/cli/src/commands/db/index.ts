@@ -9,7 +9,6 @@ import { databaseLocation } from "@pstdio/pocketcoder-server/store-config";
 import { SQL } from "bun";
 import type { Argv } from "yargs";
 import { addAction, addResource, unchanged } from "../command";
-import { addKubernetesBindingCommand } from "./bind-kubernetes-job";
 
 async function withDatabase<T>(work: (client: ReturnType<typeof postgresSqlClient>, schema: string) => Promise<T>) {
   const { databaseUrl, databaseSchema } = databaseLocation(process.env);
@@ -32,7 +31,6 @@ export function formatMigrationStatus(migrations: readonly Pick<MigrationStatus,
 // once by an operator step, before controllers of the new release start.
 export function addDatabaseCommands(parser: Argv) {
   return addResource(parser, "db", "Migrate and inspect the PostgreSQL store", (commands) => {
-    addKubernetesBindingCommand(commands);
     addAction(commands, "migrate", "Apply pending migrations to POCKETCODER_DATABASE_URL", unchanged, async () => {
       const applied = await withDatabase((client, schema) => migrateDatabase(client, undefined, schema));
       console.log(applied.length ? `applied: ${applied.join(", ")}` : "database is up to date");

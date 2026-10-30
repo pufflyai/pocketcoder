@@ -38,10 +38,8 @@ A 0.8.x PostgreSQL database upgrades in place. Keep the same database, schema an
 auth pepper. You do not need a fresh controller, new principals or new keys.
 
 1. Back up the database with your provider's tools.
-   For Kubernetes, drain active workspaces and warm runtimes with the old
-   controller first, or record and verify their original Job UIDs for the
-   binding step below. Old releases saved Job names without UIDs. The new
-   controller requires UIDs to avoid deleting a same-name replacement.
+   On Kubernetes, the new controller recovers the Job identities that 0.8 did
+   not save (see [below](#kubernetes-providers-without-job-uids)).
 2. Stop the 0.8.x controller.
 3. Run the new release's migration with the existing settings:
 
@@ -103,42 +101,22 @@ previous one in place.
 
 ### Kubernetes providers without Job UIDs
 
-`pcd db migrate` checks active workspace and warm-runtime references before
-changing the schema. It also checks an already upgraded database. If a saved
-reference has no Job UID, the command lists the affected resource IDs and stops.
-Terminal history remains readable and does not require a binding.
+0.8 saved each Kubernetes Job by name only. The 0.9 driver needs the Job's
+immutable UID to stop it and to prove that it stopped. On startup, before it
+schedules any work, the controller recovers the UID for every active workspace
+and warm runtime from the live Job. `pcd db migrate` does not check this.
 
-If the providers were not drained before upgrading, stop every controller that
-uses the database. With the new CLI, the same database settings, and `kubectl`
-configured for the correct cluster, bind each verified original Job UID:
+The controller accepts the live Job when its name, owner label and template
+digest match the saved reference. Job names come from the unique workspace or
+warm-runtime ID, and every 0.9 launch saves its UID, so no other launch can own
+that Job. A finished Job past its TTL still counts: the Pods' evidence finalizer
+keeps it readable until cleanup has saved its termination proof.
 
-```sh
-pcd db bind-kubernetes-job --kind workspace --id <workspace-id> \
-  --namespace <workspace-namespace> --job-uid <original-job-uid>
-pcd db bind-kubernetes-job --kind warm-runtime --id <warm-runtime-id> \
-  --namespace <workspace-namespace> --job-uid <original-job-uid>
-pcd db migrate
-```
-
-Use trusted launch records or Kubernetes audit evidence to verify that the UID
-belongs to the original Job. Looking up the current Job by name alone cannot
-establish that: a replacement can have the same name, labels and template digest.
-If the original identity cannot be established, or the Job has disappeared, stop
-and use the cluster operator's recovery procedure. Do not invent a UID or mark a
-workspace terminated without proving that its processes stopped.
-
-The binding command checks the live Job UID, name, namespace, owner label and
-template digest. It locks the database row, refuses to replace an existing UID,
-and refuses to run while a new controller holds its coordinator lease. Older
-controllers do not take that lease, so they must be stopped explicitly. For a
-leased warm runtime, bind both its warm-runtime row and its workspace row to
-the same original Job before restarting.
-
-Binding changes only the saved provider identity. It does not stop or delete
-Jobs, manufacture termination evidence, clear reservations, or make old
-checkpoints resumable. Restart the controller after migration and let normal
-termination collect its evidence. A separate termination-evidence failure still
-requires operator investigation.
+If the Job is gone, or belongs to another owner or template, the controller logs
+`provider identity for workspace <id> is unproved` and leaves that runtime as it
+is. Its cleanup keeps failing and its capacity stays reserved; everything else
+runs normally. Investigate with the cluster administrator. Do not invent a UID
+or mark the workspace terminated without proving that its processes stopped.
 
 ## Alpha templates to canonical workloads
 
