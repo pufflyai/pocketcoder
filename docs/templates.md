@@ -516,6 +516,13 @@ Restoring a file or republishing identical content cannot reactivate a retired
 version. Publish a new version instead. Omitting `version` at creation resolves
 the newest active version once.
 
+A preserved workspace keeps its checkpoint's version when it is restored. To
+move it onto a new version, pass `template_version` to restore, recreate or
+resume (`--template-version` in `pcd`). The new version must keep the same
+session format, mounts (names and targets, with limits that do not shrink) and
+file owner, and the same `agent.stateFile`. See
+[restore onto a newer template version](checkpoint-api.md#restore-onto-a-newer-template-version).
+
 Use `pcd templates render` when a build must promote a source manifest to a
 deployable immutable version. It replaces the placeholder image digest,
 applies typed JSON-Pointer overrides, validates and normalizes the result, and

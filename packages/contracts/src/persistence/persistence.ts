@@ -167,6 +167,9 @@ export const RestoreRequestSchema = z.object({
   external_id: z.string().min(1).max(256),
   metadata: z.record(z.string().max(64), z.string().max(512)).optional(),
   launch_input: z.record(z.string(), z.unknown()).optional(),
+  // Moves the restored workspace onto another compatible version of the same template.
+  // Omit it to restore the exact version saved in the checkpoint.
+  template_version: z.string().min(1).max(256).optional(),
 });
 export type RestoreRequest = z.infer<typeof RestoreRequestSchema>;
 

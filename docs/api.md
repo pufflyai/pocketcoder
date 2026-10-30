@@ -548,7 +548,11 @@ backups still apply retention deadlines and the existing purge journal.
 ## Attach, checkpoints, and restore
 
 See [checkpoint and restore routes](checkpoint-api.md) for persistence,
-conversation resume, and retention sweeps.
+conversation resume, and retention sweeps. Restore, recreate and resume accept
+an optional `template_version` that moves the new workspace onto another
+compatible version of the checkpoint's template; see
+[restore onto a newer template version](checkpoint-api.md#restore-onto-a-newer-template-version)
+for the compatibility rules and errors.
 
 ## Lifecycle events
 

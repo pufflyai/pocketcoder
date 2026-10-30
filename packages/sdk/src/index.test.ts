@@ -119,7 +119,7 @@ describe("PocketCoderClient", () => {
     expect(requests[0]?.signal.aborted).toBe(true);
   });
 
-  test("sends restore launch input through every recovery API", async () => {
+  test("sends restore launch input and target version through every recovery API", async () => {
     const requests: Request[] = [];
     const client = fixtureClient(
       () =>
@@ -138,6 +138,7 @@ describe("PocketCoderClient", () => {
     const input = {
       external_id: "restored",
       launch_input: { bootstrap_token: "workspace-envelope" },
+      template_version: "1.1.0",
     };
 
     await client.checkpoints.restore("checkpoint", input, "restore-key").catch(() => {});

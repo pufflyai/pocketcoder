@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { runCli } from "./cli-test-support";
 
 describe("pcd commands", () => {
-  test("passes JSON launch input to restore and recreate", async () => {
+  test("passes launch input and target version to restore, recreate and resume", async () => {
     const requests: Array<{ path: string; body: unknown }> = [];
     const server = Bun.serve({
       hostname: "127.0.0.1",
@@ -58,9 +58,14 @@ describe("pcd commands", () => {
         ],
         { env },
       );
+      const resume = await runCli(
+        ["workspaces", "resume", "--id", "workspace", "--external-id", "resumed", "--template-version", "1.1.0"],
+        { env },
+      );
 
       expect(restore.output).toContain("fixture response");
       expect(recreate.output).toContain("fixture response");
+      expect(resume.output).toContain("fixture response");
       expect(requests).toEqual([
         {
           path: "/v1/checkpoints/checkpoint/restore",
@@ -75,6 +80,10 @@ describe("pcd commands", () => {
             external_id: "recreated",
             launch_input: { bootstrap_token: "recreate-envelope" },
           },
+        },
+        {
+          path: "/v1/workspaces/workspace/resume",
+          body: { external_id: "resumed", template_version: "1.1.0" },
         },
       ]);
     } finally {

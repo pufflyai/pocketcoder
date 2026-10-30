@@ -5,6 +5,7 @@ import type { PrincipalRow, WorkspaceCheckpointRow, WorkspaceOperationRow } from
 import { templateAuthorized } from "../workspaces/service";
 import { checkpointProvider, type PersistenceContext } from "./persistence-base";
 import type { PersistenceMaintenanceService } from "./persistence-maintenance";
+import { resolveUpgradeTarget } from "./restore-target";
 
 // Releases before 1.0 kept checkpoints on volumes such as `kubernetes-pvc`. Say so instead
 // of failing somewhere inside a restore.
@@ -23,15 +24,9 @@ export class PersistenceRestoreService {
     private readonly maintenance: PersistenceMaintenanceService,
     private readonly context: PersistenceContext,
   ) {}
-  async restore(
-    principal: PrincipalRow,
-    checkpointId: string,
-    body: RestoreRequest,
-    idempotencyKey: string,
-  ): Promise<{ workspaceId: string; operation: WorkspaceOperationRow }> {
-    const replay = await this.maintenance.replayRestore(principal.id, checkpointId, body, idempotencyKey);
-    if (replay.result) return replay.result;
-    const { requestDigest } = replay;
+
+  // Every check that can reject the request runs before an operation is recorded.
+  private async restoreTarget(principal: PrincipalRow, checkpointId: string, body: RestoreRequest) {
     const checkpoint = await this.context.getCheckpointOwned(principal, checkpointId);
     requireRestorableBackend(this.context, checkpoint);
     const transferred = checkpoint.providerKind === "controller-archive" && this.context.deps.checkpointTransfers;
@@ -44,15 +39,32 @@ export class PersistenceRestoreService {
         "Principal is no longer authorized for this checkpoint template.",
       );
     }
+    const upgrade = body.template_version
+      ? await resolveUpgradeTarget(this.context.deps.store, checkpoint, body.template_version)
+      : null;
+    const spec = upgrade?.snapshot.spec ?? checkpoint.templateSnapshot.spec;
     if (
       body.launch_input !== undefined &&
-      Buffer.byteLength(canonicalJson(body.launch_input)) > checkpoint.templateSnapshot.spec.maxLaunchInputBytes
+      Buffer.byteLength(canonicalJson(body.launch_input)) > spec.maxLaunchInputBytes
     ) {
       throw new ApiError(
         "validation.invalid",
-        `launch_input exceeds the template limit of ${checkpoint.templateSnapshot.spec.maxLaunchInputBytes} bytes.`,
+        `launch_input exceeds the template limit of ${spec.maxLaunchInputBytes} bytes.`,
       );
     }
+    return { checkpoint, upgrade, spec };
+  }
+
+  async restore(
+    principal: PrincipalRow,
+    checkpointId: string,
+    body: RestoreRequest,
+    idempotencyKey: string,
+  ): Promise<{ workspaceId: string; operation: WorkspaceOperationRow }> {
+    const replay = await this.maintenance.replayRestore(principal.id, checkpointId, body, idempotencyKey);
+    if (replay.result) return replay.result;
+    const { requestDigest } = replay;
+    const { checkpoint, upgrade, spec } = await this.restoreTarget(principal, checkpointId, body);
     const now = this.context.now();
     const resultWorkspaceId = randomUUID();
     const operationResult = await this.context.insertOperation({
@@ -87,10 +99,12 @@ export class PersistenceRestoreService {
           revision: checkpoint.sourceProvenance.requested_revision,
         }
       : null;
-    const template = await this.context.deps.store.getTemplate(
-      checkpoint.templateSnapshot.name,
-      checkpoint.templateSnapshot.version,
-    );
+    const template =
+      upgrade?.template ??
+      (await this.context.deps.store.getTemplate(
+        checkpoint.templateSnapshot.name,
+        checkpoint.templateSnapshot.version,
+      ));
     if (!template) {
       await this.context.failOperation(operationResult.operation.id, "image_unavailable");
       throw new ApiError("restore.image_unavailable", "The exact checkpoint template snapshot is unavailable.");
@@ -103,10 +117,10 @@ export class PersistenceRestoreService {
         idempotencyKey: `restore:${operationResult.operation.id}`,
         requestDigest,
         templateId: template.id,
-        templateSnapshot: checkpoint.templateSnapshot,
+        templateSnapshot: upgrade?.snapshot ?? checkpoint.templateSnapshot,
         launchInput: body.launch_input ?? null,
         metadata: body.metadata ?? {},
-        deadlineAt: new Date(now.getTime() + parseDurationMs(checkpoint.templateSnapshot.spec.timeouts.maxAge)),
+        deadlineAt: new Date(now.getTime() + parseDurationMs(spec.timeouts.maxAge)),
         createdAt: now,
         originWorkspaceId: checkpoint.workspaceId,
         restoredFromCheckpointId: checkpoint.id,

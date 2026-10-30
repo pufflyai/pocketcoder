@@ -39,7 +39,9 @@ export async function checkpointDownloadAuthority(
     workspace.id === checkpoint.workspaceId ||
     workspace.restoredFromCheckpointId !== checkpoint.id ||
     workspace.originWorkspaceId !== checkpoint.workspaceId ||
-    workspace.templateDigest !== checkpoint.templateDigest ||
+    // An upgraded restore runs a newer version of the same template. The server checked
+    // that version's compatibility; the archive itself must still match the checkpoint.
+    workspace.templateName !== checkpoint.templateSnapshot.name ||
     workspace.launchMode !== "restore" ||
     !["connected", "bootstrapping"].includes(workspace.state) ||
     workspace.terminalAt ||
