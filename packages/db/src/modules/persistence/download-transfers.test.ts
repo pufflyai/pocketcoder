@@ -92,6 +92,33 @@ test("download grant binds new destination and retains original source header", 
   }
 });
 
+test("download grant accepts a destination upgraded to another version of the checkpoint template", async () => {
+  const f = await fixture();
+  try {
+    await f.context.db
+      .update(f.context.tables.workspaces)
+      .set({ templateVersion: "2.0.0", templateDigest: `sha256:${"f".repeat(64)}` })
+      .where(eq(f.context.tables.workspaces.id, f.destination.id));
+    const grant = await f.store.checkpointTransfers.grantDownload(f.input, () => {});
+    expect(grant.declaredHeader?.template_digest).toBe(f.checkpoint.templateDigest);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("download refuses a destination running another template", async () => {
+  const f = await fixture();
+  try {
+    await f.context.db
+      .update(f.context.tables.workspaces)
+      .set({ templateName: "other-template" })
+      .where(eq(f.context.tables.workspaces.id, f.destination.id));
+    await expect(f.store.checkpointTransfers.grantDownload(f.input, () => {})).rejects.toThrow("authority");
+  } finally {
+    await f.dispose();
+  }
+});
+
 test.each(["source", "operation", "epoch", "expired", "purge"])(
   "download refuses %s authority before consuming grant",
   async (failure) => {

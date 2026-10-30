@@ -6,6 +6,9 @@ import { conversationRetention } from "../conversations/conversation-retention";
 import type { PersistenceContext } from "./persistence-base";
 import { cleanupPreservedStorage } from "./persistence-cleanup";
 
+// Long enough for the first request to queue its workspace under normal load.
+const RESTORE_RESULT_WAIT_MS = 5000;
+
 export class PersistenceMaintenanceService {
   constructor(private readonly context: PersistenceContext) {}
   async storageInventory(): Promise<{
@@ -84,12 +87,7 @@ export class PersistenceMaintenanceService {
       "This Idempotency-Key was already used with a different restore request.",
     );
     if (!replay) return { requestDigest, result: null };
-    this.context.throwFailedOperation(replay);
-    const workspace = replay.resultWorkspaceId
-      ? await this.context.deps.store.getWorkspace(replay.resultWorkspaceId)
-      : null;
-    if (!workspace) throw new ApiError("internal.error", "Restore metadata is incomplete.");
-    return { requestDigest, result: { workspaceId: workspace.id, operation: replay } };
+    return { requestDigest, result: await this.restoreResult(replay) };
   }
 
   async replayInsertedRestore(operationResult: {
@@ -98,12 +96,27 @@ export class PersistenceMaintenanceService {
     conflict: boolean;
   }) {
     if (operationResult.created) return null;
-    this.context.throwFailedOperation(operationResult.operation);
-    const workspace = operationResult.operation.resultWorkspaceId
-      ? await this.context.deps.store.getWorkspace(operationResult.operation.resultWorkspaceId)
+    return this.restoreResult(operationResult.operation);
+  }
+
+  // Only the request that recorded the operation queues the workspace and decides the
+  // outcome. A concurrent or retried request with the same key waits briefly for that
+  // result, so every request gets the same replacement or the same error.
+  private async restoreResult(operation: WorkspaceOperationRow) {
+    const deadline = Date.now() + RESTORE_RESULT_WAIT_MS;
+    let current = operation;
+    while (!current.resultWorkspaceId && current.state !== "failed" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      current = (await this.context.deps.store.getOperation(current.id)) ?? current;
+    }
+    this.context.throwFailedOperation(current);
+    const workspace = current.resultWorkspaceId
+      ? await this.context.deps.store.getWorkspace(current.resultWorkspaceId)
       : null;
-    if (workspace) return { workspaceId: workspace.id, operation: operationResult.operation };
-    throw new ApiError("restore.incompatible", "Restore metadata is incomplete.");
+    if (!workspace) {
+      throw new ApiError("operation.conflict", "A restore with this Idempotency-Key is still being queued; retry.");
+    }
+    return { workspaceId: workspace.id, operation: current };
   }
 
   async delete(principal: PrincipalRow, checkpointId: string, idempotencyKey: string): Promise<WorkspaceOperationRow> {

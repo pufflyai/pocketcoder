@@ -109,6 +109,7 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
     const env = { POCKETCODER_URL: baseUrl, POCKETCODER_KEY: owner.token };
     await command([...cli, "templates", "import", templateDir], { env, quiet: true });
     return {
+      manifest: parsed.manifest,
       dataDir,
       checkpointDir,
       proxy,
