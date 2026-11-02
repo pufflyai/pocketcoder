@@ -34,6 +34,17 @@ export function templateAuthorized(principal: PrincipalRow, templateName: string
   return principal.templateNames.includes("*") || principal.templateNames.includes(templateName);
 }
 
+export function templateSnapshotOf(template: TemplateRow): TemplateSnapshot {
+  return {
+    name: template.name,
+    version: template.version,
+    digest: template.digest,
+    spec: template.spec,
+    services: templateServices(template.spec),
+    ...(template.manifest ? { manifest: template.manifest } : {}),
+  };
+}
+
 function conversationResume(
   capability: WorkspaceRow["persistenceCapability"],
 ): WorkspaceResource["persistence"]["conversation_resume"] {
@@ -161,14 +172,7 @@ export class WorkspaceService {
       return { workspace: replay, created: false };
     }
     const template = await this.activeTemplate(principal, body);
-    const snapshot: TemplateSnapshot = {
-      name: template.name,
-      version: template.version,
-      digest: template.digest,
-      spec: template.spec,
-      services: templateServices(template.spec),
-      ...(template.manifest ? { manifest: template.manifest } : {}),
-    };
+    const snapshot = templateSnapshotOf(template);
     this.validateCreateInput(template, body);
     const now = this.now();
     const result = await store.insertWorkspace(

@@ -17,6 +17,7 @@ import { addPreviewCommand } from "./preview";
 import { addPurgeCommand } from "./purge";
 import { addRecreateCommand } from "./recreate";
 import { addRestoreCommand } from "./restore";
+import { addResumeCommand } from "./resume";
 import { addTerminalCommand } from "./terminal";
 import { addTerminalSessionsCommand } from "./terminal-sessions";
 
@@ -37,6 +38,7 @@ export function addWorkspaceCommands(parser: Argv) {
     addPurgeCommand,
     addRestoreCommand,
     addRecreateCommand,
+    addResumeCommand,
     addOutputsCommand,
     addConversationsCommand,
     addAttachCommand,

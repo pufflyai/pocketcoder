@@ -220,8 +220,12 @@ pcd workspaces attach --id <uuid> [--after <cursor>] [--message <text>] \
 pcd workspaces chat --id <uuid> [--message <text>] [--follow] [--json] \
   [--poll-interval-ms 500] [--response-timeout-seconds 600] [--cancel-on-exit]
 pcd workspaces preserve --id <uuid> [--retention 24h] [--label <label>]
-pcd workspaces restore --checkpoint <uuid> --external-id <new-id> [--input '<json>']
-pcd workspaces recreate --id <source-uuid> --external-id <new-id> [--input '<json>']
+pcd workspaces restore --checkpoint <uuid> --external-id <new-id> [--input '<json>'] \
+  [--template-version <version>]
+pcd workspaces recreate --id <source-uuid> --external-id <new-id> [--input '<json>'] \
+  [--template-version <version>]
+pcd workspaces resume --id <source-uuid> --external-id <new-id> [--input '<json>'] \
+  [--template-version <version>]
 pcd workspaces outputs --id <uuid>
 ```
 
@@ -233,8 +237,8 @@ pcd workspaces outputs --id <uuid>
 - `create --wait` follows the durable workspace change cursor until `ready`;
   terminal launch failures include their bounded redacted failure log.
 - `--input` is the opaque `launch_input` JSON delivered to the harness in
-  memory as `POCKETCODER_LAUNCH_INPUT`. It works for create, restore, and
-  recreate; each new execution receives its own bounded input, which is part
+  memory as `POCKETCODER_LAUNCH_INPUT`. It works for create, restore,
+  recreate, and resume; each new execution receives its own bounded input, which is part
   of idempotency and is erased from the server once that execution is ready.
 
 - `cancel` is idempotent and never creates a replacement workspace.
@@ -256,9 +260,13 @@ pcd workspaces outputs --id <uuid>
   followed by `d`. Reattach with the printed session id; recent output replays.
 - `terminal-sessions` requires `terminal:read` and prints the metadata-only
   audit trail. Keystrokes and output content are never recorded.
-- `preserve` ends the source execution. `restore` and `recreate` always create
-  a new execution and accept a caller-chosen external ID and optional new
-  launch input; they never reuse the source execution's input.
+- `preserve` ends the source execution. `restore`, `recreate` and `resume`
+  always create a new execution and accept a caller-chosen external ID and
+  optional new launch input; they never reuse the source execution's input.
+  `resume` also restores the conversation and fails when the checkpoint cannot.
+- `--template-version` runs another compatible version of the checkpoint's
+  template instead of the saved one. See
+  [restore onto a newer template version](checkpoint-api.md#restore-onto-a-newer-template-version).
 
 ## Warm pool inventory
 

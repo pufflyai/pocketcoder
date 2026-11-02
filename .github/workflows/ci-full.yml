@@ -126,6 +126,7 @@ jobs:
               bun run example:e2e:docker-checkpoint
               bun run example:e2e:docker-checkpoint-failures
               bun run example:e2e:docker-checkpoint-repeat
+              bun run example:e2e:docker-checkpoint-upgrade
           - name: Private egress admission
             fixture: workspace
             command: |
