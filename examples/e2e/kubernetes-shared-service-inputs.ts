@@ -7,7 +7,7 @@ import {
   ExecutionRuntimeSchema,
   WorkspaceResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
-import { serviceImageFixture } from "../../packages/server/src/testing/service-image-fixture.test";
+import { serviceImageFixture } from "@pstdio/pocketcoder-server/testing/service-image";
 import { createKubernetesCluster } from "./kubernetes-cluster";
 import { controllerKubeconfig } from "./kubernetes-controller-rbac";
 import { startSharedController } from "./kubernetes-shared-controller";

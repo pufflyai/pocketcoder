@@ -12,7 +12,7 @@ import {
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "../lifecycle/lifecycle";
 import { waitFor } from "./e2e-test-support";
-import { serviceImageFixture, serviceProbeImage } from "./service-image-fixture.test";
+import { serviceImageFixture, serviceProbeImage } from "./service-image-fixture";
 
 const available =
   Bun.spawnSync(["docker", "image", "inspect", serviceProbeImage], { stdout: "ignore", stderr: "ignore" }).exitCode ===

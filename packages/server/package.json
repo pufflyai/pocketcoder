@@ -17,7 +17,8 @@
     "./public-views": "./src/config/public-views.ts",
     "./release": "./src/administration/release.ts",
     "./monitoring": "./src/observability/controller-health.ts",
-    "./principal-file": "./src/bootstrap/managed-principals/principal-file.ts"
+    "./principal-file": "./src/bootstrap/managed-principals/principal-file.ts",
+    "./testing/service-image": "./src/testing/service-image-fixture.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
