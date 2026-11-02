@@ -11,8 +11,8 @@ Mount the PVC root into the trusted controller. Keep the database, canonical
 input root and checkpoint archive on private controller storage outside workload
 mounts. Never put PGlite on NFS. The controller copies verified canonical bytes
 into private projection staging, syncs them, then publishes an execution directory
-by rename. Workloads receive only `inputs/<workspace-id>/published` at `/inputs`,
-read-only. They cannot see staging, canonical bytes, allocation metadata or a
+by rename. Workloads receive only `inputs/<workspace-id>/published` at
+`/run/pocketcoder/inputs`, read-only, the same path as Docker. They cannot see staging, canonical bytes, allocation metadata or a
 writable alias. Later execution directories do not replace earlier publications.
 Names are metadata; UUIDs select directories and file names.
 
@@ -29,7 +29,9 @@ NFS AUTH_SYS lets a client claim another UID over ordinary TCP; no mount capabil
 is needed. A read-only mount alone is insufficient.
 
 The first profile requires an IPv4 deployment with an enforced NetworkPolicy
-implementation. Use a dedicated workload namespace with exactly one egress policy:
+implementation. Use a dedicated workload namespace. The policy named in
+`networkPolicyName` must select every pod and isolate egress. This policy allows
+everything except storage:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -46,10 +48,13 @@ spec:
             except: [192.0.2.10/32]
 ```
 
-Replace that documentation address with every actual storage endpoint. Nodes and
-the trusted publisher must still reach storage. The controller checks the exact
-policy before creating launch resources, rejects additive policies, and checks an
-NFS PV's server against the blocked endpoints. For CSI storage, qualification must
+Replace that documentation address with every actual storage endpoint. A
+default-deny policy (`egress: []`) with narrower allow lists also qualifies. Nodes
+and the trusted publisher must still reach storage. Before creating launch resources,
+the controller reads every policy in the namespace. It rejects an egress rule
+without destinations and an address block that contains a storage endpoint without
+excluding it. Pod and namespace selectors only reach pods, so they are allowed.
+It also checks an NFS PV's server against the blocked endpoints. For CSI storage, qualification must
 identify and isolate every endpoint used by that driver. An API object cannot prove
 that the network plugin enforces the policy. Run the real qualification probe for
 each installed driver, network plugin, image and storage configuration. Deny admission
@@ -60,6 +65,8 @@ new qualification. DNS-only storage endpoints and IPv6 profiles are unsupported.
 
 Select `POCKETCODER_STORAGE_BACKEND=kubernetes-shared`, configure
 `POCKETCODER_CHECKPOINT_DIR`, and set `POCKETCODER_KUBERNETES_SHARED_STORAGE` to JSON.
+With `POCKETCODER_STORAGE_BACKEND=controller-archive`, the claim carries only
+immutable inputs; workspace storage stays disposable emptyDir with archived checkpoints.
 This is a bounded **test fixture**, not a production default:
 
 ```json
@@ -98,10 +105,12 @@ against one root are unsupported.
 ## Publication and retained output owners
 
 After the input store freezes and pins an ordered manifest, the execution owner
-calls `publishInputs(projection, canonicalStorage)`. Dispatch waits for that promise.
-Its mount is stable across late publications and provider recreation. Publication
-returns `/shared/inputs/<workspace-id>/published/<manifest-id>` to trusted code;
-the workload path is `/inputs/<manifest-id>/<file-id>`. The manifest is `manifest.json`.
+calls the Kubernetes driver's `publishInputs`. It copies from the canonical root in
+`POCKETCODER_INPUT_STORAGE` into `/shared/inputs/<workspace-id>/published/<manifest-id>`.
+Dispatch waits for that promise. Its mount is stable across late publications and
+provider recreation. The workload path is `/run/pocketcoder/inputs/<manifest-id>/<file-id>`.
+Finalization calls `releaseInputProjection`, which leaves a tombstone so a delayed
+publisher cannot recreate released inputs. The manifest is `manifest.json`.
 Missing or corrupt bytes fail publication. Canonical loss requires new staging refs.
 
 Finite output owners allocate declared mounts with `retainForExtraction: true`.
@@ -115,10 +124,18 @@ Existing checkpoint mounts omit that output hold. Shared checkpoint/restore keep
 the controller archive protocol; physical allocation removal must succeed before
 its database row becomes deleted. Checkpoints never include immutable input roots.
 
-This ticket provides storage enforcement and lifecycle primitives. Execution dispatch
-and automatic finite finalization belong to PC-129 and PC-131. The storage setting
-alone does not advertise a complete canonical workload profile or enable legacy
-attachment relay. Installed producer evidence must support the full capability set.
+## Installed workload evidence
+
+Service workloads on Kubernetes report the same producer evidence as Docker.
+Launch waits until the workspace container runs. Inspection checks that the pod
+uses the pinned image digest with a read-only root, no privilege escalation and all
+capabilities dropped. It also checks that the pod starts the image-owned runtime
+command through the image entrypoint, and that inputs are mounted read-only from the
+claim. Short-lived probe pods from the same image read `/opt/pocketcoder/workload.json`
+and measure its artifacts. The controller therefore needs `create` on `pods` and
+`get` on `pods/log`. Unlike Docker, live artifacts are not measured again inside the
+running container: the image digest and the read-only root keep them equal to the
+probed image. Legacy attachment relay stays rejected.
 
 ## Qualification
 

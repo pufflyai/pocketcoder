@@ -50,3 +50,11 @@ export function dockerInputProjectionOptions(config: ServerConfig) {
   ]);
   return { ...input.projection, storage, privateRoots: [input.root] };
 }
+
+// Kubernetes publishes from the private canonical root into the shared claim.
+export function kubernetesInputSource(config: ServerConfig) {
+  const input = config.inputStorage;
+  const shared = config.kubernetesSharedStorage;
+  if (!input || !shared) return;
+  return new FilesystemInputStorage(input.root, [shared.root]);
+}

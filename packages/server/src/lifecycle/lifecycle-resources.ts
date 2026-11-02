@@ -33,7 +33,7 @@ import { AccountPurgeRequiredError } from "../maintenance/account-purge";
 import { loadPurgeState } from "../maintenance/purge-state";
 import type { CheckpointTransferService } from "../persistence/checkpoint-transfer";
 import { createIssuerClient } from "../secrets/issuer-client";
-import { dockerInputProjectionOptions } from "./input-storage-config";
+import { dockerInputProjectionOptions, kubernetesInputSource } from "./input-storage-config";
 import type { ServerLog } from "./lifecycle";
 
 async function initializeStore(
@@ -101,6 +101,7 @@ export function createWorkspaceDriver(
       ...(config.kubernetesSharedStorage
         ? { sharedStorage: sharedStorage ?? new KubernetesSharedStorage(config.kubernetesSharedStorage) }
         : {}),
+      inputSource: kubernetesInputSource(config),
       ...egress,
       namespace: config.kubernetesNamespace,
       captureTerminationEvidence: true,
@@ -118,7 +119,8 @@ export function createWorkspaceDriver(
 }
 
 export function createStorageDriver(config: ServerConfig) {
-  if (config.kubernetesSharedStorage) return new KubernetesSharedStorage(config.kubernetesSharedStorage);
+  if (config.storageBackend === "kubernetes-shared" && config.kubernetesSharedStorage)
+    return new KubernetesSharedStorage(config.kubernetesSharedStorage);
   if (config.storageBackend === "filesystem") {
     return new FilesystemStorageDriver({
       workspaceRoot: config.workspaceDataDir as string,

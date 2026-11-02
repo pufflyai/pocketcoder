@@ -145,7 +145,8 @@ export function workspaceJobManifest(
               name: "workspace",
               image: spec.image,
               imagePullPolicy: options.imagePullPolicy,
-              command: spec.command,
+              // Workloads keep their image-owned entrypoint, as Docker does with `docker run <image> <cmd>`.
+              ...(workspace.templateSnapshot.manifest ? { args: spec.command } : { command: spec.command }),
               env: Object.entries(spec.env)
                 .filter(([, value]) => !value.startsWith("secretRef:"))
                 .map(([name, value]) => ({ name, value })),

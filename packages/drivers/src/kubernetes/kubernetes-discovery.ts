@@ -63,3 +63,17 @@ export function discoveredWarmRuntimes(output: string, kind: string, namespace: 
     ];
   });
 }
+
+type Run = (args: string[]) => Promise<string>;
+
+export async function listWorkspaces(run: Run, kind: string, namespace: string) {
+  return discoveredWorkspaces(
+    await run(["get", "jobs", "-l", KUBERNETES_WORKSPACE_LABEL, "-o", "json"]),
+    kind,
+    namespace,
+  );
+}
+
+export async function listWarmRuntimes(run: Run, kind: string, namespace: string) {
+  return discoveredWarmRuntimes(await run(["get", "jobs", "-l", KUBERNETES_POOL_LABEL, "-o", "json"]), kind, namespace);
+}

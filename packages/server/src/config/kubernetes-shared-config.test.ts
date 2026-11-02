@@ -43,3 +43,12 @@ test("constructs only an explicitly configured shared writer profile", () => {
     ).toThrow();
   }
 });
+
+test("a shared claim can serve immutable inputs while workspaces keep controller-archive storage", () => {
+  const config = loadConfig({ ...environment, POCKETCODER_STORAGE_BACKEND: "controller-archive" });
+  expect(config.kubernetesSharedStorage?.claimName).toBe("shared");
+  expect(createStorageDriver(config)).toBeUndefined();
+  expect(() =>
+    loadConfig({ ...environment, POCKETCODER_STORAGE_BACKEND: "filesystem", POCKETCODER_WORKSPACE_DATA_DIR: "/w" }),
+  ).toThrow("SHARED_STORAGE");
+});
