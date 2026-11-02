@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.10.0
+
+### Minor Changes
+
+- [#147](https://github.com/pufflyai/pocketcoder/pull/147) [`28398dc`](https://github.com/pufflyai/pocketcoder/commit/28398dc4b6fce647c11536b9b5c8f1f68fa9ec2a) Thanks [@au-re](https://github.com/au-re)! - Restore, recreate and resume accept `template_version` to move a preserved workspace onto another compatible version of its template, such as a newer image or new resource limits. Adds `pcd workspaces resume` and `--template-version`.
+
+### Patch Changes
+
+- [#148](https://github.com/pufflyai/pocketcoder/pull/148) [`c7906a9`](https://github.com/pufflyai/pocketcoder/commit/c7906a98a62916855d5c2fc82a6577d62277aac9) Thanks [@au-re](https://github.com/au-re)! - Deliver uploaded files to service workloads on Kubernetes through a shared claim, which can also serve inputs alone next to controller-archive storage.
+
 ## 0.9.2
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @pstdio/pocketcoder-remote
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [[`28398dc`](https://github.com/pufflyai/pocketcoder/commit/28398dc4b6fce647c11536b9b5c8f1f68fa9ec2a)]:
+  - @pstdio/pocketcoder-sdk@0.8.0
+
 ## 0.4.0
 
 ### Minor Changes
