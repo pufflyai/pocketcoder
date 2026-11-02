@@ -83,6 +83,11 @@ test.each([
     error: "open",
   },
   {
+    name: "every IPv4 address without a storage exception",
+    policies: [isolate("storage-isolation", []), allow("everywhere", [{ to: [{ ipBlock: { cidr: "0.0.0.0/0" } }] }])],
+    error: "everywhere",
+  },
+  {
     name: "an address range that contains storage",
     policies: [isolate("storage-isolation", []), allow("vpc", [{ to: [{ ipBlock: { cidr: "10.1.0.0/16" } }] }])],
     error: "vpc",

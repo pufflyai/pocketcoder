@@ -34,7 +34,7 @@ export function validateSharedProfile(options: KubernetesSharedStorageOptions) {
     (posix.isAbsolute(sub) || posix.normalize(sub) !== sub || sub.startsWith("..") || sub === ".")
   )
     throw new Error("Shared claim sub-path must be a normalized relative directory");
-  if (!options.storageCidrs.length || options.storageCidrs.some((cidr) => !ipv4Range(cidr)))
+  if (!options.storageCidrs.length || options.storageCidrs.some((cidr) => !ipv4Range(cidr) || cidr.endsWith("/0")))
     throw new Error("Shared storage requires explicit isolated IPv4 endpoints or subnets");
 }
 
@@ -102,7 +102,7 @@ interface NetworkPolicy {
 function ipv4Range(cidr: string) {
   const [address = "", bits = ""] = cidr.split("/");
   const prefix = Number(bits);
-  if (!isIPv4(address) || !/^\d+$/.test(bits) || prefix < 1 || prefix > 32) return undefined;
+  if (!isIPv4(address) || !/^\d+$/.test(bits) || prefix > 32) return undefined;
   const value = address.split(".").reduce((sum, part) => sum * 256 + Number(part), 0);
   const size = 2 ** (32 - prefix);
   const start = Math.floor(value / size) * size;
