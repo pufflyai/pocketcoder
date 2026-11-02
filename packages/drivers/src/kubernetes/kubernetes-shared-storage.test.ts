@@ -53,3 +53,30 @@ test("retains output after compute removal until trusted extraction is complete"
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("serves inputs from a configured directory inside the claim", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-shared-"));
+  try {
+    const storage = new KubernetesSharedStorage({
+      root,
+      claimSubPath: "pocketcoder-1",
+      checkpointRoot: join(root, "../", `${randomUUID()}-checkpoints`),
+      claimName: "shared",
+      storageClassName: "qualified-nfs",
+      networkPolicyName: "storage-isolation",
+      storageCidrs: ["192.0.2.1/32"],
+      volumeName: "shared-pv",
+      profile: "shared-writer-readonly/v1",
+      maxBytes: 8 * 1024 ** 2,
+      maxFiles: 16,
+    });
+    const workspaceId = randomUUID();
+
+    expect(await storage.resolveInput(workspaceId, await storage.inputMount(workspaceId))).toEqual({
+      claimName: "shared",
+      subPath: `pocketcoder-1/inputs/${workspaceId}/published`,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

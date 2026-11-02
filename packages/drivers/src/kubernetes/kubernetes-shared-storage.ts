@@ -1,6 +1,12 @@
 import { lstat, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { type CheckpointManifest, canonicalJson, type PersistenceMount } from "@pstdio/pocketcoder-contracts";
+import {
+  type CheckpointManifest,
+  canonicalJson,
+  INPUT_PROJECTION_TARGET,
+  inputProjectionDirectory,
+  type PersistenceMount,
+} from "@pstdio/pocketcoder-contracts";
 import type {
   CheckpointRef,
   InputProjectionRef,
@@ -152,7 +158,10 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
     if (!owned) throw new Error("Shared subdirectory is not allocated");
     const stat = await lstat(join(root, owned.name));
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Shared subdirectory is unavailable");
-    return { claimName: this.options.claimName, subPath: `workspaces/${source.allocationId}/${owned.name}` };
+    return {
+      claimName: this.options.claimName,
+      subPath: this.claimPath(`workspaces/${source.allocationId}/${owned.name}`),
+    };
   }
   async completeExtraction(ref: StorageRef) {
     await rm(join(this.path(ref), ".extraction-pending"), { force: true });
@@ -162,13 +171,21 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
     await this.publisher.prepare(workspaceId);
     return {
       name: "immutable-inputs",
-      target: "/inputs",
+      target: INPUT_PROJECTION_TARGET,
       readOnly: true,
       source: { kind: "shared-filesystem", allocationId: workspaceId, directory: "inputs" },
     };
   }
-  publishInputs(projection: InputProjectionRef, source: InputStorageDriver) {
-    return this.serialize(() => this.publisher.publish(projection, source));
+  async publishInputs(projection: InputProjectionRef, source: InputStorageDriver) {
+    await this.serialize(() => this.publisher.publish(projection, source));
+    return {
+      manifestId: projection.manifestId,
+      digest: projection.manifest.digest,
+      directory: inputProjectionDirectory(projection.manifestId),
+    };
+  }
+  releaseInputs(workspaceId: string, manifestId: string) {
+    return this.serialize(() => this.publisher.release(workspaceId, manifestId));
   }
   purgeInputs(workspaceId: string) {
     return this.serialize(() => this.publisher.remove(workspaceId));
@@ -178,12 +195,18 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
       mount.source.kind !== "shared-filesystem" ||
       mount.source.directory !== "inputs" ||
       mount.source.allocationId !== workspaceId ||
-      mount.target !== "/inputs" ||
+      mount.target !== INPUT_PROJECTION_TARGET ||
       mount.readOnly !== true
     )
       throw new Error("Immutable inputs require their own read-only allocation");
     await this.publisher.prepare(workspaceId);
-    return { claimName: this.options.claimName, subPath: `inputs/${allocationId(workspaceId)}/published` };
+    return { claimName: this.options.claimName, subPath: this.inputSubPath(workspaceId) };
+  }
+  inputSubPath(workspaceId: string) {
+    return this.claimPath(`inputs/${allocationId(workspaceId)}/published`);
+  }
+  private claimPath(path: string) {
+    return this.options.claimSubPath ? `${this.options.claimSubPath}/${path}` : path;
   }
   deleteStorage(ref: StorageRef) {
     return this.serialize(() => this.deleteAllocation(ref));

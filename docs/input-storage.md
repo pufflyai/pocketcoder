@@ -65,7 +65,8 @@ the operation owner (PC-129).
 The provider-neutral projection reference contains workspace/file/version IDs and
 the frozen manifest. It contains no host or PVC path. A trusted driver can read
 verified canonical bytes to rebuild a lost projection. Docker uses the optional
-daemon-host projection below. Kubernetes enforcement remains PC-130. Legacy AgentAPI attachment
+daemon-host projection below. Kubernetes uses a shared claim; see
+[Kubernetes shared storage](kubernetes-shared-storage.md). Legacy AgentAPI attachment
 messages fail with `attachment.unsupported` until a qualified projection and
 operation owner are installed. Text-only messages keep working.
 
@@ -117,8 +118,8 @@ with private propagation and recursive mounts disabled. Aliases of backing roots
 parent mounts, nested mounts, image target symlinks and extra capabilities are
 rejected. A fresh challenge read through the actual container view detects a
 replaced mount directory. Missing daemon-host access fails creation; absent
-configuration advertises no input storage profile. Warm pools and Kubernetes do
-not support this Docker setting.
+configuration advertises no input storage profile. Warm pools do not support this
+setting; Kubernetes uses [shared storage](kubernetes-shared-storage.md) instead.
 
 The execution owner first freezes and pins its ordered selection, then awaits
 `WorkspaceDriver.publishInputs(ref, selection)` before dispatch. The returned

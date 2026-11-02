@@ -1,16 +1,20 @@
 import { isIPv4 } from "node:net";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, posix, resolve } from "node:path";
 import { canonicalJson } from "@pstdio/pocketcoder-contracts";
 import { isKubernetesName } from "./kubernetes-command";
 
 export interface KubernetesSharedStorageOptions {
   root: string;
+  // Directory inside the claim that `root` mounts; workloads mount the same directory.
+  claimSubPath?: string;
   checkpointRoot: string;
   claimName: string;
   volumeName: string;
   storageClassName: string;
   networkPolicyName: string;
   storageCidrs: string[];
+  // Operator assertion: no pod address is a storage endpoint (managed or off-cluster storage).
+  storageOutsidePodNetwork?: boolean;
   profile: "shared-writer-readonly/v1";
   maxBytes: number;
   maxFiles: number;
@@ -24,11 +28,14 @@ export function validateSharedProfile(options: KubernetesSharedStorageOptions) {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Shared storage requires explicit bounds");
   if (!isAbsolute(options.root) || resolve(options.root) === "/")
     throw new Error("Shared publisher root must be an absolute private mount");
+  const sub = options.claimSubPath;
   if (
-    !options.storageCidrs.length ||
-    options.storageCidrs.some((cidr) => !cidr.endsWith("/32") || !isIPv4(cidr.slice(0, -3)))
+    sub !== undefined &&
+    (posix.isAbsolute(sub) || posix.normalize(sub) !== sub || sub.startsWith("..") || sub === ".")
   )
-    throw new Error("Shared storage requires explicit isolated IPv4 endpoints");
+    throw new Error("Shared claim sub-path must be a normalized relative directory");
+  if (!options.storageCidrs.length || options.storageCidrs.some((cidr) => !ipv4Range(cidr) || cidr.endsWith("/0")))
+    throw new Error("Shared storage requires explicit isolated IPv4 endpoints or subnets");
 }
 
 interface VolumeRecord {
@@ -75,30 +82,74 @@ export async function requireSharedVolume(
     volume.spec.local
   )
     throw new Error("Shared storage binding or retention does not match the configured profile");
-  if (volume.spec.nfs && !options.storageCidrs.includes(`${volume.spec.nfs.server}/32`))
+  const server = volume.spec.nfs?.server;
+  if (server && !options.storageCidrs.some((cidr) => covers(cidr, `${server}/32`)))
     throw new Error("NFS endpoint is not isolated from workloads");
   return { claimUid: claim.metadata.uid, volumeUid: volume.metadata.uid };
 }
 
+interface NetworkPolicy {
+  metadata: { name: string };
+  spec: {
+    podSelector?: unknown;
+    policyTypes?: string[];
+    egress?: {
+      to?: { ipBlock?: { cidr: string; except?: string[] }; podSelector?: unknown; namespaceSelector?: unknown }[];
+    }[];
+  };
+}
+
+function ipv4Range(cidr: string) {
+  const [address = "", bits = ""] = cidr.split("/");
+  const prefix = Number(bits);
+  if (!isIPv4(address) || !/^\d+$/.test(bits) || prefix > 32) return undefined;
+  const value = address.split(".").reduce((sum, part) => sum * 256 + Number(part), 0);
+  const size = 2 ** (32 - prefix);
+  const start = Math.floor(value / size) * size;
+  return { start, end: start + size - 1 };
+}
+function covers(outer: string, inner: string) {
+  const a = ipv4Range(outer);
+  const b = ipv4Range(inner);
+  return !!a && !!b && a.start <= b.start && b.end <= a.end;
+}
+function overlaps(left: string, right: string) {
+  const a = ipv4Range(left);
+  const b = ipv4Range(right);
+  return !!a && !!b && a.start <= b.end && b.start <= a.end;
+}
+
+// Policies are additive allow lists. Storage stays private when every pod is
+// egress-isolated and no rule can address a storage endpoint. Selector peers
+// reach pods, so they are safe only when storage is declared outside the pod network.
 async function requireStorageIsolation(
   options: KubernetesSharedStorageOptions,
   run: (args: string[]) => Promise<string>,
 ) {
-  const policies = JSON.parse(await run(["get", "networkpolicies", "-o", "json"])).items;
-  if (policies.length !== 1 || policies[0].metadata.name !== options.networkPolicyName)
-    throw new Error("Shared storage requires its exclusive workload network policy");
-  const expected = {
-    podSelector: {},
-    policyTypes: ["Egress"],
-    egress: [{ to: [{ ipBlock: { cidr: "0.0.0.0/0", except: options.storageCidrs } }] }],
-  };
-  // Other policies are additive. An extra allow rule would reopen the storage
-  // protocol even when the workload's filesystem mount remains read-only.
-  const spec = policies[0].spec;
+  const policies: NetworkPolicy[] = JSON.parse(await run(["get", "networkpolicies", "-o", "json"])).items;
+  const egressTypes = (policy: NetworkPolicy) =>
+    policy.spec.policyTypes ?? (policy.spec.egress ? ["Ingress", "Egress"] : ["Ingress"]);
+  const isolating = policies.find((policy) => policy.metadata.name === options.networkPolicyName);
   if (
-    canonicalJson(spec.podSelector) !== "{}" ||
-    canonicalJson(spec.policyTypes) !== canonicalJson(expected.policyTypes) ||
-    canonicalJson(spec.egress) !== canonicalJson(expected.egress)
+    !isolating ||
+    canonicalJson(isolating.spec.podSelector ?? {}) !== "{}" ||
+    !egressTypes(isolating).includes("Egress")
   )
-    throw new Error("Shared storage network policy does not isolate its storage endpoints");
+    throw new Error("Shared storage requires its named policy to isolate egress for every workload");
+  for (const policy of policies) {
+    if (!egressTypes(policy).includes("Egress")) continue;
+    for (const rule of policy.spec.egress ?? []) {
+      const reachesStorage =
+        !rule.to?.length ||
+        rule.to.some(({ ipBlock }) =>
+          ipBlock
+            ? options.storageCidrs.some(
+                (storage) =>
+                  overlaps(ipBlock.cidr, storage) && !ipBlock.except?.some((excluded) => covers(excluded, storage)),
+              )
+            : !options.storageOutsidePodNetwork,
+        );
+      if (reachesStorage) throw new Error(`Network policy ${policy.metadata.name} lets workloads reach shared storage`);
+    }
+  }
 }

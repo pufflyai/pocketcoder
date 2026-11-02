@@ -37,7 +37,7 @@ export async function prepareWaitingRuntime(
       workspaceId: workspace.id,
       incarnationId,
       profiles: ["service"],
-      storageProfiles: ["controller-readonly/v1"],
+      storageProfiles: [...(deps.driver.inputStorageProfiles ?? ["controller-readonly/v1"])],
       ceilings: deps.workloadLimits,
       now: new Date().toISOString(),
       expiresAt: workspace.deadlineAt.toISOString(),

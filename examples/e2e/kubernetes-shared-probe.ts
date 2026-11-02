@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { digestOf, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { digestOf, INPUT_PROJECTION_TARGET, parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { FilesystemInputStorage, KubernetesDriver, KubernetesSharedStorage } from "@pstdio/pocketcoder-drivers";
 import type { InputProjectionRef, ProviderRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
@@ -210,7 +210,7 @@ try {
     objects: [{ backing, reference }],
   };
   await crashAndRestartPublisher(import.meta.path, projection, shared, canonical);
-  const projected = `/inputs/${projection.manifestId}/${reference.fileId}`;
+  const projected = `${INPUT_PROJECTION_TARGET}/${projection.manifestId}/${reference.fileId}`;
   assert.equal(
     await run(first.pod.metadata.name, `console.log(await Bun.file(${JSON.stringify(projected)}).text())`),
     bytes.toString(),
@@ -218,7 +218,7 @@ try {
   for (const operation of [
     `await Bun.write(${JSON.stringify(projected)},'changed')`,
     `await (await import('node:fs/promises')).unlink(${JSON.stringify(projected)})`,
-    `await (await import('node:fs/promises')).rename(${JSON.stringify(projected)},'/inputs/replaced')`,
+    `await (await import('node:fs/promises')).rename(${JSON.stringify(projected)},'${INPUT_PROJECTION_TARGET}/replaced')`,
   ]) {
     assert.equal(
       await run(
@@ -248,7 +248,7 @@ try {
   assert.equal(
     await run(
       sibling.pod.metadata.name,
-      "console.log((await (await import('node:fs/promises')).readdir('/inputs')).length)",
+      `console.log((await (await import('node:fs/promises')).readdir('${INPUT_PROJECTION_TARGET}')).length)`,
     ),
     "0",
   );

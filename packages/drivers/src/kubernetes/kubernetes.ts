@@ -1,6 +1,7 @@
+import { timeoutMs } from "@pstdio/pocketcoder-contracts";
 import type {
-  DiscoveredProvider,
-  DiscoveredWarmProvider,
+  InputProjectionRef,
+  InputStorageDriver,
   ProviderRef,
   ProviderState,
   WarmRuntimeLaunch,
@@ -10,8 +11,9 @@ import type {
 } from "@pstdio/pocketcoder-runtime-core";
 import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
 import type { RegistryResolver } from "../registry/registry";
+import { workloadReference } from "../workloads/workload-reference";
 import { isKubernetesName, kubectl, resourceName } from "./kubernetes-command";
-import { discoveredWarmRuntimes, discoveredWorkspaces } from "./kubernetes-discovery";
+import { listWarmRuntimes, listWorkspaces } from "./kubernetes-discovery";
 import {
   captureTermination,
   EVIDENCE_FINALIZER,
@@ -26,7 +28,8 @@ import {
   referencedJob,
   removeReferencedJob,
 } from "./kubernetes-identity";
-import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_POOL_LABEL, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
+import { cleanupWarmInput, cleanupWorkspaceInput, purgeWorkspaceSecrets } from "./kubernetes-input-secrets";
+import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { legacyKubernetesProvider } from "./kubernetes-legacy";
 import { workspaceJobManifest } from "./kubernetes-manifests";
 import { applyRegistrySecret } from "./kubernetes-registry";
@@ -46,6 +49,7 @@ import {
 } from "./kubernetes-uncommitted";
 import { resolveSharedMounts } from "./kubernetes-volumes";
 import { createKubernetesWarm } from "./kubernetes-warm";
+import { KubernetesWorkloads } from "./kubernetes-workloads";
 
 export {
   KUBERNETES_DIGEST_ANNOTATION,
@@ -61,10 +65,15 @@ export interface KubernetesDriverOptions extends EgressDriverOptions, Kubernetes
   captureTerminationEvidence?: boolean;
   resolveRegistry?: RegistryResolver;
   sharedStorage?: KubernetesSharedStorage;
+  // Canonical upload bytes that published executions copy from.
+  inputSource?: InputStorageDriver;
 }
 
 export class KubernetesDriver implements WorkspaceDriver {
   readonly kind = "kubernetes";
+  get inputStorageProfiles() {
+    return this.sharedStorage ? (["shared-writer-readonly/v1"] as const) : ([] as const);
+  }
   private readonly namespace: string;
   private readonly kubectlBin: string;
   private readonly serviceAccountName: string | undefined;
@@ -77,6 +86,8 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly captureEvidence: boolean;
   private readonly resolveRegistry?: RegistryResolver;
   private readonly sharedStorage?: KubernetesSharedStorage;
+  private readonly workloads: KubernetesWorkloads;
+  private readonly kube = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
 
   constructor(options: KubernetesDriverOptions = {}) {
     this.resolveRegistry = options.resolveRegistry;
@@ -99,6 +110,16 @@ export class KubernetesDriver implements WorkspaceDriver {
     this.tolerations = options.tolerations;
     for (const toleration of this.tolerations ?? []) validateToleration(toleration);
     this.imagePullPolicy = options.imagePullPolicy ?? "IfNotPresent";
+    this.workloads = new KubernetesWorkloads(
+      this.kube,
+      {
+        imagePullPolicy: this.imagePullPolicy,
+        runtimeClassName: this.runtimeClassName,
+        nodeSelector: this.nodeSelector,
+        tolerations: this.tolerations,
+      },
+      { sharedStorage: this.sharedStorage, inputSource: options.inputSource },
+    );
     this.egress = {
       ...(options.egressImage ? { egressImage: options.egressImage } : {}),
       ...(options.egressSigningKey ? { egressSigningKey: options.egressSigningKey } : {}),
@@ -204,17 +225,21 @@ export class KubernetesDriver implements WorkspaceDriver {
       const job = JSON.parse(
         await kubectl(this.kubectlBin, this.namespace, ["create", "-f", "-", "-o", "json"], JSON.stringify(manifest)),
       );
-      return {
+      const ref = {
         kind: this.kind,
+        ...workloadReference(workspace),
         id: name,
         jobUid: jobUidOf(job),
-        ...(storageIdentity ? { storageIdentity } : {}),
+        ...(storageIdentity ? { storageIdentity, workspaceId: workspace.id } : {}),
         name,
         inputSecret,
         ...(spec.imagePullSecret ? { registrySecret } : {}),
         ...(restricted ? { egressSecret } : {}),
         namespace: this.namespace,
       };
+      if (workspace.templateSnapshot.manifest)
+        await this.workloads.waitUntilRunning(ref, timeoutMs(workspace.templateSnapshot, "start"));
+      return ref;
     }
   }
 
@@ -256,6 +281,14 @@ export class KubernetesDriver implements WorkspaceDriver {
     });
   }
 
+  publishInputs(ref: ProviderRef, input: InputProjectionRef) {
+    return this.workloads.publish(ref, input);
+  }
+
+  releaseInputProjection(ref: ProviderRef, manifestId: string) {
+    return this.workloads.release(ref, manifestId);
+  }
+
   async inspect(ref: ProviderRef): Promise<ProviderState> {
     const job = await referencedJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref);
     if (!job) return { exists: false, running: false, exitCode: null };
@@ -265,11 +298,13 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
     const running = (job.status?.active ?? 0) > 0;
     const completedExitCode = job.status?.succeeded ? 0 : 1;
-    return {
+    const state: ProviderState = {
       exists: true,
       running,
       exitCode: running || !(job.status?.succeeded || job.status?.failed) ? null : completedExitCode,
     };
+    if (running && ref.workloadTemplate) await this.workloads.observe(ref, state);
+    return state;
   }
 
   async stop(ref: ProviderRef, graceSeconds: number): Promise<void> {
@@ -311,59 +346,23 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async purgeInput(workspaceId: string): Promise<void> {
-    const name = resourceName(workspaceId);
-    await kubectl(this.kubectlBin, this.namespace, [
-      "delete",
-      "secret",
-      `${name}-input`,
-      `${name}-egress`,
-      `${name}-registry`,
-      "--ignore-not-found",
-      "--wait=true",
-    ]);
+    await purgeWorkspaceSecrets(this.kube, workspaceId);
     if (this.sharedStorage) await this.sharedStorage.purgeInputs(workspaceId);
   }
 
-  async cleanupInput(workspaceId: string): Promise<void> {
-    await kubectl(this.kubectlBin, this.namespace, [
-      "delete",
-      "secret",
-      `${resourceName(workspaceId)}-input`,
-      `${resourceName(workspaceId)}-registry`,
-      "--ignore-not-found",
-    ]).catch(() => {});
+  cleanupInput(workspaceId: string) {
+    return cleanupWorkspaceInput(this.kube, workspaceId);
   }
 
-  async cleanupWarmInput(runtimeId: string): Promise<void> {
-    await kubectl(this.kubectlBin, this.namespace, [
-      "delete",
-      "secret",
-      `pocketcoder-pool-${runtimeId}-input`,
-      "--ignore-not-found",
-    ]).catch(() => {});
+  cleanupWarmInput(runtimeId: string) {
+    return cleanupWarmInput(this.kube, runtimeId);
   }
 
-  async list(): Promise<DiscoveredProvider[]> {
-    const output = await kubectl(this.kubectlBin, this.namespace, [
-      "get",
-      "jobs",
-      "-l",
-      KUBERNETES_WORKSPACE_LABEL,
-      "-o",
-      "json",
-    ]);
-    return discoveredWorkspaces(output, this.kind, this.namespace);
+  list() {
+    return listWorkspaces(this.kube, this.kind, this.namespace);
   }
 
-  async listWarm(): Promise<DiscoveredWarmProvider[]> {
-    const output = await kubectl(this.kubectlBin, this.namespace, [
-      "get",
-      "jobs",
-      "-l",
-      KUBERNETES_POOL_LABEL,
-      "-o",
-      "json",
-    ]);
-    return discoveredWarmRuntimes(output, this.kind, this.namespace);
+  listWarm() {
+    return listWarmRuntimes(this.kube, this.kind, this.namespace);
   }
 }

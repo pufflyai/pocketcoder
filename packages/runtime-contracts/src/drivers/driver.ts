@@ -60,6 +60,8 @@ export interface DiscoveredWarmProvider {
 
 export interface WorkspaceDriver {
   readonly kind: string;
+  // Input storage profiles this deployment can qualify. Omitted means the Docker controller-readonly profile.
+  readonly inputStorageProfiles?: readonly InputProjectionStorage["profile"][];
   create(launch: WorkspaceLaunch): Promise<ProviderRef>;
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
   uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;

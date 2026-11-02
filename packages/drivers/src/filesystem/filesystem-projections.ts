@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { AcceptedInputManifestSchema, canonicalJson } from "@pstdio/pocketcoder-contracts";
+import { type AcceptedInputManifest, AcceptedInputManifestSchema, canonicalJson } from "@pstdio/pocketcoder-contracts";
 import type { InputProjectionRef, InputStorageDriver } from "@pstdio/pocketcoder-runtime-core";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -61,6 +61,24 @@ async function executionUsage(path: string) {
     files++;
   }
   return { bytes, files };
+}
+
+// A repeated publication must match the bytes already visible to the workload.
+async function verifyPublished(destination: string, manifest: AcceptedInputManifest, encoded: string) {
+  const existing = await readFile(join(destination, "manifest.json"), "utf8").catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  if (existing === undefined) return false;
+  if (existing !== encoded) throw new Error("Published input manifest cannot be replaced");
+  for (const object of manifest.objects) {
+    const bytes = await readFile(join(destination, object.fileId));
+    if (
+      bytes.length !== object.sizeBytes ||
+      `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== object.digest
+    )
+      throw new Error("Published input bytes are unavailable");
+  }
+  return true;
 }
 
 // The single controller coordinator owns this tree. Workloads only see the
@@ -131,23 +149,10 @@ export class FilesystemInputPublisher {
     )
       throw new Error("Input projection exceeds its bounds or differs from its frozen manifest");
     const published = await this.prepare(manifest.workspaceId);
+    if (await this.released(manifest.workspaceId, id)) throw new Error("Input projection was released");
     const destination = join(published, id);
     const encoded = canonicalJson(manifest);
-    const existing = await readFile(join(destination, "manifest.json"), "utf8").catch((error) => {
-      if (error.code !== "ENOENT") throw error;
-    });
-    if (existing !== undefined) {
-      if (existing !== encoded) throw new Error("Published input manifest cannot be replaced");
-      for (const object of manifest.objects) {
-        const bytes = await readFile(join(destination, object.fileId));
-        if (
-          bytes.length !== object.sizeBytes ||
-          `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== object.digest
-        )
-          throw new Error("Published input bytes are unavailable");
-      }
-      return destination;
-    }
+    if (await verifyPublished(destination, manifest, encoded)) return destination;
     const temporary = join(this.root, manifest.workspaceId, "pending", id);
     await rm(temporary, { recursive: true, force: true });
     const used = await this.usage();
@@ -182,6 +187,34 @@ export class FilesystemInputPublisher {
       await rm(temporary, { recursive: true, force: true });
       throw error;
     }
+  }
+  // A tombstone keeps a delayed publisher from recreating a finalized execution's inputs.
+  release(workspaceId: string, manifestId: string) {
+    const next = this.work.then(async () => {
+      const root = join(this.root, projectionId(workspaceId));
+      const released = join(root, "released");
+      await directory(released, 0o700);
+      if (!(await this.released(workspaceId, projectionId(manifestId)))) {
+        const handle = await open(join(released, manifestId), "wx", 0o400);
+        await handle.sync().finally(() => handle.close());
+        await syncDirectory(released);
+      }
+      await rm(join(root, "published", manifestId), { recursive: true, force: true });
+      await syncDirectory(join(root, "published")).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+    });
+    this.work = next.catch(() => {});
+    return next;
+  }
+  private released(workspaceId: string, manifestId: string) {
+    return lstat(join(this.root, workspaceId, "released", manifestId)).then(
+      () => true,
+      (error) => {
+        if (error.code !== "ENOENT") throw error;
+        return false;
+      },
+    );
   }
   async remove(workspaceId: string) {
     await rm(join(this.root, projectionId(workspaceId)), { recursive: true, force: true });

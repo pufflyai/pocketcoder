@@ -11,8 +11,9 @@ import type {
   ProviderState,
   WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
+import { type Descriptor, descriptorArtifacts, descriptorSchema, qualifyAdapters } from "../workloads/workload-policy";
+import { workloadReference } from "../workloads/workload-reference";
 import { resolveDockerImage, runDocker } from "./docker-command";
-import { type Descriptor, descriptorArtifacts, descriptorSchema, qualifyAdapters } from "./docker-workload-policy";
 
 export class DockerWorkloads {
   // Digest-pinned image bytes are immutable; live incarnation and mount evidence
@@ -21,18 +22,7 @@ export class DockerWorkloads {
   constructor(private readonly docker: string) {}
 
   reference(workspace: WorkspaceRow) {
-    const manifest = workspace.templateSnapshot.manifest;
-    if (!manifest) return {};
-    return {
-      workloadTemplate: {
-        format: manifest.apiVersion,
-        name: workspace.templateName,
-        version: workspace.templateVersion,
-        digest: workspace.templateDigest,
-        manifest,
-      },
-      workspaceId: workspace.id,
-    };
+    return workloadReference(workspace);
   }
 
   private async image(image: string) {

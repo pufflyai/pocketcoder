@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { parseWorkloadTemplate as parseFixture, parseWorkloadTemplate } from "@pstdio/pocketcoder-contracts";
-import { descriptorSchema, qualifyAdapters } from "./docker-workload-policy";
+import { descriptorSchema, qualifyAdapters } from "./workload-policy";
 
 function fixture() {
   const source = parseFixture(
