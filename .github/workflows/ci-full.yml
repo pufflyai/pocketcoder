@@ -241,6 +241,6 @@ jobs:
         with:
           bun-version: 1.4.2
       - env:
-          CI_REQUIRED: '["integration","extensions","kubernetes-shared-storage","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
+          CI_REQUIRED: '["integration","extensions","kubernetes-shared-storage","kubernetes-service-inputs","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
           CI_RESULTS: ${{ toJSON(needs) }}
         run: bun --no-env-file scripts/ci/gate.ts

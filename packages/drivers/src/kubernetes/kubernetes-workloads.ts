@@ -90,7 +90,7 @@ export class KubernetesWorkloads {
         state.detail = String(error);
       }
     }
-    state.workload = await this.inspect(ref, pod, state.inputStorage);
+    state.workload = await this.inspect(ref, pod, state.inputStorage, state.detail);
   }
 
   async pod(ref: ProviderRef): Promise<WorkspacePod | undefined> {
@@ -132,7 +132,12 @@ export class KubernetesWorkloads {
     return { profile: "shared-writer-readonly/v1", identity: `kubernetes:${identity.claimUid}:${ref.workspaceId}` };
   }
 
-  async inspect(ref: ProviderRef, pod: WorkspacePod, storage?: InputProjectionStorage): Promise<InstalledWorkload> {
+  async inspect(
+    ref: ProviderRef,
+    pod: WorkspacePod,
+    storage?: InputProjectionStorage,
+    detail?: string,
+  ): Promise<InstalledWorkload> {
     const snapshot = WorkloadTemplateSnapshotSchema.parse(ref.workloadTemplate);
     const spec = parseWorkloadTemplate(snapshot.manifest).manifest.spec;
     const container = workspaceContainer(pod);
@@ -164,7 +169,10 @@ export class KubernetesWorkloads {
       throw new Error("Installed container startup differs from the image-owned runtime command.");
     const mounts = (container.volumeMounts ?? []).map((mount) => ({ Destination: mount.mountPath }));
     const adapters = qualifyAdapters(spec, descriptor, mounts, storage);
-    if (!storage) throw new Error("Canonical service workloads require qualified read-only input storage");
+    if (!storage)
+      throw new Error(
+        `Canonical service workloads require qualified read-only input storage: ${detail ?? "not configured"}`,
+      );
     return InstalledWorkloadSchema.parse({
       workspaceId: ref.workspaceId,
       incarnationId: containerIdentity(pod),

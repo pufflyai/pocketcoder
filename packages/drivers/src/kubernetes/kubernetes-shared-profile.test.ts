@@ -13,6 +13,8 @@ const options: KubernetesSharedStorageOptions = {
   maxBytes: 1024,
   maxFiles: 8,
 };
+// Managed or off-cluster storage: pod and namespace selectors cannot address it.
+const external = { ...options, storageOutsidePodNetwork: true };
 const bound = {
   status: { phase: "Bound" },
   spec: { storageClassName: "qualified-nfs", accessModes: ["ReadWriteMany"] },
@@ -70,7 +72,7 @@ test.each([
     ],
   },
 ])("accepts workload egress that cannot reach shared storage: $name", async ({ policies }) => {
-  expect(await check(policies)).toEqual({ claimUid: "claim", volumeUid: "volume" });
+  expect(await check(policies, external)).toEqual({ claimUid: "claim", volumeUid: "volume" });
 });
 
 test.each([
@@ -90,11 +92,19 @@ test.each([
 });
 
 test("accepts storage endpoints declared as the subnet that hosts them", async () => {
-  const subnet = { ...options, storageCidrs: ["10.1.5.0/24"] };
+  const subnet = { ...external, storageCidrs: ["10.1.5.0/24"] };
   const policies = [isolate("storage-isolation", []), allow("dns", [{ to: [pods("kube-system")] }])];
 
   expect(await check(policies, subnet)).toEqual({ claimUid: "claim", volumeUid: "volume" });
   await expect(
     check([...policies, allow("vpc", [{ to: [{ ipBlock: { cidr: "10.1.5.128/25" } }] }])], subnet),
   ).rejects.toThrow("vpc");
+});
+
+test("rejects selector peers unless shared storage is declared outside the pod network", async () => {
+  // An in-cluster NFS pod is reachable through any selector that matches it.
+  const policies = [isolate("storage-isolation", []), allow("same-namespace", [{ to: [pods("workspaces")] }])];
+
+  await expect(check(policies)).rejects.toThrow("same-namespace");
+  expect(await check(policies, external)).toEqual({ claimUid: "claim", volumeUid: "volume" });
 });

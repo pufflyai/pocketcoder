@@ -13,6 +13,8 @@ export interface KubernetesSharedStorageOptions {
   storageClassName: string;
   networkPolicyName: string;
   storageCidrs: string[];
+  // Operator assertion: no pod address is a storage endpoint (managed or off-cluster storage).
+  storageOutsidePodNetwork?: boolean;
   profile: "shared-writer-readonly/v1";
   maxBytes: number;
   maxFiles: number;
@@ -91,7 +93,9 @@ interface NetworkPolicy {
   spec: {
     podSelector?: unknown;
     policyTypes?: string[];
-    egress?: { to?: { ipBlock?: { cidr: string; except?: string[] } }[] }[];
+    egress?: {
+      to?: { ipBlock?: { cidr: string; except?: string[] }; podSelector?: unknown; namespaceSelector?: unknown }[];
+    }[];
   };
 }
 
@@ -117,7 +121,7 @@ function overlaps(left: string, right: string) {
 
 // Policies are additive allow lists. Storage stays private when every pod is
 // egress-isolated and no rule can address a storage endpoint. Selector peers
-// only reach pods, never the storage service's own addresses.
+// reach pods, so they are safe only when storage is declared outside the pod network.
 async function requireStorageIsolation(
   options: KubernetesSharedStorageOptions,
   run: (args: string[]) => Promise<string>,
@@ -137,13 +141,13 @@ async function requireStorageIsolation(
     for (const rule of policy.spec.egress ?? []) {
       const reachesStorage =
         !rule.to?.length ||
-        rule.to.some(
-          ({ ipBlock }) =>
-            ipBlock &&
-            options.storageCidrs.some(
-              (storage) =>
-                overlaps(ipBlock.cidr, storage) && !ipBlock.except?.some((excluded) => covers(excluded, storage)),
-            ),
+        rule.to.some(({ ipBlock }) =>
+          ipBlock
+            ? options.storageCidrs.some(
+                (storage) =>
+                  overlaps(ipBlock.cidr, storage) && !ipBlock.except?.some((excluded) => covers(excluded, storage)),
+              )
+            : !options.storageOutsidePodNetwork,
         );
       if (reachesStorage) throw new Error(`Network policy ${policy.metadata.name} lets workloads reach shared storage`);
     }

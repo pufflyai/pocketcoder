@@ -10,6 +10,7 @@ const SharedStorageConfig = z.strictObject({
   storageClassName: z.string().min(1),
   networkPolicyName: z.string().min(1),
   storageCidrs: z.array(z.string()).min(1),
+  storageOutsidePodNetwork: z.boolean().optional(),
   profile: z.literal("shared-writer-readonly/v1"),
   maxBytes: bound,
   maxFiles: bound,

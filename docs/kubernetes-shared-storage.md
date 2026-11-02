@@ -53,7 +53,10 @@ default-deny policy (`egress: []`) with narrower allow lists also qualifies. Nod
 and the trusted publisher must still reach storage. Before creating launch resources,
 the controller reads every policy in the namespace. It rejects an egress rule
 without destinations and an address block that contains a storage endpoint without
-excluding it. Pod and namespace selectors only reach pods, so they are allowed.
+excluding it. Pod and namespace selectors reach pods. They are allowed only with
+`"storageOutsidePodNetwork": true`, which asserts that no pod address is a storage
+endpoint (managed or off-cluster storage). Leave it unset for storage that runs in
+the cluster, such as an NFS server pod.
 It also checks an NFS PV's server against the blocked endpoints. For CSI storage, qualification must
 identify and isolate every endpoint used by that driver. An API object cannot prove
 that the network plugin enforces the policy. Run the real qualification probe for
