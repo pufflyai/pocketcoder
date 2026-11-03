@@ -48,6 +48,12 @@ describe.skipIf(process.env.POCKETCODER_KUBERNETES_CONFORMANCE !== "1")("quota-d
       }
       const pods = JSON.parse(await run(["get", "pods", "-l", `job-name=${name}`, "-o", "json"]));
       expect(pods.items).toHaveLength(0);
+      // A real API server reports the quota denial only as a FailedCreate event on the Job.
+      const refusedBy = Date.now() + 10_000;
+      while (!(await driver.inspect(ref)).refused) {
+        if (Date.now() >= refusedBy) throw new Error("inspect did not report the refused launch.");
+        await Bun.sleep(100);
+      }
       expect((await f.store.countActive()).global).toBe(1);
       const current = await f.store.getWorkspace(workspace.id);
       if (!current) throw new Error("Workspace disappeared.");
