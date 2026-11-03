@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 // kubectl is the provider boundary: this script answers like an API server holding one Job and its events.
-async function driverFor(jobStatus: Record<string, unknown>, eventReasons: string[]) {
+async function driverFor(jobStatus: Record<string, unknown>, eventReasons: readonly string[]) {
   const directory = await mkdtemp(join(tmpdir(), "pc-refused-"));
   directories.push(directory);
   const script = join(directory, "kubectl.ts");
