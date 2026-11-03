@@ -34,6 +34,11 @@ export class SchedulerSweep {
 
   private async observeProvider(row: WorkspaceRow, now: Date) {
     const observed = await this.context.deps.driver.inspect(row.providerRef as ProviderRef);
+    // A refused launch never registers, so waiting for the start timeout only delays the failure.
+    if (row.state === "provisioning" && observed.refused) {
+      await this.lifecycle.fail(row, "launch_refused", now);
+      return;
+    }
     const runtime = row.runtimeRegistration;
     if (!runtime || !["provisioning", "connected", "ready"].includes(row.state)) return;
     if (observed.exists && observed.running && observed.containerIdentity === runtime.containerIdentity) return;

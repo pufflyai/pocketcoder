@@ -325,5 +325,15 @@
     "folderMillis": 1793256391000,
     "hash": "2ddc93a716e182d8f7855134ccdbd3b4ae0d53fcc7fd7403cf89728a82ab4d81",
     "name": "20261029064631_flashy_obadiah_stane"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"workspace_state_history\" DROP CONSTRAINT \"workspace_state_history_reason_check\", ADD CONSTRAINT \"workspace_state_history_reason_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'launch_refused', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));",
+      "\nALTER TABLE \"workspaces\" DROP CONSTRAINT \"workspaces_reason_code_check\", ADD CONSTRAINT \"workspaces_reason_code_check\" CHECK (\"reason_code\" IS NULL OR \"reason_code\" IN ('admission_global_capacity', 'admission_principal_capacity', 'admission_template_capacity', 'admission_policy_global_capacity', 'admission_actor_capacity', 'admission_denied', 'admission_unavailable', 'child_exit_success', 'child_exit_failure', 'setup_failed', 'bootstrap_failed', 'registration_timeout', 'health_failed', 'child_crash', 'provider_lost', 'disconnect_timeout', 'canceled_by_caller', 'deadline_expired', 'idle_expired', 'queue_timeout', 'launch_failed', 'launch_refused', 'preserve_requested', 'preserved_by_policy', 'checkpoint_created', 'checkpoint_failed', 'checkpoint_corrupt', 'checkpoint_quota_exceeded', 'checkpoint_storage_lost', 'restore_requested', 'restore_failed', 'image_unavailable', 'source_resolution_failed', 'secret_resolution_failed', 'operation_conflict', 'network_policy_failed'));"
+    ],
+    "bps": true,
+    "folderMillis": 1793710475000,
+    "hash": "2844917abc5eea00cfae538f73cfa74f571ce2d00c42c5c6fefdc6747ef10bd1",
+    "name": "20261103125435_lonely_shockwave"
   }
 ]

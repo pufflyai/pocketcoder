@@ -283,7 +283,10 @@ States: `queued → provisioning → connected → ready`, followed by
 `preserving → preserved`. Terminal states never reopen;
 `reason_code` distinguishes clean exit, setup failure, registration timeout,
 health failure, crash, provider loss, disconnect timeout, cancellation, and
-deadline/idle expiry.
+deadline/idle expiry. `launch_refused` means the provider will never start the
+workspace, for example a Kubernetes Pod that an admission policy, quota or Pod
+Security denied. It fails within one scheduler sweep instead of waiting for the
+start timeout.
 
 Workspace resources include `provisioning_mode`: `warm`, `cold`, or `null` before admission. This is informational; `POST /v1/workspaces` remains unchanged and callers cannot select pool behavior.
 

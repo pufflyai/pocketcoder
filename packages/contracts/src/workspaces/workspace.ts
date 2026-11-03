@@ -92,6 +92,7 @@ export const REASON_CODES = [
   "idle_expired",
   "queue_timeout",
   "launch_failed",
+  "launch_refused",
   "preserve_requested",
   "preserved_by_policy",
   "checkpoint_created",

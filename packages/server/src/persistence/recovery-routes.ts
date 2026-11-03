@@ -11,6 +11,7 @@ import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES, IdempotencyHeadersSchema } from "../http/shared-routes";
 import { toResource, type WorkspaceService } from "../workspaces/service";
 import { type PersistenceService, toOperationResource } from "./persistence";
+import { healedTemplateVersion, resumeCheckpoint } from "./resume-heal";
 
 export function registerRecoveryRoutes({
   app,
@@ -109,14 +110,7 @@ export function registerRecoveryRoutes({
     async (c) => {
       const principal = c.get("principal");
       const source = await service.getOwned(principal, c.req.valid("param").id);
-      const checkpoints = await store.listCheckpoints(principal.id, {
-        workspaceId: source.id,
-        state: "ready",
-      });
-      const checkpoint = checkpoints[0];
-      if (!checkpoint) {
-        throw new ApiError("checkpoint.none_ready", "Workspace has no ready checkpoint.");
-      }
+      const checkpoint = await resumeCheckpoint(store, principal, source);
       if (checkpoint.conversationRestore !== "supported") {
         const reason = checkpoint.conversationRestore === "filesystem_only" ? "filesystem_only" : "capability_unknown";
         throw new ApiError("resume.unsupported", "This checkpoint cannot restore conversation context.", {
@@ -124,10 +118,12 @@ export function registerRecoveryRoutes({
           checkpoint_id: checkpoint.id,
         });
       }
+      const body = c.req.valid("json");
+      const healed = body.template_version ? undefined : await healedTemplateVersion(store, checkpoint, source);
       const result = await persistence.restore(
         principal,
         checkpoint.id,
-        c.req.valid("json"),
+        healed ? { ...body, template_version: healed } : body,
         c.req.valid("header")["Idempotency-Key"],
       );
       const workspace = await service.getOwned(principal, result.workspaceId);

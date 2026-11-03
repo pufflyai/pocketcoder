@@ -1,86 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseTemplateManifest, type TemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
-import { server, waitFor } from "./persistence-support.test";
+import { preservedSource, registerVersion, resume, server, waitFor } from "./persistence-support.test";
 
 const createStore = createTestStoreFactory();
 type TestServer = Awaited<ReturnType<typeof server>>;
 
 const UPGRADED_IMAGE = `example.test/fixture-persistent@sha256:${"b".repeat(64)}`;
-
-async function registerVersion(
-  testServer: TestServer,
-  version: string,
-  change: (spec: TemplateManifest["spec"]) => void = () => {},
-) {
-  const manifest = structuredClone(testServer.parsed.manifest);
-  manifest.spec.version = version;
-  change(manifest.spec);
-  const parsed = parseTemplateManifest(manifest);
-  await testServer.store.upsertTemplate({
-    name: parsed.manifest.metadata.name,
-    version,
-    digest: parsed.digest,
-    description: null,
-    spec: parsed.manifest.spec,
-  });
-  return parsed;
-}
-
-// Preserves a running workspace with one saved file. Resume needs a checkpoint that can
-// restore conversation context, so the test marks a copy of the real checkpoint as one.
-async function preservedSource(testServer: TestServer) {
-  const created = await testServer.request("/v1/workspaces", {
-    method: "POST",
-    headers: { "idempotency-key": randomUUID() },
-    body: JSON.stringify({ external_id: "upgrade-source", template: { name: "fixture-persistent" } }),
-  });
-  const { id } = (await created.json()) as { id: string };
-  await testServer.scheduler.tick();
-  await waitFor(async () => (await testServer.store.getWorkspaceStorage(id))?.state === "ready");
-  const now = new Date();
-  await testServer.store.transition(id, { from: ["provisioning"], to: "connected", at: now });
-  await testServer.store.transition(id, {
-    from: ["connected"],
-    to: "ready",
-    at: now,
-    patch: { readyAt: now, lastActivityAt: now },
-  });
-  const storage = await testServer.store.getWorkspaceStorage(id);
-  await mkdir(join(String(storage?.providerRef.root), "worktree"), { recursive: true });
-  await writeFile(join(String(storage?.providerRef.root), "worktree", "state.txt"), "saved on A\n");
-  const preserved = await testServer.request(`/v1/workspaces/${id}/preserve`, {
-    method: "POST",
-    headers: { "idempotency-key": randomUUID() },
-    body: "{}",
-  });
-  const { checkpoint } = (await preserved.json()) as { checkpoint: { id: string } };
-  await waitFor(async () => (await testServer.store.getWorkspace(id))?.state === "preserved");
-  const row = await testServer.store.getCheckpoint(checkpoint.id);
-  if (!row) throw new Error("expected a checkpoint");
-  const later = (date: Date) => new Date(date.getTime() + 1);
-  const resumable = await testServer.store.insertCheckpoint({
-    ...row,
-    id: randomUUID(),
-    parentCheckpointId: row.id,
-    conversationRestore: "supported",
-    createdAt: later(row.createdAt),
-    updatedAt: later(row.updatedAt),
-    readyAt: later(row.readyAt ?? row.updatedAt),
-  });
-  return { sourceId: id, checkpointId: resumable.id };
-}
-
-function resume(testServer: TestServer, sourceId: string, key: string, body: Record<string, unknown>) {
-  return testServer.request(`/v1/workspaces/${sourceId}/resume`, {
-    method: "POST",
-    headers: { "idempotency-key": key },
-    body: JSON.stringify(body),
-  });
-}
 
 async function restoredFile(testServer: TestServer, workspaceId: string) {
   const storage = await testServer.store.getWorkspaceStorage(workspaceId);

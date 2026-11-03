@@ -85,8 +85,29 @@ A rejected request returns one of these errors:
   carries `checkpoint_id` and `template_version`.
 
 Changing the session format or the mount layout needs a data migration, which
-an upgrade does not do. Nothing upgrades on its own; omit `template_version`
-to keep the checkpoint's version.
+an upgrade does not do. Restore and recreate never upgrade on their own; omit
+`template_version` to keep the checkpoint's version.
+
+## Resume heals a conversation that cannot launch
+
+Every conversation with a ready checkpoint stays resumable. Without
+`template_version`, `resume` keeps the checkpoint's version, with two
+exceptions where that version can no longer run:
+
+- The version is retired.
+- The source workspace failed with `launch_refused`: the provider refused to
+  start it, for example a Kubernetes admission policy that no longer admits
+  its image.
+
+Then `resume` uses the newest non-retired version of the same template that
+passes the rules above, skipping the checkpoint's version and the refused one.
+If newer versions exist but none is compatible, it returns
+`409 restore.incompatible` for the newest one. If there is no other version,
+it keeps the checkpoint's version.
+
+A workspace restored from a checkpoint that never connected has no newer state.
+Resuming it resumes the checkpoint it was restored from, so a refused launch
+never leaves the conversation without a checkpoint.
 
 PocketCoder checks the target before it records any operation or workspace.
 A rejected upgrade leaves the source workspace `preserved` and its checkpoint

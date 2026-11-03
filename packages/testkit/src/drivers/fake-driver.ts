@@ -17,10 +17,13 @@ export class FakeDriver implements WorkspaceDriver {
   terminated: ProviderRef[] = [];
   stopped: ProviderRef[] = [];
   failNextCreate = false;
+  // Created providers exist but the provider refuses to start them, like a denied Kubernetes Pod.
+  refuseLaunches = false;
   createDelayMs = 0;
   private counter = 0;
   private readonly live = new Map<string, DiscoveredProvider>();
   private readonly stoppedIds = new Set<string>();
+  private readonly refusedIds = new Set<string>();
   private readonly warm = new Map<string, DiscoveredWarmProvider>();
 
   async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
@@ -32,6 +35,7 @@ export class FakeDriver implements WorkspaceDriver {
     this.created.push(launch);
     this.counter += 1;
     const ref: ProviderRef = { kind: this.kind, id: `fake-${this.counter}` };
+    if (this.refuseLaunches) this.refusedIds.add(ref.id);
     this.live.set(launch.workspace.id, {
       workspaceId: launch.workspace.id,
       templateDigest: launch.workspace.templateDigest,
@@ -58,6 +62,8 @@ export class FakeDriver implements WorkspaceDriver {
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
     const exists = [...this.live.values(), ...this.warm.values()].some((p) => p.ref.id === ref.id);
+    if (exists && this.refusedIds.has(ref.id) && !this.stoppedIds.has(ref.id))
+      return { exists, running: false, exitCode: null, refused: true };
     return {
       exists,
       running: exists && !this.stoppedIds.has(ref.id),

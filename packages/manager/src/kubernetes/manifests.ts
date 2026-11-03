@@ -49,6 +49,7 @@ export function accountManifests(
       rules: [
         { apiGroups: ["batch"], resources: ["jobs"], verbs: ["create", "get", "list", "patch", "delete"] },
         { apiGroups: [""], resources: ["pods"], verbs: ["get", "list", "patch", "delete"] },
+        { apiGroups: [""], resources: ["events"], verbs: ["get", "list"] },
         { apiGroups: [""], resources: ["secrets"], verbs: ["create", "get", "patch", "delete"] },
       ],
     },
