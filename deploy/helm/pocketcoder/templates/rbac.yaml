@@ -38,6 +38,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # FailedCreate events are the only signal that the cluster refused a workspace Pod.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
   # Input secrets for workspaces and the token targets of managed principals.
   - apiGroups: [""]
     resources: ["secrets"]

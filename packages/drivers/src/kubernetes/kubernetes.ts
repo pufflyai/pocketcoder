@@ -29,6 +29,7 @@ import {
   removeReferencedJob,
 } from "./kubernetes-identity";
 import { cleanupWarmInput, cleanupWorkspaceInput, purgeWorkspaceSecrets } from "./kubernetes-input-secrets";
+import { jobState } from "./kubernetes-inspect";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { legacyKubernetesProvider } from "./kubernetes-legacy";
 import { workspaceJobManifest } from "./kubernetes-manifests";
@@ -290,20 +291,15 @@ export class KubernetesDriver implements WorkspaceDriver {
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
-    const job = await referencedJob((args) => kubectl(this.kubectlBin, this.namespace, args), ref);
+    const run = (args: string[]) => kubectl(this.kubectlBin, this.namespace, args);
+    const job = await referencedJob(run, ref);
     if (!job) return { exists: false, running: false, exitCode: null };
     if (this.captureEvidence) {
       if (!job.metadata?.uid) throw new Error("Termination evidence unavailable");
-      await retainNodeIdentities((args) => kubectl(this.kubectlBin, this.namespace, args), ref.id, job.metadata.uid);
+      await retainNodeIdentities(run, ref.id, job.metadata.uid);
     }
-    const running = (job.status?.active ?? 0) > 0;
-    const completedExitCode = job.status?.succeeded ? 0 : 1;
-    const state: ProviderState = {
-      exists: true,
-      running,
-      exitCode: running || !(job.status?.succeeded || job.status?.failed) ? null : completedExitCode,
-    };
-    if (running && ref.workloadTemplate) await this.workloads.observe(ref, state);
+    const state = await jobState(run, job);
+    if (state.running && ref.workloadTemplate) await this.workloads.observe(ref, state);
     return state;
   }
 

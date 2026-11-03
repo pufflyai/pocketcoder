@@ -33,6 +33,8 @@ export interface ProviderState {
   running: boolean;
   exitCode: number | null;
   detail?: string;
+  // The provider will never start this workload, for example a Pod an admission policy denied.
+  refused?: boolean;
   // Observed producer and qualified storage for this exact incarnation. An
   // omitted descriptor advertises no canonical workload capabilities.
   workload?: InstalledWorkload;
