@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.11.0
+
+### Minor Changes
+
+- [#151](https://github.com/pufflyai/pocketcoder/pull/151) [`433ab7c`](https://github.com/pufflyai/pocketcoder/commit/433ab7c671faaa52f1bb112d15131c430b0376d4) Thanks [@au-re](https://github.com/au-re)! - Fail Kubernetes launches the cluster refuses as `launch_refused`, and let `resume` heal them: a never-started workspace resumes its source checkpoint, and a refused or retired version moves to the newest compatible one.
+
+### Patch Changes
+
+- [#150](https://github.com/pufflyai/pocketcoder/pull/150) [`0eea88a`](https://github.com/pufflyai/pocketcoder/commit/0eea88ab17edb860323704c8b044c51bf2cf3fbe) Thanks [@au-re](https://github.com/au-re)! - Keep the controller ready while the launch policy hook cannot yet prove one stopped workspace's termination; that workspace stays reserved and retried.
+
 ## 0.10.0
 
 ### Minor Changes
