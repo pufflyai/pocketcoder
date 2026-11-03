@@ -90,7 +90,7 @@ test("the hook reads its configuration from a live controller and admission resu
   }
 }, 15_000);
 
-test("policy reconciliation stays fail-closed while admission works, until the hook proves termination", async () => {
+test("an unproven termination stays reserved and retried without taking the controller out of service", async () => {
   const controller = await startControllerWithAdmissionHook(await createStore());
   try {
     const stopped = await createWorkspace(controller, "unproven-termination");
@@ -111,11 +111,13 @@ test("policy reconciliation stays fail-closed while admission works, until the h
     const admitted = await createWorkspace(controller, "admitted-while-unproven");
     await waitFor(async () => controller.driver.inputFor(admitted) !== undefined, "admission while unproven");
     await waitFor(async () => controller.hook.state.reconciled.length >= 2, "reconciliation retries");
-    expect(await readyz(controller)).toMatchObject({ status: 503, checks: { "policy-reconciliation": "failed" } });
+    await waitFor(async () => (await readyz(controller)).status === 200, "readiness while termination is unproven");
+    expect(await readyz(controller)).toMatchObject({ status: 200, checks: { "policy-reconciliation": "ok" } });
+    expect(controller.hook.state.pending).toEqual([stopped]);
 
     controller.hook.state.unproven.delete(stopped);
-    await waitFor(async () => (await readyz(controller)).status === 200, "readiness after termination is proven");
-    expect(controller.hook.state.pending).toEqual([]);
+    await waitFor(async () => controller.hook.state.pending.length === 0, "release after termination is proven");
+    expect((await readyz(controller)).status).toBe(200);
   } finally {
     await controller.stop();
   }

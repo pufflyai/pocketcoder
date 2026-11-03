@@ -87,13 +87,14 @@ export class PolicyReconciliation {
         ) {
           throw new Error("Invalid policy reconciliation response");
         }
-        if ("reason" in result && ["termination-unproven", "provider-unavailable"].includes(String(result.reason)))
-          failed = true;
+        // An unproven termination stays pending in the hook's ledger and is retried next tick.
+        // Failing readiness for it would take every other workspace out of service.
+        if ("reason" in result && result.reason === "provider-unavailable") failed = true;
       } catch {
         failed = true;
       }
     }
-    if (failed) throw new Error("Policy reconciliation unavailable or termination unproven");
+    if (failed) throw new Error("Policy reconciliation unavailable");
   }
 }
 

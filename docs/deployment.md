@@ -573,8 +573,7 @@ The operator listener serves two unauthenticated probes:
 `database`, `schema`, `reconciliation`, `coordinator`, `execution-dispatch`,
 `cleanup` and `policy-reconciliation`. `policy-reconciliation` is the external
 admission hook set by `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while
-the hook is down, and while the hook cannot prove that a stopped workspace was
-terminated.
+the hook is down or answers `provider-unavailable`.
 
 Readiness does not gate the API. Once `/livez` answers, every `/v1` route
 answers too, including principal, key and other admin routes, and workspace and
@@ -585,9 +584,10 @@ conversation reads. While the admission hook is down:
   scheduler tick after the hook returns admits them, without a controller
   restart.
 - Policy reconciliation stays fail-closed. A hook that is down, or answers
-  `termination-unproven`, never counts as a release. The controller keeps
-  retrying and `/readyz` stays 503 until the hook confirms every pending
-  workspace.
+  `termination-unproven`, never counts as a release, and the controller keeps
+  retrying. An unproven termination only holds that workspace's reservation:
+  `/readyz` stays 200, so one stuck cleanup cannot take every other workspace
+  out of service.
 
 Bootstrap code, such as principal enrollment and key issuance, and external
 hooks must wait on `/livez`, never on `/readyz`. Readiness waits on the hook, so

@@ -55,3 +55,33 @@ test("policy reconciliation retries terminal reservations after a lost response 
     await policy.stop(true);
   }
 });
+
+test.each([
+  { reason: "termination-unproven", fails: false },
+  { reason: "provider-unavailable", fails: true },
+])("a pending workspace answered $reason fails reconciliation: $fails", async ({ reason, fails }) => {
+  const runtime = await createTestServer(await createStore(), { globalActiveWorkspaces: 0 });
+  const created = await runtime.app.request(
+    "/v1/workspaces",
+    authed(runtime.token, { method: "POST", headers: { "idempotency-key": reason }, body: createTestBody("task") }),
+  );
+  const workspace = (await created.json()) as { id: string };
+  const policy = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(request) {
+      if (new URL(request.url).pathname.endsWith("/pending")) return Response.json({ workspace_ids: [workspace.id] });
+      return Response.json({ workspace_id: workspace.id, released: false, reason });
+    },
+  });
+  try {
+    const worker = new PolicyReconciliation(runtime.store, `${policy.url}v1/admission`, "test-runtime-control-token");
+    const failed = await worker.tick().then(
+      () => false,
+      () => true,
+    );
+    expect(failed).toBe(fails);
+  } finally {
+    await policy.stop(true);
+  }
+});
