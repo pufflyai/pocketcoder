@@ -37,8 +37,10 @@ supervise --launch-input /run/pocketcoder/input`. The service process is image-o
 infrastructure. A user task starts only through the durable execution API.
 For no-export service operations, a durable terminal acknowledgment closes input
 publication, releases that operation's projection and finalizes its input pins.
-The next request waits for this barrier. Replays retain the original execution
-receipt and never redispatch a settled operation.
+The next request in the workspace waits for this barrier; with
+`parallel-conversations` only the next request in the same conversation waits
+(see [conversation identities](conversation-identities.md)). Replays retain the
+original execution receipt and never redispatch a settled operation.
 
 ## Contract owners
 

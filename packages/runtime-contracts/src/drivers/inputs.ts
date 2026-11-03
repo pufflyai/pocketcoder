@@ -33,3 +33,11 @@ export interface InputStorageDriver {
   pruneEmpty(protectedRefs: InputBackingRef[]): Promise<void>;
   list(): Promise<InputBackingRef[]>;
 }
+
+// Publication waits for running requests to release their copies; it is retried, never a lost request.
+export class InputProjectionCapacityError extends Error {
+  constructor(message = "Input projection capacity is exhausted.") {
+    super(message);
+    this.name = "InputProjectionCapacityError";
+  }
+}

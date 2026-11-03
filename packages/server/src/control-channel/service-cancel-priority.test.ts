@@ -85,16 +85,26 @@ test("service cancel bypasses its held accept and a full relay budget", async ()
     f.dispatcher.cancel(record);
     await f.waitFor(async () => canceled);
     expect(f.hub.get(f.id)?.inflight.size).toBe(MAX_INFLIGHT_RELAY + 1);
-    const overflow = await f.hub.relayExecutionCancel(f.id, {
+    // Another conversation's cancel in the same workspace is sent too, not refused for lack of a slot.
+    const second = f.hub.relayExecutionCancel(f.id, {
       service: "agent",
       method: "POST",
       path: "/executions/cancel",
       query: {},
       headers: {},
+      body_b64: Buffer.from(
+        JSON.stringify({
+          execution: a.execution,
+          fingerprint: a.fingerprint,
+          cancelId: randomUUID(),
+          scope: "operation",
+        }),
+      ).toString("base64"),
       deadline_ms: 3000,
     });
-    expect(overflow.error_code).toBe("deadline");
+    expect(f.hub.get(f.id)?.inflight.size).toBe(MAX_INFLIGHT_RELAY + 2);
     releaseCancel();
+    expect((await second).error_code).toBeUndefined();
     await f.waitFor(async () => f.dispatchFailed);
     expect((await f.store.executions.get(a.execution))?.acknowledgedAt).toBeNull();
     await f.dispatcher.tick();

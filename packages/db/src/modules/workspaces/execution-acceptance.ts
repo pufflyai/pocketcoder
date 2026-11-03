@@ -1,6 +1,7 @@
 import {
   type ConversationRequestIdentity,
   type ExecutionRecord,
+  PARALLEL_CONVERSATION_CAPABILITIES,
   type WorkloadAcceptance,
   WorkloadAcceptanceSchema,
 } from "@pstdio/pocketcoder-contracts";
@@ -16,7 +17,7 @@ import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { requireExecutionPrincipal } from "./execution-authority";
 import { pinExecutionInputs } from "./execution-inputs";
 import { readExecution } from "./execution-owners";
-import { executionConflict, validateExecution } from "./execution-validation";
+import { executionConflict, operationAdapterCapabilities, validateExecution } from "./execution-validation";
 
 export function acceptExecution(context: DatabaseContext) {
   const {
@@ -39,8 +40,11 @@ export function acceptExecution(context: DatabaseContext) {
       validateExecution(workspace, input, at, identity);
       if (input.execution.owner === "process" && (workspace.processExecution || workspace.finiteProcess || identity))
         executionConflict("Finite process already accepted or conversation identity supplied.");
-      if (input.execution.owner === "conversation-request")
-        identity = await validateConversationExecution(context, tx, input, identity);
+      if (input.execution.owner === "conversation-request") {
+        const capabilities = operationAdapterCapabilities(workspace, input);
+        const parallel = PARALLEL_CONVERSATION_CAPABILITIES.every((capability) => capabilities.includes(capability));
+        identity = await validateConversationExecution(context, tx, input, identity, parallel);
+      }
       await pinExecutionInputs(context, tx, input, at);
       const record: ExecutionRecord = {
         acceptance: input,

@@ -13,22 +13,19 @@ export async function validateConversationExecution(
   context: DatabaseContext,
   tx: Transaction,
   input: WorkloadAcceptance,
-  identity?: ConversationRequestIdentity,
+  identity: ConversationRequestIdentity | undefined,
+  parallelConversations: boolean,
 ) {
   const parsed = ConversationRequestIdentitySchema.parse(identity);
   if (parsed.request_id !== input.execution.requestId) executionConflict("Conversation request ID mismatch.");
-  // One request at a time per conversation; other conversations in the same workspace run in parallel.
+  // One request at a time per workspace, or per conversation when the adapter runs conversations in parallel.
   const requests = context.tables.conversationRequests;
+  const scope = [eq(requests.principalId, input.callerPrincipalId), isNotNull(requests.execution)];
+  if (parallelConversations) scope.push(eq(requests.conversationId, parsed.conversation_id));
   const active = await tx
     .select()
     .from(requests)
-    .where(
-      and(
-        eq(requests.principalId, input.callerPrincipalId),
-        eq(requests.conversationId, parsed.conversation_id),
-        isNotNull(requests.execution),
-      ),
-    );
+    .where(and(...scope));
   if (
     active.some(
       (r) => r.execution?.acceptance.execution.workspaceId === input.execution.workspaceId && !r.execution.finalizedAt,

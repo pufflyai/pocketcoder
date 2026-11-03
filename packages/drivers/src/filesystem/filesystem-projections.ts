@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { type AcceptedInputManifest, AcceptedInputManifestSchema, canonicalJson } from "@pstdio/pocketcoder-contracts";
-import type { InputProjectionRef, InputStorageDriver } from "@pstdio/pocketcoder-runtime-core";
+import {
+  InputProjectionCapacityError,
+  type InputProjectionRef,
+  type InputStorageDriver,
+} from "@pstdio/pocketcoder-runtime-core";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function projectionId(id: string) {
@@ -163,7 +167,7 @@ export class FilesystemInputPublisher {
       used.bytes + reserved.bytes + manifest.objects.reduce((sum, object) => sum + object.sizeBytes, 0) >
         this.bounds.maxBytes
     )
-      throw new Error("Shared input projection capacity is owned by existing executions");
+      throw new InputProjectionCapacityError("Shared input projection capacity is owned by existing executions");
     await mkdir(temporary, { mode: 0o755 });
     try {
       for (const object of projection.objects) {

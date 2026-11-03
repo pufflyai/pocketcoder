@@ -15,6 +15,7 @@ export type {
   WorkspaceLeaseRow,
   WorkspaceLeaseStore,
 } from "@pstdio/pocketcoder-runtime-contracts";
+export { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
 export {
   type ActiveCounts,
   type AllocatedStorage,

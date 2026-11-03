@@ -1,5 +1,6 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-core";
 
 export interface ProjectionCapacity {
   bytes: number;
@@ -39,6 +40,5 @@ export async function requireProjectionCapacity(roots: string[], added: Projecti
     total.bytes += current.bytes;
     total.files += current.files;
   }
-  if (total.bytes > limit.bytes || total.files > limit.files)
-    throw new Error("Input projection capacity is exhausted.");
+  if (total.bytes > limit.bytes || total.files > limit.files) throw new InputProjectionCapacityError();
 }

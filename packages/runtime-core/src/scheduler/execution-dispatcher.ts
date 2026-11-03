@@ -4,6 +4,7 @@ import {
   executionSettled,
   type WorkloadExecutionReference,
 } from "@pstdio/pocketcoder-contracts";
+import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
 import type { Store, WorkspaceRow } from "../types";
 
 export interface ExecutionTransport {
@@ -158,7 +159,8 @@ export class ExecutionDispatcher {
           }
         },
         (error) => {
-          this.failures.add(failureKey);
+          // Capacity frees as other requests finish; the next tick retries without a health failure.
+          if (!(error instanceof InputProjectionCapacityError)) this.failures.add(failureKey);
           this.deps.onError?.(error);
         },
       )
