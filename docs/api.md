@@ -725,4 +725,5 @@ a producer receives one conversation request per workspace at a time. An adapter
 that advertises it with `request-lookup` and `deduplicated-accept` must accept,
 look up, cancel and acknowledge requests from different conversations
 concurrently. Size input projection capacity for those concurrent requests: when
-it is full, publication waits and is retried without failing readiness.
+it is full, the request waits and is resent as capacity frees. A wait longer than
+five minutes is reported as unhealthy.

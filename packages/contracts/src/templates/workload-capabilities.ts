@@ -29,11 +29,13 @@ export type WorkloadCapability = z.infer<typeof WorkloadCapabilitySchema>;
 export const WorkloadProfileSchema = z.enum(["finite-process", "cloud-interactive", "service"]);
 
 // An adapter runs requests from different conversations of one workspace at the same time only when it says
-// so, and only if a retried dispatch can ask whether it already saw the request instead of assuming it lost.
+// so, only if a retried dispatch can ask whether it already saw the request instead of assuming it lost, and
+// only if a cancel can name the one request it stops.
 export const PARALLEL_CONVERSATION_CAPABILITIES = [
   "parallel-conversations",
   "request-lookup",
   "deduplicated-accept",
+  "targeted-cancel",
 ] as const satisfies readonly WorkloadCapability[];
 
 const common: WorkloadCapability[] = [

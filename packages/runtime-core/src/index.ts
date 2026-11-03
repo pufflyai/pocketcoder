@@ -122,7 +122,11 @@ export {
   loadTemplateSource,
   type RegistryLoadResult,
 } from "./registry/registry";
-export { ExecutionDispatcher, type ExecutionTransport } from "./scheduler/execution-dispatcher";
+export {
+  ExecutionDispatcher,
+  type ExecutionTransport,
+  PROJECTION_CAPACITY_WAIT_MS,
+} from "./scheduler/execution-dispatcher";
 export { stopWorkspaceProvider } from "./scheduler/provider-termination";
 export {
   type AdmissionLimits,

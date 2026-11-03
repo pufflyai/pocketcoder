@@ -17,6 +17,8 @@ async function usage(path: string): Promise<ProjectionCapacity> {
     throw error;
   }
   for (const name of entries) {
+    // A released receipt only proves an earlier release; its copy is gone and owns no capacity.
+    if (name.endsWith(".released")) continue;
     const child = join(path, name);
     const stat = await lstat(child);
     if (stat.isDirectory()) {

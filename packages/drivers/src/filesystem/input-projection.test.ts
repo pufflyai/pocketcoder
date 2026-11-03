@@ -105,6 +105,27 @@ test("projection copies and durable receipts obey explicit byte and file ceiling
   }
 });
 
+test("released projections stop counting against capacity in a long-lived workspace", async () => {
+  const f = await projectionFixture();
+  try {
+    const bounded = new FilesystemInputProjection({
+      root: f.root,
+      storage: f.storage,
+      privateRoots: [f.canonical],
+      capacity: { bytes: 8192, files: 4 },
+    });
+    await bounded.prepare(f.scope);
+    // More finished requests than the file ceiling: each release must hand its capacity back.
+    for (let index = 0; index < 6; index++) {
+      const selected = f.selection([await f.input(`request-${index}`)]);
+      await bounded.publish(f.scope, f.incarnationId, selected);
+      await bounded.release(f.scope, selected.manifestId);
+    }
+  } finally {
+    await f.close();
+  }
+});
+
 test("1, 5 and 20 concurrent publications stay within the configured capacity", async () => {
   for (const attempts of [1, 5, 20]) {
     const f = await projectionFixture();

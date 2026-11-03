@@ -7,6 +7,9 @@ import {
 import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
 import type { Store, WorkspaceRow } from "../types";
 
+// Capacity frees as other requests finish. A wait longer than this is reported as unhealthy.
+export const PROJECTION_CAPACITY_WAIT_MS = 5 * 60_000;
+
 export interface ExecutionTransport {
   connected(workspace: WorkspaceRow): boolean;
   accept(record: ExecutionRecord, workspace: WorkspaceRow): Promise<void>;
@@ -28,6 +31,8 @@ export class ExecutionDispatcher {
   private readonly queued = new Map<string, { record: ExecutionRecord; epoch?: number }>();
   private readonly absences = new Map<string, number>();
   private readonly failures = new Set<string>();
+  // Claimed requests whose input publication waited for capacity: nothing reached the producer yet.
+  private readonly capacityWaits = new Map<string, number>();
 
   constructor(
     private readonly deps: {
@@ -126,6 +131,7 @@ export class ExecutionDispatcher {
       if (!keys.has(identity) && !this.ordinary.has(identity) && !this.controls.has(identity))
         this.failures.delete(key);
     }
+    for (const key of this.capacityWaits.keys()) if (!keys.has(key)) this.capacityWaits.delete(key);
     this.deps.onHealth?.(this.failures.size > 0);
   }
 
@@ -159,8 +165,10 @@ export class ExecutionDispatcher {
           }
         },
         (error) => {
-          // Capacity frees as other requests finish; the next tick retries without a health failure.
-          if (!(error instanceof InputProjectionCapacityError)) this.failures.add(failureKey);
+          const waitedMs =
+            (this.deps.now?.() ?? new Date()).getTime() - (this.capacityWaits.get(key) ?? Number.NEGATIVE_INFINITY);
+          if (!(error instanceof InputProjectionCapacityError) || waitedMs > PROJECTION_CAPACITY_WAIT_MS)
+            this.failures.add(failureKey);
           this.deps.onError?.(error);
         },
       )
@@ -208,8 +216,9 @@ export class ExecutionDispatcher {
       await transport.acknowledge(record, workspace);
       return true;
     }
+    const resend = this.mustResend(record, control, absentEpoch);
     const claim =
-      record.dispatchClaimedAt && absentEpoch === undefined
+      record.dispatchClaimedAt && !resend
         ? await store.executions.reconcile(execution)
         : await store.executions.claim(execution, now);
     if (!claim) return;
@@ -223,8 +232,14 @@ export class ExecutionDispatcher {
       return true;
     }
     if (control || !this.allowed()) return;
-    await this.dispatchOrdinary(current, workspace, claim.first || absentEpoch !== undefined, now);
+    await this.dispatchOrdinary(current, workspace, claim.first || resend, now);
     return true;
+  }
+
+  // The producer reported the request absent, or it only waited for publication capacity and was never sent.
+  private mustResend(record: ExecutionRecord, control: boolean, absentEpoch?: number) {
+    if (absentEpoch !== undefined) return true;
+    return !control && this.capacityWaits.has(executionInputManifestId(record.acceptance));
   }
 
   private async dispatchCancel(record: ExecutionRecord, workspace: WorkspaceRow, now: Date) {
@@ -234,8 +249,17 @@ export class ExecutionDispatcher {
   }
 
   private async dispatchOrdinary(record: ExecutionRecord, workspace: WorkspaceRow, accept: boolean, now: Date) {
-    if (accept) await this.deps.transport.accept(record, workspace);
-    else if (this.canReconcile(workspace, record)) {
+    const key = executionInputManifestId(record.acceptance);
+    if (accept) {
+      try {
+        await this.deps.transport.accept(record, workspace);
+      } catch (error) {
+        if (error instanceof InputProjectionCapacityError && !this.capacityWaits.has(key))
+          this.capacityWaits.set(key, now.getTime());
+        throw error;
+      }
+      this.capacityWaits.delete(key);
+    } else if (this.canReconcile(workspace, record)) {
       if ((await this.deps.transport.lookup(record, workspace)) === "absent") {
         const latest = await this.replayable(record.acceptance.execution, workspace.connectionEpoch);
         if (latest && this.allowed()) await this.dispatch(latest, false, workspace.connectionEpoch);
