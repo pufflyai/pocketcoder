@@ -200,9 +200,10 @@ retries use that terminal reference without submitting another operation.
 
 Cancel names the execution, incarnation and caller-stable cancel ID. Before claim,
 it settles as canceled without spawning. After claim it targets that operation.
-A late cancel returns the terminal record. The next conversation request waits for
-acknowledgment and the separate finalization barrier. Unknown or lost operations
-keep that barrier closed. Legacy `/agent/interrupt` remains a workspace-scoped
+A late cancel returns the terminal record. The next request in the same
+conversation waits for acknowledgment and the separate finalization barrier.
+Unknown or lost operations keep that barrier closed. Requests from other
+conversations in the same workspace do not wait; they run in parallel. Legacy `/agent/interrupt` remains a workspace-scoped
 operator action; it is never used to cancel an identified execution.
 
 Input pins release when an undispatched request is canceled or when execution

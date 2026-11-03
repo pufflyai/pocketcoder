@@ -157,3 +157,22 @@ test.each(["conversation", "turn", "authority", "fingerprint"])(
     }
   },
 );
+
+test("conversations in one workspace run in parallel while each conversation keeps one request at a time", async () => {
+  const f = await conversationFixture();
+  try {
+    const first = f.acceptance();
+    const firstIdentity = executionConversationIdentity(first.execution.requestId);
+    await f.store.executions.accept(first, new Date(), firstIdentity);
+
+    const other = f.acceptance();
+    const otherIdentity = executionConversationIdentity(other.execution.requestId);
+    expect((await f.store.executions.accept(other, new Date(), otherIdentity)).kind).toBe("accepted");
+
+    const next = f.acceptance();
+    const nextIdentity = executionConversationIdentity(next.execution.requestId, firstIdentity.conversation_id);
+    await expect(f.store.executions.accept(next, new Date(), nextIdentity)).rejects.toThrow("finalization");
+  } finally {
+    await f.dispose();
+  }
+});

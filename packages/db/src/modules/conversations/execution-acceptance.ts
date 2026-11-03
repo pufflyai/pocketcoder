@@ -17,11 +17,18 @@ export async function validateConversationExecution(
 ) {
   const parsed = ConversationRequestIdentitySchema.parse(identity);
   if (parsed.request_id !== input.execution.requestId) executionConflict("Conversation request ID mismatch.");
+  // One request at a time per conversation; other conversations in the same workspace run in parallel.
   const requests = context.tables.conversationRequests;
   const active = await tx
     .select()
     .from(requests)
-    .where(and(eq(requests.principalId, input.callerPrincipalId), isNotNull(requests.execution)));
+    .where(
+      and(
+        eq(requests.principalId, input.callerPrincipalId),
+        eq(requests.conversationId, parsed.conversation_id),
+        isNotNull(requests.execution),
+      ),
+    );
   if (
     active.some(
       (r) => r.execution?.acceptance.execution.workspaceId === input.execution.workspaceId && !r.execution.finalizedAt,
