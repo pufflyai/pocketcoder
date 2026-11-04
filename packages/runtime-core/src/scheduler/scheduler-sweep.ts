@@ -107,6 +107,7 @@ export class SchedulerSweep {
     const history = await this.context.deps.store.listStateHistory(row.id);
     const termination = history.find((entry) => entry.toState === "terminating");
     if (!termination || now.getTime() - termination.occurredAt.getTime() <= stuckMs) return;
+    if (!this.lifecycle.cleanupRetryDue(row.id, now)) return;
     const terminalState = (row.terminalIntent ?? "failed") as WorkspaceState;
     await this.lifecycle.finalize(row, terminalState, row.reasonCode, now);
   }

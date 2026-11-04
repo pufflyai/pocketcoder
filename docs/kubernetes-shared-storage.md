@@ -100,6 +100,13 @@ must remain visible, and must not release owned capacity. The qualification fixt
 physically caps the whole export at 64 MiB and does not claim durable backing beyond
 its test lifetime. Production requires a durable qualified shared filesystem.
 
+The controller checks this storage at startup and every 15 seconds and reports it
+as the `shared-storage` readiness check (see [deployment](deployment.md)). Launches
+refused by the profile or by unusable storage fail before anything reaches the
+cluster, with an error naming the cause, such as an NFS server outside
+`storageCidrs` or `ESTALE` after the NFS server was replaced. A stale mount needs a
+controller restart to remount.
+
 Use one `KubernetesSharedStorage` instance under the controller's existing single
 coordinator lease. Pass it to the runtime driver and the storage owner. Its queue
 serializes allocation and publication admission. Multiple independent publishers

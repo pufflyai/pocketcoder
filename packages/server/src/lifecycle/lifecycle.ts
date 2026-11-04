@@ -221,6 +221,7 @@ export async function startPocketCoderServer(
       executionDispatcher: built.executionDispatcher,
       readiness,
       metrics,
+      ...("checkSharedStorage" in driver ? { sharedStorageCheck: () => driver.checkSharedStorage() } : {}),
     });
 
     let server: ReturnType<typeof Bun.serve>;

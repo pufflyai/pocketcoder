@@ -5,6 +5,7 @@ import { createCoordinatorTick } from "./coordinator-tick";
 import type { ServerLog } from "./lifecycle";
 import { startExclusiveTimer } from "./lifecycle-resources";
 import type { loadPolicyReconciliation } from "./policy-reconciliation";
+import { sharedStorageReadiness } from "./shared-storage-readiness";
 
 // A workspace that ends during a turn never sends the turn's terminal fact.
 async function closeEndedTurns({
@@ -28,6 +29,7 @@ export function startBackgroundTimers(
     managedPrincipals?: () => Promise<void>;
     outbox: OutboxDispatcher;
     policyReconciliation: ReturnType<typeof loadPolicyReconciliation>;
+    sharedStorageCheck?: () => Promise<void>;
     warmPool?: WarmPoolManager;
   },
 ) {
@@ -65,6 +67,12 @@ export function startBackgroundTimers(
         "policy reconciliation failed",
       ),
     );
+  if (deps.sharedStorageCheck) {
+    const check = sharedStorageReadiness(deps.sharedStorageCheck, readiness);
+    // Check at startup rather than after the first interval, so readiness is not pending longer than needed.
+    void check().catch((error) => log(`shared storage check failed: ${String(error)}`));
+    timers.push(start(15_000, check, "shared storage check failed"));
+  }
   // Renewal needs only minute precision: keys renew hours before they expire.
   if (deps.managedPrincipals)
     timers.push(start(300_000, deps.managedPrincipals, "managed principal reconciliation failed"));

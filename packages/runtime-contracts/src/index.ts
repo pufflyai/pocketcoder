@@ -20,6 +20,7 @@ export type {
   WorkspaceStorageDriver,
   WorkspaceTransferRuntime,
 } from "./drivers/driver";
+export { ProviderNotSubmittedError, SharedStorageUnavailableError } from "./drivers/driver";
 export type {
   InputBackingRef,
   InputByteWriter,

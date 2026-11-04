@@ -569,11 +569,23 @@ The operator listener serves two unauthenticated probes:
 | `GET /readyz` | The controller is admitting work | Readiness probes and product traffic |
 
 `/readyz` answers 503 and lists every check with its state (`ok`, `pending`,
-`failed` or `disabled`), so the failing part is named. The checks are
-`database`, `schema`, `reconciliation`, `coordinator`, `execution-dispatch`,
-`cleanup` and `policy-reconciliation`. `policy-reconciliation` is the external
-admission hook set by `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while
-the hook is down or answers `provider-unavailable`.
+`failed` or `disabled`), so the failing part is named; `reasons` says why when a
+check can. The checks are `database`, `schema`, `reconciliation`, `coordinator`,
+`execution-dispatch`, `cleanup`, `policy-reconciliation` and `shared-storage`.
+`policy-reconciliation` is the external admission hook set by
+`POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while the hook is down or
+answers `provider-unavailable`. `shared-storage` checks Kubernetes shared input
+storage every 15 seconds, from the claim, volume and isolation policy to a write
+in its root. It reads `pending` until the first check passes and `failed` once
+checks have failed for a minute, with the cause in `reasons` (for example an NFS
+endpoint outside `storageCidrs`, or a stale handle after the NFS server changed).
+Shorter outages keep the controller ready.
+
+A launch that fails before the driver submits anything to the provider, such as
+unusable shared storage, needs no cleanup. It is retried up to the launch attempt
+limit and then fails with `launch_failed`, its cause in the failure log tail.
+When a failed launch did reach the provider and cleanup cannot yet prove what
+exists, cleanup is retried with a growing pause of up to five minutes.
 
 Readiness does not gate the API. Once `/livez` answers, every `/v1` route
 answers too, including principal, key and other admin routes, and workspace and
