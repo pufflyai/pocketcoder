@@ -3,8 +3,17 @@ import type { WorkspacePatch, WorkspaceRow } from "../types";
 import { cleanupUncommittedProvider, stopWorkspaceProvider } from "./provider-termination";
 import { decodeFailureLogTail, FAILURE_LOG_TAIL_BYTES, type SchedulerContext } from "./scheduler-base";
 
+// A provider that cannot answer is asked again after a growing pause, not on every scheduler tick.
+const CLEANUP_RETRY_BASE_MS = 2_000;
+const CLEANUP_RETRY_MAX_MS = 300_000;
+
 export class SchedulerLifecycle {
+  private readonly cleanupRetries = new Map<string, { failures: number; dueAt: number }>();
   constructor(private readonly context: SchedulerContext) {}
+
+  cleanupRetryDue(workspaceId: string, now: Date) {
+    return now.getTime() >= (this.cleanupRetries.get(workspaceId)?.dueAt ?? 0);
+  }
   async beginTermination(
     row: WorkspaceRow,
     terminalState: WorkspaceState,
@@ -58,9 +67,12 @@ export class SchedulerLifecycle {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
         await driver.purgeInput(row.id);
       } else {
-        await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row));
+        await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row), at);
       }
     } catch (err) {
+      const failures = (this.cleanupRetries.get(row.id)?.failures ?? 0) + 1;
+      const delay = Math.min(CLEANUP_RETRY_BASE_MS * 2 ** (failures - 1), CLEANUP_RETRY_MAX_MS);
+      this.cleanupRetries.set(row.id, { failures, dueAt: this.context.now().getTime() + delay });
       this.context.report(`finalize.terminate.${row.id}`, err);
       // Keep the workspace active until removal and input cleanup can be retried.
       await store.transition(row.id, {
@@ -72,6 +84,7 @@ export class SchedulerLifecycle {
       });
       return;
     }
+    this.cleanupRetries.delete(row.id);
     if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
     if (retainStorage && !this.context.deps.transferRuntime) {
       const storage = await store.getWorkspaceStorage(row.id);

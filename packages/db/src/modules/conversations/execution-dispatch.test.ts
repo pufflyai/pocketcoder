@@ -37,7 +37,11 @@ test("conversation dispatch preserves request identities and fences late cancel 
     ).toBe(false);
     const b = f.acceptance();
     const bIdentity = f.identity(b.execution.requestId);
-    await expect(f.store.executions.accept(b, new Date(), bIdentity)).rejects.toThrow("finalization");
+    // Clients can tell this short wait apart from other conflicts and retry the same request.
+    await expect(f.store.executions.accept(b, new Date(), bIdentity)).rejects.toMatchObject({
+      code: "operation.conflict",
+      details: { reason: "previous_request_finalizing" },
+    });
     await f.store.executions.acknowledge(a.execution, a.fingerprint, new Date());
     await f.store.executions.finalize(a.execution, new Date());
     expect((await f.store.inputs.getManifest(executionInputManifestId(a)))?.finalizedAt).toBeInstanceOf(Date);

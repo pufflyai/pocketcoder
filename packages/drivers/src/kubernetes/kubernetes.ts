@@ -9,6 +9,7 @@ import type {
   WorkspaceLaunch,
   WorkspaceRow,
 } from "@pstdio/pocketcoder-runtime-core";
+import { ProviderNotSubmittedError } from "@pstdio/pocketcoder-runtime-core";
 import { type EgressDriverOptions, egressConfig, workspaceInput } from "../egress/egress";
 import type { RegistryResolver } from "../registry/registry";
 import { workloadReference } from "../workloads/workload-reference";
@@ -39,7 +40,6 @@ import {
   type KubernetesToleration,
   validateToleration,
 } from "./kubernetes-scheduling";
-import { requireSharedVolume } from "./kubernetes-shared-profile";
 import type { KubernetesSharedStorage } from "./kubernetes-shared-storage";
 import { stopKubernetesJob } from "./kubernetes-stop";
 import {
@@ -47,8 +47,9 @@ import {
   LAUNCH_PHASE,
   type LaunchMetadata,
   uncommittedKubernetesProvider,
+  uncommittedKubernetesWorkspace,
 } from "./kubernetes-uncommitted";
-import { resolveSharedMounts } from "./kubernetes-volumes";
+import { checkSharedStorage, prepareSharedLaunch } from "./kubernetes-volumes";
 import { createKubernetesWarm } from "./kubernetes-warm";
 import { KubernetesWorkloads } from "./kubernetes-workloads";
 
@@ -139,15 +140,15 @@ export class KubernetesDriver implements WorkspaceDriver {
     this.sidecarsSupported = true;
   }
 
-  async create(launch: WorkspaceLaunch): Promise<ProviderRef> {
-    let storageIdentity: { claimUid: string; volumeUid: string } | undefined;
-    if (this.sharedStorage) {
-      storageIdentity = await requireSharedVolume(this.sharedStorage.options, this.namespace, (args) =>
-        kubectl(this.kubectlBin, this.namespace, args),
-      );
-      launch = { ...launch, mounts: [...launch.mounts, await this.sharedStorage.inputMount(launch.workspace.id)] };
-    }
-    const sharedMounts = await resolveSharedMounts(launch, this.sharedStorage);
+  checkSharedStorage() {
+    return checkSharedStorage(this.sharedStorage, this.namespace, this.kube);
+  }
+
+  async create(request: WorkspaceLaunch): Promise<ProviderRef> {
+    const prepared = prepareSharedLaunch(request, this.sharedStorage, this.namespace, this.kube);
+    const { launch, storageIdentity, sharedMounts } = await prepared.catch((error) => {
+      throw new ProviderNotSubmittedError(error);
+    });
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
     const name = resourceName(workspace.id);
@@ -244,12 +245,8 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
   }
 
-  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest">) {
-    return uncommittedKubernetesProvider(
-      (args) => kubectl(this.kubectlBin, this.namespace, args),
-      this.namespace,
-      workspace,
-    );
+  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest" | "registrationExpiresAt">, at: Date) {
+    return uncommittedKubernetesWorkspace(this.kube, this.namespace, workspace, at);
   }
 
   uncommittedWarmProvider(runtime: { id: string; templateDigest: string }) {

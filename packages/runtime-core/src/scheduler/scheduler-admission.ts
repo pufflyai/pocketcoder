@@ -5,6 +5,7 @@ import {
   runtimeCredentialReferences,
   workloadSnapshotOf,
 } from "@pstdio/pocketcoder-contracts";
+import { ProviderNotSubmittedError } from "@pstdio/pocketcoder-runtime-contracts";
 import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
@@ -183,7 +184,7 @@ export class SchedulerAdmission {
     } catch (err) {
       this.context.report(`launch.${row.id}`, err);
       const at = this.context.now();
-      if (!(await this.cleanupFailedLaunch(claimed, providerCreationStarted))) return false;
+      if (!(await this.cleanupFailedLaunch(claimed, providerCreationStarted, err))) return false;
       if (claimed.launchAttempts < this.context.deps.limits.maxLaunchAttempts) {
         // No provider object was created; the bounded requeue is legal.
         await store.transition(row.id, {
@@ -231,14 +232,16 @@ export class SchedulerAdmission {
     return [];
   }
 
-  private async cleanupFailedLaunch(row: WorkspaceRow, providerCreationStarted: boolean) {
-    if (!providerCreationStarted) return true;
+  private async cleanupFailedLaunch(row: WorkspaceRow, providerCreationStarted: boolean, error: unknown) {
+    // The driver proved it submitted nothing, so there is no provider object to clean up.
+    if (!providerCreationStarted || error instanceof ProviderNotSubmittedError) return true;
     try {
       await cleanupUncommittedProvider(
         this.context.deps.store,
         this.context.deps.driver,
         row,
         this.context.graceSeconds(row),
+        this.context.now(),
       );
       return true;
     } catch (error) {

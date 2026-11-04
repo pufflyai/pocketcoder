@@ -14,8 +14,8 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 
-export function executionConflict(message: string): never {
-  throw new ApiError("operation.conflict", message);
+export function executionConflict(message: string, details?: Record<string, unknown>): never {
+  throw new ApiError("operation.conflict", message, details);
 }
 
 export function validateExecution(

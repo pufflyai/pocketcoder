@@ -1,4 +1,5 @@
-import { lstat, open, readFile, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CheckpointManifest,
@@ -7,18 +8,47 @@ import {
   inputProjectionDirectory,
   type PersistenceMount,
 } from "@pstdio/pocketcoder-contracts";
-import type {
-  CheckpointRef,
-  InputProjectionRef,
-  InputStorageDriver,
-  RuntimeMountRef,
-  StorageAllocation,
-  StorageRef,
-  WorkspaceStorageDriver,
+import {
+  type CheckpointRef,
+  type InputProjectionRef,
+  type InputStorageDriver,
+  type RuntimeMountRef,
+  SharedStorageUnavailableError,
+  type StorageAllocation,
+  type StorageRef,
+  type WorkspaceStorageDriver,
 } from "@pstdio/pocketcoder-runtime-core";
 import { FilesystemInputPublisher, syncDirectory } from "../filesystem/filesystem-projections";
 import { FilesystemStorageDriver } from "../filesystem/filesystem-storage";
 import { type KubernetesSharedStorageOptions, validateSharedProfile } from "./kubernetes-shared-profile";
+
+// What an operator can do about each error a network filesystem mount returns.
+const UNAVAILABLE: Record<string, string> = {
+  ESTALE: "stale file handle; the storage server or export changed, restart the controller to remount it",
+  EIO: "I/O error from the storage server",
+  EREMOTEIO: "remote I/O error from the storage server",
+  ENOTCONN: "the storage server is not connected",
+  EHOSTDOWN: "the storage server is down",
+  EHOSTUNREACH: "the storage server is unreachable",
+  ETIMEDOUT: "the storage server timed out",
+  EACCES: "the controller may not write the storage root",
+  EPERM: "the controller may not write the storage root",
+  EROFS: "the storage is mounted read-only",
+  ENOTDIR: "the storage root is not a directory",
+};
+
+function sharedStorageFailure(root: string, error: unknown) {
+  const code = (error as { code?: unknown } | null)?.code;
+  const message = error instanceof Error ? error.message : String(error);
+  // Bun names errnos it has no table entry for "Unknown Error"; a stale NFS handle is the usual one.
+  let hint = typeof code === "string" ? UNAVAILABLE[code] : undefined;
+  if (!hint && message.startsWith("Unknown Error"))
+    hint = "unrecognised error from the storage mount, often a stale NFS handle";
+  if (!hint) return error;
+  return new SharedStorageUnavailableError(
+    `Shared input storage is unavailable at ${root}: ${typeof code === "string" ? code : "unknown"} (${hint}). ${message}`,
+  );
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function allocationId(id: string) {
@@ -67,6 +97,24 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
       },
       () => this.reserved(),
     );
+  }
+  private async guarded<T>(work: () => Promise<T>) {
+    try {
+      return await work();
+    } catch (error) {
+      throw sharedStorageFailure(this.options.root, error);
+    }
+  }
+  // Lists the input tree and writes and removes a file at the root, as launches and publication do.
+  probe() {
+    return this.guarded(async () => {
+      const inputs = join(this.options.root, "inputs");
+      await mkdir(inputs, { recursive: true });
+      await readdir(inputs);
+      const probe = join(this.options.root, `.probe-${randomUUID()}`);
+      await writeFile(probe, "");
+      await rm(probe);
+    });
   }
   private serialize<T>(work: () => Promise<T>) {
     const next = this.work.then(work);
@@ -168,7 +216,7 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
     await syncDirectory(this.path(ref));
   }
   async inputMount(workspaceId: string): Promise<RuntimeMountRef> {
-    await this.publisher.prepare(workspaceId);
+    await this.guarded(() => this.publisher.prepare(workspaceId));
     return {
       name: "immutable-inputs",
       target: INPUT_PROJECTION_TARGET,
@@ -177,7 +225,7 @@ export class KubernetesSharedStorage implements WorkspaceStorageDriver {
     };
   }
   async publishInputs(projection: InputProjectionRef, source: InputStorageDriver) {
-    await this.serialize(() => this.publisher.publish(projection, source));
+    await this.serialize(() => this.guarded(() => this.publisher.publish(projection, source)));
     return {
       manifestId: projection.manifestId,
       digest: projection.manifest.digest,

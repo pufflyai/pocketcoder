@@ -193,11 +193,11 @@ describe.skipIf(process.env.POCKETCODER_KUBERNETES_CONFORMANCE !== "1")("exact K
               });
         const job = JSON.parse(await run(["get", "job", ref.id, "-o", "json"]));
         expect(ref.jobUid).toBe(job.metadata.uid);
-        const recovered: ProviderRef =
+        const recovered: ProviderRef | null =
           mode === "cold"
-            ? await driver.uncommittedProvider(workspace)
+            ? await driver.uncommittedProvider(workspace, new Date())
             : await driver.uncommittedWarmProvider({ id: workspace.id, templateDigest: workspace.templateDigest });
-        expect(recovered.jobUid).toBe(job.metadata.uid);
+        expect(recovered?.jobUid).toBe(job.metadata.uid);
         const found =
           mode === "cold"
             ? (await driver.list()).find((item) => item.workspaceId === workspace.id)

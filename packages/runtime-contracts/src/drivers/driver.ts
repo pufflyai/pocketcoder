@@ -60,6 +60,23 @@ export interface DiscoveredWarmProvider {
   ref: ProviderRef;
 }
 
+// Thrown by create when it failed before submitting any provider object: there is nothing to clean up,
+// so the launch is retried within its attempt limit and then fails with this cause.
+export class ProviderNotSubmittedError extends Error {
+  constructor(override readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "ProviderNotSubmittedError";
+  }
+}
+
+// Shared storage the controller cannot use: unreachable, stale after a server change, or not writable.
+export class SharedStorageUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SharedStorageUnavailableError";
+  }
+}
+
 export interface WorkspaceDriver {
   readonly kind: string;
   // Input storage profiles this deployment can qualify. Omitted means the Docker controller-readonly profile.
@@ -67,7 +84,13 @@ export interface WorkspaceDriver {
   create(launch: WorkspaceLaunch): Promise<ProviderRef>;
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
   uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
-  uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
+  // Resolves null when the driver proves the launch left no provider object.
+  uncommittedProvider?(
+    workspace: Pick<WorkspaceRow, "id" | "templateDigest" | "registrationExpiresAt">,
+    at: Date,
+  ): Promise<ProviderRef | null>;
+  // Throws, naming the cause, when configured shared storage cannot serve launches; readiness reports it.
+  checkSharedStorage?(): Promise<void>;
   // Adds the provider identity an older release did not save. Returns null when the
   // reference needs nothing and throws when the identity cannot be proved.
   legacyProvider?(ref: ProviderRef, owner: { id: string; templateDigest: string }): Promise<ProviderRef | null>;

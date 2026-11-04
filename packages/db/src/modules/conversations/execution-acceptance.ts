@@ -31,7 +31,8 @@ export async function validateConversationExecution(
       (r) => r.execution?.acceptance.execution.workspaceId === input.execution.workspaceId && !r.execution.finalizedAt,
     )
   )
-    executionConflict("Previous request has not finished finalization.");
+    // A short wait, not a refusal: clients retry the same request once the earlier one finalizes.
+    executionConflict("Previous request has not finished finalization.", { reason: "previous_request_finalizing" });
   return parsed;
 }
 

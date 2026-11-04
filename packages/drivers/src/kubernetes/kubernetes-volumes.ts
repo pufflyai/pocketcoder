@@ -1,7 +1,35 @@
 import { posix } from "node:path";
 import { credentialMemoryPaths } from "@pstdio/pocketcoder-contracts";
 import type { RuntimeMountRef, WorkspaceLaunch } from "@pstdio/pocketcoder-runtime-core";
+import { requireSharedVolume } from "./kubernetes-shared-profile";
 import type { KubernetesSharedStorage } from "./kubernetes-shared-storage";
+
+type Kubectl = (args: string[]) => Promise<string>;
+
+export async function checkSharedStorage(
+  storage: KubernetesSharedStorage | undefined,
+  namespace: string,
+  run: Kubectl,
+) {
+  if (!storage) return;
+  await requireSharedVolume(storage.options, namespace, run);
+  await storage.probe();
+}
+
+// Reads and controller-side storage only: nothing reaches the cluster before the launch receipt.
+export async function prepareSharedLaunch(
+  launch: WorkspaceLaunch,
+  storage: KubernetesSharedStorage | undefined,
+  namespace: string,
+  run: Kubectl,
+) {
+  let storageIdentity: { claimUid: string; volumeUid: string } | undefined;
+  if (storage) {
+    storageIdentity = await requireSharedVolume(storage.options, namespace, run);
+    launch = { ...launch, mounts: [...launch.mounts, await storage.inputMount(launch.workspace.id)] };
+  }
+  return { launch, storageIdentity, sharedMounts: await resolveSharedMounts(launch, storage) };
+}
 
 export interface ResolvedSharedMount {
   claimName: string;

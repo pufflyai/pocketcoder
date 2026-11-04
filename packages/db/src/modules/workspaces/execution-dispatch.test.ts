@@ -121,7 +121,8 @@ test("an unavailable producer cannot starve another accepted workspace", async (
     });
     await dispatcher.tick();
     await dispatcher.drain();
-    expect(failed).toBe(true);
+    // One workspace's producer being down leaves the controller ready for every other workspace.
+    expect(failed).toBe(false);
     expect((await f.store.executions.get(first.execution))?.phase).toBe("dispatching");
     expect((await f.store.executions.get(second.execution))?.phase).toBe("terminal");
   } finally {

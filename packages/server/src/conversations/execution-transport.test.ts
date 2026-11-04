@@ -48,7 +48,7 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
     await f.store.executions.accept(input, new Date(), identity);
     await f.dispatcher.tick();
     await f.dispatcher.drain();
-    expect(f.dispatchFailed).toBe(true);
+    expect({ errors: f.dispatchErrors, failed: f.dispatchFailed }).toEqual({ errors: 1, failed: false });
     expect((await f.store.executions.get(input.execution))?.phase).toBe("terminal");
     expect((await f.store.executions.get(input.execution))?.acknowledgedAt).toBeNull();
     await f.dispatcher.tick();
@@ -59,6 +59,42 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
     expect(accepts).toBe(1);
     expect((await f.store.executions.get(input.execution))?.acknowledgedAt).toBeString();
     await f.store.executions.finalize(input.execution, new Date());
+  } finally {
+    await f.dispose();
+    await producer.stop(true);
+  }
+});
+
+test("a producer refusing an accept settles that request locally and leaves the controller ready", async () => {
+  const calls: string[] = [];
+  const producer = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/status") return Response.json({ status: "stable" });
+      calls.push(path);
+      if (path === "/executions/accept") return new Response("conversation is busy", { status: 409 });
+      // Lookup confirms the producer holds nothing for this request.
+      const { execution } = (await request.json()) as { execution: unknown };
+      return Response.json({ execution, phase: "absent" });
+    },
+  });
+  const f = await serviceFixture(Number(producer.url.port));
+  try {
+    const input = f.acceptance();
+    await f.store.executions.accept(input, new Date(), executionConversationIdentity(input.execution.requestId, f.id));
+    for (let round = 0; round < 3; round++) {
+      await f.dispatcher.tick();
+      await f.dispatcher.drain();
+    }
+    const settled = await f.store.executions.get(input.execution);
+    expect(settled).toMatchObject({
+      phase: "terminal",
+      outcome: { refused: { status: 409, message: "conversation is busy" } },
+    });
+    expect(settled?.finalizedAt).toBeString();
+    expect(calls).toEqual(["/executions/accept", "/executions/lookup"]);
+    expect(f.dispatchFailed).toBe(false);
   } finally {
     await f.dispose();
     await producer.stop(true);
@@ -109,7 +145,7 @@ test("a service can cancel a dispatch that was never accepted using the frozen f
     await f.store.executions.accept(input, new Date(), identity);
     await f.dispatcher.tick();
     await f.dispatcher.drain();
-    expect(f.dispatchFailed).toBe(true);
+    expect({ errors: f.dispatchErrors, failed: f.dispatchFailed }).toEqual({ errors: 1, failed: false });
     await f.store.executions.cancel(
       { execution: input.execution, cancelId: randomUUID(), scope: "operation" },
       new Date(),
@@ -163,7 +199,7 @@ test("an incomplete service descriptor never reaches producer accept", async () 
   }
 });
 
-test("dispatch failure remains visible until the durable execution becomes lost", async () => {
+test("a failing dispatch is reported on each attempt until its execution is lost, without failing readiness", async () => {
   const producer = Bun.serve({
     port: 0,
     fetch(request) {
@@ -177,14 +213,15 @@ test("dispatch failure remains visible until the durable execution becomes lost"
     await f.store.executions.accept(a, new Date(), executionConversationIdentity(a.execution.requestId));
     await f.dispatcher.tick();
     await f.dispatcher.drain();
-    expect(f.dispatchFailed).toBe(true);
+    expect(f.dispatchErrors).toBe(1);
     await f.dispatcher.tick();
-    expect(f.dispatchFailed).toBe(true);
     await f.dispatcher.drain();
+    expect(f.dispatchErrors).toBe(2);
     await f.store.endWorkspaceRuntime(f.id, a.execution.incarnationId, new Date());
     expect((await f.store.executions.get(a.execution))?.phase).toBe("lost");
     await f.dispatcher.tick();
-    expect(f.dispatchFailed).toBe(false);
+    await f.dispatcher.drain();
+    expect({ errors: f.dispatchErrors, failed: f.dispatchFailed }).toEqual({ errors: 2, failed: false });
   } finally {
     await f.dispose();
     await producer.stop(true);

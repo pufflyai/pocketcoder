@@ -3,7 +3,7 @@
 Base path `/v1`, JSON only, UUIDv7-style identifiers, RFC 3339 UTC
 timestamps. The generated OpenAPI document is served unauthenticated at
 `GET /v1/openapi.json`; `GET /livez` is the process liveness probe and
-`GET /readyz` reports database, schema, reconciliation, and coordinator readiness.
+`GET /readyz` reports database, schema, reconciliation, coordinator and the other readiness checks, with `reasons` for a failing check that can name its cause (see [deployment](deployment.md)).
 It also reports unresolved content cleanup and the external admission hook. See
 [health probes](deployment.md#health-probes) for which probe to wait on, and
 [verifiable cleanup](cleanup.md) for workspace purge, principal-key
@@ -717,6 +717,13 @@ an optional trusted `inputDirectory`. Lookup receives `{execution}`; cancel rece
 the public cancel envelope plus its acceptance `fingerprint`; acknowledgment receives `{execution, fingerprint}`.
 Replies use `ProducerObservationSchema`: either `{execution, phase: "absent"}` or
 `{execution, fingerprint, phase, outcome}` with accepted/running/terminal/canceled.
+A 4xx reply to accept refuses that execution. The controller asks a producer with
+`request-lookup` whether it holds the request anyway. If not, or if the producer has no
+lookup, the execution is settled as `terminal` with outcome
+`{refused: {status, message}}` (the reply body, at most 500 characters) and finalized
+without an acknowledgment. It is never resent, and the conversation can continue. Other
+failures leave the outcome open; dispatch retries them immediately once, then after
+2 seconds, doubling to 5 minutes.
 Keep terminal facts until acknowledgment, retain deduplication receipts for the
 incarnation, and make acknowledgment idempotent. Installed capabilities govern
 safe redispatch and target-aware cancellation. Plain HTTP or a declared package

@@ -105,7 +105,7 @@ test("service cancel bypasses its held accept and a full relay budget", async ()
     expect(f.hub.get(f.id)?.inflight.size).toBe(MAX_INFLIGHT_RELAY + 2);
     releaseCancel();
     expect((await second).error_code).toBeUndefined();
-    await f.waitFor(async () => f.dispatchFailed);
+    await f.waitFor(async () => f.dispatchErrors > 0);
     expect((await f.store.executions.get(a.execution))?.acknowledgedAt).toBeNull();
     await f.dispatcher.tick();
     await f.waitFor(async () => Boolean((await f.store.executions.get(a.execution))?.acknowledgedAt));
