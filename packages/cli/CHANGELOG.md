@@ -1,5 +1,15 @@
 # @pstdio/pocketcoder-cli
 
+## 0.12.0
+
+### Minor Changes
+
+- [#153](https://github.com/pufflyai/pocketcoder/pull/153) [`b24568a`](https://github.com/pufflyai/pocketcoder/commit/b24568a8a34975c910d5aec67984ab0ada6e7a98) Thanks [@au-re](https://github.com/au-re)! - Add the `parallel-conversations` workload capability: an adapter that advertises it with `request-lookup` and `deduplicated-accept` runs requests from different conversations of one workspace in parallel, each conversation still one request at a time. Cancellations from several conversations no longer compete for a single relay slot, and a request waiting for input projection capacity is retried without failing readiness.
+
+### Patch Changes
+
+- [#154](https://github.com/pufflyai/pocketcoder/pull/154) [`785e374`](https://github.com/pufflyai/pocketcoder/commit/785e374ee22ed6c06518d0d3283047bd4ecc9a65) Thanks [@au-re](https://github.com/au-re)! - Launches that fail before reaching the provider now fail promptly with their cause instead of waiting for registration to expire, and launches an earlier controller left terminating settle once no provider object exists. Cleanup that cannot yet prove what exists backs off instead of retrying every scheduler tick. A producer's 4xx refusal of an execution settles that execution as refused instead of being retried forever, other dispatch failures back off, and one execution's failures no longer fail `/readyz`. `/readyz` reports a `shared-storage` check for Kubernetes shared input storage, with a reason when it fails, and shared storage errors name their cause.
+
 ## 0.11.0
 
 ### Minor Changes
