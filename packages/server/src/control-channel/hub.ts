@@ -21,7 +21,7 @@ import type { WSContext } from "hono/ws";
 import { PreviewSocketBridge } from "../previews/socket-bridge";
 import { RelayStreamRegistry, type RelayStreamResponse } from "../relay/relay-stream-channel";
 import { type TerminalBridgeCallbacks, TerminalBridgeRegistry } from "../terminals/terminal-bridge";
-import { bufferedRelay, MAX_INFLIGHT_RELAY } from "./buffered-relay";
+import { bufferedRelay, MAX_INFLIGHT_RELAY, ordinaryRelays } from "./buffered-relay";
 import type { LiveConnection } from "./hub-connection";
 
 export type { LiveConnection } from "./hub-connection";
@@ -33,7 +33,7 @@ import { CheckpointRegistry } from "./hub-checkpoints";
 // (the latest accepted epoch) may speak for a workspace. Nothing here is
 // durable; PGlite only records epoch metadata.
 
-export { MAX_INFLIGHT_RELAY } from "./buffered-relay";
+export { MAX_CONTROL_RELAY, MAX_INFLIGHT_RELAY } from "./buffered-relay";
 
 export class Hub implements ConnectionHub {
   readonly previewSockets = new PreviewSocketBridge((conn, payload) => this.send(conn, "preview_socket", payload));
@@ -222,7 +222,7 @@ export class Hub implements ConnectionHub {
         error_code: "streaming_unsupported",
       });
     }
-    if (conn.inflight.size + conn.streams.size >= MAX_INFLIGHT_RELAY) {
+    if (ordinaryRelays(conn) >= MAX_INFLIGHT_RELAY) {
       return Promise.resolve({ request_id: requestId, headers: {}, error_code: "deadline" });
     }
     const response = this.relayStreams.open(conn, requestId, maxResponseBytes, request.deadline_ms, signal);

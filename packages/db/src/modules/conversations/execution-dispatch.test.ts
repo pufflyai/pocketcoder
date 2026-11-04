@@ -1,14 +1,15 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts";
+import type { ConversationRequestIdentity, WorkloadCapability } from "@pstdio/pocketcoder-contracts";
 import { executionInputManifestId } from "@pstdio/pocketcoder-contracts";
-import { ExecutionDispatcher } from "@pstdio/pocketcoder-runtime-core";
+import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
+import { ExecutionDispatcher, PROJECTION_CAPACITY_WAIT_MS } from "@pstdio/pocketcoder-runtime-core";
 import { eq } from "drizzle-orm";
 import { executionFixture } from "../workspaces/execution-fixture.test";
 import { executionConversationIdentity, serviceExecutionTemplate } from "../workspaces/execution-service-fixture.test";
 
-async function conversationFixture(weak = false) {
-  const f = await executionFixture(serviceExecutionTemplate, weak ? { capabilities: ["unknown-outcome"] } : {});
+async function conversationFixture(capabilities?: WorkloadCapability[]) {
+  const f = await executionFixture(serviceExecutionTemplate, capabilities ? { capabilities } : {});
   const identity = (requestId: string) => executionConversationIdentity(requestId, f.id);
   return { ...f, identity };
 }
@@ -59,7 +60,7 @@ test("conversation dispatch preserves request identities and fences late cancel 
 });
 
 test("weak producer lost response becomes unknown without another request or an unsafe interrupt", async () => {
-  const f = await conversationFixture(true);
+  const f = await conversationFixture(["unknown-outcome"]);
   let calls = 0;
   const producer = Bun.serve({
     port: 0,
@@ -157,3 +158,135 @@ test.each(["conversation", "turn", "authority", "fingerprint"])(
     }
   },
 );
+
+const parallelCapabilities: WorkloadCapability[] = [
+  "parallel-conversations",
+  "request-lookup",
+  "deduplicated-accept",
+  "targeted-cancel",
+  "unknown-outcome",
+];
+
+test("an adapter that runs conversations in parallel keeps only each conversation to one request", async () => {
+  const f = await conversationFixture(parallelCapabilities);
+  try {
+    const first = f.acceptance();
+    const firstIdentity = executionConversationIdentity(first.execution.requestId);
+    await f.store.executions.accept(first, new Date(), firstIdentity);
+    await f.store.executions.claim(first.execution, new Date());
+    // Even an outcome that may still be running holds only its own conversation.
+    await f.store.executions.observe(first.execution, first.fingerprint, "unknown", 0, new Date());
+
+    const other = f.acceptance();
+    const otherIdentity = executionConversationIdentity(other.execution.requestId);
+    expect((await f.store.executions.accept(other, new Date(), otherIdentity)).kind).toBe("accepted");
+
+    const next = f.acceptance();
+    const nextIdentity = executionConversationIdentity(next.execution.requestId, firstIdentity.conversation_id);
+    await expect(f.store.executions.accept(next, new Date(), nextIdentity)).rejects.toThrow("finalization");
+  } finally {
+    await f.dispose();
+  }
+});
+
+test.each([
+  { name: "without parallel conversations", capabilities: parallelCapabilities.slice(1) },
+  { name: "that cannot look up a request", capabilities: ["parallel-conversations", "unknown-outcome"] },
+  {
+    name: "that cannot cancel one request",
+    capabilities: parallelCapabilities.filter((capability) => capability !== "targeted-cancel"),
+  },
+])("an adapter $name keeps one request per workspace", async ({ capabilities }) => {
+  const f = await conversationFixture(capabilities as WorkloadCapability[]);
+  try {
+    const first = f.acceptance();
+    await f.store.executions.accept(first, new Date(), executionConversationIdentity(first.execution.requestId));
+    const other = f.acceptance();
+    await expect(
+      f.store.executions.accept(other, new Date(), executionConversationIdentity(other.execution.requestId)),
+    ).rejects.toThrow("finalization");
+  } finally {
+    await f.dispose();
+  }
+});
+
+function capacityDispatcher(
+  f: Awaited<ReturnType<typeof conversationFixture>>,
+  options: { full: () => boolean; now: () => Date; health: boolean[]; onAccept: () => void },
+) {
+  let sent = false;
+  return new ExecutionDispatcher({
+    store: f.store,
+    now: options.now,
+    inspect: async () => ({ exists: true, running: true, containerIdentity: f.runtime.incarnationId }),
+    onHealth: (failed) => options.health.push(failed),
+    transport: {
+      connected: () => true,
+      async accept() {
+        options.onAccept();
+        // Publication fails before anything reaches the producer.
+        if (options.full()) throw new InputProjectionCapacityError();
+        sent = true;
+      },
+      async acknowledge() {},
+      async lookup() {
+        if (!sent) throw new Error("lookup must not decide a request that was never sent");
+        return undefined;
+      },
+      async cancel() {},
+    },
+  });
+}
+
+test.each([
+  { name: "a parallel adapter", capabilities: parallelCapabilities },
+  { name: "a producer without request lookup", capabilities: ["unknown-outcome"] as WorkloadCapability[] },
+])("for $name, a request waiting for projection capacity is sent once capacity frees", async ({ capabilities }) => {
+  const f = await conversationFixture(capabilities);
+  const health: boolean[] = [];
+  let accepts = 0;
+  try {
+    const input = f.acceptance();
+    await f.store.executions.accept(input, new Date(), f.identity(input.execution.requestId));
+    const dispatcher = capacityDispatcher(f, {
+      full: () => accepts === 1,
+      now: () => new Date(),
+      health,
+      onAccept: () => accepts++,
+    });
+    // Each scan retries the waiting request; stop once it reached the producer.
+    for (let round = 0; round < 3 && accepts < 2; round++) {
+      await dispatcher.tick();
+      await dispatcher.drain();
+    }
+    expect(accepts).toBe(2);
+    expect(health).not.toContain(true);
+    expect((await f.store.executions.get(input.execution))?.phase).not.toBe("unknown");
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("a projection capacity wait that never frees fails controller health after the bounded wait", async () => {
+  const f = await conversationFixture(parallelCapabilities);
+  const health: boolean[] = [];
+  let now = new Date();
+  try {
+    const input = f.acceptance();
+    await f.store.executions.accept(input, now, f.identity(input.execution.requestId));
+    const dispatcher = capacityDispatcher(f, { full: () => true, now: () => now, health, onAccept: () => {} });
+    const started = now.getTime();
+    for (const waited of [0, PROJECTION_CAPACITY_WAIT_MS / 2]) {
+      now = new Date(started + waited);
+      await dispatcher.tick();
+      await dispatcher.drain();
+    }
+    expect(health).not.toContain(true);
+    now = new Date(started + PROJECTION_CAPACITY_WAIT_MS + 1);
+    await dispatcher.tick();
+    await dispatcher.drain();
+    expect(health.at(-1)).toBe(true);
+  } finally {
+    await f.dispose();
+  }
+});

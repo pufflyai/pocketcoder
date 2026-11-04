@@ -15,6 +15,7 @@ export type {
   WorkspaceLeaseRow,
   WorkspaceLeaseStore,
 } from "@pstdio/pocketcoder-runtime-contracts";
+export { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
 export {
   type ActiveCounts,
   type AllocatedStorage,
@@ -121,7 +122,11 @@ export {
   loadTemplateSource,
   type RegistryLoadResult,
 } from "./registry/registry";
-export { ExecutionDispatcher, type ExecutionTransport } from "./scheduler/execution-dispatcher";
+export {
+  ExecutionDispatcher,
+  type ExecutionTransport,
+  PROJECTION_CAPACITY_WAIT_MS,
+} from "./scheduler/execution-dispatcher";
 export { stopWorkspaceProvider } from "./scheduler/provider-termination";
 export {
   type AdmissionLimits,

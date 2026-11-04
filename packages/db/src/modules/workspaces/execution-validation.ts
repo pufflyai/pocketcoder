@@ -113,6 +113,13 @@ function validateInputLimits(
     executionConflict("Accepted inputs exceed template limits.");
 }
 
+// Called after validateExecution has checked that this operation's installed adapter matches the acceptance.
+export function operationAdapterCapabilities(row: WorkspaceRow, input: WorkloadAcceptance) {
+  const { template, installed } = installedEvidence(row, input);
+  const operation = template.manifest.spec.operations[input.operation];
+  return (operation && installed.adapters[operation.adapter]?.capabilities) ?? [];
+}
+
 function installedEvidence(row: WorkspaceRow, input: WorkloadAcceptance) {
   const runtime = row.runtimeRegistration;
   if (!runtime) executionConflict("Runtime is not registered.");

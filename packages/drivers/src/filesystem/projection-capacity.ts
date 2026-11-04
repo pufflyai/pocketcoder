@@ -1,5 +1,6 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-core";
 
 export interface ProjectionCapacity {
   bytes: number;
@@ -16,6 +17,8 @@ async function usage(path: string): Promise<ProjectionCapacity> {
     throw error;
   }
   for (const name of entries) {
+    // A released receipt only proves an earlier release; its copy is gone and owns no capacity.
+    if (name.endsWith(".released")) continue;
     const child = join(path, name);
     const stat = await lstat(child);
     if (stat.isDirectory()) {
@@ -39,6 +42,5 @@ export async function requireProjectionCapacity(roots: string[], added: Projecti
     total.bytes += current.bytes;
     total.files += current.files;
   }
-  if (total.bytes > limit.bytes || total.files > limit.files)
-    throw new Error("Input projection capacity is exhausted.");
+  if (total.bytes > limit.bytes || total.files > limit.files) throw new InputProjectionCapacityError();
 }

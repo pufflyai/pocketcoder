@@ -720,4 +720,10 @@ Replies use `ProducerObservationSchema`: either `{execution, phase: "absent"}` o
 Keep terminal facts until acknowledgment, retain deduplication receipts for the
 incarnation, and make acknowledgment idempotent. Installed capabilities govern
 safe redispatch and target-aware cancellation. Plain HTTP or a declared package
-version does not establish those capabilities.
+version does not establish those capabilities. Without `parallel-conversations`,
+a producer receives one conversation request per workspace at a time. An adapter
+that advertises it with `request-lookup` and `deduplicated-accept` must accept,
+look up, cancel and acknowledge requests from different conversations
+concurrently. Size input projection capacity for those concurrent requests: when
+it is full, the request waits and is resent as capacity frees. A wait longer than
+five minutes is reported as unhealthy.

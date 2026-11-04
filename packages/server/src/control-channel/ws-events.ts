@@ -9,7 +9,7 @@ import {
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { WSContext, WSEvents } from "hono/ws";
 import { activeConnectionWorkspace } from "./connection-authority";
-import { type LiveConnection, MAX_INFLIGHT_RELAY } from "./hub";
+import { type LiveConnection, MAX_CONTROL_RELAY, MAX_INFLIGHT_RELAY } from "./hub";
 import { workspaceCredentialsFor } from "./workspace-credentials";
 import { execSpecOf, sourceCredentialFor } from "./ws-auth";
 import { handleConnectedFrame } from "./ws-frame-handler";
@@ -131,7 +131,8 @@ async function registerConnection(
       ...(reconnectCredential ? { reconnect_credential: reconnectCredential } : {}),
       limits: {
         max_frame_bytes: MAX_FRAME_BYTES,
-        max_inflight_relay: MAX_INFLIGHT_RELAY,
+        // Controls have their own slots beside the ordinary relay budget.
+        max_inflight_relay: MAX_INFLIGHT_RELAY + MAX_CONTROL_RELAY,
         log_chunk_bytes: LOG_CHUNK_BYTES,
         heartbeat_seconds: HEARTBEAT_SECONDS,
       },
