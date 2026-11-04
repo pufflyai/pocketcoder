@@ -202,7 +202,10 @@ Cancel names the execution, incarnation and caller-stable cancel ID. Before clai
 it settles as canceled without spawning. After claim it targets that operation.
 A late cancel returns the terminal record. The next request in the workspace
 waits for acknowledgment and the separate finalization barrier. Unknown or lost
-operations keep that barrier closed.
+operations keep that barrier closed. A request that meets the barrier is refused with
+`409 operation.conflict` and `details.reason` `previous_request_finalizing`; it is
+safe to retry the same request once the earlier one finalizes, usually within
+seconds.
 
 An adapter that advertises `parallel-conversations`, `request-lookup` and
 `deduplicated-accept` runs conversations in parallel: the barrier then applies
