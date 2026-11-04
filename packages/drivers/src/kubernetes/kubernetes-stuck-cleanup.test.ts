@@ -8,15 +8,15 @@ import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { DEFAULT_LIMITS, Scheduler } from "@pstdio/pocketcoder-runtime-core";
 import { KubernetesDriver } from "./kubernetes";
 import { resourceName } from "./kubernetes-command";
-import { KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-// kubectl is the provider boundary: the namespace holds only the listed Secrets.
-async function fakeKubectl(secrets: unknown[]) {
+// kubectl is the provider boundary: the namespace holds only the named Secrets. Like a least-privilege
+// controller Role, it may get Secrets by name but not list them.
+async function fakeKubectl(secrets: string[]) {
   const directory = await mkdtemp(join(tmpdir(), "pc-stuck-cleanup-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
   const script = join(directory, "kubectl.ts");
@@ -25,9 +25,16 @@ async function fakeKubectl(secrets: unknown[]) {
     script,
     `#!/usr/bin/env bun
 const args = process.argv.slice(2);
+const kind = args[args.indexOf("get") + 1];
 if (args.includes("get") && args.includes("-l")) {
-  const kind = args[args.indexOf("get") + 1];
-  console.log(JSON.stringify({ items: kind === "secrets" ? ${JSON.stringify(secrets)} : [] }));
+  if (kind === "secrets" || kind === "secret") {
+    console.error('Error from server (Forbidden): secrets is forbidden: cannot list resource "secrets"');
+    process.exit(1);
+  }
+  console.log(JSON.stringify({ items: [] }));
+} else if (args.includes("get") && (kind === "secret" || kind === "secrets")) {
+  const name = args[args.indexOf("get") + 2];
+  if (${JSON.stringify(secrets)}.includes(name)) console.log(JSON.stringify({ metadata: { name } }));
 }
 `,
     { mode: 0o755 },
@@ -92,7 +99,7 @@ async function stuckLaunch(store: DatabaseStore, at: Date) {
   return id;
 }
 
-async function restartedController(secrets: (workspaceId: string) => unknown[]) {
+async function restartedController(secrets: (workspaceId: string) => string[]) {
   const store = await DatabaseStore.openPGlite();
   cleanups.push(() => store.close());
   const started = new Date("2026-11-04T00:22:00Z");
@@ -117,8 +124,6 @@ test("a launch an earlier controller left terminating settles when no provider o
 });
 
 test("a launch with a leftover workspace object still waits for proof", async () => {
-  const workspace = await restartedController((id) => [
-    { metadata: { name: `${resourceName(id)}-registry`, labels: { [KUBERNETES_WORKSPACE_LABEL]: id } } },
-  ]);
+  const workspace = await restartedController((id) => [`${resourceName(id)}-registry`]);
   expect(workspace?.state).toBe("terminating");
 });

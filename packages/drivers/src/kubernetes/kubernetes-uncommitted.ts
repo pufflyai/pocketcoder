@@ -31,11 +31,15 @@ export async function uncommittedKubernetesWorkspace(
   } catch (error) {
     if (!(error instanceof AbsenceUnprovedError) || !workspace.registrationExpiresAt) throw error;
     if (at < workspace.registrationExpiresAt) throw error;
-    const selector = `${KUBERNETES_WORKSPACE_LABEL}=${workspace.id}`;
-    for (const kind of ["pods", "secrets"]) {
-      const listed = JSON.parse(await run(["get", kind, "-l", selector, "-o", "json"])) as { items: unknown[] };
-      if (listed.items.length) throw error;
-    }
+    // The Job and input Secret were just found absent by name. A least-privilege controller may get Secrets but
+    // not list them, so the launch's other Secrets are checked by name too.
+    const pods = JSON.parse(
+      await run(["get", "pods", "-l", `${KUBERNETES_WORKSPACE_LABEL}=${workspace.id}`, "-o", "json"]),
+    ) as { items: unknown[] };
+    if (pods.items.length) throw error;
+    const name = resourceName(workspace.id);
+    for (const secret of [`${name}-egress`, `${name}-registry`])
+      if (await run(["get", "secret", secret, "--ignore-not-found", "-o", "name"])) throw error;
     return null;
   }
 }
