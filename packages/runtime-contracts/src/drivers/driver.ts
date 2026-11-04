@@ -84,7 +84,11 @@ export interface WorkspaceDriver {
   create(launch: WorkspaceLaunch): Promise<ProviderRef>;
   createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef>;
   uncommittedWarmProvider?(runtime: { id: string; templateDigest: string }): Promise<ProviderRef>;
-  uncommittedProvider?(workspace: Pick<WorkspaceRow, "id" | "templateDigest">): Promise<ProviderRef>;
+  // Resolves null when the driver proves the launch left no provider object.
+  uncommittedProvider?(
+    workspace: Pick<WorkspaceRow, "id" | "templateDigest" | "registrationExpiresAt">,
+    at: Date,
+  ): Promise<ProviderRef | null>;
   // Throws, naming the cause, when configured shared storage cannot serve launches; readiness reports it.
   checkSharedStorage?(): Promise<void>;
   // Adds the provider identity an older release did not save. Returns null when the

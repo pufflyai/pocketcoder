@@ -67,7 +67,7 @@ export class SchedulerLifecycle {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
         await driver.purgeInput(row.id);
       } else {
-        await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row));
+        await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row), at);
       }
     } catch (err) {
       const failures = (this.cleanupRetries.get(row.id)?.failures ?? 0) + 1;

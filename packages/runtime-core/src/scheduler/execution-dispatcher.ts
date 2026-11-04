@@ -10,12 +10,29 @@ import type { Store, WorkspaceRow } from "../types";
 // Capacity frees as other requests finish. A wait longer than this is reported as unhealthy.
 export const PROJECTION_CAPACITY_WAIT_MS = 5 * 60_000;
 
+// One execution failing does not make the controller unready. Executions failing in several workspaces for
+// longer than this point at the transport itself, which readiness reports.
+export const EXECUTION_FAILURE_WAIT_MS = 5 * 60_000;
+
+// The producer answered the accept with a client error: it will not run this execution as sent.
+export class ExecutionRefusedError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ExecutionRefusedError";
+  }
+}
+
 export interface ExecutionTransport {
   connected(workspace: WorkspaceRow): boolean;
   accept(record: ExecutionRecord, workspace: WorkspaceRow): Promise<void>;
   lookup(record: ExecutionRecord, workspace: WorkspaceRow): Promise<"absent" | undefined>;
   cancel(record: ExecutionRecord, workspace: WorkspaceRow): Promise<void>;
   acknowledge(record: ExecutionRecord, workspace: WorkspaceRow): Promise<void>;
+  // Finalizes an execution locally, without contacting the producer (it never accepted it).
+  release?(record: ExecutionRecord, workspace: WorkspaceRow): Promise<void>;
 }
 
 type DispatchTask = { workspaceId: string; promise: Promise<void> };
@@ -30,7 +47,9 @@ export class ExecutionDispatcher {
   private readonly controls = new Map<string, DispatchTask>();
   private readonly queued = new Map<string, { record: ExecutionRecord; epoch?: number }>();
   private readonly absences = new Map<string, number>();
-  private readonly failures = new Set<string>();
+  private readonly failures = new Map<string, { workspaceId: string; since: number }>();
+  // A request that keeps failing is retried after a growing pause, not on every scan.
+  private readonly retries = new Map<string, { failures: number; dueAt: number }>();
   // Claimed requests whose input publication waited for capacity: nothing reached the producer yet.
   private readonly capacityWaits = new Map<string, number>();
 
@@ -113,9 +132,11 @@ export class ExecutionDispatcher {
       this.reconcileFailures(pending);
       for (const record of pending) {
         if (!this.allowed()) return;
-        if (record.cancel && this.cancelPending(record)) this.cancel(record);
+        const key = executionInputManifestId(record.acceptance);
+        const control = Boolean(record.cancel && this.cancelPending(record));
+        if (!this.retryDue(`${key}:${control}`)) continue;
+        if (control) this.cancel(record);
         else {
-          const key = executionInputManifestId(record.acceptance);
           if (!this.ordinary.has(key) && !this.controls.has(key) && !this.queued.has(key))
             this.queued.set(key, { record });
         }
@@ -128,11 +149,45 @@ export class ExecutionDispatcher {
     const keys = new Set(pending.map((record) => executionInputManifestId(record.acceptance)));
     for (const key of this.failures.keys()) {
       const identity = key.slice(0, key.lastIndexOf(":"));
-      if (!keys.has(identity) && !this.ordinary.has(identity) && !this.controls.has(identity))
-        this.failures.delete(key);
+      if (!keys.has(identity) && !this.ordinary.has(identity) && !this.controls.has(identity)) this.settled(key);
     }
     for (const key of this.capacityWaits.keys()) if (!keys.has(key)) this.capacityWaits.delete(key);
-    this.deps.onHealth?.(this.failures.size > 0);
+    this.deps.onHealth?.(this.unhealthy());
+  }
+
+  private clock() {
+    return (this.deps.now?.() ?? new Date()).getTime();
+  }
+
+  private retryDue(failureKey: string) {
+    return this.clock() >= (this.retries.get(failureKey)?.dueAt ?? 0);
+  }
+
+  private failed(failureKey: string, workspaceId: string) {
+    const now = this.clock();
+    this.failures.set(failureKey, { workspaceId, since: this.failures.get(failureKey)?.since ?? now });
+    const failures = (this.retries.get(failureKey)?.failures ?? 0) + 1;
+    // The first retry is immediate; later ones wait 2 s, doubling to 5 min.
+    const delay = failures === 1 ? 0 : Math.min(2_000 * 2 ** (failures - 2), 300_000);
+    this.retries.set(failureKey, { failures, dueAt: now + delay });
+  }
+
+  private settled(failureKey: string) {
+    this.failures.delete(failureKey);
+    this.retries.delete(failureKey);
+  }
+
+  // Readiness reflects controller-wide trouble only: input capacity stuck past its wait, or requests failing in
+  // more than one workspace for longer than a single producer's trouble explains.
+  private unhealthy() {
+    const now = this.clock();
+    if ([...this.capacityWaits.values()].some((since) => now - since > PROJECTION_CAPACITY_WAIT_MS)) return true;
+    const workspaces = new Set(
+      [...this.failures.values()]
+        .filter((failure) => now - failure.since >= EXECUTION_FAILURE_WAIT_MS)
+        .map((failure) => failure.workspaceId),
+    );
+    return workspaces.size > 1;
   }
 
   private pump() {
@@ -157,24 +212,22 @@ export class ExecutionDispatcher {
       .then(
         (performed) => {
           if (performed) {
-            this.failures.delete(failureKey);
+            this.settled(failureKey);
             if (executionSettled(record)) {
-              this.failures.delete(`${key}:true`);
-              this.failures.delete(`${key}:false`);
+              this.settled(`${key}:true`);
+              this.settled(`${key}:false`);
             }
           }
         },
         (error) => {
-          const waitedMs =
-            (this.deps.now?.() ?? new Date()).getTime() - (this.capacityWaits.get(key) ?? Number.NEGATIVE_INFINITY);
-          if (!(error instanceof InputProjectionCapacityError) || waitedMs > PROJECTION_CAPACITY_WAIT_MS)
-            this.failures.add(failureKey);
+          // A capacity wait reached nothing; it is retried on every scan and reported through its own bound.
+          if (!(error instanceof InputProjectionCapacityError)) this.failed(failureKey, workspaceId);
           this.deps.onError?.(error);
         },
       )
       .finally(() => {
         lane.delete(key);
-        this.deps.onHealth?.(this.failures.size > 0);
+        this.deps.onHealth?.(this.unhealthy());
         const replayEpoch = this.absences.get(key);
         if (!control) this.absences.delete(key);
         if (!control && replayEpoch !== undefined && this.allowed())
@@ -254,6 +307,7 @@ export class ExecutionDispatcher {
       try {
         await this.deps.transport.accept(record, workspace);
       } catch (error) {
+        if (error instanceof ExecutionRefusedError) return this.refused(record, workspace, error, now);
         if (error instanceof InputProjectionCapacityError && !this.capacityWaits.has(key))
           this.capacityWaits.set(key, now.getTime());
         throw error;
@@ -265,6 +319,18 @@ export class ExecutionDispatcher {
         if (latest && this.allowed()) await this.dispatch(latest, false, workspace.connectionEpoch);
       }
     } else await this.unknown(record, workspace, now);
+  }
+
+  // A refused request is settled, never resent. A producer that can look it up reports whether a refused
+  // retry was in fact already running; otherwise the refusal is the answer.
+  private async refused(record: ExecutionRecord, workspace: WorkspaceRow, error: ExecutionRefusedError, now: Date) {
+    const { store, transport } = this.deps;
+    if (this.canReconcile(workspace, record) && (await transport.lookup(record, workspace)) !== "absent") return;
+    const { execution, fingerprint } = record.acceptance;
+    const outcome = { refused: { status: error.status, message: error.message } };
+    await store.executions.observe(execution, fingerprint, "terminal", workspace.connectionEpoch, now, outcome);
+    await store.executions.acknowledge(execution, fingerprint, now);
+    await transport.release?.(record, workspace);
   }
 
   private unknown(record: ExecutionRecord, workspace: WorkspaceRow, now: Date) {

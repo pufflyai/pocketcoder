@@ -38,9 +38,14 @@ export async function processDispatchFixture(
     conversationTransport({ store: f.store, hub, driver: {} }),
   );
   let dispatchFailed = false;
+  // Each failed dispatch attempt; readiness (dispatchFailed) only reflects controller-wide trouble.
+  let dispatchErrors = 0;
   const dispatcher = new ExecutionDispatcher({
     onHealth: (failed) => {
       dispatchFailed = failed;
+    },
+    onError: () => {
+      dispatchErrors++;
     },
     store: f.store,
     concurrency: options.concurrency ?? 20,
@@ -164,6 +169,9 @@ export async function processDispatchFixture(
     ...f,
     hub,
     dispatcher,
+    get dispatchErrors() {
+      return dispatchErrors;
+    },
     get dispatchFailed() {
       return dispatchFailed;
     },

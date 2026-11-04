@@ -47,6 +47,7 @@ import {
   LAUNCH_PHASE,
   type LaunchMetadata,
   uncommittedKubernetesProvider,
+  uncommittedKubernetesWorkspace,
 } from "./kubernetes-uncommitted";
 import { checkSharedStorage, prepareSharedLaunch } from "./kubernetes-volumes";
 import { createKubernetesWarm } from "./kubernetes-warm";
@@ -244,12 +245,8 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
   }
 
-  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest">) {
-    return uncommittedKubernetesProvider(
-      (args) => kubectl(this.kubectlBin, this.namespace, args),
-      this.namespace,
-      workspace,
-    );
+  uncommittedProvider(workspace: Pick<WorkspaceRow, "id" | "templateDigest" | "registrationExpiresAt">, at: Date) {
+    return uncommittedKubernetesWorkspace(this.kube, this.namespace, workspace, at);
   }
 
   uncommittedWarmProvider(runtime: { id: string; templateDigest: string }) {

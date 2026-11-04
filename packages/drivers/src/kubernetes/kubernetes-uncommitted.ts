@@ -11,6 +11,35 @@ export type LaunchMetadata = {
   annotations?: Record<string, string>;
 };
 
+class AbsenceUnprovedError extends Error {
+  constructor() {
+    super("Uncommitted Kubernetes provider absence is unproved");
+  }
+}
+
+// No receipt alone proves nothing: a create sent before the receipt check may still land. Once the launch's
+// registration window has closed no request of that launch can still land, so a namespace without any of its
+// objects proves the launch left nothing to clean up.
+export async function uncommittedKubernetesWorkspace(
+  run: (args: string[]) => Promise<string>,
+  namespace: string,
+  workspace: Pick<WorkspaceRow, "id" | "templateDigest" | "registrationExpiresAt">,
+  at: Date,
+) {
+  try {
+    return await uncommittedKubernetesProvider(run, namespace, workspace);
+  } catch (error) {
+    if (!(error instanceof AbsenceUnprovedError) || !workspace.registrationExpiresAt) throw error;
+    if (at < workspace.registrationExpiresAt) throw error;
+    const selector = `${KUBERNETES_WORKSPACE_LABEL}=${workspace.id}`;
+    for (const kind of ["pods", "secrets"]) {
+      const listed = JSON.parse(await run(["get", kind, "-l", selector, "-o", "json"])) as { items: unknown[] };
+      if (listed.items.length) throw error;
+    }
+    return null;
+  }
+}
+
 export async function uncommittedKubernetesProvider(
   run: (args: string[]) => Promise<string>,
   namespace: string,
@@ -39,7 +68,7 @@ export async function uncommittedKubernetesProvider(
     return { ...ref, jobUid: jobUidOf({ metadata }) };
   }
   const input = await run(["get", "secret", ref.inputSecret, "--ignore-not-found", "-o", "json"]);
-  if (!input) throw new Error("Uncommitted Kubernetes provider absence is unproved");
+  if (!input) throw new AbsenceUnprovedError();
   const metadata = (JSON.parse(input) as { metadata: LaunchMetadata }).metadata;
   if (
     !metadata.uid ||

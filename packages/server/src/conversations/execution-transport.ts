@@ -9,11 +9,25 @@ import {
   executionSettled,
   ProducerObservationSchema,
 } from "@pstdio/pocketcoder-contracts";
-import type { ExecutionTransport, Store, WorkspaceDriver, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import {
+  ExecutionRefusedError,
+  type ExecutionTransport,
+  type Store,
+  type WorkspaceDriver,
+  type WorkspaceRow,
+} from "@pstdio/pocketcoder-runtime-core";
 import type { InputStorage } from "../attachments/input-storage";
 import { prepareExecutionInputs } from "../control-channel/execution-inputs";
 import type { Hub } from "../control-channel/hub";
 import { finalizeServiceExecution } from "./execution-finalization";
+
+function refusalMessage(status: number, body: string | undefined) {
+  const text = Buffer.from(body ?? "", "base64")
+    .toString()
+    .trim()
+    .slice(0, 500);
+  return text || `Producer refused the execution with HTTP ${status}.`;
+}
 
 // Capable service adapters use fixed, template-declared endpoints. Plain AgentAPI
 // interruption remains workspace-scoped and is never used for operation cancellation.
@@ -54,6 +68,9 @@ export function conversationTransport(deps: {
       body_b64: Buffer.from(payload).toString("base64"),
       deadline_ms: Math.min(route.deadlineSeconds * 1000, Math.max(1, workspace.deadlineAt.getTime() - Date.now())),
     });
+    // A client error answering accept is the producer refusing this execution; anything else may still be in flight.
+    if (action === "accept" && !reply.error_code && reply.status && reply.status >= 400 && reply.status < 500)
+      throw new ExecutionRefusedError(reply.status, refusalMessage(reply.status, reply.body_b64));
     if (reply.error_code || !reply.status || reply.status >= 300)
       throw new ApiError("relay.upstream_error", "Execution response is unsettled; reconcile the same producer ID.");
     const bytes = Buffer.from(reply.body_b64 ?? "", "base64");
@@ -109,6 +126,7 @@ export function conversationTransport(deps: {
         await call(record, workspace, "lookup", executionLookupEnvelope(record.acceptance.execution)),
       );
     },
+    release: (record, workspace) => finalizeServiceExecution(deps, record, workspace),
     async acknowledge(record, workspace) {
       await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), Boolean(record.cancel));
       await deps.store.executions.acknowledge(record.acceptance.execution, record.acceptance.fingerprint, new Date());
@@ -140,5 +158,6 @@ export function executionTransport(process: ExecutionTransport, conversation: Ex
     lookup: (r, w) => owner(r).lookup(r, w),
     cancel: (r, w) => owner(r).cancel(r, w),
     acknowledge: (r, w) => owner(r).acknowledge(r, w),
+    release: async (r, w) => owner(r).release?.(r, w),
   };
 }

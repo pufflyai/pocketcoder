@@ -572,6 +572,9 @@ The operator listener serves two unauthenticated probes:
 `failed` or `disabled`), so the failing part is named; `reasons` says why when a
 check can. The checks are `database`, `schema`, `reconciliation`, `coordinator`,
 `execution-dispatch`, `cleanup`, `policy-reconciliation` and `shared-storage`.
+`execution-dispatch` fails only for controller-wide trouble: requests failing in more
+than one workspace for five minutes, or input capacity stuck past its five-minute wait.
+One producer refusing or failing its requests affects only those requests.
 `policy-reconciliation` is the external admission hook set by
 `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while the hook is down or
 answers `provider-unavailable`. `shared-storage` checks Kubernetes shared input
@@ -585,7 +588,10 @@ A launch that fails before the driver submits anything to the provider, such as
 unusable shared storage, needs no cleanup. It is retried up to the launch attempt
 limit and then fails with `launch_failed`, its cause in the failure log tail.
 When a failed launch did reach the provider and cleanup cannot yet prove what
-exists, cleanup is retried with a growing pause of up to five minutes.
+exists, cleanup is retried with a growing pause of up to five minutes. Once the
+launch's registration window has closed and no Job, Pod or Secret labelled for the
+workspace exists, absence is proven and the workspace settles, including workspaces
+an earlier controller left terminating.
 
 Readiness does not gate the API. Once `/livez` answers, every `/v1` route
 answers too, including principal, key and other admin routes, and workspace and

@@ -241,6 +241,7 @@ export class SchedulerAdmission {
         this.context.deps.driver,
         row,
         this.context.graceSeconds(row),
+        this.context.now(),
       );
       return true;
     } catch (error) {

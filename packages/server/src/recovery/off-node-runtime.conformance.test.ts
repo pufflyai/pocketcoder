@@ -128,7 +128,7 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1" || process.env.POCKETCODER_KU
         },
         type: "Opaque",
       });
-      const preparedRef = await driver.uncommittedProvider(prepared);
+      const preparedRef = await driver.uncommittedProvider(prepared, new Date());
       expect(
         await f.store.transition(prepared.id, {
           from: ["queued"],

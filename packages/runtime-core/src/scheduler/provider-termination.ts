@@ -78,20 +78,14 @@ export async function cleanupUncommittedProvider(
   driver: WorkspaceDriver,
   workspace: WorkspaceRow,
   graceSeconds: number,
+  at = new Date(),
 ) {
   const current = await store.getWorkspace(workspace.id);
   if (current?.providerRef) {
     await stopWorkspaceProvider(store, driver, current, graceSeconds, new Date());
   } else if (driver.uncommittedProvider) {
-    const ref = await driver.uncommittedProvider(workspace);
-    await store.updateWorkspace(workspace.id, { providerKind: driver.kind, providerRef: ref }, new Date());
-    await stopWorkspaceProvider(
-      store,
-      driver,
-      { id: workspace.id, providerKind: driver.kind, providerRef: ref },
-      graceSeconds,
-      new Date(),
-    );
+    const ref = await driver.uncommittedProvider(workspace, at);
+    if (ref) await stopUncommitted(store, driver, workspace, ref, graceSeconds);
   } else {
     if (driver.kind === "kubernetes") throw new Error("Kubernetes admission proof is unavailable");
     for (const found of await driver.list()) {
@@ -108,4 +102,21 @@ export async function cleanupUncommittedProvider(
     }
   }
   await driver.purgeInput(workspace.id);
+}
+
+async function stopUncommitted(
+  store: Pick<WorkspaceStore, "updateWorkspace" | "getWorkspace">,
+  driver: WorkspaceDriver,
+  workspace: WorkspaceRow,
+  ref: NonNullable<WorkspaceRow["providerRef"]>,
+  graceSeconds: number,
+) {
+  await store.updateWorkspace(workspace.id, { providerKind: driver.kind, providerRef: ref }, new Date());
+  await stopWorkspaceProvider(
+    store,
+    driver,
+    { id: workspace.id, providerKind: driver.kind, providerRef: ref },
+    graceSeconds,
+    new Date(),
+  );
 }
