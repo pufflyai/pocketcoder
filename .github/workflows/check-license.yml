@@ -3,8 +3,6 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
-env:
-  BUN_VERSION: 1.4.2
 jobs:
   licenses:
     runs-on: ubuntu-latest
@@ -13,7 +11,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version-file: package.json
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Test the license policy

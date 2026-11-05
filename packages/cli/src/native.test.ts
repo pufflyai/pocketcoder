@@ -20,6 +20,7 @@ test("the package launcher runs the native CLI on Node without Bun in PATH", asy
         "build",
         join(import.meta.dir, "index.ts"),
         "--compile",
+        "--bytecode",
         "--minify",
         "--format=cjs",
         "--outfile",

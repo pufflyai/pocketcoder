@@ -6,7 +6,7 @@ const root = resolve(import.meta.dir, "../..");
 export async function nativeRecord(binary: string, commit: string) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("A full source commit is required");
   const bytes = await Bun.file(binary).arrayBuffer();
-  if (bytes.byteLength > 90_000_000) throw new Error("Executable exceeded 90 MB");
+  if (bytes.byteLength > 150_000_000) throw new Error("Executable exceeded 150 MB");
   const cli = await Bun.file(join(root, "packages/cli/package.json")).json();
   const seed = await Bun.file(join(root, "packages/db/assets/core-seed.json")).json();
   return {
@@ -39,7 +39,7 @@ export async function verifyNativeArtifact(directory: string, commit: string) {
   const bytes = await Bun.file(binary).arrayBuffer();
   if (
     bytes.byteLength !== record.bytes ||
-    bytes.byteLength > 90_000_000 ||
+    bytes.byteLength > 150_000_000 ||
     new Bun.CryptoHasher("sha256").update(bytes).digest("hex") !== record.sha256
   ) {
     throw new Error("Artifact checksum or size differs");

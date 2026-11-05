@@ -19,7 +19,7 @@ bun add /absolute/path/pstdio-pocketcoder-sdk-0.6.0.tgz \
 ```
 
 These are the package versions used for PC-114. Both local and remote Pi use
-`0.83.0`; AgentAPI uses `0.12.2`; Bun uses `1.4.2`. The saved
+`0.83.0`; AgentAPI uses `0.12.2`; Bun used `1.4.2` for that demo. The saved
 [demo result](pi-bridge-demo.md) records the candidate hashes and workspace pins.
 For another candidate, use its manifest rather than these version numbers.
 

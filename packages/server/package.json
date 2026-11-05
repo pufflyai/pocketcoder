@@ -25,7 +25,7 @@
     "compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-server",
     "dev": "bun --watch ./src/index.ts",
     "start": "bun ./src/index.ts",
-    "test": "bun test",
+    "test": "bun --no-env-file test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit && tsc --project ./src/displays/client/tsconfig.json"
   },
   "dependencies": {

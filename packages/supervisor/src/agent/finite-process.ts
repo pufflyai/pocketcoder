@@ -80,7 +80,7 @@ export class FiniteProcess {
           ...running,
           phase: "exited",
           exitCode: child.signalCode ? null : code,
-          signal: child.signalCode,
+          signal: child.signalCode ? String(child.signalCode) : null,
           endedAt: new Date().toISOString(),
         };
         await this.stopGroup("SIGTERM", this.finalizationGraceMs);

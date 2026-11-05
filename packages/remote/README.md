@@ -27,7 +27,7 @@ Or run without installing: `bunx @pstdio/pocketcoder-remote`.
 ## Usage
 
 ```sh
-POCKETCODER_URL=http://127.0.0.1:7080 \
+POCKETCODER_URL=http://127.0.0.1:8090 \
 POCKETCODER_KEY=pkt_... \
 POCKETCODER_WORKSPACE_ID=<uuid> \
 pocketcoder-remote [initial prompt]

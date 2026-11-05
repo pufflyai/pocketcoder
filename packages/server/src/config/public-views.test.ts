@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { publicViewConfig } from "./public-views";
+import { publicViewConfig, trustedIngress } from "./public-views";
 
 test("public views require different registrable domains, including private suffixes", () => {
   const config = {
@@ -39,4 +39,8 @@ test("trusted ingress accepts addresses and bounded ranges only", () => {
     "fe80::1%eth0",
   ])
     expect(() => publicViewConfig(JSON.stringify({ ...config, trustedIngress: [entry] }))).toThrow();
+});
+
+test("trusted ingress rejects host-local IPv6 zones before building the address list", () => {
+  expect(() => trustedIngress(["fe80::1%eth0"])).toThrow("zone identifier");
 });

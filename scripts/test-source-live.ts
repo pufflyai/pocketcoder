@@ -35,7 +35,7 @@ async function main() {
     await Bun.write(join(directory, "pocketcoder-supervisor"), Bun.file("deploy/image/pocketcoder-supervisor"));
     await writeFile(
       join(directory, "Dockerfile"),
-      `FROM oven/bun:1.4.2
+      `FROM oven/bun:1.4.4
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY supervisor.js /opt/pocketcoder/supervisor.js

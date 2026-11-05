@@ -142,9 +142,9 @@ async function cancelDuringPublication(f: Awaited<ReturnType<typeof dockerExecut
   }
 }
 
-test.skipIf(!available)(
-  "Docker cancellation stops descendants after their leader exits",
-  async () => {
+test.skipIf(!available).each([false, true])(
+  "Docker cancellation stops descendants with late delivery=%s",
+  async (lateDelivery) => {
     const f = await dockerExecutionFixture(
       [
         "/bin/sh",
@@ -169,6 +169,7 @@ test.skipIf(!available)(
         { execution: a.acceptance.execution, cancelId: randomUUID(), scope: "operation" },
         new Date(),
       );
+      if (lateDelivery) await Bun.sleep(1100);
       await f.executionDispatcher.tick();
       await f.waitFor(async () => (await f.store.executions.get(a.acceptance.execution))?.phase === "terminal");
       const stopped = Bun.spawnSync(["docker", "exec", a.ref.id, "cat", `/proc/${child}/stat`], {
@@ -179,7 +180,14 @@ test.skipIf(!available)(
         const stat = stopped.stdout.toString();
         expect(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]).toBe("Z");
       } else expect(stopped.stderr.toString()).toContain("No such file or directory");
-      expect((await f.store.getWorkspace(a.workspace.id))?.finiteProcess?.signal).toBe("SIGTERM");
+      const fact = (await f.store.getWorkspace(a.workspace.id))?.finiteProcess;
+      expect(fact).toMatchObject({ phase: "exited", exitCode: null });
+      if (lateDelivery) {
+        expect(fact?.signal).toBe("SIGKILL");
+      } else {
+        // Docker delivery can consume the absolute cancel deadline before the first signal.
+        expect(["SIGTERM", "SIGKILL"]).toContain(String(fact?.signal));
+      }
     } finally {
       await f.dispose();
     }

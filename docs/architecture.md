@@ -343,12 +343,14 @@ limit or deadline fires, or the workspace connection ends. AgentAPI-native
 snapshots created under v5 declare `GET /events`; older snapshots remain
 buffered.
 
-Servers accept v1–v5 supervisors, so rollout is server-first — connected v1/v2 supervisors
+Servers accept v1–v13 supervisors, so rollout is server-first — connected v1/v2 supervisors
 keep text-only relay and attachment requests fail with
 `attachment.unsupported` until the workspace image updates. Terminal requests
 on v1–v3 supervisors return `terminal.protocol_unsupported`. Stream routes on
 v1–v4 supervisors return `relay.streaming_unsupported`, allowing clients to
-fall back to stable history polling.
+fall back to stable history polling. Newer features gate the same way: checkpoint
+restore needs v7, source credentials v8, runtime credentials v9, previews v10,
+screenshots v11, waiting runtimes v12, and durable execution dispatch v13.
 
 A separate, narrowly scoped pool-enrollment socket (its own version axis)
 serves optional task-agnostic warm runtimes. Its only server message is a

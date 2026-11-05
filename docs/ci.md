@@ -4,9 +4,9 @@ PR updates target a 95th-percentile completion time below five minutes, includin
 
 ## Fast PR feedback
 
-Quality checks run on every update. Nx selects changed packages and all their dependents against the PR's actual base revision. Type checks and unit and route tests run for those projects. Four Bun shards divide the test files across runners. Runtime changes also run a real local echo workspace through Docker and the server.
+Quality checks run on every update. Nx selects changed packages and all their dependents against the tested merge candidate's first parent. Type checks and unit and route tests run for those projects. Four Bun shards divide the test files across runners. Runtime changes also run a real local echo workspace through Docker and the server.
 
-Root configuration, scripts, workflows, build recipes, unknown paths, and changes with no Nx owner select all projects. Changes limited to docs, changeset text, and contributor instructions still run quality checks. They receive full qualification when queued. The selection code and tests live in scripts/ci/selection.ts.
+Root configuration, scripts, workflows, build recipes, unknown paths, and changes with no Nx owner select all projects. Changes limited to docs, changeset text, and contributor instructions still run quality checks. They receive full qualification when queued. The selection code and tests live in `scripts/ci/selection.ts` and `scripts/ci/diff.ts`. Event base metadata can lag the checkout; both Git and Nx compare with the same tested parent. The plan is recorded in the job summary.
 
 Obsolete PR runs are cancelled. Queue runs and protected-branch runs finish so a later update cannot cancel the evidence needed for a merge or publication. Existing timeouts are not widened.
 
@@ -14,7 +14,7 @@ Obsolete PR runs are cancelled. Queue runs and protected-branch runs finish so a
 
 The queue tests the checked-out merge result, using github.sha for builds and artifacts. Full mode selects all packages. Separate runners execute integration, repository contracts, performance, harnesses, package builds, and image qualification. The suite coverage check rejects a new root test command until it has a full-CI owner.
 
-The 1.0 integration branch also requires embedded database checks on three platforms, native builds and clean installation, managed Docker and Kubernetes services, recovery and upgrade scenarios, monitoring, and image scans and smoke checks on both Linux architectures. Main keeps PostgreSQL-backed tests and validates its three existing image roles on both architectures. These are separate changes because main does not contain the unreleased 1.0 product.
+Full qualification includes embedded database checks on three platforms, native builds and clean installation, managed Docker and Kubernetes services, Helm installation, recovery and upgrade scenarios, monitoring, and image scans and smoke checks on both Linux architectures. PostgreSQL-backed store suites run whenever packages are selected. Reusable workflow gates require every dependency to pass, so adding a job does not require maintaining a second job list. The outer gate permits only deliberately unselected jobs to be skipped and rejects any failed or cancelled dependency. Job summaries record the actual gate results.
 
 Add the full-ci label to a PR to qualify a CI change before rollout. Full checks can also be requested without a merge:
 
@@ -24,7 +24,7 @@ gh workflow run ci.yml --ref <branch> -f full=true
 
 ## Caches and shared builds
 
-PRs and queue jobs read shared Bun, Nx, and image layer caches. Only successful jobs running on protected branches may publish shared caches. Keys separate the operating system, architecture, Bun version, lockfile, task group, and source revision.
+PRs and queue jobs read shared Bun, Nx, and image layer caches. Only successful jobs running on protected branches may publish shared caches. Task cache keys separate the operating system, architecture, installed Bun version, lockfile, task group, and source revision. Setup and release workflows read Bun from `package.json`; cache keys use that installed version.
 
 Nx build and typecheck results can be cached. Only auth's pure unit tests opt into test caching. Database, Docker, browser, provider, recovery, clock, and repository-wide contract tests run each time. Cached inputs include dependencies and shared build inputs.
 
@@ -38,7 +38,7 @@ Protected-branch pushes run fast smoke checks and package builds after merging. 
 
 Both main and feature/pocketcoder-1-0 require a PR, a merge queue, and the CI check from GitHub Actions. Rules have no bypass actors and block branch deletion and force pushes. Queue groups merge one PR at a time and require every selected job to pass. Use the normal merge queue; do not use an administrator bypass.
 
-Install and qualify the matching workflows before enabling a branch's rules. Keep the main bootstrap PR separate from the 1.0 integration change. Existing PRs may need an update from their base branch to receive the new workflow. A green fast PR run does not replace full queue validation.
+Install and qualify matching workflows before enabling a branch's rules. Existing PRs may need an update from their base branch to receive the new workflow. A green fast PR run does not replace full queue validation.
 
 ## Timing and local validation
 
@@ -55,3 +55,14 @@ bun run ci:test
 ```
 
 Workflow syntax is checked with actionlint. Live Docker, Kubernetes, native platform, and hosted cache behavior are also verified by the full workflow. Fix a slow or failing check instead of widening its timeout or removing it from the gate.
+
+
+## Investigating failures
+
+After each push, wait for all applicable checks on that commit. Use `gh pr checks`
+and `gh run view <run-id> --log-failed` to inspect failures. Separate runner setup,
+build, test and cleanup time before changing code. Keep the PR open as a draft
+when a required check remains blocked, and link evidence in its **Fix** and
+**Downsides** sections. Full qualification uses the `full-ci` label so workflow
+changes can be tested before merging. Never hide a failure with retries, skips,
+smaller workloads, or wider timeouts.

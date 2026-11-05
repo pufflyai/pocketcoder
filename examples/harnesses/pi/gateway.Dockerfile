@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.2-slim
+FROM oven/bun:1.4.4-slim
 
 WORKDIR /opt/pi-gateway
 COPY examples/harnesses/pi/openai-gateway.ts examples/harnesses/pi/gateway.ts ./

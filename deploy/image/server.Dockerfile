@@ -4,7 +4,7 @@
 # Build from the repository root:
 #   docker build -f deploy/image/server.Dockerfile -t pocketcoder-server:dev .
 
-FROM oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS build
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -36,7 +36,7 @@ FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot" \
   org.opencontainers.image.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2" \
   dev.pstdio.pocketcoder.libc="glibc" \
-  dev.pstdio.pocketcoder.bun.version="1.4.3" \
+  dev.pstdio.pocketcoder.bun.version="1.4.4" \
   dev.pstdio.pocketcoder.coreutils.version="9.7-3" \
   dev.pstdio.pocketcoder.kubectl.version="1.35.9" \
   dev.pstdio.pocketcoder.kubectl.go.version="1.26.10" \

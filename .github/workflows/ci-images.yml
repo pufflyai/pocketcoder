@@ -4,7 +4,6 @@ on:
 permissions:
   contents: read
 env:
-  BUN_VERSION: 1.4.2
   CANDIDATE_COMMIT: ${{ github.sha }}
 jobs:
   validate:
@@ -33,7 +32,7 @@ jobs:
           ref: ${{ env.CANDIDATE_COMMIT }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - uses: docker/setup-buildx-action@v3
       - name: Expose job-scoped cache access to Buildx

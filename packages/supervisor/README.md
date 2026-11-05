@@ -67,7 +67,7 @@ automatic exports belong to their later gates. Canonical public publication rema
 disabled until those requirements are implemented.
 
 Model-free proof uses real Bun children and a bundled supervisor in
-`oven/bun:1.4.2`. Tests cover waiting, immediate exit 0, exit 7, a long command,
+`oven/bun:1.4.4`. Tests cover waiting, immediate exit 0, exit 7, a long command,
 signals, reconnect, stale references, durable facts and a real Docker container
 crash. Test bounds are 1 MiB/input, 8 MiB staged input, 16 inputs, 2 transfers,
 4 MiB/16 exports, 600s input retention, 900s export retention, a 600s deadline and

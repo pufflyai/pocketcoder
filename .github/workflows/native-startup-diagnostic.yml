@@ -10,7 +10,6 @@ on:
 permissions: {}
 
 env:
-  BUN_VERSION: 1.4.2
   SOURCE_COMMIT: ${{ github.sha }}
 
 jobs:
@@ -27,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - name: Compile a distinct instrumented executable without starting it
         run: bun scripts/native-startup-profile.ts "$RUNNER_TEMP/profile"
@@ -51,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version-file: package.json
       - uses: actions/setup-node@v4
         if: inputs.affected-only
         with:

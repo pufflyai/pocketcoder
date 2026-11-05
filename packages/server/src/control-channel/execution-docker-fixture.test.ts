@@ -23,7 +23,8 @@ import { seedWaitingWorkspace } from "./waiting-workspace-fixture.test";
 import { execSpecOf } from "./ws-auth";
 import { handleConnectedFrame } from "./ws-frame-handler";
 
-export const executionDockerImage = "oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895";
+export const executionDockerImage =
+  "oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d";
 export async function dockerExecutionFixture(command?: string[], finalizationSeconds?: number) {
   const f = await createPGliteFixture("execution-docker", "disk");
   const root = await realpath(await mkdtemp(join(tmpdir(), "pc129-installed-")));

@@ -21,6 +21,8 @@ started](docs/getting-started.md), then the [CLI reference](docs/cli.md),
 [Node SDK](packages/sdk/README.md), [templates](docs/templates.md), [HTTP API](docs/api.md),
 [deployment](docs/deployment.md), and [architecture](docs/architecture.md).
 
+For development, read the [contributor guidance](AGENTS.md) and [CI guide](docs/ci.md).
+
 ## AgentAPI-native workspaces
 
 Templates declare the coding agent; PocketCoder owns AgentAPI startup,
@@ -57,7 +59,7 @@ release, but cannot be mixed with `agent`.
 
 ```sh
 bun install
-bun test                       # full suite, using memory and disk PGlite
+bun run test                   # full suite, using memory and disk PGlite
 
 ```
 
@@ -66,24 +68,36 @@ and gateway values. Validate them offline, but do not use that directory as a
 runnable server catalog.
 
 Set a private data folder on local disk or a block volume.
-The fixed `pocketcoder` schema migrates automatically. Local admin commands
-run while the server is stopped and hold the same folder lock.
+The fixed `pocketcoder` schema migrates automatically. With PGlite the controller
+creates and keeps its own key bundle. Set `POCKETCODER_AUTH_PEPPER` only with
+PostgreSQL, and keep it in private operator configuration for later restarts.
+
+Start the server first: principal and key commands use HTTP.
 
 ```sh
-export POCKETCODER_DIR="$PWD/pc_data"
-export POCKETCODER_AUTH_PEPPER="$(openssl rand -base64 32)"
-# Keep the pepper in private operator configuration for later restarts.
-
-bun run pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read --templates '*'
-bun run pcd keys issue --principal my-backend --expires "$(bun -e 'console.log(new Date(Date.now() + 86_400_000).toISOString())')"   # shown once
-
 POCKETCODER_TEMPLATE_DIR=/absolute/path/to/reviewed/runtime-templates \
-bun run pcd -- server start
+bun run pcd -- serve --dir ./pc_data --http 127.0.0.1:8090
 ```
 
-Keys issued without `--scopes` inherit live principal scopes. Use `pcd
-principals update --name my-backend --scopes ...` to change them without direct
-database edits; pass `keys issue --scopes ...` for a key-specific restriction.
+In another terminal, create the owner key through the private local socket, then
+issue a scoped backend key:
+
+```sh
+export POCKETCODER_URL=http://127.0.0.1:8090
+export POCKETCODER_KEY=$(bun run pcd -- superuser create --dir ./pc_data --json | jq -r .token)
+
+bun run pcd principals create --name my-backend --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read --templates '*' --json
+bun run pcd keys issue --principal-id <returned-id> --request-id <operation-id> \
+  --scopes templates:read,workspaces:create,workspaces:read,workspaces:cancel,workspaces:preserve,workspaces:restore,checkpoints:read,checkpoints:delete,outputs:read,conversations:read,conversations:delete,services:relay,attachments:write,logs:read,network:read,terminal:attach,terminal:read \
+  --templates '*' \
+  --expires "$(bun -e 'console.log(new Date(Date.now() + 3_600_000).toISOString())')" --json
+```
+
+Issuance requires explicit scopes, a request ID and an expiry inside the calling
+key's remaining lifetime. Omitting `--templates` snapshots the principal's current
+grants. Change a principal's grants with `pcd principals update --id
+<principal-id> --scopes ...`; pass `keys issue --scopes ...` for a key-specific
+restriction.
 
 For the included Pi harness, the repository convenience builds and
 materializes that runtime catalog before starting the gateway and server:
@@ -98,7 +112,7 @@ To manage the server independently, run `local:prepare`, keep
 `POCKETCODER_TEMPLATE_DIR`/`POCKETCODER_SECRET_ROOT`, and use `pcd server
 start|status|stop`; see the [getting-started guide](docs/getting-started.md).
 
-Then add the machine key to `.env` in the repository root:
+Then add the backend key to `.env` in the repository root:
 
 ```dotenv
 POCKETCODER_URL=http://127.0.0.1:8090
@@ -229,13 +243,18 @@ trusted publisher. Do not keep a publish token in the repository.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `POCKETCODER_DIR` | `./pc_data` | Private embedded database folder on local disk or a block volume |
-| `POCKETCODER_AUTH_PEPPER` | required (pglite store) | Keyed digest secret for machine keys |
+| `POCKETCODER_STORE` | `postgres` with a database URL, else `pglite` | Store driver |
+| `POCKETCODER_DATABASE_URL` | none | PostgreSQL URL; selects the PostgreSQL store |
+| `POCKETCODER_DATABASE_SCHEMA` | `pocketcoder` | Schema for all PocketCoder tables |
+| `POCKETCODER_DIR` | `./pc_data` | Private controller folder; with PGlite it also holds the database |
+| `POCKETCODER_JOURNAL_DIR` | PGlite: recorded folder; PostgreSQL: required | Deletion journal outside the data folder |
+| `POCKETCODER_AUTH_PEPPER` | PGlite: generated key bundle; PostgreSQL: required | Keyed digest secret for machine keys |
 | `POCKETCODER_EVENT_SIGNING_KEY` | pepper | HMAC key for lifecycle event signatures |
 | `POCKETCODER_EVENT_SINK_URL` | none | Callback URL for signed lifecycle events |
 | `POCKETCODER_TEMPLATE_DIR` | none | Directory of reviewed template manifests |
-| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1:8090` | Listen address |
-| `POCKETCODER_WORKSPACE_SERVER_URL` | `http://host.docker.internal:<port>` | URL workspaces use to reach the server |
+| `POCKETCODER_HOST` / `POCKETCODER_PORT` | `127.0.0.1` / `8090` | Operator listen address |
+| `POCKETCODER_AGENT_HTTP` | `0.0.0.0:8091` | Separate agent listener |
+| `POCKETCODER_WORKSPACE_SERVER_URL` | Docker: `http://host.docker.internal:8091` | Agent origin workspaces use to reach the server |
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |

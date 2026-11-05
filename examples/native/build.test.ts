@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { command } from "../e2e/local-process";
 
-test("the Linux executable including its database assets fits the 90 MB budget", async () => {
+test("the Linux executable including its database assets fits the 150 MB budget", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-size-"));
   const binary = join(directory, "pocketcoder");
   const root = resolve(import.meta.dir, "../..");
@@ -15,6 +15,7 @@ test("the Linux executable including its database assets fits the 90 MB budget",
         "build",
         join(root, "packages/cli/src/index.ts"),
         "--compile",
+        "--bytecode",
         "--minify",
         "--format=cjs",
         "--target",
@@ -24,7 +25,7 @@ test("the Linux executable including its database assets fits the 90 MB budget",
       ],
       { quiet: true },
     );
-    expect((await stat(binary)).size).toBeLessThanOrEqual(90_000_000);
+    expect((await stat(binary)).size).toBeLessThanOrEqual(150_000_000);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

@@ -60,7 +60,7 @@ The server image's public `pocketcoder` command is a bundled script that uses
 the image's shared GNU Bun runtime. Its absolute shebang works without a shell
 or `env`. The image record retains the script size and runtime version. Smoke
 checks direct service startup, finite owner bootstrap and a clean SIGTERM exit.
-The separately distributed native executable still has the 90 MB size cap;
+The separately distributed native executable still has the 150 MB size cap;
 the smoke checks its size before running its controller callback.
 
 The Kind 0.33.0 fixture uses Kubernetes 1.35.0 nodes. The rebuilt kubectl 1.35.9 client

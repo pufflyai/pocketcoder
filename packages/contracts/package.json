@@ -25,10 +25,10 @@
     "./browser-display": "./src/browser-display.ts"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.4"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun --no-env-file test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {

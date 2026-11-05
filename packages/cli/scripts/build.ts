@@ -17,6 +17,7 @@ for (const target of ["darwin-arm64", "linux-arm64", "linux-x64"]) {
       "build",
       join(root, "src/index.ts"),
       "--compile",
+      "--bytecode",
       "--minify",
       "--format=cjs",
       `--target=bun-${target}`,
@@ -26,5 +27,5 @@ for (const target of ["darwin-arm64", "linux-arm64", "linux-x64"]) {
     { stdout: "inherit", stderr: "inherit" },
   );
   if ((await child.exited) !== 0) throw new Error(`Native CLI build failed: ${target}`);
-  if ((await stat(executable)).size > 90_000_000) throw new Error(`Executable exceeded 90 MB: ${target}`);
+  if ((await stat(executable)).size > 150_000_000) throw new Error(`Executable exceeded 150 MB: ${target}`);
 }

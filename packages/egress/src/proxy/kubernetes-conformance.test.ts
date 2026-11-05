@@ -75,7 +75,7 @@ conformanceTest(
               containers: [
                 {
                   name: "audit",
-                  image: "oven/bun:1.4.2-alpine",
+                  image: "oven/bun:1.4.4-alpine",
                   command: ["bun", "-e", auditScript],
                   ports: [{ containerPort: 8080 }],
                   readinessProbe: {

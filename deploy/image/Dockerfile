@@ -6,7 +6,7 @@
 #   bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
 #   docker build -t pocketcoder-workspace:dev deploy/image
 
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS agentapi-chat
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS agentapi-chat
 # Rebuild the same signed v0.12.2 source: its released binaries contain
 # vulnerable Go and x/text versions. Keep its embedded chat UI.
 ADD --checksum=sha256:ac268b66c61be487bf3a3917a791abd10f3211b8ca8640897b884e2ba836d769 \
@@ -33,13 +33,13 @@ RUN apk add --no-cache patch \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
 FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS glibc
-FROM oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS bun-glibc
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS bun-glibc
 
-FROM oven/bun:1.4.3-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
 ARG TARGETARCH
 LABEL org.opencontainers.image.title="PocketCoder workspace" \
   org.opencontainers.image.source="https://github.com/pufflyai/pocketcoder" \
-  io.pstdio.pocketcoder.bun.version="1.4.3" \
+  io.pstdio.pocketcoder.bun.version="1.4.4" \
   io.pstdio.pocketcoder.agentapi.version="0.12.2" \
   io.pstdio.pocketcoder.agentapi.revision="9ff117e231822f670305254ef24f6389f75953f4" \
   io.pstdio.pocketcoder.agentapi.go.version="1.27.3" \

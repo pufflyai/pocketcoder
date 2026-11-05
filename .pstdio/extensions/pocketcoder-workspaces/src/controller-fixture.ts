@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionConnectionsApi } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
+import { buildLocalImage } from "../../../../examples/local/runtime";
 
 const repo = resolve(import.meta.dir, "../../../..");
 async function run(args: string[], cwd = repo, env: Record<string, string | undefined> = process.env) {
@@ -55,8 +56,7 @@ export async function startController() {
   };
   try {
     await run(["bun", "build", "packages/supervisor/src/index.ts", "--target", "bun", "--outdir", "deploy/image/dist"]);
-    await run(["docker", "build", "-t", imageTag, "deploy/image"]);
-    const digest = await run(["docker", "image", "inspect", imageTag, "--format", "{{.Id}}"]);
+    const { imageId: digest } = await buildLocalImage({ root: repo, imageTag, context: "deploy/image" });
     await cli("server", "start");
     const issued = JSON.parse(
       await cli(

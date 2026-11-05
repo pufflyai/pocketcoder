@@ -31,3 +31,26 @@ test("protected branch pushes must finish their build and package checks", () =>
 test("affected packages also run the store suites on PostgreSQL", () => {
   expect(expectedJobs("fast", true, false)).toContain("stores");
 });
+
+test.each(["failure", "cancelled"])("an unlisted job with %s still blocks CI", (result) => {
+  expect(() => assertSuccessfulJobs({ quality: { result: "success" }, helm: { result } }, ["quality"])).toThrow("helm");
+});
+
+test.each(["failure", "cancelled", "skipped"])(
+  "the full gate requires every dependency, including %s",
+  async (result) => {
+    const child = Bun.spawn([process.execPath, new URL("gate.ts", import.meta.url).pathname, "--all"], {
+      env: {
+        ...process.env,
+        GITHUB_STEP_SUMMARY: "",
+        CI_REQUIRED: '["quality"]',
+        CI_RESULTS: JSON.stringify({ quality: { result: "success" }, helm: { result } }),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    expect(code).toBe(1);
+    expect(error).toContain("helm");
+  },
+);

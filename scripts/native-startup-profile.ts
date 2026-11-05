@@ -14,6 +14,7 @@ const compiler = await Bun.build({
   compile: { outfile: binary },
   format: "cjs",
   minify: true,
+  bytecode: true,
   banner:
     'console.error("[startup-phase] " + JSON.stringify({ phase: "bundle-entry", epochMs: Date.now(), startMs: performance.now(), cpuMicroseconds: process.cpuUsage(), pid: process.pid }));',
   plugins: [nativeStartupHooks()],

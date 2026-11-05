@@ -50,7 +50,7 @@ export const imageSmokeFlows = {
 async function buildNativeExecutable() {
   await imageCommand([process.execPath, "run", "build:native"]);
   const bytes = Bun.file("out/native/pocketcoder").size;
-  if (bytes > 90_000_000) throw new Error(`Native executable exceeds 90 MB: ${bytes} bytes`);
+  if (bytes > 150_000_000) throw new Error(`Native executable exceeds 150 MB: ${bytes} bytes`);
   return { bytes, sourceBun: Bun.version };
 }
 

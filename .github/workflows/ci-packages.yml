@@ -4,7 +4,6 @@ on:
 permissions:
   contents: read
 env:
-  BUN_VERSION: 1.4.2
   NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
   NX_LOAD_DOT_ENV_FILES: "false"
   NX_DAEMON: "false"
@@ -47,6 +46,7 @@ jobs:
           if-no-files-found: error
       - uses: ./.github/actions/save-cache
         with:
+          bun-version: ${{ steps.setup.outputs.bun-version }}
           cache: build
           nx-hit: ${{ steps.setup.outputs.nx-hit }}
           bun-hit: ${{ steps.setup.outputs.bun-hit }}

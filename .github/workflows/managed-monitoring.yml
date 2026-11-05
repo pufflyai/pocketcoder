@@ -36,7 +36,6 @@ jobs:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
         run: bun run example:e2e:managed-monitoring
 env:
-  BUN_VERSION: 1.4.2
   NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
   NX_LOAD_DOT_ENV_FILES: "false"
   NX_DAEMON: "false"
