@@ -16,6 +16,11 @@ image, runtime, adapter, read-only input mount and incarnation before readiness.
 Cloud-interactive publication remains closed. Kubernetes has
 no qualified canonical workload driver. Offline validation is not qualification.
 
+Canonical waiting runtimes require workspace protocol 14. Older supervisors are
+rejected before registration, so rebuild pinned images with the current supervisor.
+The controller supplies `/run/pocketcoder/services` as private writable memory for
+service control, including templates with a read-only root and no authored memory paths.
+
 A service workload can declare `spec.lifecycle.persistence`, `checkpointHook`,
 `timeouts` and `maxLaunchInputBytes`. These use the existing lifecycle owners.
 They preserve state mounts, quiescing hooks and conversation restore without

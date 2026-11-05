@@ -46,7 +46,7 @@ export function waitingExecSpec(
     services: spec.services,
     previews: spec.previews,
     timeouts: policy.timeouts,
-    security: { writable_memory_paths: spec.security.writableMemoryPaths },
+    security: { writable_memory_paths: policy.security.writableMemoryPaths },
     network:
       spec.network.mode === "restricted"
         ? { mode: "restricted", proxy_url: "http://127.0.0.1:18080", health_url: "http://127.0.0.1:18082/healthz" }

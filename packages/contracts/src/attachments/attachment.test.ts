@@ -122,7 +122,7 @@ describe("attachment manifest", () => {
   });
 });
 
-describe("protocol v13", () => {
+describe("protocol v14", () => {
   const envelope = {
     v: PROTOCOL_VERSION,
     workspace_id: randomUUID(),
@@ -131,9 +131,9 @@ describe("protocol v13", () => {
     sent_at: new Date().toISOString(),
   };
 
-  test("supports versions 1 through 13 and keeps capability gates distinct", () => {
-    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
-    expect(PROTOCOL_VERSION).toBe(13);
+  test("supports versions 1 through 14 and keeps capability gates distinct", () => {
+    expect(SUPPORTED_PROTOCOL_VERSIONS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(PROTOCOL_VERSION).toBe(14);
     expect(ATTACHMENTS_MIN_PROTOCOL_VERSION).toBe(3);
     expect(STREAMING_MIN_PROTOCOL_VERSION).toBe(5);
     expect(SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION).toBe(8);

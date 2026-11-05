@@ -22,7 +22,11 @@ export function workloadLifecycle(manifest: WorkloadTemplate) {
     version: spec.version,
     image: spec.image,
     resources: spec.resources,
-    security: spec.security,
+    security: {
+      ...spec.security,
+      // Service control must work even when the authored root has no writable paths.
+      writableMemoryPaths: ["/run/pocketcoder/services", ...spec.security.writableMemoryPaths],
+    },
     network: spec.network,
     previews: spec.previews,
     services: Object.fromEntries(

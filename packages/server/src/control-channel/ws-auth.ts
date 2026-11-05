@@ -109,7 +109,7 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
   )
     return { error: "Runtime credentials require agent protocol version 9." };
   if (row && waitingProtocolRejected(row, credentials.protocolVersion))
-    return { error: "Waiting runtime is ended or requires protocol version 12." };
+    return { error: `Waiting runtime is ended or requires protocol version ${WAITING_RUNTIME_MIN_PROTOCOL_VERSION}.` };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };
   if (
     deps.checkpointTransfers &&

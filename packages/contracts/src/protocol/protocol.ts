@@ -87,9 +87,9 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 export const EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION = 13;
-export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 12;
+export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 14;
 export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
 export const ATTACHMENTS_MIN_PROTOCOL_VERSION = 3;
 export const SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION = 8;
@@ -106,6 +106,7 @@ export const SUPPORTED_PROTOCOL_VERSIONS = [
   10,
   11,
   12,
+  13,
   PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -134,6 +135,7 @@ const EnvelopeBase = z.object({
     z.literal(10),
     z.literal(11),
     z.literal(12),
+    z.literal(13),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
