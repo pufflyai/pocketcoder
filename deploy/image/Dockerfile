@@ -32,7 +32,20 @@ RUN apk add --no-cache patch \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS glibc
+# Bun embeds TLS and compression. Drop unused system OpenSSL and its zlib
+# dependency rather than carrying their vulnerable code into the runtime.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS glibc-base
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS glibc-runtime
+COPY --from=glibc-base / /rootfs/
+RUN rm /rootfs/usr/lib/*/libz.so.* \
+    /rootfs/usr/lib/*/libcrypto.so.* /rootfs/usr/lib/*/libssl.so.* \
+    /rootfs/var/lib/dpkg/status.d/zlib1g* /rootfs/var/lib/dpkg/status.d/libssl3t64* \
+  && rm -rf /rootfs/usr/lib/*/engines-3 /rootfs/usr/lib/*/ossl-modules \
+    /rootfs/usr/share/doc/zlib1g /rootfs/usr/share/doc/libssl3t64 \
+    /rootfs/usr/share/lintian/overrides/libssl3t64
+
+FROM scratch AS glibc
+COPY --from=glibc-runtime /rootfs/ /
 FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS bun-glibc
 
 FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a

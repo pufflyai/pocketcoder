@@ -37,7 +37,7 @@ export function assertGlibcCoverage(report: {
   assertImageScan(report);
   if (report.Metadata?.OS?.Family !== "debian") throw new Error("GNU runtime scan must use Debian matching");
   const packages = report.Results?.filter((r) => r.Type === "debian").flatMap((r) => r.Packages ?? []) ?? [];
-  for (const name of ["libc6", "libstdc++6", "libgcc-s1", "libgomp1", "libssl3t64", "zlib1g", "libzstd1"])
+  for (const name of ["libc6", "libstdc++6", "libgcc-s1", "libgomp1", "libzstd1"])
     if (!packages.some((p) => p.Name === name && p.Version && p.Arch))
       throw new Error(`GNU runtime package coverage is missing: ${name}`);
 }

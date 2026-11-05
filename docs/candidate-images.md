@@ -104,6 +104,16 @@ Pi and OSS recipes pin x/text v0.41.0 to fix
 [CVE-2026-56851](https://pkg.go.dev/vuln/GO-2026-6629). kubectl is rebuilt from
 the pinned 1.35.9 source with patched Go and x/net.
 
+The server, manager and workspace GNU runtime omit system OpenSSL and its zlib
+dependency. Bun supplies TLS and compression internally; its dynamic libraries
+and our native file operations need glibc instead. The runtime stages remove
+both unused libraries and their package records from the pinned distroless
+filesystem. This removes the vulnerable zlib code identified by
+[CVE-2026-76844](https://security-tracker.debian.org/tracker/CVE-2026-76844).
+Certificate authorities and the required C and C++ runtime libraries remain.
+Alpine desktop and browser tools keep their own native TLS libraries. Both
+architecture scans and runtime smoke checks still apply.
+
 Desktop and browser recipes copy signed Alpine indexes from
 [`deploy/image/apk-indexes`](../deploy/image/apk-indexes/README.md). They check
 their SHA-256 hashes before installation. Refreshing only their cache timestamps
