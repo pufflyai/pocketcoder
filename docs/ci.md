@@ -29,6 +29,10 @@ package and the shared CI, deployment, docs, examples, extensions and tooling
 areas. A PR can have several labels. The rules live in
 [`.github/labeler.yml`](../.github/labeler.yml).
 
+Only adding `full-ci` starts validation from a label event. Other label updates
+use a separate concurrency group, skip validation, and do not publish a `CI`
+check. They cannot cancel a running validation or replace its required result.
+
 Labels refresh when a PR opens, reopens, receives commits or is edited. Area
 labels that no longer match are removed. Labels outside that configuration,
 such as `full-ci`, remain manually managed. The label workflow can also be run

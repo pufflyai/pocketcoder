@@ -28,8 +28,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Ordinary labels must not cancel validation for the same PR.
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action ==
+    'labeled' && github.event.label.name != 'full-ci' && '-labels' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && (github.event.action != 'labeled' ||
+    github.event.label.name == 'full-ci') }}
 env:
   NX_CACHE_DIRECTORY: ${{ github.workspace }}/.nx/cache
   NX_LOAD_DOT_ENV_FILES: "false"
@@ -37,6 +40,7 @@ env:
   PC93_S3_IMAGE: rustfs/rustfs@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
 jobs:
   plan:
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-latest
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
@@ -57,6 +61,7 @@ jobs:
           CI_FULL: ${{ inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || false }}
         run: bun --no-env-file scripts/ci/plan.ts
   quality:
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
@@ -194,8 +199,9 @@ jobs:
       'skipped') && (needs.smoke.result == 'success' || needs.smoke.result == 'skipped')
     uses: ./.github/workflows/ci-packages.yml
   checks:
-    name: CI
-    if: always()
+    # A skipped metadata job must not satisfy the required CI check.
+    name: ${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && 'Label metadata' || 'CI' }}
+    if: always() && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
     needs:
       - plan
       - quality
@@ -216,6 +222,8 @@ jobs:
           CI_REQUIRED: ${{ needs.plan.outputs.required }}
           CI_RESULTS: ${{ toJSON(needs) }}
         run: bun --no-env-file scripts/ci/gate.ts
-run-name: "CI ${{ (inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') || github.event_name ==
-  'merge_group' || github.event_name == 'schedule') && 'full' || 'fast' }}: ${{ github.event.pull_request.title ||
-  github.ref_name }}"
+run-name: >-
+  ${{ github.event.action == 'labeled' && github.event.label.name != 'full-ci' && 'Label metadata' ||
+  format('CI {0}', (inputs.full || contains(github.event.pull_request.labels.*.name, 'full-ci') ||
+  github.event_name == 'merge_group' || github.event_name == 'schedule') && 'full' || 'fast') }}:
+  ${{ github.event.pull_request.title || github.ref_name }}
