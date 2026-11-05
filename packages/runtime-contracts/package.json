@@ -15,7 +15,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "bun test --pass-with-no-tests",
+    "test": "bun --no-env-file test --pass-with-no-tests",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {

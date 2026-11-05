@@ -14,14 +14,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test",
+    "test": "bun --no-env-file test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@pstdio/sdk": "0.40.0"
   },
   "devDependencies": {
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "typescript": "5.9.3"
   }
 }

@@ -7,7 +7,7 @@ production recovery support.
 
 ## Run the check
 
-Use Bun 1.4.2 and a running Docker Engine. From the repository root:
+Use Bun 1.4.4 and a running Docker Engine. From the repository root:
 
 ```sh
 bun install --frozen-lockfile

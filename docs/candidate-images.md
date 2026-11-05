@@ -60,7 +60,7 @@ The server image's public `pocketcoder` command is a bundled script that uses
 the image's shared GNU Bun runtime. Its absolute shebang works without a shell
 or `env`. The image record retains the script size and runtime version. Smoke
 checks direct service startup, finite owner bootstrap and a clean SIGTERM exit.
-The separately distributed native executable still has the 90 MB size cap;
+The separately distributed native executable still has the 150 MB size cap;
 the smoke checks its size before running its controller callback.
 
 The Kind 0.33.0 fixture uses Kubernetes 1.35.0 nodes. The rebuilt kubectl 1.35.9 client
@@ -103,6 +103,16 @@ the patched Go and x/text versions, including its embedded chat UI. The workspac
 Pi and OSS recipes pin x/text v0.41.0 to fix
 [CVE-2026-56851](https://pkg.go.dev/vuln/GO-2026-6629). kubectl is rebuilt from
 the pinned 1.35.9 source with patched Go and x/net.
+
+The server, manager and workspace GNU runtime omit system OpenSSL and its zlib
+dependency. Bun supplies TLS and compression internally; its dynamic libraries
+and our native file operations need glibc instead. The runtime stages remove
+both unused libraries and their package records from the pinned distroless
+filesystem. This removes the vulnerable zlib code identified by
+[CVE-2026-76844](https://security-tracker.debian.org/tracker/CVE-2026-76844).
+Certificate authorities and the required C and C++ runtime libraries remain.
+Alpine desktop and browser tools keep their own native TLS libraries. Both
+architecture scans and runtime smoke checks still apply.
 
 Desktop and browser recipes copy signed Alpine indexes from
 [`deploy/image/apk-indexes`](../deploy/image/apk-indexes/README.md). They check

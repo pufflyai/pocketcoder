@@ -39,7 +39,7 @@ for (const mode of ["fresh", "existing"] as const)
             `pocketcoder.workspace=${workspaceId}`,
             "--label",
             "pocketcoder.template-digest=sha256:owned-fixture",
-            "oven/bun:1.4.2",
+            "oven/bun:1.4.4",
             "bun",
             "--version",
           ],

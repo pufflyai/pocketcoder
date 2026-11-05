@@ -155,10 +155,10 @@ explicit owner `admin`. See the generated OpenAPI schemas for the complete list.
 ## Controller secrets
 
 ```sh
-pocketcoder secrets put <name> --file <protected-json-file>
-pocketcoder secrets put <name> --file=-  # read JSON from stdin
-pocketcoder secrets list [--json]
-pocketcoder secrets retire <name>
+pcd secrets put <name> --file <protected-json-file>
+pcd secrets put <name> --file=-  # read JSON from stdin
+pcd secrets list [--json]
+pcd secrets retire <name>
 ```
 
 These commands use HTTP and require `secrets:write` or `admin`. Input is bounded
@@ -309,8 +309,8 @@ The template must declare the preview port. Use a controller on loopback and an
 owner key with `previews:open` outside the workspace:
 
 ```sh
-pocketcoder workspaces preview --id <workspace-id> --name web --open
-pocketcoder workspaces forward --id <workspace-id> --name web --port 3001
+pcd workspaces preview --id <workspace-id> --name web --open
+pcd workspaces forward --id <workspace-id> --name web --port 3001
 ```
 
 `preview` prints a one-time browser URL; `--open` opens the default browser.
@@ -334,7 +334,7 @@ finish cleanup. The demo checks HTML, CSS, live reload, token replay, loopback
 forwarding and workspace shutdown.
 # Workspace desktop
 
-`pocketcoder workspaces display --id <workspace> --open` opens a trusted desktop
+`pcd workspaces display --id <workspace> --open` opens a trusted desktop
 viewer for a template with `display.mode` set to `desktop`. Add `--control` for
 keyboard and pointer control. The key needs `display:view`, and control also
 needs `display:control`. The URL is single-use and lasts 60 seconds. The viewer

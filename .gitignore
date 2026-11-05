@@ -43,4 +43,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Embedded controller state
 pc_data/
+pc_data-journal/
 manager_data/

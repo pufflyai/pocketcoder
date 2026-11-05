@@ -206,14 +206,19 @@ minutes. `recovery complete` reports how many it found.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.4.2+
+- [Bun](https://bun.sh) 1.4.4, the version pinned in `package.json`.
 - Docker (to actually run workspaces; the API works without it)
 
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun run test      # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
+bun --no-env-file run test  # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
 ```
+
+`bun --no-env-file run test` disables automatic `.env` loading before the
+outer process starts the checked-in scripts. Use `bun --no-env-file test <path>`
+for a targeted test. Explicitly exported environment variables still reach tests; clear operator settings such
+as `POCKETCODER_DATABASE_URL` before running them.
 
 ## 1. Run the server
 
@@ -271,8 +276,8 @@ path in this demonstration uses unrestricted networking and no persistent mount.
 A runtime that needs provider authority must use credentials scoped to its
 workspace that expire with it; never copy an owner, controller or registry key
 into a template or workspace. The issuer/private-pull matrix and controller restore
-remain separate development work. This command proves the local flow, not the
-full 0.9 release.
+remain separate development work. This command proves the local flow, not a
+complete production deployment.
 
 For a persistent local Pi deployment, after configuring the data folder, a principal
 and machine key, run the optional repository convenience:
@@ -399,14 +404,16 @@ POCKETCODER_URL=http://127.0.0.1:8090
 POCKETCODER_KEY=pkt_…
 ```
 
-The CLI loads it automatically, so no shell export is required:
+The CLI loads it automatically, so no shell export is required. The examples
+below use the installed `pcd`; from a source checkout, prefix each one with
+`bun run pcd --`:
 
 ```sh
 pcd templates list                       # what you may launch
 pcd workspaces create --template <name> --wait  # waits through ready or failure
 pcd workspaces list --active             # queued/provisioning/connected/ready/terminating
 pcd workspaces logs --id <uuid>          # bounded operational logs
-pcd workspaces terminal --id <uuid>      # template-declared interactive PTY
+pcd workspaces terminal --id <uuid>      # only templates that declare a terminal
 ```
 
 A workspace goes `queued → provisioning → connected → ready`. Once `ready`,

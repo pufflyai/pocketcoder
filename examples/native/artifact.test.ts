@@ -20,3 +20,26 @@ test("a downloaded artifact is tied to its commit and rejects changed executable
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test.skipIf(process.platform !== "linux")(
+  "large native artifact verification keeps memory bounded",
+  async () => {
+    // A small shell prevents Linux from inheriting the test runner's RSS peak across exec.
+    const child = Bun.spawn(
+      ["sh", "-c", '"$@"', "pc-artifact-memory", process.execPath, join(import.meta.dir, "artifact-memory-fixture.ts")],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect({ code, stderr }).toMatchObject({ code: 0 });
+    const result = JSON.parse(stdout);
+    expect(result.growthBytes).toBeLessThan(64 * 1024 ** 2);
+  },
+  30_000,
+);

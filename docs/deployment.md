@@ -647,12 +647,14 @@ for the PVC, network boundary, publisher and cleanup contract. The default
 - **Rotation**: issue a new machine key, switch the caller, revoke the old
   one; old and new overlap safely.
 - **Protocol upgrades are server-first**: the server accepts workspace
-  protocol v1–v5, so deploy it before rolling new workspace images.
+  protocol v1–v13, so deploy it before rolling new workspace images.
   Connected older supervisors keep the capabilities of their version:
   attachment staging requires explicit [trusted storage](input-storage.md). Terminal opens
   below v4 return `terminal.protocol_unsupported`, and streamed relay routes
   below v5 return `relay.streaming_unsupported` until the workspace image
-  carries a newer supervisor.
+  carries a newer supervisor. Later capabilities gate the same way: checkpoint
+  restore v7, source credentials v8, runtime credentials v9, previews v10,
+  screenshots v11, waiting runtimes v12, and execution dispatch v13.
 - **Secrets**: never put provider/LLM credentials in templates or launch
   input. An LLM gateway (e.g. agentgateway) should remain the only credential
   boundary; env names that look like secrets are rejected unless they are

@@ -16,7 +16,7 @@
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",
     "compile": "bun build ./src/index.ts --compile --outfile ./dist/pocketcoder-supervisor",
     "start": "bun ./src/index.ts",
-    "test": "bun test",
+    "test": "bun --no-env-file test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {

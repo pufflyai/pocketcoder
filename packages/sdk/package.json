@@ -35,7 +35,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "bun test",
+    "test": "bun --no-env-file test",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@pstdio/pocketcoder-contracts": "workspace:*",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "@types/node": "26.1.2",
     "tsdown": "0.22.14",
     "typescript": "5.9.3"

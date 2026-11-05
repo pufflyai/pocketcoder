@@ -1,5 +1,5 @@
 # Build from the repository root. Operator credentials are supplied at runtime.
-FROM oven/bun:1.4.3-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS build
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -20,11 +20,26 @@ RUN tar -xzf /tmp/kubernetes.tar.gz --strip-components=1 \
     -ldflags='-s -w -X k8s.io/component-base/version.gitVersion=v1.35.9 -X k8s.io/component-base/version.gitMajor=1 -X k8s.io/component-base/version.gitMinor=35' \
     -o /out/kubectl ./cmd/kubectl
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
+# Bun embeds TLS and compression. Drop unused system OpenSSL and its zlib
+# dependency rather than carrying their vulnerable code into the runtime.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS glibc-base
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS glibc-runtime
+COPY --from=glibc-base / /rootfs/
+RUN rm /rootfs/usr/lib/*/libz.so.* \
+    /rootfs/usr/lib/*/libcrypto.so.* /rootfs/usr/lib/*/libssl.so.* \
+    /rootfs/var/lib/dpkg/status.d/zlib1g* /rootfs/var/lib/dpkg/status.d/libssl3t64* \
+  && rm -rf /rootfs/usr/lib/*/engines-3 /rootfs/usr/lib/*/ossl-modules \
+    /rootfs/usr/share/doc/zlib1g /rootfs/usr/share/doc/libssl3t64 \
+    /rootfs/usr/share/lintian/overrides/libssl3t64
+
+FROM scratch
+COPY --from=glibc-runtime /rootfs/ /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot" \
   org.opencontainers.image.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2" \
   dev.pstdio.pocketcoder.libc="glibc" \
-  dev.pstdio.pocketcoder.bun.version="1.4.3" \
+  dev.pstdio.pocketcoder.bun.version="1.4.4" \
   dev.pstdio.pocketcoder.kubectl.version="1.35.9" \
   dev.pstdio.pocketcoder.kubectl.go.version="1.26.10" \
   dev.pstdio.pocketcoder.kubectl.x-net.version="0.60.0"

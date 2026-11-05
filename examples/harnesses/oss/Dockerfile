@@ -1,7 +1,7 @@
 # Build from the PocketCoder repository root:
 #   docker build -f examples/harnesses/oss/Dockerfile -t pocketcoder-oss:dev .
 
-FROM oven/bun:1.4.2-slim AS supervisor-build
+FROM oven/bun:1.4.4-slim AS supervisor-build
 WORKDIR /src
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -21,7 +21,7 @@ RUN apk add --no-cache patch \
   && go mod verify \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
-FROM oven/bun:1.4.2-slim
+FROM oven/bun:1.4.4-slim
 
 WORKDIR /opt/oss
 COPY examples/harnesses/oss/package.json examples/harnesses/oss/bun.lock ./

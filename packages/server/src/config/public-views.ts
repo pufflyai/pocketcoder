@@ -7,6 +7,8 @@ import { registrableDomain } from "./domains/registrable-domain";
 // when network policy admits nothing but the ingress to the controller listener.
 const ingressEntry = z.string().refine((value) => {
   const [address = "", prefix, ...rest] = value.split("/");
+  // IPv6 zone identifiers are host-local and cannot describe a trusted range.
+  if (address.includes("%")) return false;
   const family = isIP(address);
   if (!family || rest.length) return false;
   if (prefix !== undefined && !(/^[1-9][0-9]{0,2}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128)))
@@ -46,6 +48,7 @@ export function trustedIngress(entries: string[]) {
   const list = new BlockList();
   for (const entry of entries) {
     const [address = "", prefix] = entry.split("/");
+    if (address.includes("%")) throw new Error(`trusted ingress entry has a zone identifier: ${entry}`);
     const family = isIP(address) === 4 ? "ipv4" : "ipv6";
     if (prefix) list.addSubnet(address, Number(prefix), family);
     else list.addAddress(address, family);

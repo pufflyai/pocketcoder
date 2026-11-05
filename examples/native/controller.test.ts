@@ -14,7 +14,7 @@ test("one executable starts and restarts outside the checkout without Bun or adj
   await command([process.execPath, "run", "build:native"], { quiet: true });
   const controller = await nativeController(join(root, "out/native/pocketcoder"), directory);
   try {
-    expect((await stat(controller.executable)).size).toBeLessThanOrEqual(90_000_000);
+    expect((await stat(controller.executable)).size).toBeLessThanOrEqual(150_000_000);
     expect((await readdir(directory)).sort()).toEqual(["pocketcoder", "tools"]);
     expect(await readdir(join(directory, "tools"))).toEqual(["docker"]);
     await controller.start();

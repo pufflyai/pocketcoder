@@ -1,0 +1,104 @@
+# Only labels defined here are managed by the PR area labeler.
+"auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/auth/**"
+"cli":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/cli/**"
+          - "examples/native/**"
+          - "scripts/native-startup*.ts"
+"contracts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/contracts/**"
+          - "packages/runtime-contracts/**"
+"database":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/db/**"
+          - "scripts/build-pglite-seed.ts"
+          - "scripts/upgrade/**"
+"drivers":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/drivers/**"
+"egress":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/egress/**"
+"manager":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/manager/**"
+"remote":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/remote/**"
+"runtime":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/runtime-core/**"
+"sdk":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/sdk/**"
+"server":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/server/**"
+"supervisor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/supervisor/**"
+"testkit":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/testkit/**"
+"ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "scripts/ci/**"
+"deployment":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "deploy/**"
+"docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/README.md"
+          - "AGENTS.md"
+          - "CLAUDE.md"
+          - "LICENSE"
+          - ".agents/**"
+          - ".github/pull_request_template.md"
+"examples":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "examples/**"
+"extensions":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".pstdio/**"
+"tooling":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/**"
+          - ".changeset/**"
+          - "package.json"
+          - "bun.lock"
+          - "bunfig.toml"
+          - "lerna.json"
+          - "nx.json"
+          - "tsconfig*.json"
+          - "biome*.json"
+          - "knip.jsonc"
+          - ".env.example"
+          - ".gitignore"
+          - ".dockerignore"
+          - ".editorconfig"
+          - ".npmrc"
+          - "license-clarifications.json"

@@ -26,8 +26,10 @@ Keep the owner key and backup outside all workspaces.
 `native.json` records the commit, CLI version, target, byte count, SHA-256 checksum,
 PGlite and PostgreSQL versions, seed and engine checksums, and migration hashes.
 CI checks the executable's reported version and the database format in a real
-backup against that record. It also enforces an executable of at most 90 MB,
-controller peak memory of at most 512 MB, and readiness within three seconds.
+backup against that record. The executable size limit is 150 MB, approved for
+the Bun 1.4.4 upgrade. Controller peak memory is limited to 512 MB, and readiness
+must complete within three seconds. Builds include JavaScript bytecode to
+reduce parsing work on the first start.
 
 ## Public packages
 
@@ -64,12 +66,12 @@ current source:
   "private": true,
   "type": "module",
   "dependencies": {
-    "@pstdio/pocketcoder-cli": "file:./packages/pstdio-pocketcoder-cli-0.8.0.tgz",
-    "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.6.0.tgz",
-    "@pstdio/pocketcoder-remote": "file:./packages/pstdio-pocketcoder-remote-0.3.3.tgz"
+    "@pstdio/pocketcoder-cli": "file:./packages/pstdio-pocketcoder-cli-0.12.0.tgz",
+    "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.8.0.tgz",
+    "@pstdio/pocketcoder-remote": "file:./packages/pstdio-pocketcoder-remote-0.4.1.tgz"
   },
   "overrides": {
-    "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.6.0.tgz"
+    "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.8.0.tgz"
   }
 }
 ```
@@ -95,7 +97,7 @@ The CLI has no install dependencies, so it can also run directly from its tarbal
 
 ```sh
 mkdir cli
-tar -xzf packages/pstdio-pocketcoder-cli-0.8.0.tgz -C cli
+tar -xzf packages/pstdio-pocketcoder-cli-0.12.0.tgz -C cli
 node cli/package/dist/bin.js --help
 ```
 

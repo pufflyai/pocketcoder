@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { HarnessEventSink, JsonPatch, ResourceAnchor } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
+import { buildLocalImage } from "../../../../examples/local/runtime";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createMachineProvider, machinePath, machineRef } from "./machines";
@@ -33,8 +34,7 @@ const buildImage = async () => {
     "deploy/image/dist",
   ]);
   const imageTag = `pocketcoder-pstdio-echo:test-${randomUUID()}`;
-  await command(["docker", "build", "-t", imageTag, "deploy/image"]);
-  const image = await command(["docker", "image", "inspect", imageTag, "--format", "{{.Id}}"]);
+  const { imageId: image } = await buildLocalImage({ root: repo, imageTag, context: "deploy/image" });
   return { imageTag, image };
 };
 

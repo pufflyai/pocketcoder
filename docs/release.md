@@ -25,8 +25,8 @@ need a fresh controller, new principals or new keys to take a release.
 
    - PostgreSQL starts from the last 0.8.x release (and a database first written
      by 0.7.1).
-   - PGlite has no shipped release yet. Add the first 0.9 release to the test as
-     soon as it is tagged.
+   - PGlite has shipped since 0.9 but has no upgrade case yet. Add one before the
+     next release.
 3. **Release notes name every manual step.** The default is none. If a release
    needs one, the notes say what it is and which databases it applies to.
 
@@ -42,7 +42,7 @@ Add the new tag to the upgrade test cases, so the next release upgrades from it.
 
 Publish the release's container images. Run the `candidate images` workflow on
 the tagged commit, then run the `release images` workflow with the tag (for
-example `v0.9.0`). It points `<role>:<version>` and, unless you clear `latest`,
+example `v0.12.0`). It points `<role>:<version>` and, unless you clear `latest`,
 `<role>:latest` at that commit's scanned candidate digests for every role. It
 rebuilds nothing, and it changes no tag unless every role has a candidate.
 

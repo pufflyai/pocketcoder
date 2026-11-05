@@ -5,6 +5,8 @@ inputs:
     description: Task cache group
     required: true
 outputs:
+  bun-version:
+    value: ${{ steps.runtime.outputs.version }}
   nx-hit:
     value: ${{ steps.nx.outputs.cache-hit }}
   bun-hit:
@@ -14,12 +16,15 @@ runs:
   steps:
     - uses: oven-sh/setup-bun@v2
       with:
-        bun-version: 1.4.2
+        bun-version-file: package.json
+    - id: runtime
+      run: echo "version=$(bun --version)" >> "$GITHUB_OUTPUT"
+      shell: bash
     - uses: actions/cache/restore@v4
       id: bun
       with:
         path: ~/.bun/install/cache
-        key: bun-v1-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}
+        key: bun-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.version }}-${{ hashFiles('bun.lock') }}
     - run: bun install --frozen-lockfile
       shell: bash
     - name: Install pstdio extension dependencies
@@ -31,7 +36,7 @@ runs:
       id: nx
       with:
         path: .nx/cache
-        key: nx-v4-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-${{ github.sha }}
-        restore-keys: nx-v4-${{ runner.os }}-${{ runner.arch }}-1.4.2-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-
+        key: nx-v4-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.version }}-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-${{ github.sha }}
+        restore-keys: nx-v4-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.version }}-${{ hashFiles('bun.lock') }}-${{ inputs.cache }}-
     - run: bun --no-env-file scripts/ci/task-cache.ts import
       shell: bash

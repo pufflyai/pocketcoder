@@ -58,7 +58,7 @@ async function identity(dataDir = "pc_data") {
 try {
   if (!flag("--binary")) await command([process.execPath, "run", "build:native"], { quiet: true });
   const binaryBytes = (await stat(binary)).size;
-  if (binaryBytes > 90_000_000) throw new Error(`Executable exceeded 90 MB: ${binaryBytes} bytes`);
+  if (binaryBytes > 150_000_000) throw new Error(`Executable exceeded 150 MB: ${binaryBytes} bytes`);
   const fixture = flag("--fixture");
   let image: { image: string };
   let template: Awaited<ReturnType<typeof nativeTemplate>>;

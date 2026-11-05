@@ -93,7 +93,7 @@ test("GNU runtime coverage rejects Alpine-only results and omitted native librar
       {
         Target: "GNU runtime",
         Type: "debian",
-        Packages: ["libc6", "libstdc++6", "libgcc-s1", "libgomp1", "libssl3t64", "zlib1g", "libzstd1"].map((Name) => ({
+        Packages: ["libc6", "libstdc++6", "libgcc-s1", "libgomp1", "libzstd1"].map((Name) => ({
           Name,
           Version: "patched",
           Arch: "arm64",

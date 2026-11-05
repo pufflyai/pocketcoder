@@ -1,12 +1,24 @@
+import { createReadStream } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "../..");
 
+// Hash incrementally: large parent buffers inflate Linux's child RSS high-water mark.
+async function executableHash(binary: string) {
+  const hasher = new Bun.CryptoHasher("sha256");
+  let bytes = 0;
+  for await (const chunk of createReadStream(binary)) {
+    bytes += chunk.length;
+    if (bytes > 150_000_000) throw new Error("Executable exceeded 150 MB");
+    hasher.update(chunk);
+  }
+  return { bytes, sha256: hasher.digest("hex") };
+}
+
 export async function nativeRecord(binary: string, commit: string) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("A full source commit is required");
-  const bytes = await Bun.file(binary).arrayBuffer();
-  if (bytes.byteLength > 90_000_000) throw new Error("Executable exceeded 90 MB");
+  const hash = await executableHash(binary);
   const cli = await Bun.file(join(root, "packages/cli/package.json")).json();
   const seed = await Bun.file(join(root, "packages/db/assets/core-seed.json")).json();
   return {
@@ -14,8 +26,7 @@ export async function nativeRecord(binary: string, commit: string) {
     platform: process.platform,
     arch: process.arch,
     version: cli.version as string,
-    bytes: bytes.byteLength,
-    sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+    ...hash,
     database: {
       app: seed.app as string,
       pglite: seed.pgliteVersion as string,
@@ -36,12 +47,8 @@ export async function verifyNativeArtifact(directory: string, commit: string) {
   if (record.platform !== process.platform || record.arch !== process.arch)
     throw new Error("Artifact platform differs");
   const binary = join(directory, "pocketcoder");
-  const bytes = await Bun.file(binary).arrayBuffer();
-  if (
-    bytes.byteLength !== record.bytes ||
-    bytes.byteLength > 90_000_000 ||
-    new Bun.CryptoHasher("sha256").update(bytes).digest("hex") !== record.sha256
-  ) {
+  const hash = await executableHash(binary);
+  if (hash.bytes !== record.bytes || hash.sha256 !== record.sha256) {
     throw new Error("Artifact checksum or size differs");
   }
   await chmod(binary, 0o755);

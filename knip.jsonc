@@ -11,6 +11,7 @@
         "deploy/digitalocean/production/run-access.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
+        "examples/native/artifact-memory-fixture.ts",
         "scripts/native-startup-runner.ts",
         "scripts/upgrade/seed-previous-release.ts",
         "examples/e2e/managed-interruption-child.ts",
