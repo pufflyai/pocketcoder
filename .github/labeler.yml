@@ -1,0 +1,104 @@
+# Only labels defined here are managed by the PR area labeler.
+"area:auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/auth/**"
+"area:cli":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/cli/**"
+          - "examples/native/**"
+          - "scripts/native-startup*.ts"
+"area:contracts":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/contracts/**"
+          - "packages/runtime-contracts/**"
+"area:database":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/db/**"
+          - "scripts/build-pglite-seed.ts"
+          - "scripts/upgrade/**"
+"area:drivers":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/drivers/**"
+"area:egress":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/egress/**"
+"area:manager":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/manager/**"
+"area:remote":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/remote/**"
+"area:runtime":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/runtime-core/**"
+"area:sdk":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/sdk/**"
+"area:server":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/server/**"
+"area:supervisor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/supervisor/**"
+"area:testkit":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "packages/testkit/**"
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "scripts/ci/**"
+"area:deployment":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "deploy/**"
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/README.md"
+          - "AGENTS.md"
+          - "CLAUDE.md"
+          - "LICENSE"
+          - ".agents/**"
+          - ".github/pull_request_template.md"
+"area:examples":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "examples/**"
+"area:extensions":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".pstdio/**"
+"area:tooling":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "scripts/**"
+          - ".changeset/**"
+          - "package.json"
+          - "bun.lock"
+          - "bunfig.toml"
+          - "lerna.json"
+          - "nx.json"
+          - "tsconfig*.json"
+          - "biome*.json"
+          - "knip.jsonc"
+          - ".env.example"
+          - ".gitignore"
+          - ".dockerignore"
+          - ".editorconfig"
+          - ".npmrc"
+          - "license-clarifications.json"

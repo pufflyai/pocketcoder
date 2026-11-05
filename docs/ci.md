@@ -22,6 +22,26 @@ Add the full-ci label to a PR to qualify a CI change before rollout. Full checks
 gh workflow run ci.yml --ref <branch> -f full=true
 ```
 
+## PR area labels
+
+The PR area labeler adds `area:*` labels from changed paths. It covers each
+package and the shared CI, deployment, docs, examples, extensions and tooling
+areas. A PR can have several labels. The rules live in
+[`.github/labeler.yml`](../.github/labeler.yml).
+
+Labels refresh when a PR opens, reopens, receives commits or is edited. Area
+labels that no longer match are removed. Labels outside that configuration,
+such as `full-ci`, remain manually managed. The label workflow can also be run
+with a PR number to refresh an older PR.
+
+Automatic runs use the PR base branch's configuration. Manual runs use the
+selected workflow ref's configuration. Both use GitHub's changed-file API and
+never check out or run PR code, including for forked PRs. The job
+can read repository files and manage PR labels; it cannot write source code.
+New label names can be created automatically. Automatic labeling starts after
+the workflow is merged into the base branch. Existing open PRs were labeled
+once during setup.
+
 ## Caches and shared builds
 
 PRs and queue jobs read shared Bun, Nx, and image layer caches. Only successful jobs running on protected branches may publish shared caches. Task cache keys separate the operating system, architecture, installed Bun version, lockfile, task group, and source revision. Setup and release workflows read Bun from `package.json`; cache keys use that installed version.

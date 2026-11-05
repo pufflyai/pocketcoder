@@ -1,0 +1,28 @@
+name: PR area labels
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Pull request number to label
+        required: true
+        type: number
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+concurrency:
+  group: pr-area-labels-${{ github.event.pull_request.number || inputs.pr-number }}
+  cancel-in-progress: false
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Read trusted configuration through the API; never check out PR code.
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          configuration-path: .github/labeler.yml
+          sync-labels: true
+          pr-number: ${{ github.event.pull_request.number || inputs.pr-number }}
