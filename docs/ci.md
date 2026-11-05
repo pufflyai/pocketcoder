@@ -66,7 +66,7 @@ Install and qualify matching workflows before enabling a branch's rules. Existin
 
 ## Timing and local validation
 
-The PR feedback timing workflow reports the latest twenty completed first-attempt fast PR runs. Opt-in full PR qualification is excluded. It measures creation through completion, including runner wait, and reports p95 and whether it is below 300 seconds. Cancelled updates and human reruns are excluded. The JSON artifact and job summary retain the result. Initial samples can include older workflow runs. Hosted measurements are required before claiming the target is met.
+The PR feedback timing workflow reports the latest twenty completed first-attempt fast PR runs. Opt-in full PR qualification and metadata-only label runs are excluded. It measures creation through completion, including runner wait, and reports p95 and whether it is below 300 seconds. Cancelled updates and human reruns are excluded. The JSON artifact and job summary retain the result. Initial samples can include older workflow runs. Hosted measurements are required before claiming the target is met.
 
 Run the same local contributor checks before handoff:
 

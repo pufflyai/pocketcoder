@@ -13,7 +13,8 @@ export function summarizeTimings(runs: RunTiming[]) {
         run.conclusion &&
         run.conclusion !== "cancelled" &&
         (run.run_attempt ?? 1) === 1 &&
-        !run.display_title?.startsWith("CI full:"),
+        !run.display_title?.startsWith("CI full:") &&
+        !run.display_title?.startsWith("Label metadata:"),
     )
     .slice(0, 20)
     .map((run) => Math.round((Date.parse(run.updated_at) - Date.parse(run.created_at)) / 1000))

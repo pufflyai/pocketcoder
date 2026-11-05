@@ -46,3 +46,16 @@ test("opt-in full qualification does not count as fast PR feedback", () => {
     ]).samples,
   ).toBe(0);
 });
+
+test.each(["success", "skipped"])("label metadata with %s status is not validation feedback", (conclusion) => {
+  expect(
+    summarizeTimings([
+      {
+        created_at: "2026-10-16T09:00:00Z",
+        updated_at: "2026-10-16T09:00:01Z",
+        conclusion,
+        display_title: "Label metadata: update area tags",
+      },
+    ]),
+  ).toEqual({ samples: 0, p95Seconds: null, withinBudget: null });
+});
