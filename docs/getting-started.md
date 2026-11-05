@@ -212,12 +212,12 @@ minutes. `recovery complete` reports how many it found.
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun run test      # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
+bun --no-env-file run test  # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
 ```
 
-`bun run test` runs the checked-in test scripts with automatic `.env` loading
-disabled. Use `bun --no-env-file test <path>` for a targeted test. Explicitly
-exported environment variables still reach tests; clear operator settings such
+`bun --no-env-file run test` disables automatic `.env` loading before the
+outer process starts the checked-in scripts. Use `bun --no-env-file test <path>`
+for a targeted test. Explicitly exported environment variables still reach tests; clear operator settings such
 as `POCKETCODER_DATABASE_URL` before running them.
 
 ## 1. Run the server

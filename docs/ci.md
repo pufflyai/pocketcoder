@@ -69,10 +69,11 @@ Run the same local contributor checks before handoff:
 ```sh
 bun run check
 bun run typecheck
-bun run test
-bun run pack:check
+bun --no-env-file run test
 bun run ci:test
 ```
+
+Run `bun run pack:check` as well when publishable output changes.
 
 Workflow syntax is checked with actionlint. Live Docker, Kubernetes, native platform, and hosted cache behavior are also verified by the full workflow. Fix a slow or failing check instead of widening its timeout or removing it from the gate.
 

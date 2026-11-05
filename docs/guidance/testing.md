@@ -3,7 +3,7 @@
 1. **Red** — write the smallest failing test first (reproduce bugs before fixing them). Skip only for config/docs-only changes.
 2. **Green** — write the minimum code to pass.
 3. **Refactor** — clean up, delete dead code, keep tests green.
-4. **Prove it** — run `bun run check`, `bun run typecheck`, and `bun run test` before finishing. If publishable output changed, run `bun run pack:check`.
+4. **Prove it** — run `bun run check`, `bun run typecheck`, and `bun --no-env-file run test` before finishing. If publishable output changed, run `bun run pack:check`.
 
 ## Testing
 
@@ -15,8 +15,10 @@
 ## Test environment
 
 Use the version of Bun pinned by `packageManager` in `package.json`. CI reads
-that file too. Test scripts use `bun --no-env-file test`; Lerna also disables
-loading `.env` files. Keep developer controller settings out of test processes.
+that file too. Start full suites with `bun --no-env-file run test` or
+`bun --no-env-file run test:postgres` to make environment-file isolation explicit
+at the entrypoint. Test scripts also use `bun --no-env-file test`, and Lerna
+disables loading `.env` files. Keep developer controller settings out of test processes.
 Explicit environment variables still reach tests, so clear operator settings
 such as `POCKETCODER_DATABASE_URL` before running them.
 

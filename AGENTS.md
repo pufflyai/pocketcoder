@@ -2,8 +2,8 @@
 
 Read the [product overview](README.md) and [security model](docs/security.md)
 before changing behavior. PocketCoder runs coding agents in isolated
-workspaces. Anything a workspace can read must be scoped to that workspace and
-expire with it.
+workspaces. Credentials a workspace can read must be scoped to that workspace
+and expire with it.
 
 ## Work guidance
 
