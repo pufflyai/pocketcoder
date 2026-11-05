@@ -24,7 +24,8 @@ gh workflow run ci.yml --ref <branch> -f full=true
 
 ## PR area labels
 
-The PR area labeler adds `area:*` labels from changed paths. It covers each
+The PR area labeler adds labels such as `cli`, `server` and `docs` from changed
+paths. Area labels share the light-green color `#c2e0c6`. It covers each
 package and the shared CI, deployment, docs, examples, extensions and tooling
 areas. A PR can have several labels. The rules live in
 [`.github/labeler.yml`](../.github/labeler.yml).

@@ -1,71 +1,71 @@
 # Only labels defined here are managed by the PR area labeler.
-"area:auth":
+"auth":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/auth/**"
-"area:cli":
+"cli":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/cli/**"
           - "examples/native/**"
           - "scripts/native-startup*.ts"
-"area:contracts":
+"contracts":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/contracts/**"
           - "packages/runtime-contracts/**"
-"area:database":
+"database":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/db/**"
           - "scripts/build-pglite-seed.ts"
           - "scripts/upgrade/**"
-"area:drivers":
+"drivers":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/drivers/**"
-"area:egress":
+"egress":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/egress/**"
-"area:manager":
+"manager":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/manager/**"
-"area:remote":
+"remote":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/remote/**"
-"area:runtime":
+"runtime":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/runtime-core/**"
-"area:sdk":
+"sdk":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/sdk/**"
-"area:server":
+"server":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/server/**"
-"area:supervisor":
+"supervisor":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/supervisor/**"
-"area:testkit":
+"testkit":
   - changed-files:
       - any-glob-to-any-file:
           - "packages/testkit/**"
-"area:ci":
+"ci":
   - changed-files:
       - any-glob-to-any-file:
           - ".github/**"
           - "scripts/ci/**"
-"area:deployment":
+"deployment":
   - changed-files:
       - any-glob-to-any-file:
           - "deploy/**"
-"area:docs":
+"docs":
   - changed-files:
       - any-glob-to-any-file:
           - "docs/**"
@@ -75,15 +75,15 @@
           - "LICENSE"
           - ".agents/**"
           - ".github/pull_request_template.md"
-"area:examples":
+"examples":
   - changed-files:
       - any-glob-to-any-file:
           - "examples/**"
-"area:extensions":
+"extensions":
   - changed-files:
       - any-glob-to-any-file:
           - ".pstdio/**"
-"area:tooling":
+"tooling":
   - changed-files:
       - any-glob-to-any-file:
           - "scripts/**"
