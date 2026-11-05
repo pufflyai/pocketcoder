@@ -178,7 +178,7 @@ class Supervisor {
     if (failed !== null) return failed;
     if (exec.workload) {
       this.waiting = new WaitingRuntime(this.input, exec, this.sendFrame.bind(this), this.logs);
-      this.waiting.startInfrastructure();
+      await this.waiting.startInfrastructure(`/tmp/pocketcoder-services-${this.input.workspace_id}.sock`);
       this.harness.phase = "waiting";
     } else if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
     this.runtimePrepared = true;

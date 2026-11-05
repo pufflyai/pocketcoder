@@ -1,0 +1,190 @@
+[
+  {
+    "name": "ascii",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:f5c6cafcd99390c110f9de1e9053b782d1db266c71c519772e77d8fefdf8d9a8"
+  },
+  {
+    "name": "exact whitespace",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": " Analyze these loans.\n",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\" Analyze these loans.\\n\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:e59d3a3bef1d5ce62752dc37ac539deb3c37edc39cbc039e1b67fb20296b90e9"
+  },
+  {
+    "name": "composed Unicode",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "é 😀",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"é 😀\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:9076b2160df3e7c86231614f33b56aa8e603348bad207cab99ed50a89f8ed95f"
+  },
+  {
+    "name": "decomposed Unicode",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "é 😀",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"é 😀\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:50942389ae44a7688737cdc7b82c2bf53174ebdfb46d154fc3da914844d06d41"
+  },
+  {
+    "name": "attachments A B",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [
+        {
+          "inputId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "name": "loans.csv",
+          "mediaType": "text/csv",
+          "sizeBytes": 1024
+        },
+        {
+          "inputId": "11111111-1111-4111-8111-111111111111",
+          "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "name": "résumé😀.txt",
+          "mediaType": "text/csv",
+          "sizeBytes": 0
+        }
+      ],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[{\"inputId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"mediaType\":\"text/csv\",\"name\":\"loans.csv\",\"sha256\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sizeBytes\":1024,\"versionId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\"},{\"inputId\":\"11111111-1111-4111-8111-111111111111\",\"mediaType\":\"text/csv\",\"name\":\"résumé😀.txt\",\"sha256\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sizeBytes\":0,\"versionId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\"}],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:11113e07a665523de9b0c3c43a7d3d7d07a41a73e5002e0ad96d76ecca1b6446"
+  },
+  {
+    "name": "attachments B A",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [
+        {
+          "inputId": "11111111-1111-4111-8111-111111111111",
+          "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "name": "résumé😀.txt",
+          "mediaType": "text/csv",
+          "sizeBytes": 0
+        },
+        {
+          "inputId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "name": "loans.csv",
+          "mediaType": "text/csv",
+          "sizeBytes": 1024
+        }
+      ],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[{\"inputId\":\"11111111-1111-4111-8111-111111111111\",\"mediaType\":\"text/csv\",\"name\":\"résumé😀.txt\",\"sha256\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sizeBytes\":0,\"versionId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\"},{\"inputId\":\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\",\"mediaType\":\"text/csv\",\"name\":\"loans.csv\",\"sha256\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sizeBytes\":1024,\"versionId\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\"}],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:a6fa22c80d7ab2896c5273a232414ce7ab93ca838271c57aed9e509147842258"
+  },
+  {
+    "name": "profile revision",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 2
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":2,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:463ab2c18f498d5dfb866b24a7f84792f021a0c32e3c82003e9e5c0ddcc8c428"
+  },
+  {
+    "name": "profile identity",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "22222222-2222-4222-8222-222222222222",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"22222222-2222-4222-8222-222222222222\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:0bfe059a9408af3fd15802852346d905a405770c6fcc2690a0d25fe6ace31e4b"
+  },
+  {
+    "name": "deadline",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:01Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:01Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:9e00321794e9dda55a7998cc403dfd0f9f3669bc48142bf2be915d415cc416e8"
+  },
+  {
+    "name": "session identity",
+    "input": {
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "11111111-1111-4111-8111-111111111111",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"77777777-7777-4777-8777-777777777777\",\"sessionId\":\"11111111-1111-4111-8111-111111111111\"}",
+    "fingerprint": "sha256:ccd9d2c3e53dfe49919fda2644975a6db696153b1baec149f73de617f27d9162"
+  },
+  {
+    "name": "request identity",
+    "input": {
+      "requestId": "11111111-1111-4111-8111-111111111111",
+      "message": "Analyze these loans.",
+      "attachments": [],
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "profileId": "11111111-1111-4111-8111-111111111111",
+      "profileRevision": 1
+    },
+    "canonicalJson": "{\"attachments\":[],\"dispatchDeadline\":\"2026-11-05T16:10:00Z\",\"message\":\"Analyze these loans.\",\"profileId\":\"11111111-1111-4111-8111-111111111111\",\"profileRevision\":1,\"requestId\":\"11111111-1111-4111-8111-111111111111\",\"sessionId\":\"66666666-6666-4666-8666-666666666666\"}",
+    "fingerprint": "sha256:b7c8946a81123fe3d72a6c41923ec5bb7676dc63a1fae38c9e5320b9a71447a4"
+  }
+]

@@ -8,7 +8,7 @@ import { registrableDomain } from "./domains/registrable-domain";
 const ingressEntry = z.string().refine((value) => {
   const [address = "", prefix, ...rest] = value.split("/");
   const family = isIP(address);
-  if (!family || rest.length) return false;
+  if (!family || rest.length || address.includes("%")) return false;
   if (prefix !== undefined && !(/^[1-9][0-9]{0,2}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128)))
     return false;
   // Build the entry now: an address the list cannot hold must fail here, not at controller start.

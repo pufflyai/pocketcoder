@@ -6,14 +6,15 @@ agent wrapper or credentials. Generic HTTP transport can use the `service`
 profile with no operation adapters. That profile promises no request recovery or
 cloud-interactive execution semantics.
 
-The Docker controller admits authored `service` workloads with request-aware
-`pocketcoder.execution/v1` adapters, no credential slots and no output roots.
+The Docker controller admits `finite-process` workloads and authored `service`
+workloads with request-aware `pocketcoder.execution/v1` adapters. Credential
+slots remain closed; service operations cannot declare output roots.
 Set `POCKETCODER_WORKLOAD_LIMITS` to a JSON object with the deployment's finite
 workload ceilings, and configure [immutable input storage](input-storage.md).
 Publication retains the complete canonical manifest. Startup checks the actual
 image, runtime, adapter, read-only input mount and incarnation before readiness.
-Finite-process and cloud-interactive publication remain closed. Kubernetes has
-no qualified canonical service driver. Offline validation is not qualification.
+Cloud-interactive publication remains closed. Kubernetes has
+no qualified canonical workload driver. Offline validation is not qualification.
 
 A service workload can declare `spec.lifecycle.persistence`, `checkpointHook`,
 `timeouts` and `maxLaunchInputBytes`. These use the existing lifecycle owners.
@@ -549,7 +550,7 @@ for the template uid, and a working directory readable by that uid. See
 [`deploy/image/Dockerfile`](../deploy/image/Dockerfile) for a minimal example
 and the [deployment guide](deployment.md) for building and pinning.
 
-### Local web previews
+### Web previews
 
 Declare each webapp port in the immutable template. These ports are separate from
 AgentAPI and other platform services. The app must listen inside the workspace.
@@ -566,13 +567,15 @@ numbers or hyphens. `display` and `pc-*` names are reserved. Ports must be betwe
 
 A caller with `previews:open` and current ownership can mint a browser URL.
 Each workspace and preview has its own full UUID hostname under `.localhost`.
-Local previews require an HTTP controller on loopback. Hosted and embedded views
-are delivered in later slices.
+Local previews require an HTTP controller on loopback. Hosted top-level and
+embedded views use the configured isolated public-view origin. Cloud opens
+require a durable grant; see [preview grants](preview-grants.md).
 
 The one-time URL expires after 60 seconds. Opening it creates a host-only,
 HttpOnly, SameSite=Lax cookie and redirects to `/` before serving workspace HTML.
-The browser session lasts at most one hour, the issuing key's remaining lifetime,
-and the workspace deadline. Permission loss, revocation or workspace shutdown
+Local browser sessions last at most one hour, the issuing key's remaining
+lifetime, and the workspace deadline. Cloud sessions are also capped by their
+grant, initially at most 60 seconds. Permission loss, revocation or workspace shutdown
 closes active streams. A controller restart requires a fresh URL.
 
 HTTP assets, relative redirects and WebSockets use the supervisor's existing
@@ -638,3 +641,60 @@ frame acknowledgements or agent traffic.
 
 Run `bun run example:e2e:browser` with Docker running to check real navigation,
 detailed frames, input, permission denial, expiry, reconnect and cleanup.
+
+
+## Workspace-lived websites
+
+A canonical workload can declare a reviewed service process and leave it stopped
+until a tool starts it. For example, add this entry under `spec.services`:
+
+```json
+"website": {
+  "baseUrl": "http://127.0.0.1:3000",
+  "healthPath": "/",
+  "routes": [{ "method": "GET", "path": "/" }],
+  "required": false,
+  "autostart": false,
+  "process": {
+    "command": ["/usr/local/bin/bun", "run", "website"],
+    "cwd": "/workspace",
+    "env": {}
+  }
+}
+```
+
+The reviewed script may serve workload-authored files from an allowed writable
+root. Preview traffic needs a declared preview port matching the website listener.
+Ports used by execution adapters remain private and cannot also be preview ports. A manual service cannot block initial readiness.
+
+The supervisor provides this workspace-local tool recipe:
+
+```sh
+pocketcoder-supervisor service start website <stable-start-uuid>
+pocketcoder-supervisor service status website
+pocketcoder-supervisor service stop website
+```
+
+The control socket comes from `POCKETCODER_SERVICES_SOCKET`. Start accepts only
+the declared service name and a stable UUID. It cannot select a command, secret,
+environment or port. Repeating that ID returns the saved start receipt. Using it
+for another service conflicts. Status reports process state separately from HTTP
+listener health. After observed exit, a new ID may start one new attempt. Unknown
+outcomes must be stopped and reconciled before restart. There is no restart loop.
+
+Task completion and targeted cancel stop the task group and leave workspace
+services alive. Workspace release, finite-job finalization and hard expiry stop
+all owned groups before extraction. Detached processes outside those groups have
+no continuity guarantee. A replacement workspace starts new service processes.
+
+Canonical runtimes do not use agent-idle observations to expire a workspace.
+Every workspace still has a hard deadline. At creation, the controller stores a
+ceiling from the smaller template and deployment maximum. A shorter initial
+`spec.lifecycle.timeouts.maxAge` leaves room for an authorized extension. Read
+`lifetime.revision` and `lifetime.ceilingAt` from the workspace resource, then use
+[the lifetime route](api.md#workspace-lifetime-extension). It locks the same row
+as teardown and keeps a receipt for each extension ID. Browser traffic, uploads,
+reconnects and live reload never extend lifetime. Extending a workspace does not
+extend previously issued credentials or browser grants.
+
+See [finite exports](finite-exports.md) for output ownership and cleanup.

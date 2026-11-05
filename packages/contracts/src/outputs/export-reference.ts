@@ -20,6 +20,7 @@ export const WorkloadExportReferenceSchema = z
     execution: WorkloadExecutionReferenceSchema,
     manifestDigest: WorkloadDigestSchema,
     completeness: z.enum(["complete", "partial", "lost"]),
+    cleanupState: z.enum(["not_required", "pending", "complete"]).optional(),
     publication: z.enum(["published", "unavailable", "expired"]),
     objects: z.array(ExportObjectReferenceSchema),
     errors: z.array(z.string().min(1).max(512)),
@@ -37,6 +38,8 @@ export const WorkloadExportReferenceSchema = z
     }
     if (Date.parse(value.expiresAt) <= Date.parse(value.publishedAt))
       ctx.addIssue({ code: "custom", path: ["expiresAt"], message: "export retention must be positive" });
+    if ((value.completeness === "complete") !== (value.errors.length === 0))
+      ctx.addIssue({ code: "custom", path: ["errors"], message: "Export errors must agree with completeness" });
     const ids = value.objects.map((object) => object.objectId);
     if (new Set(ids).size !== ids.length)
       ctx.addIssue({ code: "custom", path: ["objects"], message: "export object IDs must be unique" });

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { ApiError, hasScope, type ViewSessionOptions } from "@pstdio/pocketcoder-contracts";
 import { keyAuthority, type Store } from "@pstdio/pocketcoder-runtime-core";
 import { templateAuthorized, type WorkspaceService } from "../workspaces/service";
+import { previewIncarnation } from "./grants";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 export interface PreviewSession {
@@ -13,12 +14,33 @@ export interface PreviewSession {
   control?: boolean;
   mode: ViewSessionOptions["mode"];
   parentOrigin?: string;
+  grantId?: string;
+  incarnationId?: string;
 }
 
 export class PreviewSessions {
   private readonly tokens = new Map<string, PreviewSession>();
   private readonly sessions = new Map<string, PreviewSession>();
   private readonly embeds = new Map<string, PreviewSession>();
+  private readonly streams = new Map<string, Set<() => void>>();
+
+  track(session: PreviewSession, close: () => void) {
+    const grantId = session.grantId;
+    if (!grantId) return () => {};
+    const streams = this.streams.get(grantId) ?? new Set<() => void>();
+    streams.add(close);
+    this.streams.set(grantId, streams);
+    return () => {
+      streams.delete(close);
+      if (!streams.size) this.streams.delete(grantId);
+    };
+  }
+  pendingStreams(grantId: string) {
+    return this.streams.get(grantId)?.size ?? 0;
+  }
+  closeGrant(grantId: string) {
+    for (const close of this.streams.get(grantId) ?? []) close();
+  }
 
   constructor(
     private readonly store: Store,
@@ -32,13 +54,24 @@ export class PreviewSessions {
     keyId: string,
     control = false,
     options: ViewSessionOptions = { mode: "local" },
+    grantId?: string,
   ) {
     this.sweep();
     if (this.tokens.size + this.sessions.size + this.embeds.size >= 4096)
       throw new ApiError("operation.conflict", "Preview session limit reached.");
-    const session = { workspaceId, name, origin, keyId, control, ...options, expires: Date.now() + 60 * 60_000 };
+    const session: PreviewSession = {
+      workspaceId,
+      name,
+      origin,
+      keyId,
+      control,
+      ...options,
+      ...(grantId ? { grantId } : {}),
+      expires: Date.now() + 60 * 60_000,
+    };
     const { workspace, key } = await this.authorize(session);
     session.expires = Math.min(session.expires, workspace.deadlineAt.getTime(), key.expiresAt?.getTime() ?? Infinity);
+    session.incarnationId = previewIncarnation(workspace);
     const token = randomBytes(32).toString("base64url");
     this.tokens.set(digest(token), { ...session, expires: Math.min(session.expires, Date.now() + 60_000) });
     return { token, expires: session.expires };
@@ -52,7 +85,7 @@ export class PreviewSessions {
     this.tokens.delete(tokenId);
     const { workspace, key } = await this.authorize(session);
     session.expires = Math.min(
-      Date.now() + 60 * 60_000,
+      session.grantId ? session.expires : Date.now() + 60 * 60_000,
       workspace.deadlineAt.getTime(),
       key.expiresAt?.getTime() ?? Infinity,
     );
@@ -92,6 +125,11 @@ export class PreviewSessions {
       throw new ApiError("auth.missing_scope", "Display control permission was removed.");
     const principal = { ...found.principal, templateNames: authority.templateNames };
     const workspace = await this.service.getOwned(principal, session.workspaceId);
+    if (session.incarnationId && session.incarnationId !== previewIncarnation(workspace))
+      throw new ApiError("auth.invalid_key", "Preview incarnation has ended.");
+    if (session.name !== "display" && session.mode !== "local" && !session.grantId)
+      throw new ApiError("auth.invalid_key", "Cloud preview grant required.");
+    await this.authorizeGrant(session, workspace);
     if (!templateAuthorized(principal, workspace.templateName))
       throw new ApiError("auth.invalid_key", "Template permission was removed.");
     if (workspace.state !== "ready" || workspace.purgeRequestedAt || workspace.deadlineAt.getTime() <= Date.now()) {
@@ -103,6 +141,25 @@ export class PreviewSessions {
         throw new ApiError("validation.invalid", "Display is not declared by the workspace template.");
     } else if (!preview) throw new ApiError("validation.invalid", "Preview is not declared by the workspace template.");
     return { workspace, key: found.key, preview };
+  }
+
+  private async authorizeGrant(session: PreviewSession, workspace: Awaited<ReturnType<WorkspaceService["getOwned"]>>) {
+    if (session.grantId) {
+      const grant = await this.store.previewGrants.get(session.grantId);
+      if (
+        !grant ||
+        grant.revokedAt ||
+        grant.expiresAt.getTime() <= Date.now() ||
+        grant.ceilingAt.getTime() <= Date.now() ||
+        grant.workspaceId !== workspace.id ||
+        grant.incarnationId !== previewIncarnation(workspace) ||
+        grant.keyId !== session.keyId ||
+        grant.principalId !== workspace.principalId ||
+        !grant.previews.includes(session.name)
+      )
+        throw new ApiError("auth.invalid_key", "Preview grant is unavailable.");
+      session.expires = Math.min(session.expires, grant.expiresAt.getTime());
+    }
   }
 
   private sweep() {

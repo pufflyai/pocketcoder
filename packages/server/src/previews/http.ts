@@ -1,5 +1,6 @@
 import {
   ApiError,
+  PREVIEW_AUTHORIZATION_CHECK_MS,
   PREVIEW_FRAME_BYTES,
   type ProxyRequest,
   previewCookies,
@@ -51,7 +52,8 @@ export async function previewHttp(
   const deadline = Math.max(1, Math.min(300_000, session.expires - Date.now()));
   const abort = new AbortController();
   const stop = () => abort.abort();
-  const timer = setInterval(() => void sessions.authorize(session).catch(stop), 250);
+  const untrack = sessions.track(session, stop);
+  const timer = setInterval(() => void sessions.authorize(session).catch(stop), PREVIEW_AUTHORIZATION_CHECK_MS);
   timer.unref();
   const timeout = setTimeout(stop, deadline);
   timeout.unref();
@@ -59,6 +61,7 @@ export async function previewHttp(
     clearInterval(timer);
     clearTimeout(timeout);
     request.signal.removeEventListener("abort", stop);
+    untrack();
     release();
   };
   request.signal.addEventListener("abort", stop, { once: true });

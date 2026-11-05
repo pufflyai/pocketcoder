@@ -33,7 +33,7 @@ export function composeCheckpointRuntime(
       await checkpointTransfers.cleanup(workspace.id);
       const storage = await store.getWorkspaceStorage(workspace.id);
       if (storage && storage.state !== "deleted") {
-        if (storageDriver?.kind === "kubernetes-shared")
+        if (storageDriver && storage.providerRef.kind === storageDriver.kind)
           await storageDriver.deleteStorage(storage.providerRef as StorageRef);
         const at = new Date();
         await store.updateWorkspaceStorage(storage.id, { state: "deleted", deletedAt: at, retainedUntil: null }, at);

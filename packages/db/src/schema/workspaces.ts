@@ -82,6 +82,7 @@ export function createWorkspaceTables(
       launchAttempts: integer("launch_attempts").notNull().default(0),
       health: jsonb("health").$type<NonNullable<WorkspaceRow["health"]>>().notNull().default({}),
       metadata: jsonb("metadata").$type<NonNullable<WorkspaceRow["metadata"]>>().notNull().default({}),
+      lifetime: jsonb("lifetime").$type<import("@pstdio/pocketcoder-contracts").WorkspaceLifetime>(),
       deadlineAt: timestamptz("deadline_at").notNull(),
       createdAt: timestamptz("created_at").notNull(),
       updatedAt: timestamptz("updated_at").notNull(),

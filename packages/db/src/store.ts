@@ -14,6 +14,7 @@ import { createNetworkAudit } from "./modules/network-audit/repository";
 import { createOutbox } from "./modules/outbox/repository";
 import { createBinaryOutputs } from "./modules/outputs/binary-outputs";
 import { createOutputs } from "./modules/outputs/repository";
+import { createRetainedExports } from "./modules/outputs/retained-exports";
 import { createCheckpoints } from "./modules/persistence/checkpoints";
 import { createContentPurge } from "./modules/persistence/content";
 import { createInputManifests } from "./modules/persistence/inputs/manifests";
@@ -22,6 +23,7 @@ import { createOperations } from "./modules/persistence/operations";
 import { createStorageReservations } from "./modules/persistence/reservations";
 import { createStorage } from "./modules/persistence/storage";
 import { createCheckpointTransfers } from "./modules/persistence/transfers";
+import { createPreviewGrants } from "./modules/previews/grants";
 import { createWorkspaceLeases } from "./modules/secrets/leases";
 import { createSecrets } from "./modules/secrets/repository";
 import { createTemplates } from "./modules/templates/repository";
@@ -31,6 +33,7 @@ import { createAdmission } from "./modules/workspaces/admission";
 import { createAdmissionSnapshot } from "./modules/workspaces/admission-snapshot";
 import { createExecutionDispatch } from "./modules/workspaces/execution-dispatch";
 import { createFiniteProcesses } from "./modules/workspaces/finite-process";
+import { extendWorkspaceDeadline } from "./modules/workspaces/lifetime";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
@@ -38,6 +41,8 @@ import { createRecordReplay } from "./recovery/replay-records";
 
 export class DatabaseStore implements Store {
   readonly executions: Store["executions"];
+  readonly exports: Store["exports"];
+  readonly previewGrants: Store["previewGrants"];
   readonly inputs: Store["inputs"];
   readonly checkpointTransfers: ReturnType<typeof createCheckpointTransfers>;
   readonly binaryOutputs: ReturnType<typeof createBinaryOutputs>;
@@ -86,6 +91,8 @@ export class DatabaseStore implements Store {
       return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
     };
     this.executions = createExecutionDispatch(context);
+    this.exports = createRetainedExports(context);
+    this.previewGrants = createPreviewGrants(context);
     this.inputs = { ...createInputObjects(context), ...createInputManifests(context) };
     this.checkpointTransfers = createCheckpointTransfers(context);
     this.binaryOutputs = createBinaryOutputs(context);
@@ -148,6 +155,7 @@ export class DatabaseStore implements Store {
     this.recordFiniteProcess = processes.recordFiniteProcess;
     this.endWorkspaceRuntime = processes.endWorkspaceRuntime;
     const workspaces = createWorkspaces(context);
+    this.extendWorkspaceDeadline = extendWorkspaceDeadline(context);
     this.insertWorkspace = workspaces.insertWorkspace;
     this.getWorkspaceByIdempotency = workspaces.getWorkspaceByIdempotency;
     this.getWorkspace = workspaces.getWorkspace;
@@ -276,6 +284,7 @@ export class DatabaseStore implements Store {
   readonly revokeMachineKey: Store["revokeMachineKey"];
   readonly touchMachineKey: Store["touchMachineKey"];
   readonly insertWorkspace: Store["insertWorkspace"];
+  readonly extendWorkspaceDeadline: Store["extendWorkspaceDeadline"];
   readonly getWorkspaceByIdempotency: Store["getWorkspaceByIdempotency"];
   readonly getWorkspace: Store["getWorkspace"];
   readonly listWorkspaces: Store["listWorkspaces"];

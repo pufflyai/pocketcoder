@@ -91,6 +91,8 @@ export interface SchedulerDeps {
   authorizeLaunch?: (workspace: WorkspaceRow) => Promise<AdmissionDecision>;
   admissionFenced?: () => boolean;
   preserveByPolicy?: (row: WorkspaceRow, trigger: "idle" | "deadline" | "clean_exit" | "failure") => Promise<boolean>;
+  completeOutputCleanup?: (workspace: WorkspaceRow) => Promise<void>;
+  finalizeOutputs?: (row: WorkspaceRow) => Promise<void>;
   now?: () => Date;
   onError?: (context: string, err: unknown) => void;
   metrics?: MetricSink;

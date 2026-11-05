@@ -40,6 +40,7 @@ export {
   type DiscoveredWarmProvider,
   deadlinePreservationExpiry,
   type EncryptedSecret,
+  type ExportExtraction,
   type LogRow,
   type LogStore,
   MAX_CHECKPOINT_PRESERVATION_MS,

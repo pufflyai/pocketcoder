@@ -1,4 +1,5 @@
 import { ApiError } from "../common/errors";
+import { finiteOutputMounts } from "./finite-outputs";
 import { parseTemplateManifest } from "./template";
 import { RuntimeTemplatePolicySchema, ServiceSchema } from "./template-alpha-schema";
 import { isWorkloadTemplate } from "./workload-format";
@@ -34,7 +35,10 @@ export function workloadLifecycle(manifest: WorkloadTemplate) {
       disconnectGrace: duration,
       terminateGrace: `${spec.limits.finalizationSeconds}s`,
     },
-    persistence: lifecycle?.persistence,
+    persistence: {
+      ...lifecycle?.persistence,
+      mounts: [...(lifecycle?.persistence.mounts ?? []), ...finiteOutputMounts(spec)],
+    },
     checkpointHook: lifecycle?.checkpointHook,
     maxLaunchInputBytes: lifecycle?.maxLaunchInputBytes,
   });
@@ -49,15 +53,19 @@ export function runtimeTemplateDefinition(input: unknown) {
   const parsed = parseWorkloadTemplate(input);
   const spec = parsed.manifest.spec;
   if (
-    spec.profile !== "service" ||
-    Object.values(spec.adapters).some((a) => a.kind !== "service" || a.protocol !== "pocketcoder.execution/v1")
+    spec.profile !== "finite-process" &&
+    (spec.profile !== "service" ||
+      Object.values(spec.adapters).some((a) => a.kind !== "service" || a.protocol !== "pocketcoder.execution/v1"))
   ) {
     throw new ApiError(
       "validation.invalid",
-      "unsupported template format: only request-aware service workloads are qualified for publication",
+      "unsupported template format: only finite-process and request-aware service workloads are qualified for publication",
     );
   }
-  if (Object.values(spec.operations).some((operation) => operation.outputRoots.length))
+  if (
+    spec.profile !== "finite-process" &&
+    Object.values(spec.operations).some((operation) => operation.outputRoots.length)
+  )
     throw new ApiError("validation.invalid", "Service output publication is not qualified.");
   if (Object.keys(spec.credentialSlots).length)
     throw new ApiError("validation.invalid", "Workload credential slots are not qualified.");

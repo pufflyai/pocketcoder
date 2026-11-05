@@ -20,7 +20,10 @@ test("service startup retains declared mounts, checkpoint hook and bounded launc
   const snapshot = workloadSnapshotOf(parseWorkloadTemplate({ ...source, spec: { ...source.spec, lifecycle } }));
   const exec = waitingExecSpec(snapshot, "observed-incarnation", "restore", input);
   expect(exec.harness).toBeNull();
-  expect(exec.persistence.mounts).toEqual(lifecycle.persistence.mounts.map(({ name, target }) => ({ name, target })));
+  expect(exec.persistence.mounts).toEqual([
+    ...lifecycle.persistence.mounts.map(({ name, target }) => ({ name, target })),
+    { name: "finite-output-0", target: "/outputs" },
+  ]);
   expect(exec.persistence.conversation_restore).toBe("supported");
   expect(exec.checkpoint_hook?.command).toEqual(lifecycle.checkpointHook.command);
   expect(exec.env.POCKETCODER_LAUNCH_INPUT).toBe(JSON.stringify(input));

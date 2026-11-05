@@ -335,5 +335,19 @@
     "folderMillis": 1793710475000,
     "hash": "2844917abc5eea00cfae538f73cfa74f571ce2d00c42c5c6fefdc6747ef10bd1",
     "name": "20261103125435_lonely_shockwave"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"export_objects\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"export_id\" uuid NOT NULL,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"execution\" jsonb NOT NULL,\n\t\"reference\" jsonb NOT NULL,\n\t\"data\" bytea,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"preview_grants\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"incarnation_id\" text NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"key_id\" uuid NOT NULL,\n\t\"subject\" text NOT NULL,\n\t\"access_revision\" text NOT NULL,\n\t\"previews\" text[] NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"ceiling_at\" timestamp with time zone NOT NULL,\n\t\"revoked_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"workspaces\" ADD COLUMN \"lifetime\" jsonb;",
+      "\nCREATE INDEX \"export_objects_retention\" ON \"export_objects\" (\"expires_at\");",
+      "\nCREATE INDEX \"export_objects_workspace\" ON \"export_objects\" (\"workspace_id\");",
+      "\nALTER TABLE \"storage_reservations\" DROP CONSTRAINT \"storage_reservations_purpose_check\", ADD CONSTRAINT \"storage_reservations_purpose_check\" CHECK (\"purpose\" IN ('checkpoint-upload', 'checkpoint-index', 'backup', 'attachment', 'screenshot', 'export'));"
+    ],
+    "bps": true,
+    "folderMillis": 1793899513000,
+    "hash": "1273549286c6ab25408e36e80b59dc08a917dd6a048e99edf2f6b5cca5ff3872",
+    "name": "20261105172513_young_the_professor"
   }
 ]

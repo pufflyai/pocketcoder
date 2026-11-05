@@ -55,7 +55,7 @@ export const WorkloadTemplateBaseSchema = z.strictObject({
     operations: z.record(WorkloadNameSchema, WorkloadOperationSchema),
     services: z.record(
       WorkloadNameSchema,
-      ServiceSchema.extend({ process: HarnessSchema.strict().optional() }).strict(),
+      ServiceSchema.extend({ process: HarnessSchema.strict().optional(), autostart: z.boolean().optional() }).strict(),
     ),
     previews: PreviewsSchema,
     credentialSlots: z.record(WorkloadNameSchema, CredentialSlotSchema),

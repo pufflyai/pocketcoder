@@ -202,7 +202,13 @@ test.skipIf(!available)(
         conversationIdentity: nextIdentity,
       });
     } catch (error) {
-      console.error(logs.slice(-30).join("\n"));
+      console.error(
+        logs
+          .filter((line) => !line.includes('"event":"request.completed"'))
+          .slice(-30)
+          .join("\n"),
+      );
+      if (workspaceId) console.error(await request(`/v1/workspaces/${workspaceId}`).catch(() => null));
       if (workspaceId)
         console.error(
           await request(

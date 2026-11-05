@@ -51,8 +51,12 @@ export async function quiesceArchive(
     if (!callbacks.native && !callbacks.hasHook)
       callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
     return true;
-  } catch {
-    callbacks.send("checkpoint_status", { operation_id: operationId, phase: "failed" });
+  } catch (error) {
+    callbacks.send("checkpoint_status", {
+      operation_id: operationId,
+      phase: "failed",
+      detail: error instanceof Error ? error.message.slice(0, 512) : "quiescence failed",
+    });
     return false;
   } finally {
     clearTimeout(timer);

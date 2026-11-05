@@ -5,6 +5,7 @@ export type {
   DiscoveredProvider,
   DiscoveredStorage,
   DiscoveredWarmProvider,
+  ExportExtraction,
   ProviderRef,
   ProviderState,
   RuntimeMountRef,
@@ -37,6 +38,10 @@ export * from "./stores/checkpoint-transfers";
 export * from "./stores/executions";
 export type { InputClaim, InputLimits, InputManifestRow, InputStore, StoredInput } from "./stores/inputs";
 export * from "./stores/leases";
+export * from "./stores/managed-budgets";
+export * from "./stores/managed-sessions";
+export * from "./stores/preview-grants";
+export * from "./stores/retained-exports";
 export * from "./stores/secrets";
 export * from "./stores/storage-reservations";
 export type { WorkspaceRuntimeRegistration } from "./stores/workspaces";

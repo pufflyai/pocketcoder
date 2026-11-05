@@ -36,7 +36,7 @@ export async function prepareWaitingRuntime(
     const admission = workloadAdmission(parseWorkloadTemplate(template.manifest), {
       workspaceId: workspace.id,
       incarnationId,
-      profiles: ["service"],
+      profiles: ["service", "finite-process"],
       storageProfiles: [...(deps.driver.inputStorageProfiles ?? ["controller-readonly/v1"])],
       ceilings: deps.workloadLimits,
       now: new Date().toISOString(),

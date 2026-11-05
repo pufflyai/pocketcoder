@@ -607,9 +607,9 @@ The `pocketcoder.dev/v1` workload schemas are available from
 `InputObjectReference`, `AcceptedInputManifest`, `ExportObjectReference`,
 `WorkloadExportReference` and `CredentialSlot`.
 
-These are contracts for the later runtime gates, not new HTTP endpoints in G0.
-`POST /v1/templates` and startup import currently reject canonical workloads.
-The offline validate/render commands accept them. See the
+The Docker path admits finite-process and request-aware service workloads under
+explicit deployment limits. Cloud-interactive publication and credential slots
+remain closed. Offline validate/render commands accept the wider contract. See the
 [owner map and complete example](templates.md#canonical-workload-templates).
 
 An execution reference identifies workspace, runtime incarnation, owning process
@@ -734,3 +734,45 @@ look up, cancel and acknowledge requests from different conversations
 concurrently. Size input projection capacity for those concurrent requests: when
 it is full, the request waits and is resent as capacity frees. A wait longer than
 five minutes is reported as unhealthy.
+
+
+## Finite result collection
+
+These routes use the existing workspace owner. Collection and content require
+`outputs:read`; deletion requires `workspaces:purge`.
+
+| Route | Result |
+| --- | --- |
+| `GET /v1/workspaces/{id}/executions/{requestId}/exports` | 202 while pending; 200 with a settled `WorkloadExportReference` |
+| `GET /v1/workspaces/{id}/exports/{objectId}/content` | Retained bytes, independent of running compute; 404 when unavailable |
+| `DELETE /v1/workspaces/{id}/exports/{exportId}` | Deletes retained bytes and releases their storage reservation |
+
+A settled manifest exists even for zero files. Its completeness is `complete`,
+`partial` or `lost`. Errors accompany non-complete results. Workload exit outcome,
+manifest completeness, object availability and staging `cleanupState` are separate
+facts. See [finite exports](finite-exports.md).
+
+## Workspace lifetime extension
+
+`POST /v1/workspaces/{id}/lifetime` requires the existing owner and
+`workspaces:create`. Send `extensionId` (UUID), `expectedRevision` (the current
+`lifetime.revision`), and `deadlineAt` (absolute ISO time). The desired deadline
+must be later than the current deadline and no later than the persisted creation
+ceiling or current key expiry. The transaction must acquire the workspace before
+its current expiry or any teardown claim. It returns a `LifetimeReceipt` with the
+new revision and original ceiling. Identical retries return the original receipt;
+changed input or a stale revision conflicts. Legacy workspaces without a stored
+ceiling cannot extend.
+
+## Durable preview grants
+
+Cloud preview opens take `grantId` alongside the existing `session` options.
+Grant create/lookup/renew/revoke routes require `previews:open` and current
+workspace ownership. See [the grant contract and renewal flow](preview-grants.md).
+
+## Managed integration contract
+
+The proposed logical session, queue and budget APIs have versioned types and
+machine-readable schemas, but are not registered server routes. Their status,
+field mappings and transaction owners are listed in the
+[managed contract index](managed-contracts.md).

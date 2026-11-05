@@ -27,6 +27,15 @@ export function waitingExecSpec(
     workload: {
       incarnationId,
       profile: spec.profile,
+      serviceHealth: Object.fromEntries(
+        Object.entries(spec.services).map(([name, service]) => [
+          name,
+          { baseUrl: service.baseUrl, healthPath: service.healthPath },
+        ]),
+      ),
+      manualServices: Object.entries(spec.services)
+        .filter(([, service]) => service.autostart === false)
+        .map(([name]) => name),
       operations,
       infrastructure: Object.fromEntries(
         Object.entries(spec.services).flatMap(([name, service]) => (service.process ? [[name, service.process]] : [])),
