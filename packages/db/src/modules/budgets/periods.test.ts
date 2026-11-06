@@ -40,6 +40,7 @@ test.each(["utc_day", "utc_month"] as const)(
         requestedOutputTokens: 20,
       };
       await budgets.reserve(input);
+      expect((await budgets.usage(f.keyId, f.scopeId)).oldestUnresolvedAt).toBeNull();
       await budgets.claimSend(identity);
       await budgets.retainUncertain(identity);
       const before = await budgets.usage(f.keyId, f.scopeId);

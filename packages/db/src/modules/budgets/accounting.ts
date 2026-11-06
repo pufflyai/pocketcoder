@@ -54,7 +54,8 @@ export function usageSnapshot(
   blockedReason: string | null,
 ): managed.BudgetUsage {
   const e = exposure(records, policy.scopeId, policy, at);
-  const oldest = e.active.map((r) => new Date(r.reservation.reservedAt).getTime()).sort((a, b) => a - b)[0];
+  const unresolved = e.active.filter((r) => r.state === "uncertain" || r.state === "conflict");
+  const oldest = unresolved.map((r) => new Date(r.reservation.reservedAt).getTime()).sort((a, b) => a - b)[0];
   return {
     scopeId: policy.scopeId,
     policyRevision: policy.revision,
@@ -73,7 +74,7 @@ export function usageSnapshot(
     workspaceStarts: 0,
     activeWorkspaces: 0,
     inFlightModelRequests: e.active.length,
-    unresolvedInvocations: e.active.filter((r) => r.state === "uncertain" || r.state === "conflict").length,
+    unresolvedInvocations: unresolved.length,
     oldestUnresolvedAt: oldest === undefined ? null : new Date(oldest).toISOString(),
     blockedReason,
     asOf: at.toISOString(),
