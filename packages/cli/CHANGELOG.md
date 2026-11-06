@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.12.1
+
+### Patch Changes
+
+- [#157](https://github.com/pufflyai/pocketcoder/pull/157) [`78a6661`](https://github.com/pufflyai/pocketcoder/commit/78a6661b0260f2de50219cfe7e6d4ae93ed4a521) Thanks [@au-re](https://github.com/au-re)! - Compile the controller to bytecode with Bun 1.4.4 under the 150 MB limit and preserve trusted ingress validation.
+
 ## 0.12.0
 
 ### Minor Changes
