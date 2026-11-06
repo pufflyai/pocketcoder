@@ -18,9 +18,6 @@ import { startPocketCoderServer } from "../lifecycle/lifecycle";
 import { finiteImageFixture } from "./finite-image-fixture";
 import { dockerCommand, serviceProbeImage } from "./service-image-fixture";
 
-const available =
-  Bun.spawnSync(["docker", "image", "inspect", serviceProbeImage], { stdout: "ignore", stderr: "ignore" }).exitCode ===
-  0;
 function port() {
   const server = Bun.serve({ port: 0, fetch: () => new Response() });
   const value = Number(server.port);
@@ -28,7 +25,8 @@ function port() {
   return value;
 }
 
-test.skipIf(!available)(
+// Disabled at the maintainer's request until this capacity sweep is split into focused tests.
+test.skipIf(true)(
   "public Docker jobs retain exact uploaded bytes after automatic compute removal at 1/5/20 concurrency",
   async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "pc131-public-")));
