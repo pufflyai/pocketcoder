@@ -8,6 +8,7 @@ import { createConversationTables } from "./conversations";
 import { createExportObjectTables } from "./export-objects";
 import { createInputTables } from "./inputs";
 import { createLeaseTables } from "./leases";
+import { createManagedTables } from "./managed";
 import { createPersistenceTables } from "./persistence";
 import { createPreviewGrantTables } from "./preview-grants";
 import { createSecretTables } from "./secrets";
@@ -24,6 +25,7 @@ export function createSchema(schema?: string) {
   const reservations = createStorageReservationTables(table, access, workspaces, persistence);
   return {
     ...access,
+    ...createManagedTables(table, access),
     ...secrets,
     ...createLeaseTables(table, workspaces, secrets),
     ...workspaces,
@@ -42,6 +44,16 @@ export function createSchema(schema?: string) {
 
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
+  managedScopes,
+  managedScopeGrants,
+  managedProfiles,
+  managedCredentials,
+  managedSessions,
+  managedObservations,
+  budgetPolicies,
+  budgetInvocations,
+  budgetAudits,
+  budgetReports,
   workspaceLeases,
   workspaceLeaseFences,
   secrets,

@@ -801,3 +801,12 @@ History reads the canonical conversation request rows and survives workspace
 teardown. Page sizes are bounded to 200; cursors must belong to the same
 workspace, principal and conversation. Legacy text-only agent routes still reject
 attachments.
+
+
+## Managed session authority and accounting
+
+See [managed sessions and budget accounting](managed-runtime.md) for implemented
+profile provisioning, logical session create/lookup, scope policy and usage routes,
+exclusive business-credential placement, pinned broker renewal and trusted internal
+reservation/settlement ports. Request dispatch, provider gateway enforcement and
+physical capacity accounting retain their separate owners.

@@ -2,8 +2,8 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "fc909b61d028f2133291ba4205fe3f67efa48994b588dd164e17c30701d54084",
-  "sourceChecksum": "5b1f57f221e194718b6d97befb1ec2af2c982cb35c1f6a9f4ae1e790f1668752",
+  "checksum": "d8ebfc182a87e674466404578c6c9470d852a194ab4c87f80bb13dc851076934",
+  "sourceChecksum": "af6c15a93c2a532e70ab58d4fb4ccb3a2c1a38f8054168a03c294f33da902e08",
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -104,8 +104,8 @@
       "hash": "2844917abc5eea00cfae538f73cfa74f571ce2d00c42c5c6fefdc6747ef10bd1"
     },
     {
-      "name": "20261105172513_young_the_professor",
-      "hash": "1273549286c6ab25408e36e80b59dc08a917dd6a048e99edf2f6b5cca5ff3872"
+      "name": "20261106010540_closed_quicksilver",
+      "hash": "b98f87df69257e7ec3deec1b01e537483f9e27c4771f6a1e6a5c386cfd49b318"
     }
   ]
 }

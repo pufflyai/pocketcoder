@@ -3,38 +3,41 @@
 The internal `@pstdio/pocketcoder-contracts` package exports `managed`, the versioned integration design
 for PC-162 draft revision 2. `MANAGED_CONTRACT_REVISION` is
 `pocketcoder.managed/v1`. The authoritative Zod types live under
-`packages/contracts/src/sessions` and `budgets`. These are contracts for later
-session and accounting work, not a claim that logical sessions or budgets run now.
+`packages/contracts/src/sessions` and `budgets`. Session create/lookup, execution profile provisioning, budget policy writes/reads
+and usage reads are implemented. The remaining request, file, recovery, history
+and gateway operations retain their separate owners. See the [implemented runtime](managed-runtime.md).
 
 | Artifact | Purpose |
 | --- | --- |
 | [JSON Schema](../packages/contracts/src/sessions/generated/contracts.schema.json) | Named strict input/resource definitions, Draft 2020-12 |
-| [OpenAPI](../packages/contracts/src/sessions/generated/openapi.json) | Proposed consumer routes; every operation has `x-shipped: false` |
+| [OpenAPI](../packages/contracts/src/sessions/generated/openapi.json) | Consumer routes; `x-shipped` identifies implemented operations |
 | [Parent examples](../packages/contracts/src/sessions/fixtures/parent-revision-2.json) | One example per parent definition |
 | [Collection examples](../packages/contracts/src/sessions/fixtures/collection-v1.json) | Pending, empty complete, zero-file partial and loss |
 | [Fingerprint vectors](../packages/contracts/src/sessions/fixtures/fingerprints-v1.json) | Portable canonical UTF-8 JSON and SHA-256 expectations |
+| [Implemented store ports](../packages/runtime-contracts/src/stores/managed-runtime.ts) | Narrow live authority/session/accounting ports; DB feature helpers pass the owning transaction |
 | [Store ports](../packages/runtime-contracts/src/stores/managed-sessions.ts) | Transaction, authority, input pins, canonical requests, bindings, observations and history |
 | [Budget ports](../packages/runtime-contracts/src/stores/managed-budgets.ts) | Invocation reservations, usage evidence, uncertain liability and cleanup settlement |
 
 Run `bun run contracts:generate` after changing a schema. `bun run check` rejects
 stale artifacts. Runtime schema tests cover cross-field identity, event revisions,
 terminal/cancel consistency and collection invariants beyond structural JSON
-validation. Generate clients from this explicitly unshipped API only as design
-work; do not send these routes to current servers.
+validation. Only operations marked `x-shipped: true` are installed. The running server also
+publishes its actual API at `/v1/openapi.json`. Implemented routes use the existing
+`WireError` envelope; future managed error designs remain explicit.
 
 ## Contract and physical API map
 
 | Parent concept | Versioned name | Current physical foundation / next owner |
 | --- | --- | --- |
-| Immutable execution profile | `ExecutionProfile` | PC-164 provisioning; PC-137 credential authorization/delivery |
-| Logical identity and state | `SessionCreate`, `Session` | PC-164; canonical conversation owns its transcript |
+| Immutable execution profile | `ExecutionProfile` | PC-137 provisions and pins authority; PC-164 references it |
+| Logical identity and state | `SessionCreate`, `Session` | PC-164 ships create/lookup and generation binding; canonical conversation owns its transcript |
 | Durable logical acceptance | `RequestInput`, `Request` | PC-166 extends `conversation_requests`; current `/workspaces/{id}/executions` requires a physical envelope |
 | Cancel and close | `CancelCommand`, `CancelReceipt` | PC-172 composes existing targeted execution cancellation and workspace lifecycle |
 | Immutable session inputs | `InputUpload`, `InputObject`, `InputReference` | PC-165 extends existing input owner; current upload paths are workspace-scoped |
 | Retained result and zero-file receipt | `CollectionResult`, `ExportObject`, `ExportPage` | PC-165 maps `WorkloadExportReference`; PC-131 implements finite physical collection |
 | Retained history snapshot | `HistoryPage` | PC-173 reuses canonical `ConversationRecordDocument`; outer fields are exactly `records`, `nextCursor`, `eventCursor` |
 | Ordered observations | `RuntimeEvent` | PC-164 writes revisions/observations; PC-173 adds snapshot/replay readers |
-| Budget scopes and policies | `BudgetPolicyWrite`, `BudgetPolicy`, `BudgetUsage` | PC-167/168/169/170; no consumer-writable usage settlement |
+| Budget scopes and policies | `BudgetPolicyWrite`, `BudgetPolicy`, `BudgetUsage` | PC-167/168/169 ship policy and token accounting; PC-170 owns capacity; no consumer-writable settlement |
 | Runtime cleanup evidence | `CleanupReceipt` | Trusted accounting input, separate from model usage evidence |
 | Workspace service tool | `ServiceStart`, `ServiceReceipt` | PC-133 ships supervisor-local `service start/stop/status`; no public remote shell |
 | Bounded physical extension | `LifetimeExtension`, `LifetimeReceipt` | PC-133 ships `/workspaces/{id}/lifetime`; camel-case request/receipt fields |
@@ -77,8 +80,8 @@ in one transaction before producer acknowledgement. Managed recovery must replac
 the legacy eager interrupted-record shortcut, not invent a successful reply on
 restart. Retained observations are not another execution authority. Snapshot pages
 and their event watermark use one consistent snapshot with a stable upper bound.
-PC-164/166/171/172/173 implement these ports and crash cuts; this change provides
-and tests their contract only.
+PC-164 implements session revisions and transaction-aware observation writes.
+PC-166/171/172/173 retain logical acceptance, recovery, close and replay ownership.
 
 ## Fingerprint and placement
 
@@ -103,3 +106,16 @@ appear in these resources, templates, history, events or logs.
 
 Capability admission still uses installed producer evidence and `workloadAdmission`.
 Declaring a schema or capability name never enables an unsupported adapter.
+
+The internal invocation port also freezes requestDigest/countEvidenceRef and the
+physical binding revision. It separates reservation from a once-only send claim.
+Trusted usage evidence records provider/account/response identity and report
+digests. See [accounting and reconciliation](managed-runtime.md#reserve-claim-and-settle).
+
+The broad generic ManagedSessionPorts/ManagedBudgetPorts describe later composition.
+The implemented subset is ManagedRuntimeStore in managed-runtime.ts. Session-level
+binding compares a durable binding revision and keeps a separate highest generation.
+Its stored conversationId is the canonical public conversation identity; the existing
+conversation owner allocates a document row only when it first writes transcript bytes.
+DB sessionWriter helpers accept the caller transaction for later atomic acceptance.
+These spellings refine the earlier draft without adding another execution owner.

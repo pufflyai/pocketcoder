@@ -4,6 +4,7 @@ import { z } from "zod";
 
 type IssuerConfig = Extract<SecretPutRequest, { type: "setup-issuer" }>["value"];
 const IdentitySchema = z.strictObject({
+  managed_authority: z.record(z.string(), z.json()).optional(),
   workspace_id: z.uuid(),
   source_url: z.url().nullable(),
   source_revision: z.string().min(1).nullable(),
@@ -25,6 +26,7 @@ const MintSchema = IdentitySchema.extend({
 const RevokeSchema = IdentitySchema.extend({ revoked: z.literal(true) });
 const unavailable = () => new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
 const identityOf = (row: WorkspaceLeaseRow) => ({
+  ...(row.managedAuthority ? { managed_authority: row.managedAuthority } : {}),
   workspace_id: row.workspaceId,
   source_url: row.sourceUrl,
   source_revision: row.sourceRevision,
@@ -87,6 +89,7 @@ export function createIssuerClient(options: { ca?: string } = {}) {
   function bound(row: WorkspaceLeaseRow, result: z.infer<typeof IdentitySchema>) {
     const expected = identityOf(row);
     if (
+      digestOf(result.managed_authority ?? null) !== digestOf(row.managedAuthority) ||
       result.workspace_id !== expected.workspace_id ||
       result.source_url !== expected.source_url ||
       result.source_revision !== expected.source_revision ||

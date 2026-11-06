@@ -17,6 +17,8 @@ function parametersFor(route: (typeof managedRoutes)[number]) {
         ? { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }
         : { type: "string", format: "uuid" },
   }));
+  if (route.path.startsWith("/v1/execution-profiles/"))
+    parameters.push({ name: "principalId", in: "query", required: true, schema: { type: "string", format: "uuid" } });
   if (route.path.endsWith("/events")) parameters.push({ name: "after", in: "query", schema: { type: "string" } });
   if (route.path.endsWith("/history"))
     parameters.push(
@@ -33,6 +35,8 @@ function parametersFor(route: (typeof managedRoutes)[number]) {
   return parameters;
 }
 
+const errorName = (route: (typeof managedRoutes)[number]) => (route.shipped ? "WireError" : "Error");
+
 export function generatedManagedContract() {
   const definitions = Object.fromEntries(
     Object.entries(managedSchemas).map(([name, schema]) => [
@@ -45,7 +49,7 @@ export function generatedManagedContract() {
     $id: "urn:pocketcoder:managed:contracts:1",
     title: MANAGED_CONTRACT_REVISION,
     description:
-      "Proposed integration contract. Cross-record identity, Unicode validity, state transitions and authorization require the exported runtime validators and contract notes.",
+      "Versioned integration contract. Unimplemented operations remain marked x-shipped:false. Cross-record identity, Unicode validity, state transitions and authorization require the exported runtime validators and contract notes.",
     $defs: definitions,
   };
   const paths: Record<string, Record<string, unknown>> = {};
@@ -64,10 +68,10 @@ export function generatedManagedContract() {
     for (const status of [400, 403, 404, 409, 410, 412, 422, 429, 503])
       responses[status] = {
         description: "Safe managed error; reconcile potentially accepted writes by identity",
-        content: content("Error"),
+        content: content(errorName(route)),
       };
     const operation = {
-      "x-shipped": false,
+      "x-shipped": route.shipped,
       "x-contract-revision": MANAGED_CONTRACT_REVISION,
       parameters: parametersFor(route),
       security: [{ bearerAuth: [] }],
@@ -89,7 +93,7 @@ export function generatedManagedContract() {
     schema,
     openapi: {
       openapi: "3.1.0",
-      info: { title: "PocketCoder managed integration (unshipped)", version: "1" },
+      info: { title: "PocketCoder managed integration", version: "1" },
       paths,
       components: { schemas: definitions, securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } } },
     },

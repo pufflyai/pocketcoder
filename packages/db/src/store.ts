@@ -6,6 +6,7 @@ import { createPostgresContext, type PostgresOptions } from "./database/postgres
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import type { JournalSnapshot } from "./journal/acknowledgement";
 import { createJournalAcknowledgement } from "./journal/acknowledgement";
+import { createManagedRuntime } from "./managed-runtime";
 import { createAuth } from "./modules/auth/repository";
 import { convertLegacyConversations } from "./modules/conversations/legacy-conversion";
 import { createConversations } from "./modules/conversations/repository";
@@ -40,6 +41,7 @@ import { createRecovery } from "./recovery/recovery";
 import { createRecordReplay } from "./recovery/replay-records";
 
 export class DatabaseStore implements Store {
+  readonly managed: Store["managed"];
   readonly executions: Store["executions"];
   readonly exports: Store["exports"];
   readonly previewGrants: Store["previewGrants"];
@@ -90,6 +92,7 @@ export class DatabaseStore implements Store {
       if (!context.journal || !context.dataWriter) throw new Error("A durable journal is required.");
       return { head: context.journal.head(), records: context.journal.records(), writer: context.dataWriter };
     };
+    this.managed = createManagedRuntime(context);
     this.executions = createExecutionDispatch(context);
     this.exports = createRetainedExports(context);
     this.previewGrants = createPreviewGrants(context);

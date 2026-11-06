@@ -13,7 +13,7 @@ test("generated schemas and proposed OpenAPI routes share the versioned contract
   expect(Object.keys(schema.$defs)).toEqual(Object.keys(managedSchemas));
   for (const route of managedRoutes) {
     const operation = openapi.paths[route.path][route.method];
-    expect(operation["x-shipped"]).toBe(false);
+    expect(operation["x-shipped"]).toBe(route.shipped);
     for (const match of route.path.matchAll(/\{(\w+)\}/g)) {
       expect(
         operation.parameters.some((p: { name: string; in: string }) => p.name === match[1] && p.in === "path"),

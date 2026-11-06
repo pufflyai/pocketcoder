@@ -23,6 +23,8 @@ import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { InputStorage, type InputStorageOptions } from "./attachments/input-storage";
+import { registerBudgetPolicyRoutes } from "./budgets/policy-routes";
+import { registerBudgetUsageRoutes } from "./budgets/usage-routes";
 import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
@@ -58,6 +60,8 @@ import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
+import { registerProfileRoutes } from "./sessions/profile-routes";
+import { registerSessionRoutes } from "./sessions/session-routes";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
@@ -298,6 +302,10 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
+  registerSessionRoutes(app, store);
+  registerProfileRoutes(app, store);
+  registerBudgetPolicyRoutes(app, store);
+  registerBudgetUsageRoutes(app, store);
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);

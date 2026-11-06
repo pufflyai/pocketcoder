@@ -1,13 +1,13 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "PocketCoder managed integration (unshipped)",
+    "title": "PocketCoder managed integration",
     "version": "1"
   },
   "paths": {
     "/v1/execution-profiles/{profileId}/revisions/{revision}": {
       "put": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -27,6 +27,15 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "principalId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -61,7 +70,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -71,7 +80,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -81,7 +90,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -91,7 +100,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -101,7 +110,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -111,7 +120,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -121,7 +130,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -131,7 +140,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -141,7 +150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -151,7 +160,7 @@
     },
     "/v1/sessions": {
       "post": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [],
         "security": [
@@ -195,7 +204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -205,7 +214,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -215,7 +224,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -225,7 +234,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -235,7 +244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -245,7 +254,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -255,7 +264,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -265,7 +274,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -275,7 +284,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -285,7 +294,7 @@
     },
     "/v1/sessions/{sessionId}": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -319,7 +328,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -329,7 +338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -339,7 +348,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -349,7 +358,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -359,7 +368,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -369,7 +378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -379,7 +388,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -389,7 +398,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -399,7 +408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2199,7 +2208,7 @@
     },
     "/v1/budget-scopes/{scopeId}/policy": {
       "put": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2257,7 +2266,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2267,7 +2276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2277,7 +2286,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2287,7 +2296,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2297,7 +2306,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2307,7 +2316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2317,7 +2326,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2327,7 +2336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2337,7 +2346,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2345,7 +2354,7 @@
         }
       },
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2379,7 +2388,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2389,7 +2398,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2399,7 +2408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2409,7 +2418,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2419,7 +2428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2429,7 +2438,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2439,7 +2448,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2449,7 +2458,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2459,7 +2468,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2469,7 +2478,7 @@
     },
     "/v1/budget-scopes/{scopeId}/usage": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2503,7 +2512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2513,7 +2522,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2523,7 +2532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2533,7 +2542,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2543,7 +2552,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2553,7 +2562,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2563,7 +2572,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2573,7 +2582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2583,7 +2592,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -5400,6 +5409,119 @@
               }
             },
             "required": ["code", "message", "retry", "retryAfterSeconds", "requestId"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["error"],
+        "additionalProperties": false
+      },
+      "WireError": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "auth.invalid_key",
+                  "auth.missing_scope",
+                  "auth.disabled_principal",
+                  "principal.not_found",
+                  "principal.name_conflict",
+                  "key.not_found",
+                  "request.body_too_large",
+                  "validation.invalid",
+                  "idempotency.conflict",
+                  "capacity.queue_full",
+                  "capacity.waiters_full",
+                  "template.not_found",
+                  "template.version_not_found",
+                  "template.version_immutable",
+                  "template.not_authorized",
+                  "workspace.not_found",
+                  "workspace.external_id_conflict",
+                  "workspace.not_ready",
+                  "workspace.terminal",
+                  "workspace.disconnected",
+                  "terminal.not_declared",
+                  "terminal.session_limit",
+                  "terminal.session_not_found",
+                  "terminal.session_closed",
+                  "terminal.protocol_unsupported",
+                  "workspace.persistence_not_enabled",
+                  "workspace.preserving",
+                  "checkpoint.not_found",
+                  "checkpoint.unsupported",
+                  "artifact.not_found",
+                  "artifact.workspace_active",
+                  "artifact.too_large",
+                  "checkpoint.not_ready",
+                  "checkpoint.none_ready",
+                  "checkpoint.corrupt",
+                  "checkpoint.quota_exceeded",
+                  "checkpoint.in_use",
+                  "restore.template_not_authorized",
+                  "restore.image_unavailable",
+                  "restore.incompatible",
+                  "resume.unsupported",
+                  "conversation.not_found",
+                  "conversation.expired",
+                  "conversation.deleted",
+                  "operation.conflict",
+                  "source.not_allowed",
+                  "source.invalid_revision",
+                  "secret.unavailable",
+                  "secret.not_found",
+                  "storage.capacity_exhausted",
+                  "relay.body_too_large",
+                  "relay.route_not_allowed",
+                  "relay.streaming_unsupported",
+                  "relay.deadline_exceeded",
+                  "relay.upstream_error",
+                  "agent.interrupt_unsupported",
+                  "attachment.invalid",
+                  "attachment.too_large",
+                  "attachment.not_found",
+                  "attachment.conflict",
+                  "attachment.unsupported",
+                  "attachment.interrupted",
+                  "maintenance.active",
+                  "maintenance.timeout",
+                  "backup.failed",
+                  "journal.pending",
+                  "account.purged",
+                  "account.purge_pending",
+                  "recovery.required",
+                  "recovery.failed",
+                  "session.not_found",
+                  "session.closed",
+                  "profile.not_found",
+                  "budget.not_found",
+                  "budget.exhausted",
+                  "budget.conflict",
+                  "revision.stale",
+                  "internal.error"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "details": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": ["code", "message", "request_id"],
             "additionalProperties": false
           }
         },

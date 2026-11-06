@@ -270,3 +270,12 @@ with business credentials. Only credential-free compatible sessions may share.
 The binding ID is an opaque broker registration, never the credential. Physical
 credentials must expire with their workspace and be reissued after replacement;
 no long-lived authority may enter templates, request JSON, history or logs.
+
+
+## Managed session authority and accounting
+
+See [managed sessions and budget accounting](managed-runtime.md) for implemented
+profile provisioning, logical session create/lookup, scope policy and usage routes,
+exclusive business-credential placement, pinned broker renewal and trusted internal
+reservation/settlement ports. Request dispatch, provider gateway enforcement and
+physical capacity accounting retain their separate owners.

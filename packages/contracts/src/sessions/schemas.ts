@@ -1,5 +1,6 @@
 import { BudgetPolicySchema, BudgetPolicyWriteSchema } from "../budgets/policy";
 import { BudgetUsageSchema, CleanupReceiptSchema } from "../budgets/usage";
+import { ErrorEnvelopeSchema } from "../common/errors";
 import { LifetimeExtensionSchema, LifetimeReceiptSchema } from "../workspaces/lifetime";
 import { ServiceReceiptSchema, ServiceStartSchema } from "../workspaces/service-control";
 import { CollectionResultSchema } from "./collection";
@@ -26,6 +27,7 @@ export const managedSchemas = {
   CancelReceipt: CancelReceiptSchema,
   RuntimeEvent: RuntimeEventSchema,
   Error: ErrorSchema,
+  WireError: ErrorEnvelopeSchema,
   BudgetPolicy: BudgetPolicySchema,
   BudgetPolicyWrite: BudgetPolicyWriteSchema,
   BudgetUsage: BudgetUsageSchema,

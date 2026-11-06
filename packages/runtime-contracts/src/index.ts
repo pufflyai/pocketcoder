@@ -39,6 +39,7 @@ export * from "./stores/executions";
 export type { InputClaim, InputLimits, InputManifestRow, InputStore, StoredInput } from "./stores/inputs";
 export * from "./stores/leases";
 export * from "./stores/managed-budgets";
+export * from "./stores/managed-runtime";
 export * from "./stores/managed-sessions";
 export * from "./stores/preview-grants";
 export * from "./stores/retained-exports";

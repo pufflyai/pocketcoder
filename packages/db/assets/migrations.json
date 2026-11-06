@@ -338,16 +338,37 @@
   },
   {
     "sql": [
-      "CREATE TABLE \"export_objects\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"export_id\" uuid NOT NULL,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"execution\" jsonb NOT NULL,\n\t\"reference\" jsonb NOT NULL,\n\t\"data\" bytea,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "CREATE TABLE \"budget_audits\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"invocation_id\" uuid NOT NULL,\n\t\"actor_key_id\" uuid NOT NULL,\n\t\"reason\" text NOT NULL,\n\t\"previous\" jsonb NOT NULL,\n\t\"next\" jsonb NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"budget_invocations\" (\n\t\"invocation_id\" uuid PRIMARY KEY,\n\t\"record\" jsonb NOT NULL,\n\t\"reserved_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"budget_policies\" (\n\t\"scope_id\" uuid,\n\t\"revision\" integer,\n\t\"policy\" jsonb NOT NULL,\n\tCONSTRAINT \"budget_policies_pkey\" PRIMARY KEY(\"scope_id\",\"revision\")\n);\n",
+      "\nCREATE TABLE \"budget_reports\" (\n\t\"invocation_id\" uuid,\n\t\"digest\" text,\n\t\"evidence\" jsonb NOT NULL,\n\t\"recorded_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"budget_reports_pkey\" PRIMARY KEY(\"invocation_id\",\"digest\")\n);\n",
+      "\nCREATE TABLE \"export_objects\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"export_id\" uuid NOT NULL,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"execution\" jsonb NOT NULL,\n\t\"reference\" jsonb NOT NULL,\n\t\"data\" bytea,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"deleted_at\" timestamp with time zone\n);\n",
+      "\nCREATE TABLE \"managed_credentials\" (\n\t\"binding_id\" uuid PRIMARY KEY,\n\t\"binding\" jsonb NOT NULL\n);\n",
+      "\nCREATE TABLE \"managed_observations\" (\n\t\"principal_id\" uuid,\n\t\"session_id\" uuid,\n\t\"sequence\" bigint,\n\t\"event\" jsonb NOT NULL,\n\tCONSTRAINT \"managed_observations_pkey\" PRIMARY KEY(\"principal_id\",\"session_id\",\"sequence\")\n);\n",
+      "\nCREATE TABLE \"managed_profiles\" (\n\t\"profile_id\" uuid,\n\t\"revision\" integer,\n\t\"principal_id\" uuid NOT NULL,\n\t\"profile\" jsonb NOT NULL,\n\t\"business_slots\" jsonb NOT NULL,\n\tCONSTRAINT \"managed_profiles_pkey\" PRIMARY KEY(\"profile_id\",\"revision\")\n);\n",
+      "\nCREATE TABLE \"managed_scope_grants\" (\n\t\"scope_id\" uuid,\n\t\"principal_id\" uuid,\n\tCONSTRAINT \"managed_scope_grants_pkey\" PRIMARY KEY(\"scope_id\",\"principal_id\")\n);\n",
+      "\nCREATE TABLE \"managed_scopes\" (\n\t\"scope_id\" uuid PRIMARY KEY,\n\t\"principal_id\" uuid NOT NULL,\n\t\"installation\" boolean NOT NULL,\n\t\"blocked_reason\" text,\n\t\"last_clock_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nCREATE TABLE \"managed_sessions\" (\n\t\"principal_id\" uuid,\n\t\"session_id\" uuid,\n\t\"conversation_id\" uuid NOT NULL,\n\t\"session\" jsonb NOT NULL,\n\t\"binding\" jsonb,\n\t\"binding_revision\" integer DEFAULT 0 NOT NULL,\n\t\"last_generation\" integer DEFAULT 0 NOT NULL,\n\t\"next_sequence\" bigint DEFAULT 1 NOT NULL,\n\t\"queue_count\" integer DEFAULT 0 NOT NULL,\n\t\"queue_bytes\" bigint DEFAULT 0 NOT NULL,\n\tCONSTRAINT \"managed_sessions_pkey\" PRIMARY KEY(\"principal_id\",\"session_id\")\n);\n",
       "\nCREATE TABLE \"preview_grants\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"incarnation_id\" text NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"key_id\" uuid NOT NULL,\n\t\"subject\" text NOT NULL,\n\t\"access_revision\" text NOT NULL,\n\t\"previews\" text[] NOT NULL,\n\t\"created_at\" timestamp with time zone NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"ceiling_at\" timestamp with time zone NOT NULL,\n\t\"revoked_at\" timestamp with time zone\n);\n",
+      "\nALTER TABLE \"workspace_leases\" ADD COLUMN \"managed_authority\" jsonb;",
       "\nALTER TABLE \"workspaces\" ADD COLUMN \"lifetime\" jsonb;",
       "\nCREATE INDEX \"export_objects_retention\" ON \"export_objects\" (\"expires_at\");",
       "\nCREATE INDEX \"export_objects_workspace\" ON \"export_objects\" (\"workspace_id\");",
+      "\nCREATE UNIQUE INDEX \"managed_installation_scope\" ON \"managed_scopes\" (\"installation\") WHERE \"installation\" = true;",
+      "\nALTER TABLE \"budget_audits\" ADD CONSTRAINT \"budget_audits_j7QHV8Ue4LZo_fkey\" FOREIGN KEY (\"invocation_id\") REFERENCES \"budget_invocations\"(\"invocation_id\");",
+      "\nALTER TABLE \"budget_policies\" ADD CONSTRAINT \"budget_policies_scope_id_managed_scopes_scope_id_fkey\" FOREIGN KEY (\"scope_id\") REFERENCES \"managed_scopes\"(\"scope_id\");",
+      "\nALTER TABLE \"budget_reports\" ADD CONSTRAINT \"budget_reports_nlISV9kK3JCn_fkey\" FOREIGN KEY (\"invocation_id\") REFERENCES \"budget_invocations\"(\"invocation_id\");",
+      "\nALTER TABLE \"managed_observations\" ADD CONSTRAINT \"managed_observations_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"managed_profiles\" ADD CONSTRAINT \"managed_profiles_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"managed_scope_grants\" ADD CONSTRAINT \"managed_scope_grants_scope_id_managed_scopes_scope_id_fkey\" FOREIGN KEY (\"scope_id\") REFERENCES \"managed_scopes\"(\"scope_id\");",
+      "\nALTER TABLE \"managed_scope_grants\" ADD CONSTRAINT \"managed_scope_grants_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"managed_scopes\" ADD CONSTRAINT \"managed_scopes_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
+      "\nALTER TABLE \"managed_sessions\" ADD CONSTRAINT \"managed_sessions_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");",
       "\nALTER TABLE \"storage_reservations\" DROP CONSTRAINT \"storage_reservations_purpose_check\", ADD CONSTRAINT \"storage_reservations_purpose_check\" CHECK (\"purpose\" IN ('checkpoint-upload', 'checkpoint-index', 'backup', 'attachment', 'screenshot', 'export'));"
     ],
     "bps": true,
-    "folderMillis": 1793899513000,
-    "hash": "1273549286c6ab25408e36e80b59dc08a917dd6a048e99edf2f6b5cca5ff3872",
-    "name": "20261105172513_young_the_professor"
+    "folderMillis": 1793927140000,
+    "hash": "b98f87df69257e7ec3deec1b01e537483f9e27c4771f6a1e6a5c386cfd49b318",
+    "name": "20261106010540_closed_quicksilver"
   }
 ]

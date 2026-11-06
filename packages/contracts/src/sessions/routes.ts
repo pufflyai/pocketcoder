@@ -1,21 +1,22 @@
 import type { managedSchemas } from "./schemas";
 
 type Shape = keyof typeof managedSchemas | "bytes";
-const route = (method: "get" | "post" | "put", path: string, response: Shape, body?: Shape) => ({
+const route = (method: "get" | "post" | "put", path: string, response: Shape, body?: Shape, shipped = false) => ({
   method,
   path,
   response,
   body,
+  shipped,
 });
 const sessions = "/v1/sessions/{sessionId}";
 const requests = `${sessions}/requests`;
 const budgets = "/v1/budget-scopes/{scopeId}";
 
-// These are integration designs. Registering a schema never installs a server route.
+// The implementation marker follows the owning server routes; remaining operations are designs.
 export const managedRoutes = [
-  route("put", "/v1/execution-profiles/{profileId}/revisions/{revision}", "ExecutionProfile", "ExecutionProfile"),
-  route("post", "/v1/sessions", "Session", "SessionCreate"),
-  route("get", sessions, "Session"),
+  route("put", "/v1/execution-profiles/{profileId}/revisions/{revision}", "ExecutionProfile", "ExecutionProfile", true),
+  route("post", "/v1/sessions", "Session", "SessionCreate", true),
+  route("get", sessions, "Session", undefined, true),
   route("post", `${sessions}/resume`, "Session"),
   route("post", requests, "Request", "RequestInput"),
   route("get", `${requests}/{requestId}`, "Request"),
@@ -29,7 +30,7 @@ export const managedRoutes = [
   route("get", `${requests}/{requestId}/collection`, "CollectionResult"),
   route("get", `${sessions}/exports`, "ExportPage"),
   route("get", `${sessions}/exports/{exportId}/content`, "bytes"),
-  route("put", `${budgets}/policy`, "BudgetPolicy", "BudgetPolicyWrite"),
-  route("get", `${budgets}/policy`, "BudgetPolicy"),
-  route("get", `${budgets}/usage`, "BudgetUsage"),
+  route("put", `${budgets}/policy`, "BudgetPolicy", "BudgetPolicyWrite", true),
+  route("get", `${budgets}/policy`, "BudgetPolicy", undefined, true),
+  route("get", `${budgets}/usage`, "BudgetUsage", undefined, true),
 ];

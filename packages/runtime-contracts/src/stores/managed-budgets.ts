@@ -15,6 +15,9 @@ export interface ManagedReservation {
   reservedAt: Date;
 }
 export interface ManagedUsageEvidence {
+  provider: string;
+  providerAccountId: string;
+  responseId: string;
   identity: ManagedInvocationIdentity;
   inputTokens: number;
   outputTokens: number;

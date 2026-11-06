@@ -1,47 +1,18 @@
-import { randomUUID } from "node:crypto";
-import { digestOf } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceLeaseRequest, WorkspaceLeaseRow } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, asc, eq, isNull, lte, notInArray } from "drizzle-orm";
-import { type DatabaseContext, lock, type Transaction } from "../../database/context";
+import type { WorkspaceLeaseRequest } from "@pstdio/pocketcoder-runtime-contracts";
+import { and, asc, eq, notInArray } from "drizzle-orm";
+import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
-import { leaseSourceIdentity, leaseWorkspaceActive } from "./lease-authority";
+import { leaseWorkspaceActive } from "./lease-authority";
 import { fenceWorkspaceLeaseRows } from "./lease-fence";
+import { requestLease } from "./lease-requests";
+import { managedLeaseActive } from "./managed-lease-authority";
 
 const closed = ["revoked", "expired"] as const;
 const isClosed = (state: string) => state === "revoked" || state === "expired";
 
-async function enforceReferenceLimit(
-  tx: Transaction,
-  leases: DatabaseContext["tables"]["workspaceLeases"],
-  input: WorkspaceLeaseRequest,
-) {
-  const sameReference = and(
-    eq(leases.workspaceId, input.workspaceId),
-    eq(leases.secretName, input.secretName),
-    eq(leases.purpose, input.purpose),
-    notInArray(leases.state, [...closed]),
-  );
-  await tx
-    .update(leases)
-    .set({ state: "expired", closedAt: input.at, updatedAt: input.at })
-    .where(and(sameReference, lte(leases.issuerExpiresAt, input.at)));
-  const pending = await tx.select({ id: leases.id }).from(leases).where(sameReference);
-  if (pending.length >= 2) throw new Error("Workspace lease limit reached");
-}
-
-function assertRequestIdentity(row: WorkspaceLeaseRow, input: WorkspaceLeaseRequest, templateDigest: string) {
-  if (
-    row.secretVersionId !== input.secretVersionId ||
-    row.workspaceId !== input.workspaceId ||
-    row.policyDigest !== input.policyDigest ||
-    row.templateDigest !== templateDigest ||
-    row.purpose !== input.purpose
-  )
-    throw new Error("Lease request identity changed");
-}
-
-export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
-  const { workspaces, workspaceLeases: leases, workspaceLeaseFences: fences, secrets } = tables;
+export function createWorkspaceLeases(context: DatabaseContext) {
+  const { db, tables } = context;
+  const { workspaces, workspaceLeases: leases, workspaceLeaseFences: fences } = tables;
   async function workspace(tx: Transaction, id: string) {
     const [row] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
     if (!row) throw new Error("Lease workspace is unavailable");
@@ -61,64 +32,7 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
   const update = async (tx: Transaction, id: string, patch: Partial<typeof leases.$inferInsert>) =>
     requiredRow((await tx.update(leases).set(patch).where(eq(leases.id, id)).returning())[0]);
   return {
-    async requestWorkspaceLease(input: WorkspaceLeaseRequest) {
-      return db.transaction(async (tx) => {
-        // Name first: publication/retirement and lease admission use one order.
-        await lock(tx, input.secretName, 4);
-        const owner = await workspace(tx, input.workspaceId);
-        if (await fenced(tx, owner.id)) throw new Error("Lease workspace is fenced");
-        if (!leaseWorkspaceActive(owner, input.purpose, input.at)) throw new Error("Lease workspace is inactive");
-        const [issuer] = await tx
-          .select()
-          .from(secrets)
-          .where(
-            and(
-              eq(secrets.name, input.secretName),
-              eq(secrets.versionId, input.secretVersionId),
-              eq(secrets.type, input.purpose),
-              isNull(secrets.retiredAt),
-            ),
-          );
-        if (!issuer) throw new Error("Lease issuer is unavailable");
-        const [existing] = await tx
-          .select()
-          .from(leases)
-          .where(and(eq(leases.secretName, input.secretName), eq(leases.requestId, input.requestId)));
-        if (existing) {
-          assertRequestIdentity(existing, input, owner.templateDigest);
-          return existing;
-        }
-        const sourceIdentity = leaseSourceIdentity(owner, input.purpose, input.secretName);
-        await enforceReferenceLimit(tx, leases, input);
-        const requestExpiresAt = new Date(Math.min(owner.deadlineAt.getTime(), input.at.getTime() + 300_000));
-        const identity = {
-          workspaceId: owner.id,
-          secretName: input.secretName,
-          secretVersionId: issuer.versionId,
-          purpose: input.purpose,
-          ...sourceIdentity,
-          templateDigest: owner.templateDigest,
-          policyDigest: input.policyDigest,
-          requestId: input.requestId,
-          requestExpiresAt,
-        };
-        return requiredRow(
-          (
-            await tx
-              .insert(leases)
-              .values({
-                id: randomUUID(),
-                ...identity,
-                requestDigest: digestOf({ ...identity, requestExpiresAt: requestExpiresAt.toISOString() }),
-                state: "requested",
-                createdAt: input.at,
-                updatedAt: input.at,
-              })
-              .returning()
-          )[0],
-        );
-      });
-    },
+    requestWorkspaceLease: (input: WorkspaceLeaseRequest) => requestLease(context, input),
     async getWorkspaceLease(id: string) {
       return (await db.select().from(leases).where(eq(leases.id, id)))[0] ?? null;
     },
@@ -170,7 +84,10 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
         )
           throw new Error("Lease request identity changed");
         const stopped =
-          row.state === "revoking" || (await fenced(tx, owner.id)) || !leaseWorkspaceActive(owner, row.purpose, at);
+          row.state === "revoking" ||
+          (await fenced(tx, owner.id)) ||
+          !leaseWorkspaceActive(owner, row.purpose, at) ||
+          !(await managedLeaseActive(tx, tables, owner, row.managedAuthority, row.secretName, row.secretVersionId, at));
         let state = row.state;
         if (stopped) state = "revoking";
         else if (state !== "delivered") state = "issued";
@@ -185,7 +102,8 @@ export function createWorkspaceLeases({ db, tables }: DatabaseContext) {
           !row.issuerExpiresAt ||
           row.issuerExpiresAt <= at ||
           (await fenced(tx, owner.id)) ||
-          !leaseWorkspaceActive(owner, row.purpose, at)
+          !leaseWorkspaceActive(owner, row.purpose, at) ||
+          !(await managedLeaseActive(tx, tables, owner, row.managedAuthority, row.secretName, row.secretVersionId, at))
         )
           return null;
         return update(tx, id, { state: "delivered", deliveredAt: row.deliveredAt ?? at, updatedAt: at });
