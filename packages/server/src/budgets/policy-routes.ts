@@ -1,12 +1,11 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
-import { bodyLimit } from "hono/body-limit";
+import { MANAGED_ERROR_RESPONSES, managedBodyLimit } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
-import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 
 export function registerBudgetPolicyRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
-  app.use("/v1/budget-scopes/*", bodyLimit({ maxSize: 262144 }));
+  app.use("/v1/budget-scopes/*", managedBodyLimit(262144));
   app.openapi(
     createRoute({
       method: "put",
@@ -23,7 +22,7 @@ export function registerBudgetPolicyRoutes(app: OpenAPIHono<AppEnv>, store: Stor
           description: "Committed policy revision",
           content: { "application/json": { schema: managed.BudgetPolicySchema } },
         },
-        ...COMMON_ERROR_RESPONSES,
+        ...MANAGED_ERROR_RESPONSES,
       },
     }),
     async (c) => {
@@ -50,7 +49,7 @@ export function registerBudgetPolicyRoutes(app: OpenAPIHono<AppEnv>, store: Stor
       request: { params: z.object({ scopeId: z.uuid() }) },
       responses: {
         200: { description: "Current policy", content: { "application/json": { schema: managed.BudgetPolicySchema } } },
-        ...COMMON_ERROR_RESPONSES,
+        ...MANAGED_ERROR_RESPONSES,
       },
     }),
     async (c) => {

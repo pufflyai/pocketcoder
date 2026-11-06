@@ -65,7 +65,7 @@ export function generatedManagedContract() {
       responses["201"] = { description: "Created or accepted once", content: content(route.response) };
     if (route.response === "CancelReceipt")
       responses["202"] = { description: "Cancellation pending", content: content(route.response) };
-    for (const status of [400, 403, 404, 409, 410, 412, 422, 429, 503])
+    for (const status of [400, 403, 404, 409, 410, 412, 413, 422, 429, 503])
       responses[status] = {
         description: "Safe managed error; reconcile potentially accepted writes by identity",
         content: content(errorName(route)),

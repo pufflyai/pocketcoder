@@ -1,12 +1,11 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { managed } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
-import { bodyLimit } from "hono/body-limit";
+import { MANAGED_ERROR_RESPONSES, managedBodyLimit } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
-import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 
 export function registerSessionRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
-  app.use("/v1/sessions", bodyLimit({ maxSize: 16384 }));
+  app.use("/v1/sessions", managedBodyLimit(16384));
   app.openapi(
     createRoute({
       method: "post",
@@ -20,7 +19,7 @@ export function registerSessionRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
           description: "Created or replayed logical session",
           content: { "application/json": { schema: managed.SessionSchema } },
         },
-        ...COMMON_ERROR_RESPONSES,
+        ...MANAGED_ERROR_RESPONSES,
       },
     }),
     async (c) => c.json(await store.managed.sessions.create(c.get("keyId"), c.req.valid("json")), 200),
@@ -35,7 +34,7 @@ export function registerSessionRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
       request: { params: z.object({ sessionId: z.uuid() }) },
       responses: {
         200: { description: "Logical session", content: { "application/json": { schema: managed.SessionSchema } } },
-        ...COMMON_ERROR_RESPONSES,
+        ...MANAGED_ERROR_RESPONSES,
       },
     }),
     async (c) => c.json(await store.managed.sessions.get(c.get("keyId"), c.req.valid("param").sessionId), 200),

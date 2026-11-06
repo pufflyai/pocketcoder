@@ -1,12 +1,13 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
-import { bodyLimit } from "hono/body-limit";
+import { MANAGED_ERROR_RESPONSES, managedBodyLimit } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
-import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 
 export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
-  app.use("/v1/execution-profiles/*", bodyLimit({ maxSize: 262144 }));
+  app.use("/v1/execution-profiles/*", managedBodyLimit(262144));
+  app.use("/v1/credential-bindings/*", managedBodyLimit(16384));
+  app.use("/v1/budget-scopes/:scopeId/grant", managedBodyLimit(16384));
   app.openapi(
     createRoute({
       method: "put",
@@ -24,7 +25,7 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
           description: "Immutable profile revision",
           content: { "application/json": { schema: managed.ExecutionProfileSchema } },
         },
-        ...COMMON_ERROR_RESPONSES,
+        ...MANAGED_ERROR_RESPONSES,
       },
     }),
     async (c) => {
@@ -50,7 +51,7 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
         params: z.object({ scopeId: z.uuid() }),
         body: { content: { "application/json": { schema: scope } } },
       },
-      responses: { 204: { description: "Scope granted" }, ...COMMON_ERROR_RESPONSES },
+      responses: { 204: { description: "Scope granted" }, ...MANAGED_ERROR_RESPONSES },
     }),
     async (c) => {
       const input = c.req.valid("json");
@@ -84,7 +85,7 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
         params: z.object({ bindingId: z.uuid() }),
         body: { content: { "application/json": { schema: credential } } },
       },
-      responses: { 204: { description: "Immutable credential binding registered" }, ...COMMON_ERROR_RESPONSES },
+      responses: { 204: { description: "Immutable credential binding registered" }, ...MANAGED_ERROR_RESPONSES },
     }),
     async (c) => {
       const input = c.req.valid("json");

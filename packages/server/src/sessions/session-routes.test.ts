@@ -19,6 +19,17 @@ test("public provisioning and session/policy routes enforce ownership, precondit
       path,
       authed(server.token, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }), headers }),
     );
+  for (const [path, method] of [
+    ["/v1/sessions", "POST"],
+    [`/v1/budget-scopes/${scopeId}/grant`, "PUT"],
+    [`/v1/credential-bindings/${randomUUID()}`, "PUT"],
+    [`/v1/execution-profiles/${profileId}/revisions/1?principalId=${caller.principal.id}`, "PUT"],
+    [`/v1/budget-scopes/${scopeId}/policy`, "PUT"],
+  ] as const) {
+    const oversized = await request(path, method, { padding: "x".repeat(262144) });
+    expect(oversized.status).toBe(413);
+    expect(await oversized.json()).toMatchObject({ error: { code: "request.body_too_large" } });
+  }
   expect(
     (
       await request(`/v1/budget-scopes/${scopeId}/grant`, "PUT", {
