@@ -27,6 +27,7 @@ export class SchedulerLifecycle {
       reason,
       at,
       patch: { terminalIntent: terminalState },
+      ...(reason === "deadline_expired" ? { expectedDeadlineAt: row.deadlineAt } : {}),
     });
     if (!updated) {
       return null;
@@ -85,7 +86,10 @@ export class SchedulerLifecycle {
       return;
     }
     this.cleanupRetries.delete(row.id);
+    // Stop proof precedes extraction; output storage stays allocated until the
+    // collection receipt and immutable bytes are committed together.
     if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
+    await this.context.deps.finalizeOutputs?.(row);
     if (retainStorage && !this.context.deps.transferRuntime) {
       const storage = await store.getWorkspaceStorage(row.id);
       if (storage && !["retained", "deleted"].includes(storage.state)) {
@@ -102,6 +106,7 @@ export class SchedulerLifecycle {
       }
     } else {
       await this.context.cleanupWorkspaceStorage(row);
+      await this.context.deps.completeOutputCleanup?.(row);
     }
     let failurePatch: WorkspacePatch = {};
     if (terminalState === "failed") {

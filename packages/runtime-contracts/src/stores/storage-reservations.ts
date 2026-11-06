@@ -4,6 +4,7 @@ export const STORAGE_RESERVATION_PURPOSES = [
   "backup",
   "attachment",
   "screenshot",
+  "export",
 ] as const;
 export const STORAGE_RESERVATION_STATES = ["reserved", "committed", "releasing", "released"] as const;
 

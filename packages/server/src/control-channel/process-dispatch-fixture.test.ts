@@ -1,3 +1,5 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { AgentFrameSchema, PROTOCOL_VERSION } from "@pstdio/pocketcoder-contracts";
 import { executionFixture } from "@pstdio/pocketcoder-db/testing";
@@ -32,6 +34,7 @@ export async function processDispatchFixture(
     { mode: "disk", base: shared },
   );
   root = f.directory ?? "";
+  const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));
   const hub = shared?.hub ?? new Hub();
   const transport = executionTransport(
     processTransport({ store: f.store, hub, driver: {} }),
@@ -98,6 +101,9 @@ export async function processDispatchFixture(
             conn.registered = true;
             const current = await f.store.getWorkspace(f.id);
             if (!current) throw new Error("Workspace missing");
+            const exec = execSpecOf(current, null, "provider_installed");
+            // Host fixtures provide the private memory mount that drivers supply in containers.
+            exec.security.writable_memory_paths = [serviceDirectory];
             hub.send(conn, "registered_ack", {
               epoch: conn.epoch,
               reconnect_credential: "fixture-memory-only",
@@ -107,7 +113,7 @@ export async function processDispatchFixture(
                 log_chunk_bytes: 65536,
                 heartbeat_seconds: 15,
               },
-              exec: execSpecOf(current, null, "provider_installed"),
+              exec,
             });
             return;
           }
@@ -210,6 +216,7 @@ export async function processDispatchFixture(
       await child.exited;
       await pipeline;
       await server.stop(true);
+      await rm(serviceDirectory, { recursive: true, force: true });
       if (!shared) await f.dispose();
     },
   };

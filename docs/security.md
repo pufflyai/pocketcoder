@@ -248,3 +248,25 @@ atomic copy. Kubernetes projection and operation dispatch fencing remain separat
 owners; attachment-bearing legacy messages are rejected until those owners are
 installed. See
 [immutable input storage](input-storage.md) for configuration, retries and recovery.
+
+## Durable cloud preview authority
+
+The consumer authorizes its users and supplies opaque subject/access-revision
+values. A cloud browser session requires a durable grant bound to the issuing key,
+principal, exact workspace/incarnation and declared preview names. Its initial
+lease is at most 60 seconds. Renewal cannot widen scope or revive an expired or
+revoked ID. Revocation commits before active stream closure; pending closure is
+reported until local tracked streams end. HTTP and WebSocket authority checks run
+every 250 ms, with separate expiry timers when authority reads stall. See
+[preview grants](preview-grants.md) for the API and measured closure tests.
+
+A new incarnation requires a new grant and origin. Existing tokens and cookies
+never acquire replacement-workspace access. Grant renewal and passive browser
+traffic do not extend workspace lifetime. A workspace deadline extension cannot
+extend previously minted browser or application credentials.
+
+The managed placement contract requires an exclusive workspace for every session
+with business credentials. Only credential-free compatible sessions may share.
+The binding ID is an opaque broker registration, never the credential. Physical
+credentials must expire with their workspace and be reissued after replacement;
+no long-lived authority may enter templates, request JSON, history or logs.

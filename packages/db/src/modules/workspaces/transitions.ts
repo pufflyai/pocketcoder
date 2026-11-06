@@ -13,10 +13,14 @@ import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
 import { CHANGE_PATCH_KEYS } from "./patch";
 
-function permitsTransition(current: Pick<WorkspaceRow, "state" | "connectionEpoch">, req: TransitionRequest) {
+function permitsTransition(
+  current: Pick<WorkspaceRow, "state" | "connectionEpoch" | "deadlineAt">,
+  req: TransitionRequest,
+) {
   return (
     req.from.includes(current.state) &&
     canTransition(current.state, req.to) &&
+    (req.expectedDeadlineAt === undefined || current.deadlineAt.getTime() === req.expectedDeadlineAt.getTime()) &&
     (req.expectedConnectionEpoch === undefined || current.connectionEpoch === req.expectedConnectionEpoch)
   );
 }

@@ -21,7 +21,6 @@ test("keeps the instance in every remote execution target and exposes real capab
     diff: false,
     merge: false,
     rebase: false,
-    archive: false,
     delete: true,
   });
 });

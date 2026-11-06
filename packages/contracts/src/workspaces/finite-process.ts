@@ -36,6 +36,8 @@ export const WaitingRuntimeSpecSchema = z.strictObject({
   profile: WorkloadProfileSchema,
   operations: z.record(z.string(), HarnessSchema),
   infrastructure: z.record(z.string(), HarnessSchema),
+  serviceHealth: z.record(z.string(), z.strictObject({ baseUrl: z.string().url(), healthPath: z.string() })).optional(),
+  manualServices: z.array(z.string()).optional(),
 });
 export type WaitingRuntimeSpec = z.infer<typeof WaitingRuntimeSpecSchema>;
 export const ProcessStartPayload = z.strictObject({

@@ -27,6 +27,7 @@ export interface WorkspaceServiceDeps {
   store: TemplateStore & WorkspaceStore;
   scheduler: Scheduler;
   limits: AdmissionLimits;
+  deploymentDeadlineSeconds?: number;
   now?: () => Date;
 }
 
@@ -77,6 +78,7 @@ export function toResource(row: WorkspaceRow): WorkspaceResource {
     connected_at: row.connectedAt?.toISOString() ?? null,
     ready_at: row.readyAt?.toISOString() ?? null,
     deadline_at: row.deadlineAt.toISOString(),
+    ...(row.lifetime ? { lifetime: { revision: row.lifetime.revision, ceilingAt: row.lifetime.ceilingAt } } : {}),
     terminal_at: row.terminalAt?.toISOString() ?? null,
     metadata: row.metadata,
     origin_workspace_id: row.originWorkspaceId,
@@ -175,6 +177,16 @@ export class WorkspaceService {
     const snapshot = templateSnapshotOf(template);
     this.validateCreateInput(template, body);
     const now = this.now();
+    const maxAgeDeadline = now.getTime() + parseDurationMs(template.spec.timeouts.maxAge);
+    let lifetime: WorkspaceRow["lifetime"];
+    let deadlineAt = new Date(maxAgeDeadline);
+    if (template.manifest && this.deps.deploymentDeadlineSeconds) {
+      const ceilingAt =
+        now.getTime() +
+        Math.min(template.manifest.spec.limits.deadlineSeconds, this.deps.deploymentDeadlineSeconds) * 1000;
+      lifetime = { ceilingAt: new Date(ceilingAt).toISOString(), revision: 1, extensions: {} };
+      deadlineAt = new Date(Math.min(maxAgeDeadline, ceilingAt));
+    }
     const result = await store.insertWorkspace(
       {
         id: randomUUID(),
@@ -189,7 +201,8 @@ export class WorkspaceService {
         sourceDescriptor: body.source ?? null,
         persistenceCapability: template.spec.persistence.conversationRestore,
         launchMode: "create",
-        deadlineAt: new Date(now.getTime() + parseDurationMs(template.spec.timeouts.maxAge)),
+        ...(lifetime ? { lifetime } : {}),
+        deadlineAt,
         createdAt: now,
       },
       { maxQueuedWorkspaces: limits.maxQueuedWorkspaces },

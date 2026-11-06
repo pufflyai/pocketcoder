@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type AgentFrame,
   type ExecSpec,
@@ -9,12 +10,12 @@ import {
 import { enforcedEnvironment } from "../bootstrap/supervisor-utils";
 import type { SupervisorLogs } from "../observability/supervisor-logs";
 import { FiniteProcess } from "./finite-process";
-import { groupHasWriters } from "./process-group";
+import { WorkspaceServices } from "./workspace-services";
 
 export class WaitingRuntime {
   readonly process: FiniteProcess;
-  private readonly drains: Promise<void>[] = [];
-  private readonly services: ReturnType<typeof Bun.spawn>[] = [];
+  private readonly services: WorkspaceServices;
+  private serviceSocket?: string;
   private readonly spec: NonNullable<ExecSpec["workload"]>;
   private pending: ProcessReference | null = null;
   private readonly resend: ReturnType<typeof setInterval>;
@@ -23,11 +24,21 @@ export class WaitingRuntime {
     input: ProviderInput,
     private readonly exec: ExecSpec,
     private readonly send: (type: AgentFrame["type"], payload: unknown) => boolean,
-    private readonly logs: Pick<SupervisorLogs, "pump" | "log">,
+    logs: Pick<SupervisorLogs, "pump" | "log">,
   ) {
     const spec = exec.workload;
     if (!spec || exec.harness) throw new Error("Waiting runtimes cannot start an automatic harness");
     this.spec = spec;
+    this.services = new WorkspaceServices(
+      spec.infrastructure,
+      (env) => ({
+        ...enforcedEnvironment(exec, env),
+        ...(this.serviceSocket ? { POCKETCODER_SERVICES_SOCKET: this.serviceSocket } : {}),
+      }),
+      logs,
+      { workspaceId: input.workspace_id, incarnationId: spec.incarnationId },
+      spec.serviceHealth,
+    );
     this.process = new FiniteProcess(
       input.workspace_id,
       spec.incarnationId,
@@ -43,18 +54,11 @@ export class WaitingRuntime {
     }, 1000);
   }
 
-  startInfrastructure() {
-    for (const command of Object.values(this.spec.infrastructure)) {
-      const child = Bun.spawn(command.command, {
-        cwd: command.cwd ?? "/",
-        env: enforcedEnvironment(this.exec, command.env),
-        detached: true,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      this.services.push(child);
-      this.drains.push(this.logs.pump(child.stdout, "stdout"), this.logs.pump(child.stderr, "stderr"));
+  async startInfrastructure(socket?: string) {
+    this.serviceSocket = socket;
+    if (socket) this.services.listen(socket);
+    for (const name of Object.keys(this.spec.infrastructure)) {
+      if (!this.spec.manualServices?.includes(name)) await this.services.start(name);
     }
     this.reconnect();
   }
@@ -78,6 +82,7 @@ export class WaitingRuntime {
           env: {
             ...enforcedEnvironment(this.exec, command.env),
             POCKETCODER_OPERATION_INPUT: JSON.stringify(frame.payload.input),
+            ...(this.serviceSocket ? { POCKETCODER_SERVICES_SOCKET: this.serviceSocket } : {}),
             ...(frame.payload.inputDirectory ? { POCKETCODER_INPUT_DIRECTORY: frame.payload.inputDirectory } : {}),
           },
         });
@@ -119,26 +124,30 @@ export class WaitingRuntime {
 
   signal(signal: "SIGTERM" | "SIGKILL") {
     void this.process.stopWriters(signal);
-    for (const child of this.services) {
-      try {
-        process.kill(-child.pid, signal);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      }
-    }
+    this.services.signal(signal);
   }
 
   async close() {
     clearInterval(this.resend);
     this.signal("SIGKILL");
-    await Promise.all([
-      this.process.stopWriters("SIGKILL"),
-      this.process.drained,
-      ...this.services.map(async (child) => {
-        await child.exited;
-        while (groupHasWriters(child.pid)) await Bun.sleep(10);
-      }),
-      ...this.drains,
-    ]);
+    await Promise.all([this.process.stopWriters("SIGKILL"), this.process.drained, this.services.close()]);
+  }
+}
+
+export async function startWaitingRuntime(
+  input: ProviderInput,
+  exec: ExecSpec,
+  send: (type: AgentFrame["type"], payload: unknown) => boolean,
+  logs: Pick<SupervisorLogs, "pump" | "log">,
+) {
+  const socketDirectory = exec.security.writable_memory_paths[0];
+  if (!socketDirectory) throw new Error("Waiting runtime requires writable service storage");
+  const waiting = new WaitingRuntime(input, exec, send, logs);
+  try {
+    await waiting.startInfrastructure(join(socketDirectory, "services.sock"));
+    return waiting;
+  } catch (error) {
+    await waiting.close();
+    throw error;
   }
 }

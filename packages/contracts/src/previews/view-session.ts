@@ -15,4 +15,6 @@ export const ViewSessionSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("embedded"), parentOrigin: HttpsOriginSchema }),
 ]);
 export type ViewSessionOptions = z.infer<typeof ViewSessionSchema>;
-export const PreviewOpenRequestSchema = z.strictObject({ session: ViewSessionSchema.default({ mode: "local" }) });
+export const PreviewOpenRequestSchema = z
+  .strictObject({ session: ViewSessionSchema.default({ mode: "local" }), grantId: z.uuid().optional() })
+  .refine((input) => input.session.mode === "local" || !!input.grantId, "Cloud previews require a grant");

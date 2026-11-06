@@ -94,7 +94,7 @@ export class DockerWorkloads {
   async inspect(
     ref: ProviderRef,
     state: ProviderState,
-    storage?: InputProjectionStorage,
+    storage?: InputProjectionStorage | Promise<InputProjectionStorage | undefined>,
   ): Promise<InstalledWorkload | undefined> {
     if (!ref.workloadTemplate || !state.running || !state.containerIdentity) return;
     const snapshot = WorkloadTemplateSnapshotSchema.parse(ref.workloadTemplate);
@@ -126,7 +126,6 @@ export class DockerWorkloads {
       canonicalJson(actual.Config.Entrypoint ?? []) !== canonicalJson(descriptor.runtime.entrypoint)
     )
       throw new Error("Installed container startup differs from the image-owned runtime command.");
-    const adapters = qualifyAdapters(spec, descriptor, actual.Mounts, storage);
     const live = await this.imageCommand(
       spec.image,
       "sha256sum",
@@ -137,7 +136,9 @@ export class DockerWorkloads {
       if (!live.includes(`${entry.digest.slice(7)}  /proc/1/root${entry.artifact}`))
         throw new Error("Live installed artifact differs from its image pin.");
     }
-    if (!storage)
+    const inputStorage = await storage;
+    const adapters = qualifyAdapters(spec, descriptor, actual.Mounts, inputStorage);
+    if (!inputStorage)
       throw new Error(
         `Canonical service workloads require qualified read-only input storage: ${state.detail ?? "not configured"}`,
       );
@@ -147,9 +148,13 @@ export class DockerWorkloads {
       templateDigest: snapshot.digest,
       image: spec.image,
       runtime: spec.runtime,
-      storage,
+      storage: inputStorage,
       capabilities: [
-        ...new Set(["ready-without-task", ...Object.values(adapters).flatMap((adapter) => adapter.capabilities)]),
+        ...new Set([
+          "ready-without-task",
+          ...(descriptor.runtime.capabilities ?? []),
+          ...Object.values(adapters).flatMap((adapter) => adapter.capabilities),
+        ]),
       ],
       adapters,
     });

@@ -4,7 +4,6 @@ import {
   defineView,
   viewDataEvents,
   workbenchModes,
-  workbenchPages,
   workbenchResourceKinds,
 } from "@pstdio/sdk/extensions";
 import {
@@ -158,8 +157,7 @@ export const instancesPage = definePage({
   icon: "server",
   path: "pocketcoder",
   mode: workbenchModes.project,
-  parent: workbenchPages.start,
-  main: { kind: "view", view: templatesView.ref, cardinality: "one" },
+  main: { kind: "view", presentation: "page", view: templatesView.ref, cardinality: "one" },
   slots: [
     {
       id: "connections",
@@ -180,7 +178,7 @@ export const instancePage = definePage({
   mode: workbenchModes.project,
   parent: instancesPage.ref,
   resource: { kinds: [instanceKind.ref] },
-  main: { kind: "view", view: machinesView.ref, cardinality: "one" },
+  main: { kind: "view", presentation: "page", view: machinesView.ref, cardinality: "one" },
   slots: [],
 });
 export const navigation = defineNavigationItem({

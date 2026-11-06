@@ -1,11 +1,4 @@
-import {
-  defineNavigationItem,
-  definePage,
-  defineView,
-  viewDataEvents,
-  workbenchModes,
-  workbenchPages,
-} from "@pstdio/sdk/extensions";
+import { defineNavigationItem, definePage, defineView, viewDataEvents, workbenchModes } from "@pstdio/sdk/extensions";
 import { changed, connectWorkspace, createWorkspace, deleteWorkspace, refresh } from "./commands";
 import { projectWorkspace, readWorkspace, remoteRef } from "./workspace";
 
@@ -83,8 +76,7 @@ export const workspacesPage = definePage({
   icon: "cloud",
   path: "pocketcoder-workspaces",
   mode: workbenchModes.project,
-  parent: workbenchPages.start,
-  main: { kind: "view", view: workspacesView.ref, cardinality: "one" },
+  main: { kind: "view", presentation: "page", view: workspacesView.ref, cardinality: "one" },
   slots: [],
 });
 export const navigation = defineNavigationItem({

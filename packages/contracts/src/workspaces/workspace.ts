@@ -166,6 +166,7 @@ export const WorkspaceResourceSchema = z.object({
   connected_at: z.iso.datetime().nullable(),
   ready_at: z.iso.datetime().nullable(),
   deadline_at: z.iso.datetime(),
+  lifetime: z.strictObject({ revision: z.number().int().positive(), ceilingAt: z.iso.datetime() }).optional(),
   terminal_at: z.iso.datetime().nullable(),
   metadata: z.record(z.string(), z.string()),
   origin_workspace_id: z.uuid().nullable(),

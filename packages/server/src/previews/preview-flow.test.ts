@@ -20,6 +20,7 @@ for (const mode of ["local", "embedded"] as const)
       expect(await client.previews.list(workspace.id)).toEqual([{ name: "web", port: previewPort }]);
       const viewClient = mode === "embedded" ? publicClient : client;
       const minted = await viewClient.previews.open(workspace.id, "web", {
+        ...(mode === "embedded" ? { grantId: await fixture.grant() } : {}),
         session: mode === "embedded" ? { mode, parentOrigin: publicViews.parents[0] ?? "" } : { mode },
       });
       const preview = new URL(minted.url);

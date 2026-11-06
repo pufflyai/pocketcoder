@@ -5,9 +5,11 @@ import { createActivityTables } from "./activity";
 import { createBinaryOutputTables } from "./binary-outputs";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
 import { createConversationTables } from "./conversations";
+import { createExportObjectTables } from "./export-objects";
 import { createInputTables } from "./inputs";
 import { createLeaseTables } from "./leases";
 import { createPersistenceTables } from "./persistence";
+import { createPreviewGrantTables } from "./preview-grants";
 import { createSecretTables } from "./secrets";
 import { createStorageReservationTables } from "./storage-reservations";
 import { createTransferControllerTable } from "./transfer-controller";
@@ -30,6 +32,8 @@ export function createSchema(schema?: string) {
     ...persistence,
     ...reservations,
     ...createInputTables(table, access, workspaces, reservations),
+    ...createExportObjectTables(table),
+    ...createPreviewGrantTables(table),
     ...createBinaryOutputTables(table, access, workspaces, reservations),
     ...createCheckpointTransferTables(table, access, workspaces, persistence, reservations),
     ...createTransferControllerTable(table),
@@ -52,6 +56,8 @@ export const {
   warmPoolRuntimes,
   workspaceOutputs,
   binaryOutputs,
+  exportObjects,
+  previewGrants,
   workspaceConversations,
   workspaceConversationMessages,
   conversations,

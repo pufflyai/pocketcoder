@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ApiError, previewRequestHeaders } from "@pstdio/pocketcoder-contracts";
+import { ApiError, PREVIEW_AUTHORIZATION_CHECK_MS, previewRequestHeaders } from "@pstdio/pocketcoder-contracts";
 import type { Server } from "bun";
 import type { Context } from "hono";
 import { getBunServer } from "hono/bun";
@@ -18,7 +18,16 @@ export async function previewWebSocket(
   input?: (bytes: Uint8Array) => Uint8Array[],
 ) {
   const url = new URL(c.req.url);
-  let id: string | undefined;
+  const id = randomUUID();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  const untrack = sessions.track(session, () => hub.previewSockets.close(id));
+  const done = () => {
+    clearInterval(timer);
+    clearTimeout(expiry);
+    untrack();
+    release();
+  };
   try {
     const protocols = (c.req.header("sec-websocket-protocol") ?? "")
       .split(",")
@@ -28,29 +37,25 @@ export async function previewWebSocket(
       throw new ApiError("validation.invalid", "Invalid WebSocket protocols.");
     const prepared = await hub.previewSockets.prepare(connection, {
       op: "open",
-      request_id: randomUUID(),
+      request_id: id,
       name: session.name,
       path: url.pathname + url.search,
       origin: session.origin,
       cookie: previewRequestHeaders(c.req.raw.headers).cookie,
       protocols,
     });
-    id = prepared.id;
     if (prepared.protocol && !protocols.includes(prepared.protocol))
       throw new ApiError("validation.invalid", "Invalid upstream protocol.");
     await sessions.authorize(session);
-    let timer: ReturnType<typeof setInterval>;
-    const done = () => {
-      clearInterval(timer);
-      release();
-    };
     const events: WSEvents = {
       onOpen: (_event, ws) => {
         hub.previewSockets.attach(prepared.id, ws, done);
         timer = setInterval(() => {
           void sessions.authorize(session).catch(() => hub.previewSockets.close(prepared.id));
-        }, 250);
+        }, PREVIEW_AUTHORIZATION_CHECK_MS);
         timer.unref();
+        expiry = setTimeout(() => hub.previewSockets.close(prepared.id), Math.max(0, session.expires - Date.now()));
+        expiry.unref();
       },
       onMessage: (event) => {
         if (input) {
@@ -86,8 +91,8 @@ export async function previewWebSocket(
     if (!upgraded) throw new ApiError("validation.invalid", "WebSocket upgrade failed.");
     return new Response(null);
   } catch (error) {
-    if (id) hub.previewSockets.close(id);
-    release();
+    hub.previewSockets.close(id);
+    done();
     throw error;
   }
 }

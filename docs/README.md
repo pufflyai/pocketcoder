@@ -14,6 +14,9 @@ API drives the whole lifecycle.
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [Private source](private-source.md) | Scoped Git setup leases, issuer contract and real provider checks |
 | [Runtime credentials](runtime-credentials.md) | Renewable workspace authority and cleanup on both providers |
+| [Managed contracts](managed-contracts.md) | Versioned logical session and budget designs, shipped physical APIs, and ownership |
+| [Finite exports](finite-exports.md) | Automatic collection, retained bytes, cleanup, and expiry |
+| [Preview grants](preview-grants.md) | Durable browser authority, renewal, revocation, and stream bounds |
 | [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
 | [Checkpoint API](checkpoint-api.md) | Attach, preserve, restore and list the routes that operate on saved state |
 | [Attachments and input storage](input-storage.md) | How uploaded bytes become immutable, bounded workspace input |
@@ -73,8 +76,9 @@ pcd workspaces cancel --id <uuid>
 
 Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
-`pocketcoder-supervisor` (PID 1) → PocketCoder-owned AgentAPI → your template's
-coding-agent command.
+`pocketcoder-supervisor` (PID 1). Agent templates run through PocketCoder-owned
+AgentAPI. Canonical finite operations start explicitly through the durable
+execution API. See [templates](templates.md) for the qualified provider paths.
 
 Run `bun run test` for the full suite. It runs the browser, unit, performance,
 integration, deployment, example, and policy checks in that order. The warm-pool
