@@ -12,7 +12,7 @@ import { handleControlFrame } from "./agent/control-frames";
 import { handleInteractiveFrame } from "./agent/interactive-frames";
 import { createSupervisorHarness } from "./agent/supervisor-harness";
 import { SupervisorTransfers } from "./agent/supervisor-transfers";
-import { WaitingRuntime } from "./agent/waiting-runtime";
+import { startWaitingRuntime, type WaitingRuntime } from "./agent/waiting-runtime";
 import { AttachmentManager } from "./attachments/attachments";
 import { prepareWorkspace } from "./bootstrap/prepare-workspace";
 import { SetupCompletion } from "./bootstrap/setup-completion";
@@ -177,8 +177,7 @@ class Supervisor {
     });
     if (failed !== null) return failed;
     if (exec.workload) {
-      this.waiting = new WaitingRuntime(this.input, exec, this.sendFrame.bind(this), this.logs);
-      await this.waiting.startInfrastructure(`/tmp/pocketcoder-services-${this.input.workspace_id}.sock`);
+      this.waiting = await startWaitingRuntime(this.input, exec, this.sendFrame.bind(this), this.logs);
       this.harness.phase = "waiting";
     } else if (!(await this.harness.start(exec))) return EXIT_SETUP_FAILED;
     this.runtimePrepared = true;

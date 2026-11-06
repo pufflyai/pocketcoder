@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import {
   type AgentFrame,
   type ExecSpec,
@@ -130,5 +131,23 @@ export class WaitingRuntime {
     clearInterval(this.resend);
     this.signal("SIGKILL");
     await Promise.all([this.process.stopWriters("SIGKILL"), this.process.drained, this.services.close()]);
+  }
+}
+
+export async function startWaitingRuntime(
+  input: ProviderInput,
+  exec: ExecSpec,
+  send: (type: AgentFrame["type"], payload: unknown) => boolean,
+  logs: Pick<SupervisorLogs, "pump" | "log">,
+) {
+  const socketDirectory = exec.security.writable_memory_paths[0];
+  if (!socketDirectory) throw new Error("Waiting runtime requires writable service storage");
+  const waiting = new WaitingRuntime(input, exec, send, logs);
+  try {
+    await waiting.startInfrastructure(join(socketDirectory, "services.sock"));
+    return waiting;
+  } catch (error) {
+    await waiting.close();
+    throw error;
   }
 }

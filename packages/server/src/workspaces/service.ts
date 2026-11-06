@@ -177,6 +177,16 @@ export class WorkspaceService {
     const snapshot = templateSnapshotOf(template);
     this.validateCreateInput(template, body);
     const now = this.now();
+    const maxAgeDeadline = now.getTime() + parseDurationMs(template.spec.timeouts.maxAge);
+    let lifetime: WorkspaceRow["lifetime"];
+    let deadlineAt = new Date(maxAgeDeadline);
+    if (template.manifest && this.deps.deploymentDeadlineSeconds) {
+      const ceilingAt =
+        now.getTime() +
+        Math.min(template.manifest.spec.limits.deadlineSeconds, this.deps.deploymentDeadlineSeconds) * 1000;
+      lifetime = { ceilingAt: new Date(ceilingAt).toISOString(), revision: 1, extensions: {} };
+      deadlineAt = new Date(Math.min(maxAgeDeadline, ceilingAt));
+    }
     const result = await store.insertWorkspace(
       {
         id: randomUUID(),
@@ -191,19 +201,8 @@ export class WorkspaceService {
         sourceDescriptor: body.source ?? null,
         persistenceCapability: template.spec.persistence.conversationRestore,
         launchMode: "create",
-        ...(template.manifest && this.deps.deploymentDeadlineSeconds
-          ? {
-              lifetime: {
-                ceilingAt: new Date(
-                  now.getTime() +
-                    Math.min(template.manifest.spec.limits.deadlineSeconds, this.deps.deploymentDeadlineSeconds) * 1000,
-                ).toISOString(),
-                revision: 1,
-                extensions: {},
-              },
-            }
-          : {}),
-        deadlineAt: new Date(now.getTime() + parseDurationMs(template.spec.timeouts.maxAge)),
+        ...(lifetime ? { lifetime } : {}),
+        deadlineAt,
         createdAt: now,
       },
       { maxQueuedWorkspaces: limits.maxQueuedWorkspaces },

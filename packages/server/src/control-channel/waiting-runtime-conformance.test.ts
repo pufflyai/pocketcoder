@@ -85,3 +85,27 @@ test.skipIf(!available).each(["crash", "deadline", "cancel-owned", "restart"])(
   },
   15000,
 );
+
+test.skipIf(!available)(
+  "waiting Docker runtime starts with a read-only root and no authored tmp mount",
+  async () => {
+    const f = await dockerExecutionFixture(["bun", "-e", "process.exit(0)"], undefined, (source) => {
+      source.spec.security.readOnlyRoot = true;
+      source.spec.security.writableMemoryPaths = [];
+    });
+    try {
+      const a = await f.prepare(false);
+      const host = JSON.parse(await docker("inspect", "--format", "{{json .HostConfig}}", a.ref.id));
+      expect(host.ReadonlyRootfs).toBe(true);
+      expect(Object.keys(host.Tmpfs)).toEqual(["/run/pocketcoder/services"]);
+      expect(await docker("exec", a.ref.id, "test", "-S", "/run/pocketcoder/services/services.sock")).toBe("");
+      await f.store.executions.accept(a.acceptance, new Date());
+      await f.executionDispatcher.tick();
+      await f.waitFor(async () => (await f.store.getWorkspace(a.workspace.id))?.finiteProcess?.phase === "exited");
+      expect((await f.store.getWorkspace(a.workspace.id))?.finiteProcess?.exitCode).toBe(0);
+    } finally {
+      await f.dispose();
+    }
+  },
+  15000,
+);

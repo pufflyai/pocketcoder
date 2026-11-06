@@ -30,9 +30,12 @@ export class PreviewSessions {
     const streams = this.streams.get(grantId) ?? new Set<() => void>();
     streams.add(close);
     this.streams.set(grantId, streams);
+    let tracked = true;
     return () => {
+      if (!tracked) return;
+      tracked = false;
       streams.delete(close);
-      if (!streams.size) this.streams.delete(grantId);
+      if (!streams.size && this.streams.get(grantId) === streams) this.streams.delete(grantId);
     };
   }
   pendingStreams(grantId: string) {
