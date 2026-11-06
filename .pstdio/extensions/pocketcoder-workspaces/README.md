@@ -8,7 +8,7 @@ This extension works independently of PocketCoder Lab.
 | PocketCoder Lab | Try templates, launch local controller instances, inspect test machines |
 | PocketCoder Workspaces | Create workspaces using one operator-approved template and controller connection |
 
-Requires extension API 0.3.1. SDK and host validation use 0.47.0-nightly.20261105030234. The deployment connection remains text-only. Use PocketCoder Lab for the local file-aware reference workflow.
+Requires extension API 0.3.1. The extension depends on SDK 0.46.0 and was validated on host 0.47.0-nightly.20261105030234. The deployment connection remains text-only. Use PocketCoder Lab for the local file-aware reference workflow.
 
 ## Install
 

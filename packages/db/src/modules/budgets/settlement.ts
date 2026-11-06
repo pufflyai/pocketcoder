@@ -95,6 +95,8 @@ export function settlementOwner(context: DatabaseContext, now: () => Date) {
     async retainUncertain(identity: ManagedInvocationIdentity) {
       await db.transaction(async (tx) => {
         const { record, at } = await locked(tx, identity);
+        if (record.state === "reserved")
+          throw new ApiError("budget.conflict", "Uncertainty requires a claimed invocation.");
         if (record.state === "settled" || record.state === "conflict" || record.state === "abandoned") return;
         record.state = "uncertain";
         record.touchedUntil = at;

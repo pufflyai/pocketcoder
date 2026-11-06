@@ -6,7 +6,7 @@ For normal workspace provisioning, install [PocketCoder Workspaces](../pocketcod
 
 ## Setup
 
-Use Prompt Studio extension API 0.3.1, Docker Engine, Bun 1.4.2, and the PocketCoder executable built from this checkout. This extension pins SDK 0.47.0-nightly.20261105030234, matching the tested host. The file-aware request routes require this implementation; use the executable built below.
+Use Prompt Studio extension API 0.3.1, Docker Engine, Bun 1.4.4, and the PocketCoder executable built from this checkout. This extension pins SDK 0.46.0 and was tested on host 0.47.0-nightly.20261105030234. The file-aware request routes require this implementation; use the executable built below.
 
 From the integration checkout:
 

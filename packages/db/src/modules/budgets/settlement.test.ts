@@ -2,6 +2,56 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { bindCompute, managedFixture, provision } from "../managed/fixture.test";
 
+test("an unclaimed reservation cannot become uncertain or accept provider usage", async () => {
+  const f = await managedFixture();
+  try {
+    await provision(f);
+    const workspaceId = await bindCompute(f);
+    const identity = {
+      principalId: f.principal.id,
+      sessionId: f.sessionId,
+      requestId: randomUUID(),
+      invocationId: randomUUID(),
+    };
+    await f.store.managed.budgets.reserve({
+      identity,
+      workspaceId,
+      model: "fixture/model",
+      requestDigest: `sha256:${"a".repeat(64)}`,
+      countEvidenceRef: "local-count/unsent",
+      inputTokens: 20,
+      requestedOutputTokens: 20,
+    });
+    await expect(f.store.managed.budgets.retainUncertain(identity)).rejects.toMatchObject({ code: "budget.conflict" });
+    await expect(
+      f.store.managed.budgets.settle({
+        identity,
+        provider: "local",
+        providerAccountId: "fixture",
+        responseId: "never-sent",
+        inputTokens: 10,
+        outputTokens: 10,
+        providerEvidenceRef: "fixture/unsent",
+        observedAt: new Date(),
+      }),
+    ).rejects.toMatchObject({ code: "budget.conflict" });
+    expect(await f.store.managed.budgets.usage(f.keyId, f.scopeId)).toMatchObject({
+      heldInputTokens: 20,
+      heldOutputTokens: 20,
+      inFlightModelRequests: 1,
+      unresolvedInvocations: 0,
+    });
+    await f.store.managed.budgets.abandonUnsent(identity);
+    expect(await f.store.managed.budgets.usage(f.keyId, f.scopeId)).toMatchObject({
+      heldInputTokens: 0,
+      heldOutputTokens: 0,
+      inFlightModelRequests: 0,
+    });
+  } finally {
+    await f.dispose();
+  }
+});
+
 test("trusted settlement is idempotent and conflicting evidence fences retained exposure", async () => {
   const f = await managedFixture();
   try {

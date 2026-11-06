@@ -1,4 +1,4 @@
-import type { OpenAPIHono } from "@hono/zod-openapi";
+import { type OpenAPIHono, z } from "@hono/zod-openapi";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
@@ -20,7 +20,9 @@ export function registerExportRoutes(app: OpenAPIHono<AppEnv>, store: Store, ser
   });
   app.get("/v1/workspaces/:id/exports/:objectId/content", requireScope("outputs:read"), async (c) => {
     const row = await service.getOwned(c.get("principal"), c.req.param("id"));
-    const content = await store.exports.content(row.id, c.req.param("objectId"), row.principalId, new Date());
+    const objectId = z.uuid().safeParse(c.req.param("objectId"));
+    if (!objectId.success) throw new ApiError("workspace.not_found", "Export content is unavailable or expired.");
+    const content = await store.exports.content(row.id, objectId.data, row.principalId, new Date());
     if (!content) throw new ApiError("workspace.not_found", "Export content is unavailable or expired.");
     return new Response(content, {
       headers: { "content-type": "application/octet-stream", "cache-control": "no-store" },
