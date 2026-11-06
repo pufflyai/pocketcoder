@@ -9,6 +9,7 @@ import {
   type SessionMessage,
   type SessionMessageRole,
 } from "@pstdio/sdk/extensions";
+import { fileTurnMessages, reconnectFileTurn, startFileTurn, supportsFileTurns } from "./file-turns";
 import { createHarnessRuns } from "./harness-runs";
 import { instancesFor } from "./instances";
 import { isTerminal, type Machine, machinePath, machineRef } from "./machines";
@@ -61,7 +62,7 @@ export function createMachineHarness(getInstances = instancesFor) {
       throw new Error("Choose a PocketCoder agent machine.");
     const ref = machineRef(execution.providerRef);
     const sessionId = `${ref.instanceId}:${ref.machineId}`;
-    if (input.agentSessionId && input.agentSessionId !== sessionId)
+    if (input.agentSessionId && input.agentSessionId !== sessionId && !input.agentSessionId.startsWith(`${sessionId}:`))
       throw new Error("This agent session belongs to another machine.");
     return { ...ref, sessionId, instances: getInstances(ctx.projectId) };
   };
@@ -155,13 +156,27 @@ export function createMachineHarness(getInstances = instancesFor) {
   };
   const send = async (ctx: HarnessContext, input: HarnessStartInput & { agentSessionId?: string }) => {
     const ref = target(ctx, input);
-    if (input.attachments?.length)
-      throw new Error("File attachments are not supported in this PocketCoder agent connection.");
     let machine = await ref.instances.request<Machine>(ref.instanceId, machinePath(ref.machineId), {
       signal: input.signal,
     });
-    while (machine.state !== "ready" || machine.agent_state !== "stable") {
+    while (machine.state !== "ready") {
       if (isTerminal(machine)) throw new Error(`Machine is ${machine.state}. Launch a new machine to continue.`);
+      const change = await ref.instances.request<{ workspace: Machine }>(
+        ref.instanceId,
+        `${machinePath(ref.machineId)}/changes?after=${machine.change_cursor}&wait=30`,
+        { signal: input.signal },
+      );
+      machine = change.workspace;
+    }
+    const capabilities = await supportsFileTurns(ref, input.signal);
+    if (capabilities.requests) {
+      if (input.attachments?.length && !capabilities.attachments)
+        throw new Error("This template does not support immutable file inputs.");
+      return startFileTurn(ctx, input, ref);
+    }
+    if (input.attachments?.length) throw new Error("Choose a file-aware agent template to send attachments.");
+    while (machine.agent_state !== "stable") {
+      if (isTerminal(machine)) throw new Error(`Machine is ${machine.state}.`);
       const change = await ref.instances.request<{ workspace: Machine }>(
         ref.instanceId,
         `${machinePath(ref.machineId)}/changes?after=${machine.change_cursor}&wait=30`,
@@ -186,12 +201,14 @@ export function createMachineHarness(getInstances = instancesFor) {
     id: "agent",
     label: "PocketCoder agent",
     cwdRequirement: "optional",
-    capabilities: () => ["SessionReattach"],
+    capabilities: () => ["SessionReattach", "Attachments"],
     start: (ctx, input) => runs.run(ctx, input, (active) => send(ctx, active)),
     resume: (ctx, input) => runs.run(ctx, input, (active) => send(ctx, active)),
     reattach(ctx, input) {
       return runs.run(ctx, input, async (active) => {
         const ref = target(ctx, active);
+        const fileTurn = await reconnectFileTurn(ctx, active, ref);
+        if (fileTurn) return fileTurn;
         const cursor = await ctx.state.get<{ target: string; baseline: number }>(`turn:${active.sessionId}`);
         active.signal?.throwIfAborted();
         if (!cursor || cursor.target !== ref.sessionId) throw new Error("No pending PocketCoder turn was found.");
@@ -202,6 +219,8 @@ export function createMachineHarness(getInstances = instancesFor) {
     async getMessages(ctx, input) {
       const ref = target(ctx, input);
       const machine = await ref.instances.request<Machine>(ref.instanceId, machinePath(ref.machineId));
+      if ((await supportsFileTurns(ref)).requests)
+        return fileTurnMessages(ctx, ref, input.agentSessionId.slice(ref.sessionId.length + 1));
       return isTerminal(machine) ? history(ref) : normalizeMessages(ref.machineId, await readMessages(ref));
     },
     recoverMessages: (_ctx, input) => reconcileMessageHistory(input),

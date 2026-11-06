@@ -776,3 +776,28 @@ The proposed logical session, queue and budget APIs have versioned types and
 machine-readable schemas, but are not registered server routes. Their status,
 field mappings and transaction owners are listed in the
 [managed contract index](managed-contracts.md).
+
+## File-aware agent requests
+
+Input-aware service templates can expose an operation named `message` through a
+verified `pocketcoder.execution/v1` adapter. These workspace-scoped routes require
+`services:relay` and current workspace ownership:
+
+| Route | Result |
+| --- | --- |
+| `GET /v1/workspaces/{id}/agent/capabilities` | Whether request submission and immutable attachments are supported |
+| `POST /v1/workspaces/{id}/agent/requests` | Accept or replay a message request; 201 for new intent, 200 for an identical replay |
+| `GET /v1/workspaces/{id}/agent/requests/{requestId}?conversationId={uuid}` | The existing physical execution receipt |
+| `GET /v1/workspaces/{id}/agent/requests?conversationId={uuid}&limit=100&cursor={requestId}` | Accepted requests in order, with a nullable `next_cursor` |
+
+Upload bytes through the existing attachment route first. Submit `requestId`,
+`conversationId`, `content`, and `files` containing the returned immutable input
+references. Persist one UUID per turn and replay the same body after an uncertain
+response. Changed input under that request ID conflicts. The server pins the
+installed workspace incarnation, template and adapter and computes the physical
+fingerprint. Acceptance, scheduling and finalization use the existing execution
+owner. These routes do not create a logical managed session, queue or budget.
+History reads the canonical conversation request rows and survives workspace
+teardown. Page sizes are bounded to 200; cursors must belong to the same
+workspace, principal and conversation. Legacy text-only agent routes still reject
+attachments.

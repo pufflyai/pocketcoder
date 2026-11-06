@@ -115,7 +115,8 @@
     "operator:cloud-init": "bun --no-env-file deploy/digitalocean/production/write-cloud-init.ts",
     "test:extensions": "bun run build:native && bun test ./.pstdio/extensions/pocketcoder ./.pstdio/extensions/pocketcoder-workspaces",
     "ci:test": "bun test scripts/ci",
-    "contracts:generate": "bun scripts/build-managed-contract.ts"
+    "contracts:generate": "bun scripts/build-managed-contract.ts",
+    "local:pstdio": "bun --no-env-file scripts/pstdio-demo.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",

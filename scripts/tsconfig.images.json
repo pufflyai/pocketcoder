@@ -6,6 +6,8 @@
     "./release-images.ts",
     "./image-*.ts",
     "./native-startup-*.ts",
-    "../examples/e2e/image-*.ts"
+    "../examples/e2e/image-*.ts",
+    "./pstdio-demo.ts",
+    "../examples/harnesses/file-agent/adapter.ts"
   ]
 }

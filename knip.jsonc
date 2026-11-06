@@ -6,6 +6,7 @@
       "entry": [
         "scripts/ci/*.ts",
         "deploy/image/echo-harness.ts",
+        "examples/harnesses/file-agent/adapter.ts",
         "deploy/image/desktop-harness.ts",
         "deploy/image/browser-harness.ts",
         "deploy/digitalocean/production/run-access.ts",

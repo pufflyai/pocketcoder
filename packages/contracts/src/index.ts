@@ -285,6 +285,7 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/agent-request";
 export * from "./workspaces/execution-dispatch";
 export * from "./workspaces/execution-envelope";
 export * from "./workspaces/execution-runtime";

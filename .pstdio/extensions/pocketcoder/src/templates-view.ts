@@ -3,6 +3,7 @@ import { refresh } from "./commands";
 import { launchInstance } from "./instance-commands";
 import { changed } from "./resources";
 import { catalogFiles, listCatalog, templateDirectory } from "./template-catalog";
+import { deleteTemplate, saveTemplate } from "./template-commands";
 
 export const templatesView = defineView({
   id: "templates",
@@ -12,8 +13,16 @@ export const templatesView = defineView({
     kind: "dataTable",
     refreshEvents: [changed],
     emptyTitle: "Add an agent template",
-    emptyDescription: `Ask your agent to write a JSON or YAML template in ${templateDirectory}, then Refresh.`,
+    emptyDescription: `Use Save template, or write a JSON or YAML template in ${templateDirectory}, then Refresh.`,
     toolbarActions: [
+      {
+        id: "save",
+        label: "Save template",
+        icon: "file-plus",
+        command: saveTemplate.ref,
+        input: saveTemplate.params,
+        submitLabel: "Save template",
+      },
       {
         id: "launch",
         label: "Launch instance",
@@ -24,6 +33,9 @@ export const templatesView = defineView({
         submitLabel: "Launch instance",
       },
       { id: "refresh", label: "Refresh", icon: "refresh-cw", presentation: "secondary", command: refresh.ref },
+    ],
+    rowActions: [
+      { id: "delete", label: "Remove from catalog", icon: "trash-2", destructive: true, command: deleteTemplate.ref },
     ],
     columns: [
       { id: "name", label: "Template" },

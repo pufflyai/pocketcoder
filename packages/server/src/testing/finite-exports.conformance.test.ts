@@ -78,7 +78,7 @@ test.skipIf(!available)(
         },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
-      expect(response.ok, await response.clone().text()).toBe(true);
+      expect(response.ok, response.ok ? undefined : await response.text()).toBe(true);
       return response.json();
     };
     const ids: string[] = [];
@@ -146,7 +146,7 @@ test.skipIf(!available)(
           },
           body: "input",
         });
-        expect(upload.status, await upload.clone().text()).toBe(201);
+        expect(upload.status, upload.status === 201 ? undefined : await upload.text()).toBe(201);
         const inputs = { workspaceId: id, incarnationId: runtime.incarnationId, objects: [await upload.json()] };
         const execution = {
           workspaceId: id,
@@ -174,7 +174,6 @@ test.skipIf(!available)(
           ),
         );
         expect(FiniteProcessFactSchema.parse(record.outcome).exitCode).toBe(0);
-        expect(await dockerCommand("ps", "-aq", "--filter", `label=pocketcoder.workspace=${id}`)).toBe("");
         await request(`/v1/workspaces/${id}/executions/${execution.requestId}/exports`);
         const manifest = WorkloadExportReferenceSchema.parse(record.collection);
         expect(manifest.cleanupState).toBe("complete");
@@ -193,6 +192,10 @@ test.skipIf(!available)(
         const started = performance.now();
         const workspaces = await Promise.all(Array.from({ length: concurrency }, prepare));
         await Promise.all(workspaces.map(run));
+        const remaining = (await dockerCommand("ps", "-a", "--format", '{{.Label "pocketcoder.workspace"}}')).split(
+          "\n",
+        );
+        for (const workspace of workspaces) expect(remaining).not.toContain(workspace.id);
         console.log(
           JSON.stringify({ ticket: "PC-131", image: image.image, concurrency, elapsedMs: performance.now() - started }),
         );

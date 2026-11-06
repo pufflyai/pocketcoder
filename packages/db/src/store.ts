@@ -207,6 +207,7 @@ export class DatabaseStore implements Store {
     this.readNetworkEvents = networkAudit.readNetworkEvents;
     const conversations = createConversations(context);
     this.acceptConversationRequest = conversations.acceptConversationRequest;
+    this.listConversationExecutions = conversations.listConversationExecutions;
     this.isAcceptedTurn = conversations.isAcceptedTurn;
     this.commitConversationTurn = conversations.commitConversationTurn;
     this.appendWorkspaceMessage = conversations.appendWorkspaceMessage;
@@ -325,6 +326,7 @@ export class DatabaseStore implements Store {
   readonly appendNetworkEvents: Store["appendNetworkEvents"];
   readonly readNetworkEvents: Store["readNetworkEvents"];
   readonly acceptConversationRequest: Store["acceptConversationRequest"];
+  readonly listConversationExecutions: Store["listConversationExecutions"];
   readonly isAcceptedTurn: Store["isAcceptedTurn"];
   readonly commitConversationTurn: Store["commitConversationTurn"];
   readonly appendWorkspaceMessage: Store["appendWorkspaceMessage"];
