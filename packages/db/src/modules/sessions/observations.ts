@@ -34,8 +34,8 @@ export function sessionWriter({ tables }: DatabaseContext) {
   ) {
     const row = await read(tx, id);
     if (row.session.revision !== expectedRevision) throw new ApiError("revision.stale", "Session revision changed.");
-    if (["closed", "failed"].includes(row.session.state) && state !== row.session.state)
-      throw new ApiError("session.closed", "Session has ended.");
+    if (state !== row.session.state && !managed.canTransitionSession(row.session.state, state))
+      throw new ApiError("session.closed", "Session state cannot make this transition.");
     const at = new Date().toISOString();
     const session = { ...row.session, revision: expectedRevision + 1, state, reasonCode, updatedAt: at };
     await tx.update(sessions).set({ session }).where(where(id));

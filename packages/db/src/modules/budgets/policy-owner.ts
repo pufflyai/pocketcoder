@@ -1,6 +1,6 @@
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import { desc, eq } from "drizzle-orm";
-import { type DatabaseContext, lock, type Transaction } from "../../database/context";
+import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 import { nextPolicy, replayPolicy } from "./policy-revisions";
 
@@ -30,7 +30,6 @@ export function policyOwner(context: DatabaseContext) {
       parsed.modelLimits.sort((a, b) => a.model.localeCompare(b.model));
       return db.transaction(async (tx) => {
         await auth.scope(tx, keyId, input.scopeId, true);
-        await lock(tx, input.scopeId, 34);
         const known = await tx
           .select()
           .from(policies)

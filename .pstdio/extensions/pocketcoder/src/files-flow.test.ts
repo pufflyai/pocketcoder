@@ -96,6 +96,16 @@ test("a real local agent reads exact uploads, survives a lost reply, follows up 
     expect(await harness.capabilities()).toContain("Attachments");
     const connected = await harness.start(context, { sessionId, workspace: target, prompt: "", events });
     expect(await connected.done).toEqual({ status: "completed" });
+    const rejected = await harness.resume(context, {
+      sessionId,
+      signal,
+      workspace: target,
+      agentSessionId: connected.agentSessionId ?? "",
+      prompt: "x".repeat(262145),
+      events,
+    });
+    expect(await rejected.done).toEqual({ status: "failed" });
+    expect(state.has(`file-turn:${sessionId}`)).toBe(false);
     const file = join(root, "loan facts.txt");
     const content = "Loan principal: SEK 1250000\nCustomer: Åsa";
     await Bun.write(file, content);

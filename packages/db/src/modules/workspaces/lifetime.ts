@@ -4,6 +4,7 @@ import {
   type LifetimeExtension,
   LifetimeExtensionSchema,
 } from "@pstdio/pocketcoder-contracts";
+import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
 
@@ -19,11 +20,9 @@ export function extendWorkspaceDeadline(context: DatabaseContext) {
         .for("update");
       if (!row) throw new ApiError("workspace.not_found", "Workspace not found.");
       const at = now();
-      const lifetime = row.lifetime;
-      const prior = lifetime?.extensions[command.extensionId];
+      const prior = row.lifetime?.extensions[command.extensionId];
       if (prior) return replay(prior, command);
-      if (!lifetime || row.purgeRequestedAt || !["ready", "connected"].includes(row.state) || row.deadlineAt <= at)
-        throw new ApiError("operation.conflict", "Workspace lifetime cannot be extended.");
+      const lifetime = extensibleLifetime(row, at);
       if (command.expectedRevision !== lifetime.revision)
         throw new ApiError("operation.conflict", "Workspace deadline revision changed.");
       const deadlineAt = new Date(command.deadlineAt);
@@ -50,6 +49,17 @@ export function extendWorkspaceDeadline(context: DatabaseContext) {
     notifyChange(context, id);
     return result;
   };
+}
+
+function extensibleLifetime(
+  row: Pick<WorkspaceRow, "lifetime" | "purgeRequestedAt" | "state" | "deadlineAt" | "templateSnapshot">,
+  at: Date,
+) {
+  if (!row.lifetime || row.purgeRequestedAt || !["ready", "connected"].includes(row.state) || row.deadlineAt <= at)
+    throw new ApiError("operation.conflict", "Workspace lifetime cannot be extended.");
+  if (row.templateSnapshot.spec.network.mode === "restricted")
+    throw new ApiError("operation.conflict", "Workspace egress audit authority cannot be extended.");
+  return row.lifetime;
 }
 
 function replay(prior: import("@pstdio/pocketcoder-contracts").LifetimeReceipt, command: LifetimeExtension) {

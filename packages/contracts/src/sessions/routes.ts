@@ -1,7 +1,13 @@
 import type { managedSchemas } from "./schemas";
 
 type Shape = keyof typeof managedSchemas | "bytes";
-const route = (method: "get" | "post" | "put", path: string, response: Shape, body?: Shape, shipped = false) => ({
+const route = (
+  method: "get" | "post" | "put",
+  path: string,
+  response: Shape | "empty",
+  body?: Shape,
+  shipped = false,
+) => ({
   method,
   path,
   response,
@@ -14,6 +20,8 @@ const budgets = "/v1/budget-scopes/{scopeId}";
 
 // The implementation marker follows the owning server routes; remaining operations are designs.
 export const managedRoutes = [
+  route("put", `${budgets}/grant`, "empty", "BudgetScopeGrant", true),
+  route("put", "/v1/credential-bindings/{bindingId}", "empty", "CredentialBinding", true),
   route("put", "/v1/execution-profiles/{profileId}/revisions/{revision}", "ExecutionProfile", "ExecutionProfile", true),
   route("post", "/v1/sessions", "Session", "SessionCreate", true),
   route("get", sessions, "Session", undefined, true),

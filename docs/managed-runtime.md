@@ -37,7 +37,9 @@ An owner key with `admin` provisions authority outside every workspace:
    credential binding become immutable. Publish a new revision to change them.
 
 Only an owner can register grants, bindings and profiles. Policy writes require
-`budgets:admin` and scope ownership, or owner authority. Reads require
+`budgets:admin` and ownership of a personal scope with one grantee, or owner
+authority. Installation scopes and scopes shared by several principals require
+owner `admin` authority for every policy write, including identical replay. Reads require
 `budgets:read` and a scope grant, or owner authority. Execution keys cannot give
 themselves grants or remove a profile's scopes.
 
@@ -55,6 +57,10 @@ generation. It checks actual workspace ownership, template, incarnation, lifetim
 and required policies. Detaching or replacing compute requires the old workspace
 to have ended and every old lease to be revoked or recorded expired. A revocation
 outage keeps that operation pending. Clearing a binding never resets its generation.
+Observations follow the versioned session transition table. A failed session can
+close or return to provisioning through a fresh binding. A fenced replacement
+may also move a ready session back to provisioning; a suspended session must
+provision before it can become ready again.
 
 Business credentials require one exclusive workspace per session, even when the
 broker and profile match. Credential-free siblings require the same principal,

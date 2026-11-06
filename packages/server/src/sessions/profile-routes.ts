@@ -39,7 +39,6 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
       );
     },
   );
-  const scope = z.object({ principalId: z.uuid(), installation: z.boolean() }).strict();
   app.openapi(
     createRoute({
       method: "put",
@@ -49,7 +48,7 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
       middleware: [requireScope("admin")] as const,
       request: {
         params: z.object({ scopeId: z.uuid() }),
-        body: { content: { "application/json": { schema: scope } } },
+        body: { content: { "application/json": { schema: managed.managedSchemas.BudgetScopeGrant } } },
       },
       responses: { 204: { description: "Scope granted" }, ...MANAGED_ERROR_RESPONSES },
     }),
@@ -64,16 +63,6 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
       return c.body(null, 204);
     },
   );
-  const credential = z
-    .object({
-      bindingId: z.uuid(),
-      principalId: z.uuid(),
-      secretName: z.string().min(1).max(128),
-      secretVersionId: z.uuid().optional(),
-      slots: z.array(z.string().min(1).max(128)).min(1).max(100),
-      authorityExpiresAt: z.iso.datetime({ offset: true }),
-    })
-    .strict();
   app.openapi(
     createRoute({
       method: "put",
@@ -83,7 +72,7 @@ export function registerProfileRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
       middleware: [requireScope("admin")] as const,
       request: {
         params: z.object({ bindingId: z.uuid() }),
-        body: { content: { "application/json": { schema: credential } } },
+        body: { content: { "application/json": { schema: managed.managedSchemas.CredentialBinding } } },
       },
       responses: { 204: { description: "Immutable credential binding registered" }, ...MANAGED_ERROR_RESPONSES },
     }),

@@ -25,6 +25,38 @@ test("no-compute sessions replay after restart and fence old binding revisions",
   }
 });
 
+test("session observations enforce the public transitions and allow failed sessions to close", async () => {
+  const f = await managedFixture();
+  try {
+    const initial = await provision(f);
+    const id = { principalId: f.principal.id, sessionId: f.sessionId };
+    const suspended = await f.store.managed.sessions.appendObservation(id, initial.revision, "suspended", null);
+    await expect(f.store.managed.sessions.appendObservation(id, suspended.revision, "ready", null)).rejects.toThrow();
+    expect(await f.store.managed.sessions.get(f.keyId, f.sessionId)).toEqual(suspended);
+    const failed = await f.store.managed.sessions.appendObservation(id, suspended.revision, "failed", "provider_lost");
+    expect((await f.store.managed.sessions.appendObservation(id, failed.revision, "closed", null)).state).toBe(
+      "closed",
+    );
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("failed sessions can bind fresh compute after the previous binding is fenced", async () => {
+  const f = await managedFixture();
+  try {
+    await provision(f);
+    const id = { principalId: f.principal.id, sessionId: f.sessionId };
+    const current = await f.store.managed.sessions.get(f.keyId, f.sessionId);
+    await f.store.managed.sessions.appendObservation(id, current.revision, "failed", "provider_lost");
+    const { bindCompute } = await import("../managed/fixture.test");
+    await bindCompute(f);
+    expect((await f.store.managed.sessions.get(f.keyId, f.sessionId)).state).toBe("provisioning");
+  } finally {
+    await f.dispose();
+  }
+});
+
 test("binding comparisons retain generation history after detach and observations roll back with their transaction", async () => {
   const f = await managedFixture();
   try {

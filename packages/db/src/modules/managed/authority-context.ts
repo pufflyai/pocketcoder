@@ -1,6 +1,6 @@
 import { ApiError, hasScope, type managed, type Scope } from "@pstdio/pocketcoder-contracts";
 import { and, eq } from "drizzle-orm";
-import type { DatabaseContext, Transaction } from "../../database/context";
+import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { lockKeyAuthority } from "../auth/authority";
 
 export const unavailable = () => new ApiError("profile.not_found", "Execution authority is unavailable.");
@@ -16,15 +16,13 @@ export function authorityContext({ tables }: DatabaseContext) {
   }
   async function scope(tx: Transaction, keyId: string, scopeId: string, write: boolean) {
     const actor = await caller(tx, keyId, write ? "budgets:admin" : "budgets:read");
-    const [row] = await tx.select().from(scopes).where(eq(scopes.scopeId, scopeId));
-    const [grant] = await tx
-      .select()
-      .from(grants)
-      .where(and(eq(grants.scopeId, scopeId), eq(grants.principalId, actor.authority.principalId)));
-    if (
-      !row ||
-      (!actor.authority.scopes.includes("admin") && (write ? row.principalId !== actor.authority.principalId : !grant))
-    )
+    await lock(tx, scopeId, 34);
+    const [row] = await tx.select().from(scopes).where(eq(scopes.scopeId, scopeId)).for("update");
+    const members = await tx.select().from(grants).where(eq(grants.scopeId, scopeId));
+    const ownsPersonalScope =
+      !row?.installation && members.length === 1 && row?.principalId === actor.authority.principalId;
+    const hasGrant = members.some((grant) => grant.principalId === actor.authority.principalId);
+    if (!row || (!actor.authority.scopes.includes("admin") && (write ? !ownsPersonalScope : !hasGrant)))
       throw new ApiError("budget.not_found", "Unknown budget scope.");
     return row;
   }

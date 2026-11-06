@@ -159,19 +159,24 @@ export class SchedulerContext {
       await this.deps.transferRuntime.cleanupWorkspace(row);
       return;
     }
-    const storageDriver = this.deps.storageDriver;
-    if (!storageDriver) return;
     const storage = await this.deps.store.getWorkspaceStorage(row.id);
     if (!storage || ["retained", "deleted"].includes(storage.state)) return;
     try {
+      const storageDriver = this.deps.storageDriver;
+      if (!storageDriver) throw new Error("Workspace storage cleanup requires its storage driver.");
       if (Object.keys(storage.providerRef).length > 0) {
         await storageDriver.deleteStorage(storage.providerRef as StorageRef);
       }
       const at = this.now();
-      await this.deps.store.updateWorkspaceStorage(storage.id, { state: "deleted", deletedAt: at }, at);
+      await this.deps.store.updateWorkspaceStorage(
+        storage.id,
+        { state: "deleted", deletedAt: at, lastErrorCode: null },
+        at,
+      );
     } catch (error) {
       await this.deps.store.updateWorkspaceStorage(storage.id, { lastErrorCode: "storage_cleanup_failed" }, this.now());
       this.report(`storage.cleanup.${row.id}`, error);
+      throw error;
     }
   }
 

@@ -70,12 +70,34 @@ export class SchedulerLifecycle {
       } else {
         await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row), at);
       }
+      // Stop proof precedes extraction; output storage stays allocated until the
+      // collection receipt and immutable bytes are committed together.
+      if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
+      await this.context.deps.finalizeOutputs?.(row);
+      if (retainStorage && !this.context.deps.transferRuntime) {
+        const storage = await store.getWorkspaceStorage(row.id);
+        if (storage && !["retained", "deleted"].includes(storage.state)) {
+          await store.updateWorkspaceStorage(
+            storage.id,
+            {
+              state: "retained",
+              retainedUntil: new Date(
+                at.getTime() + parseDurationMs(row.templateSnapshot.spec.persistence.checkpoint.retention),
+              ),
+            },
+            at,
+          );
+        }
+      } else {
+        await this.context.cleanupWorkspaceStorage(row);
+        await this.context.deps.completeOutputCleanup?.(row);
+      }
     } catch (err) {
       const failures = (this.cleanupRetries.get(row.id)?.failures ?? 0) + 1;
       const delay = Math.min(CLEANUP_RETRY_BASE_MS * 2 ** (failures - 1), CLEANUP_RETRY_MAX_MS);
       this.cleanupRetries.set(row.id, { failures, dueAt: this.context.now().getTime() + delay });
       this.context.report(`finalize.terminate.${row.id}`, err);
-      // Keep the workspace active until removal and input cleanup can be retried.
+      // Keep the workspace active until provider and storage cleanup can be retried.
       await store.transition(row.id, {
         from: ["provisioning", "connected", "ready"],
         to: "terminating",
@@ -86,28 +108,6 @@ export class SchedulerLifecycle {
       return;
     }
     this.cleanupRetries.delete(row.id);
-    // Stop proof precedes extraction; output storage stays allocated until the
-    // collection receipt and immutable bytes are committed together.
-    if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
-    await this.context.deps.finalizeOutputs?.(row);
-    if (retainStorage && !this.context.deps.transferRuntime) {
-      const storage = await store.getWorkspaceStorage(row.id);
-      if (storage && !["retained", "deleted"].includes(storage.state)) {
-        await store.updateWorkspaceStorage(
-          storage.id,
-          {
-            state: "retained",
-            retainedUntil: new Date(
-              at.getTime() + parseDurationMs(row.templateSnapshot.spec.persistence.checkpoint.retention),
-            ),
-          },
-          at,
-        );
-      }
-    } else {
-      await this.context.cleanupWorkspaceStorage(row);
-      await this.context.deps.completeOutputCleanup?.(row);
-    }
     let failurePatch: WorkspacePatch = {};
     if (terminalState === "failed") {
       try {
@@ -122,7 +122,7 @@ export class SchedulerLifecycle {
       }
     }
     connections.close(row.id);
-    if (this.context.deps.transferRuntime && row.restoredFromCheckpointId) {
+    if (row.restoredFromCheckpointId) {
       await this.context.finishRestoreOperation(row, "failed", "restore_failed");
     }
     await store.transition(row.id, {

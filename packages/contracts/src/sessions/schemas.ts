@@ -8,12 +8,15 @@ import { ErrorSchema, RuntimeEventSchema } from "./event";
 import { ExportObjectSchema, InputObjectSchema, InputReferenceSchema, InputUploadSchema } from "./files";
 import { ManagedExportPageSchema, ManagedHistoryPageSchema } from "./pages";
 import { ExecutionProfileSchema, SessionCreateSchema, SessionSchema } from "./profile";
+import { BudgetScopeGrantSchema, CredentialBindingSchema } from "./provisioning";
 import { CancelCommandSchema, CancelReceiptSchema, RequestInputSchema, RequestSchema } from "./request";
 import { ManagedQueueLimitsSchema } from "./states";
 
 export const MANAGED_CONTRACT_REVISION = "pocketcoder.managed/v1" as const;
 export const managedSchemas = {
   ExecutionProfile: ExecutionProfileSchema,
+  BudgetScopeGrant: BudgetScopeGrantSchema,
+  CredentialBinding: CredentialBindingSchema,
   SessionCreate: SessionCreateSchema,
   Session: SessionSchema,
   InputReference: InputReferenceSchema,

@@ -36,7 +36,8 @@ export function createManagedAuthority(context: DatabaseContext): ManagedAuthori
         const actor = await auth.caller(tx, keyId, "admin", principalId);
         if (!actor.target || actor.target.disabledAt) throw unavailable();
         await lock(tx, "managed-scope-registration", 30);
-        const [known] = await tx.select().from(scopes).where(eq(scopes.scopeId, scopeId));
+        await lock(tx, scopeId, 34);
+        const [known] = await tx.select().from(scopes).where(eq(scopes.scopeId, scopeId)).for("update");
         if (known && known.installation !== installation) throw conflict();
         if (!known) {
           if (installation && (await tx.select().from(scopes).where(eq(scopes.installation, true))).length)

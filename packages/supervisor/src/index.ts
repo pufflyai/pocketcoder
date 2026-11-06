@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     if (!action || !["start", "stop", "status"].includes(action) || !name || !/^[a-z][a-z0-9-]{0,62}$/.test(name))
       usage();
     const response = await fetch(`http://localhost/${name}/${action}`, {
-      unix: process.env.POCKETCODER_SERVICES_SOCKET ?? "/tmp/pocketcoder-services.sock",
+      unix: process.env.POCKETCODER_SERVICES_SOCKET ?? "/run/pocketcoder/services/services.sock",
       method: "POST",
       ...(action === "start" ? { body: JSON.stringify({ startId }) } : {}),
     });

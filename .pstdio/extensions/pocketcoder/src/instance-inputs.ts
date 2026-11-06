@@ -1,5 +1,27 @@
 import { join } from "node:path";
 
+export function validatedWorkloadLimits(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Template limits are required.");
+  const limits = value as Record<string, number>;
+  for (const key of [
+    "stagedInputBytes",
+    "inputFiles",
+    "inputFileBytes",
+    "inFlightTransfers",
+    "finalizationSeconds",
+    "unreferencedInputRetentionSeconds",
+    "deadlineSeconds",
+    "exportBytes",
+    "exportFiles",
+    "exportRetentionSeconds",
+  ]) {
+    const limit = limits[key];
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit <= 0)
+      throw new Error(`Template limits.${key} must be a finite positive integer.`);
+  }
+  return limits;
+}
+
 export function inputEnvironment(root: string, limits: Record<string, number>) {
   const capacity = { bytes: limits.stagedInputBytes, files: limits.inputFiles };
   return {

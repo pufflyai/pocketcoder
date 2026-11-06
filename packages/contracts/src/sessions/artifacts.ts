@@ -37,6 +37,31 @@ function parametersFor(route: (typeof managedRoutes)[number]) {
 
 const errorName = (route: (typeof managedRoutes)[number]) => (route.shipped ? "WireError" : "Error");
 
+function responsesFor(route: (typeof managedRoutes)[number]) {
+  const media = route.response === "bytes" ? "application/octet-stream" : "application/json";
+  const responses: Record<string, object> =
+    route.response === "empty"
+      ? {
+          "204": { description: "Provisioning completed or identically replayed" },
+        }
+      : {
+          "200": {
+            description: "Lookup, completed operation or identical replay",
+            content: content(route.response, route.response === "RuntimeEvent" ? "text/event-stream" : media),
+          },
+        };
+  if (!route.shipped && route.body && ["SessionCreate", "RequestInput", "InputUpload"].includes(route.body))
+    responses["201"] = { description: "Created or accepted once", content: content(route.response) };
+  if (route.response === "CancelReceipt")
+    responses["202"] = { description: "Cancellation pending", content: content(route.response) };
+  for (const status of [400, 403, 404, 409, 410, 412, 413, 422, 429, 503])
+    responses[status] = {
+      description: "Safe managed error; reconcile potentially accepted writes by identity",
+      content: content(errorName(route)),
+    };
+  return responses;
+}
+
 export function generatedManagedContract() {
   const definitions = Object.fromEntries(
     Object.entries(managedSchemas).map(([name, schema]) => [
@@ -54,22 +79,6 @@ export function generatedManagedContract() {
   };
   const paths: Record<string, Record<string, unknown>> = {};
   for (const route of managedRoutes) {
-    const media = route.response === "bytes" ? "application/octet-stream" : "application/json";
-    const responses: Record<string, object> = {
-      "200": {
-        description: "Lookup, completed operation or identical replay",
-        content: content(route.response, route.response === "RuntimeEvent" ? "text/event-stream" : media),
-      },
-    };
-    if (route.body && ["SessionCreate", "RequestInput", "InputUpload"].includes(route.body))
-      responses["201"] = { description: "Created or accepted once", content: content(route.response) };
-    if (route.response === "CancelReceipt")
-      responses["202"] = { description: "Cancellation pending", content: content(route.response) };
-    for (const status of [400, 403, 404, 409, 410, 412, 413, 422, 429, 503])
-      responses[status] = {
-        description: "Safe managed error; reconcile potentially accepted writes by identity",
-        content: content(errorName(route)),
-      };
     const operation = {
       "x-shipped": route.shipped,
       "x-contract-revision": MANAGED_CONTRACT_REVISION,
@@ -83,7 +92,7 @@ export function generatedManagedContract() {
             },
           }
         : {}),
-      responses,
+      responses: responsesFor(route),
     };
     const methods = paths[route.path] ?? {};
     methods[route.method] = operation;

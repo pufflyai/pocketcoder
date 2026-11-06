@@ -4,11 +4,42 @@ import { eq } from "drizzle-orm";
 import { executionFixture } from "./execution-fixture.test";
 import { extendWorkspaceDeadline } from "./lifetime";
 
+test("restricted workspaces cannot extend beyond their fixed egress audit token lifetime", async () => {
+  const f = await executionFixture();
+  try {
+    const row = await f.store.getWorkspace(f.id);
+    if (!row) throw new Error("Workspace missing");
+    const ceilingAt = new Date(row.deadlineAt.getTime() + 60000).toISOString();
+    await f.context.db
+      .update(f.context.tables.workspaces)
+      .set({
+        lifetime: { ceilingAt, revision: 1, extensions: {} },
+        templateSnapshot: {
+          ...row.templateSnapshot,
+          spec: { ...row.templateSnapshot.spec, network: { mode: "restricted", allow: [] } },
+        },
+      })
+      .where(eq(f.context.tables.workspaces.id, f.id));
+    await expect(
+      f.store.extendWorkspaceDeadline(f.id, f.principal.id, {
+        extensionId: randomUUID(),
+        expectedRevision: 1,
+        deadlineAt: ceilingAt,
+      }),
+    ).rejects.toThrow("egress");
+    expect((await f.store.getWorkspace(f.id))?.deadlineAt).toEqual(row.deadlineAt);
+    expect((await f.store.getWorkspace(f.id))?.lifetime?.revision).toBe(1);
+  } finally {
+    await f.dispose();
+  }
+});
+
 test("authorized lifetime extension is atomic, bounded and cannot revive expired work", async () => {
   const f = await executionFixture();
   try {
     const at = new Date();
-    const row = (await f.store.getWorkspace(f.id))!;
+    const row = await f.store.getWorkspace(f.id);
+    if (!row) throw new Error("Workspace missing");
     await f.context.db
       .update(f.context.tables.workspaces)
       .set({

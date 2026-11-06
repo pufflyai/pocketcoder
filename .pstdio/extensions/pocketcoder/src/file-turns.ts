@@ -7,6 +7,7 @@ import type {
   HarnessStartInput,
   SessionMessage,
 } from "@pstdio/sdk/extensions";
+import { InstanceHttpError } from "./instance-http";
 import type { createInstances } from "./instances";
 
 type Instances = ReturnType<typeof createInstances>;
@@ -25,11 +26,17 @@ const key = (sessionId: string) => `file-turn:${sessionId}`;
 type FilePresentation = Pick<HarnessAttachment, "fileId" | "fileName" | "mimeType" | "sizeBytes" | "url">;
 
 export async function supportsFileTurns(ref: Target, signal?: AbortSignal) {
-  return ref.instances.request<{ requests: boolean; attachments: boolean }>(
-    ref.instanceId,
-    `/v1/workspaces/${ref.machineId}/agent/capabilities`,
-    { signal },
-  );
+  try {
+    return await ref.instances.request<{ requests: boolean; attachments: boolean }>(
+      ref.instanceId,
+      `/v1/workspaces/${ref.machineId}/agent/capabilities`,
+      { signal },
+    );
+  } catch (error) {
+    if (error instanceof InstanceHttpError && [404, 410, 422].includes(error.status))
+      return { requests: false, attachments: false };
+    throw error;
+  }
 }
 
 async function upload(ref: Target, input: HarnessStartInput) {
@@ -176,7 +183,7 @@ export async function reconnectFileTurn(ctx: HarnessContext, input: HarnessReatt
   const pending = await ctx.state.get<Pending>(key(input.sessionId));
   if (!pending) return null;
   if (pending.target !== ref.sessionId) throw new Error("The pending request belongs to another workspace.");
-  return observeFileTurn(ctx, input, ref, pending, true);
+  return observeFileTurn(ctx, input, ref, pending, false);
 }
 
 async function observeFileTurn(
@@ -184,18 +191,28 @@ async function observeFileTurn(
   input: HarnessStartInput | HarnessReattachInput,
   ref: Target,
   pending: Pending,
-  submit: boolean,
+  firstSubmission: boolean,
 ): Promise<HarnessSession> {
   const controller = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal;
   const done = (async () => {
     // Replaying this exact saved body is safe even when the first response was lost.
-    if (submit)
+    try {
       await ref.instances.request(ref.instanceId, path(ref), {
         method: "POST",
         body: JSON.stringify(pending.request),
         signal,
       });
+    } catch (error) {
+      // A replay can follow a lost acceptance response. Only a rejected first
+      // submission proves that this saved request never reached execution.
+      if (firstSubmission && error instanceof InstanceHttpError && [400, 413, 422].includes(error.status)) {
+        await ctx.state.delete(key(input.sessionId));
+        ctx.logger.warn(error.message);
+        return { status: "failed" as const };
+      }
+      throw error;
+    }
     while (!signal.aborted) {
       const receipt = await read(ref, pending.request, signal);
       input.events.push({

@@ -194,23 +194,37 @@ export class SchedulerAdmission {
           patch: { providerKind: null, providerRef: null, registrationDigest: null, registrationExpiresAt: null },
         });
       } else {
-        const failurePatch = await this.context.captureLaunchFailure(row.id, err, at);
-        await store.transition(row.id, {
-          from: ["provisioning"],
-          to: "failed",
-          reason: "launch_failed",
-          at,
-          patch: {
-            launchInput: null,
-            registrationDigest: null,
-            ...failurePatch,
-          },
-        });
-        await this.context.cleanupWorkspaceStorage(claimed);
-        await this.context.finishRestoreOperation(row, "failed", "restore_failed");
+        await this.failLaunch(claimed, err, at);
       }
       return false;
     }
+  }
+
+  private async failLaunch(row: WorkspaceRow, error: unknown, at: Date) {
+    const store = this.context.deps.store;
+    const failurePatch = await this.context.captureLaunchFailure(row.id, error, at);
+    const pending = await store.transition(row.id, {
+      from: ["provisioning"],
+      to: "terminating",
+      reason: "launch_failed",
+      at,
+      patch: { terminalIntent: "failed", registrationDigest: null, ...failurePatch },
+    });
+    if (!pending) return;
+    try {
+      await this.context.cleanupWorkspaceStorage(pending);
+      await this.context.finishRestoreOperation(row, "failed", "restore_failed");
+    } catch (cleanupError) {
+      this.context.report(`launch.cleanup.${row.id}`, cleanupError);
+      return;
+    }
+    await store.transition(row.id, {
+      from: ["terminating"],
+      to: "failed",
+      reason: "launch_failed",
+      at,
+      patch: { launchInput: null },
+    });
   }
 
   private async prepareRuntime(workspace: WorkspaceRow) {

@@ -11,7 +11,7 @@ const requestTransitions: Record<Request["state"], readonly Request["state"][]> 
 };
 const sessionTransitions: Record<Session["state"], readonly Session["state"][]> = {
   provisioning: ["ready", "suspended", "closed", "failed"],
-  ready: ["suspended", "closed", "failed"],
+  ready: ["provisioning", "suspended", "closed", "failed"],
   suspended: ["provisioning", "closed", "failed"],
   closed: [],
   failed: ["provisioning", "closed"],

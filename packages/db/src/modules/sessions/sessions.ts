@@ -88,8 +88,7 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
         if (!principal || principal.disabledAt) throw unavailable();
         const row = await writer.read(tx, id);
         if (row.bindingRevision !== expectedRevision) throw new ApiError("revision.stale", "Binding revision changed.");
-        if (["closed", "failed"].includes(row.session.state))
-          throw new ApiError("session.closed", "Session has ended.");
+        if (row.session.state === "closed") throw new ApiError("session.closed", "Session has ended.");
         await placement.previousFenced(tx, row.binding, binding);
         if (binding) await placement.validate(tx, id, row.session, binding, row.lastGeneration);
         await tx

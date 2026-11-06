@@ -763,6 +763,9 @@ its current expiry or any teardown claim. It returns a `LifetimeReceipt` with th
 new revision and original ceiling. Identical retries return the original receipt;
 changed input or a stale revision conflicts. Legacy workspaces without a stored
 ceiling cannot extend.
+Restricted-network workspaces cannot extend: their running egress audit token is
+fixed to the original deadline. The API returns `operation.conflict` without
+changing the deadline or revision. Start a fresh workspace for a longer lifetime.
 
 ## Durable preview grants
 
