@@ -12,7 +12,7 @@ test("a real late first start retains failure, RSS, logs and cleanup", async () 
       binary,
       `#!${process.execPath}\nif (process.argv.includes("--version")) { console.log("fixture"); process.exit(0); }
       console.error("late-first-start-fixture");
-      setTimeout(() => Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.POCKETCODER_HTTP.split(":")[1]), fetch: () => new Response("ready") }), 3200);
+      setTimeout(() => Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.POCKETCODER_HTTP.split(":")[1]), fetch: () => new Response("ready") }), 4200);
       process.on("SIGTERM", () => process.exit(0));\n`,
     );
     await chmod(binary, 0o755);
@@ -38,10 +38,10 @@ test("a real late first start retains failure, RSS, logs and cleanup", async () 
     expect(stderr).toContain("[startup-exit] ");
     expect(stderr).toContain("late-first-start-fixture");
     const result = JSON.parse(stdout.trim());
-    expect(result.error).toContain("Controller exceeded 3-second readiness");
+    expect(result.error).toContain("Controller exceeded 4-second readiness");
     expect(result.error).toContain("late-first-start-fixture");
     expect(result.measurements).toHaveLength(1);
-    expect(result.measurements[0].readinessMs).toBeGreaterThan(3000);
+    expect(result.measurements[0].readinessMs).toBeGreaterThan(4000);
     expect(result.measurements[0].peakMemoryBytes).toBeGreaterThan(0);
     expect(result.cleanup).toEqual({ stopped: true, removed: true });
     expect(await Bun.file(join(result.directory, "pocketcoder")).exists()).toBe(false);
@@ -63,7 +63,7 @@ test.each([undefined, "--first-with-version"])(
         const event = (phase) => appendFileSync(${JSON.stringify(events)}, JSON.stringify({ phase, epochMs: Date.now() }) + "\\n");
         if (process.argv.includes("--version")) { event("version"); console.log("normal-fixture-version"); process.exit(0); }
         event("serve"); console.error("normal-late-first-fixture");
-        setTimeout(() => Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.POCKETCODER_HTTP.split(":")[1]), fetch: () => new Response("ready") }), 3200);
+        setTimeout(() => Bun.serve({ hostname: "127.0.0.1", port: Number(process.env.POCKETCODER_HTTP.split(":")[1]), fetch: () => new Response("ready") }), 4200);
         process.on("SIGTERM", () => { event("term"); process.exit(0); });\n`,
       );
       await chmod(binary, 0o755);
@@ -94,7 +94,7 @@ test.each([undefined, "--first-with-version"])(
       expect(result.prelude.finishedEpochMs).toBeGreaterThanOrEqual(observed[0].epochMs);
       expect(result.firstStartedEpochMs).toBeGreaterThanOrEqual(result.prelude.finishedEpochMs);
       expect(result.firstStartedEpochMs).toBeLessThanOrEqual(observed[1].epochMs);
-      expect(result.error).toContain("Controller exceeded 3-second readiness");
+      expect(result.error).toContain("Controller exceeded 4-second readiness");
       expect(result.error).toContain("normal-late-first-fixture");
       expect(result.measurements).toHaveLength(1);
       expect(result.measurements[0].peakMemoryBytes).toBeGreaterThan(0);

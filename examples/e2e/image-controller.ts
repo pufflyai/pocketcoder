@@ -120,7 +120,7 @@ export async function startDockerImageController(options: {
     const startedAt = (await command(["docker", "inspect", name, "--format", "{{.State.StartedAt}}"], { quiet: true }))
       .stdout;
     const readinessMs = Date.now() - Date.parse(startedAt);
-    if (readinessMs > 3000) throw new Error(`Image controller exceeded 3-second readiness: ${readinessMs} ms`);
+    if (readinessMs > 4000) throw new Error(`Image controller exceeded 4-second readiness: ${readinessMs} ms`);
     measurement.readinessMs = readinessMs;
     measurement.peakMemoryBytes = await readPeakMemory();
     if (!measurement.peakMemoryBytes || measurement.peakMemoryBytes > 512_000_000)

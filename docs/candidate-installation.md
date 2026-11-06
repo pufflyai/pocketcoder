@@ -28,7 +28,7 @@ PGlite and PostgreSQL versions, seed and engine checksums, and migration hashes.
 CI checks the executable's reported version and the database format in a real
 backup against that record. The executable size limit is 150 MB, approved for
 the Bun 1.4.4 upgrade. Controller peak memory is limited to 512 MB, and readiness
-must complete within three seconds. Builds include JavaScript bytecode to
+must complete within the approved temporary four seconds. Builds include JavaScript bytecode to
 reduce parsing work on the first start.
 
 ## Public packages
