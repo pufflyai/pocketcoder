@@ -48,7 +48,7 @@ export async function deleteExportBytes(
     .update(objects)
     .set({ data: null, deletedAt: at })
     .where(and(predicate, isNull(objects.deletedAt)))
-    .returning({ exportId: objects.exportId });
+    .returning({ exportId: objects.exportId, reservationId: objects.reservationId });
   if (!removed.length) return;
   await tx
     .update(context.tables.storageReservations)
@@ -66,7 +66,7 @@ export async function deleteExportBytes(
         eq(context.tables.storageReservations.purpose, "export"),
         inArray(
           context.tables.storageReservations.id,
-          removed.map((row) => row.exportId),
+          removed.map((row) => row.reservationId ?? row.exportId),
         ),
       ),
     );

@@ -269,7 +269,7 @@ test.each(["terminal", "absent"])("input pin loss keeps service %s lookup safe",
     await f.dispatcher.drain();
     expect(accepts).toBe(1);
     expect(acknowledgments).toBe(phase === "terminal" ? 1 : 0);
-    expect((await f.store.executions.get(a.execution))?.phase).toBe(phase === "terminal" ? "terminal" : "lost");
+    expect((await f.store.executions.get(a.execution))?.phase).toBe(phase === "terminal" ? "terminal" : "unknown");
   } finally {
     await f.dispose();
     await producer.stop(true);

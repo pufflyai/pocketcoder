@@ -62,6 +62,7 @@ import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
 import { registerProfileRoutes } from "./sessions/profile-routes";
 import { registerSessionRoutes } from "./sessions/session-routes";
+import { registerSessionWorkRoutes } from "./sessions/work-routes";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
@@ -71,6 +72,7 @@ import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
 export interface BuildDeps {
+  sessionQueueLimits?: import("@pstdio/pocketcoder-runtime-core").ManagedQueueLimits;
   assertAccountAllowed?: () => Promise<void>;
   inputStorageOptions?: InputStorageOptions;
   screenshotOptions?: ScreenshotOptions;
@@ -303,6 +305,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
   registerSessionRoutes(app, store);
+  registerSessionWorkRoutes(app, store, { inputs, storage: deps.inputStorageOptions, queue: deps.sessionQueueLimits });
   registerProfileRoutes(app, store);
   registerBudgetPolicyRoutes(app, store);
   registerBudgetUsageRoutes(app, store);

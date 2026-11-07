@@ -1,18 +1,16 @@
 import {
   type ExecutionRecord,
   executionInputManifestId,
+  executionNeedsAcknowledgment,
   executionSettled,
   type WorkloadExecutionReference,
 } from "@pstdio/pocketcoder-contracts";
 import { InputProjectionCapacityError } from "@pstdio/pocketcoder-runtime-contracts";
 import type { Store, WorkspaceRow } from "../types";
+import { releaseUnsentExecution } from "./execution-finalization";
+import { executionUnhealthy, producerMissing } from "./execution-health";
 
-// Capacity frees as other requests finish. A wait longer than this is reported as unhealthy.
-export const PROJECTION_CAPACITY_WAIT_MS = 5 * 60_000;
-
-// One execution failing does not make the controller unready. Executions failing in several workspaces for
-// longer than this point at the transport itself, which readiness reports.
-export const EXECUTION_FAILURE_WAIT_MS = 5 * 60_000;
+export { EXECUTION_FAILURE_WAIT_MS, PROJECTION_CAPACITY_WAIT_MS } from "./execution-health";
 
 // The producer answered the accept with a client error: it will not run this execution as sent.
 export class ExecutionRefusedError extends Error {
@@ -115,10 +113,7 @@ export class ExecutionDispatcher {
   }
 
   private cancelPending(record: ExecutionRecord) {
-    return (
-      !executionSettled(record) ||
-      (["terminal", "canceled"].includes(record.phase) && !!record.dispatchClaimedAt && !record.acknowledgedAt)
-    );
+    return !executionSettled(record) || executionNeedsAcknowledgment(record);
   }
 
   private allowed() {
@@ -128,6 +123,7 @@ export class ExecutionDispatcher {
   private async scanPending() {
     do {
       this.dirty = false;
+      await this.deps.store.managed.requests.prepare(this.now());
       const pending = await this.deps.store.executions.pending();
       this.reconcileFailures(pending);
       for (const record of pending) {
@@ -156,8 +152,9 @@ export class ExecutionDispatcher {
   }
 
   private clock() {
-    return (this.deps.now?.() ?? new Date()).getTime();
+    return this.now().getTime();
   }
+  private now = () => this.deps.now?.() ?? new Date();
 
   private retryDue(failureKey: string) {
     return this.clock() >= (this.retries.get(failureKey)?.dueAt ?? 0);
@@ -180,14 +177,7 @@ export class ExecutionDispatcher {
   // Readiness reflects controller-wide trouble only: input capacity stuck past its wait, or requests failing in
   // more than one workspace for longer than a single producer's trouble explains.
   private unhealthy() {
-    const now = this.clock();
-    if ([...this.capacityWaits.values()].some((since) => now - since > PROJECTION_CAPACITY_WAIT_MS)) return true;
-    const workspaces = new Set(
-      [...this.failures.values()]
-        .filter((failure) => now - failure.since >= EXECUTION_FAILURE_WAIT_MS)
-        .map((failure) => failure.workspaceId),
-    );
-    return workspaces.size > 1;
+    return executionUnhealthy(this.failures.values(), this.capacityWaits.values(), this.clock());
   }
 
   private pump() {
@@ -249,18 +239,31 @@ export class ExecutionDispatcher {
       !this.canReconcile(workspace, record)
     )
       return null;
+    if (record.phase === "running") {
+      await this.deps.store.executions.observe(
+        execution,
+        record.acceptance.fingerprint,
+        "unknown",
+        epoch,
+        this.deps.now?.() ?? new Date(),
+        record.outcome,
+      );
+      return null;
+    }
     return record;
   }
 
   private async dispatch(record: ExecutionRecord, control: boolean, absentEpoch?: number) {
     const { store, transport } = this.deps;
-    const now = this.deps.now?.() ?? new Date();
+    const now = this.now();
     const execution = record.acceptance.execution;
     const workspace = await store.getWorkspace(execution.workspaceId);
-    if (!workspace || workspace.purgeRequestedAt || !transport.connected(workspace)) return;
+    if (!workspace || workspace.purgeRequestedAt) return;
+    if (await releaseUnsentExecution(record, workspace, transport)) return true;
+    if (!transport.connected(workspace)) return;
     if (absentEpoch !== undefined && workspace.connectionEpoch !== absentEpoch) return;
     const observed = await this.deps.inspect(workspace);
-    if (!observed.exists || !observed.running || observed.containerIdentity !== execution.incarnationId) {
+    if (producerMissing(observed, execution.incarnationId)) {
       await store.endWorkspaceRuntime(workspace.id, execution.incarnationId, now);
       return true;
     }

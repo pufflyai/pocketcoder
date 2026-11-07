@@ -2,6 +2,7 @@ import type { managed } from "@pstdio/pocketcoder-contracts";
 import type {
   InvocationRecord,
   ManagedBinding,
+  ManagedCapacityRecord,
   ManagedCredentialBinding,
   ManagedUsageEvidence,
 } from "@pstdio/pocketcoder-runtime-contracts";
@@ -82,6 +83,7 @@ export function createManagedTables(
       bindingRevision: integer("binding_revision").notNull().default(0),
       lastGeneration: integer("last_generation").notNull().default(0),
       nextSequence: bigint("next_sequence", { mode: "number" }).notNull().default(1),
+      nextRequestSequence: bigint("next_request_sequence", { mode: "number" }).notNull().default(1),
       queueCount: integer("queue_count").notNull().default(0),
       queueBytes: bigint("queue_bytes", { mode: "number" }).notNull().default(0),
     },
@@ -110,6 +112,10 @@ export function createManagedTables(
     },
     (row) => [primaryKey({ columns: [row.scopeId, row.revision] })],
   );
+  const managedCapacity = table("managed_capacity", {
+    workspaceId: uuid("workspace_id").primaryKey(),
+    record: jsonb("record").$type<ManagedCapacityRecord>().notNull(),
+  });
   // The single invocation owner retains holds, rates and settlement evidence together.
   const budgetInvocations = table("budget_invocations", {
     invocationId: uuid("invocation_id").primaryKey(),
@@ -146,6 +152,7 @@ export function createManagedTables(
     managedCredentials,
     managedSessions,
     managedObservations,
+    managedCapacity,
     budgetPolicies,
     budgetInvocations,
     budgetAudits,

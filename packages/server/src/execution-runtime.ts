@@ -21,7 +21,7 @@ export function composeExecutionDispatcher(
     onHealth: (failed) => readiness.set("execution-dispatch", failed ? "failed" : "ok"),
     transport: executionTransport(
       processTransport({ store, hub, driver, inputs }),
-      conversationTransport({ store, hub, driver, inputs }),
+      conversationTransport({ store, hub, driver, inputs, readCapacity: deps.inputStorageOptions?.capacity }),
     ),
     inspect: (workspace) => {
       const ref = { kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef };

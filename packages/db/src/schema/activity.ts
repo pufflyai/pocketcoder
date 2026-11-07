@@ -4,6 +4,7 @@ import type {
   ConversationRequestRow,
   ConversationStateRow,
   LogRow,
+  ManagedRequestRecord,
   StateHistoryRow,
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
@@ -42,6 +43,7 @@ export function createActivityTables(
       workspaceId: uuid("workspace_id").references(() => workspaces.id),
       identity: jsonb("identity").$type<ConversationRequestRow["identity"]>().notNull(),
       execution: jsonb("execution").$type<NonNullable<ConversationRequestRow["execution"]>>(),
+      managed: jsonb("managed").$type<ManagedRequestRecord>(),
       acceptedAt: timestamptz("accepted_at").notNull(),
     },
     (table) => [primaryKey({ columns: [table.principalId, table.conversationId, table.requestId] })],

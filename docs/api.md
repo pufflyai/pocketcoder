@@ -775,8 +775,9 @@ workspace ownership. See [the grant contract and renewal flow](preview-grants.md
 
 ## Managed integration contract
 
-The proposed logical session, queue and budget APIs have versioned types and
-machine-readable schemas, but are not registered server routes. Their status,
+The logical session, queue and budget APIs have versioned types and
+machine-readable schemas. Only operations marked `x-shipped: true` are registered.
+Their status,
 field mappings and transaction owners are listed in the
 [managed contract index](managed-contracts.md).
 
@@ -811,5 +812,7 @@ attachments.
 See [managed sessions and budget accounting](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
 exclusive business-credential placement, pinned broker renewal and trusted internal
-reservation/settlement ports. Request dispatch, provider gateway enforcement and
-physical capacity accounting retain their separate owners.
+reservation/settlement ports. [Session work](managed-session-work.md) describes
+implemented request acceptance, file readiness, collection and adapter publication.
+Provider gateway enforcement, automatic placement/recovery, cancellation and
+history replay retain their later owners.

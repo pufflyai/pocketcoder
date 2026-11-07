@@ -14,6 +14,7 @@ import type {
   AdmissionLimits,
   PrincipalRow,
   Scheduler,
+  Store,
   TemplateRow,
   TemplateStore,
   WorkspaceRow,
@@ -24,7 +25,7 @@ import type {
 // request flow; scheduling, SQL, and driver logic live below this layer.
 
 export interface WorkspaceServiceDeps {
-  store: TemplateStore & WorkspaceStore;
+  store: TemplateStore & WorkspaceStore & Pick<Store, "managed">;
   scheduler: Scheduler;
   limits: AdmissionLimits;
   deploymentDeadlineSeconds?: number;
@@ -278,6 +279,7 @@ export class WorkspaceService {
         at: now,
       });
       // Admission can win between the read and this write; then terminate what it admitted.
+      if (updated) await store.managed.capacity.releaseUnlaunched(row.id, now);
       return updated ?? (await this.cancel(principal, id));
     }
     if (row.state === "terminating" || row.terminalAt) {

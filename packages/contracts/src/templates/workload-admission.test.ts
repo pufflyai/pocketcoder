@@ -11,6 +11,38 @@ const bounds = {
   expiresAt: "2026-10-15T00:10:00Z",
 };
 
+test("service output roots require observed immutable publication before readiness", () => {
+  const source = workloadFixture();
+  const parsed = parseWorkloadTemplate({
+    ...source,
+    spec: {
+      ...source.spec,
+      profile: "service",
+      adapters: {
+        main: {
+          kind: "service",
+          digest: source.spec.adapters.main.digest,
+          protocol: "pocketcoder.execution/v1",
+          service: "api",
+        },
+      },
+      services: { api: { baseUrl: "http://127.0.0.1:8080", routes: [{ method: "GET", path: "/health" }] } },
+    },
+  });
+  const installed = installedFixture(parsed.manifest);
+  installed.templateDigest = parsed.digest;
+  installed.capabilities.push("unknown-outcome");
+  const main = installed.adapters.main;
+  if (!main) throw Error("Missing adapter");
+  main.capabilities.push("unknown-outcome");
+  main.capabilities = main.capabilities.filter((capability) => capability !== "explicit-publication");
+  const deployment = { ...bounds, ceilings: fixtureLimits, profiles: ["service"], installed };
+  expect(workloadAdmission(parsed, deployment)).toMatchObject({
+    supported: false,
+    reasons: ["operation run capability unavailable: explicit-publication"],
+  });
+});
+
 function fixture(profile: "finite-process" | "cloud-interactive" = "finite-process") {
   const parsed = parseWorkloadTemplate(workloadFixture(profile));
   const installed = installedFixture(parsed.manifest);

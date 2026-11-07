@@ -9,8 +9,8 @@ export async function finalizeServiceExecution(
   workspace: WorkspaceRow,
 ) {
   const operation = workspace.runtimeRegistration?.template?.manifest.spec.operations[record.acceptance.operation];
-  if (!operation || operation.outputRoots.length)
-    throw new ApiError("operation.conflict", "Output publication is not qualified.");
+  if (!operation) throw new ApiError("operation.conflict", "Output operation is unavailable.");
+  await deps.store.exports.seal(record.acceptance.execution, new Date());
   if (record.acceptance.inputs.objects.length) {
     if (!deps.driver.releaseInputProjection || !workspace.providerRef)
       throw new ApiError("operation.conflict", "Input projection cleanup is unavailable.");
@@ -19,5 +19,6 @@ export async function finalizeServiceExecution(
       executionInputManifestId(record.acceptance),
     );
   }
+  await deps.store.exports.completeCleanup(record.acceptance.execution);
   await deps.store.executions.finalize(record.acceptance.execution, new Date());
 }

@@ -846,7 +846,7 @@
     },
     "/v1/sessions/{sessionId}/requests": {
       "post": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -885,22 +885,12 @@
               }
             }
           },
-          "201": {
-            "description": "Created or accepted once",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Request"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Safe managed error; reconcile potentially accepted writes by identity",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -910,7 +900,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -920,7 +910,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -930,7 +920,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -940,7 +930,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -950,7 +940,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -960,7 +950,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -970,7 +960,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -980,7 +970,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -990,7 +980,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1000,7 +990,7 @@
     },
     "/v1/sessions/{sessionId}/requests/{requestId}": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -1043,7 +1033,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1053,7 +1043,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1063,7 +1053,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1073,7 +1063,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1083,7 +1073,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1093,7 +1083,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1103,7 +1093,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1113,7 +1103,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1123,7 +1113,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1133,7 +1123,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1751,7 +1741,7 @@
     },
     "/v1/sessions/{sessionId}/inputs": {
       "post": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -1790,22 +1780,12 @@
               }
             }
           },
-          "201": {
-            "description": "Created or accepted once",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InputObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Safe managed error; reconcile potentially accepted writes by identity",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1815,7 +1795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1825,7 +1805,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1835,7 +1815,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1845,7 +1825,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1855,7 +1835,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1865,7 +1845,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1875,7 +1855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1885,7 +1865,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1895,7 +1875,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1905,7 +1885,7 @@
     },
     "/v1/sessions/{sessionId}/inputs/{inputId}/content": {
       "put": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -1959,7 +1939,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1969,7 +1949,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1979,7 +1959,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1989,7 +1969,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -1999,7 +1979,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2009,7 +1989,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2019,7 +1999,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2029,7 +2009,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2039,7 +2019,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2049,7 +2029,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2059,7 +2039,7 @@
     },
     "/v1/sessions/{sessionId}/inputs/{inputId}": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2102,7 +2082,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2112,7 +2092,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2122,7 +2102,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2132,7 +2112,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2142,7 +2122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2152,7 +2132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2162,7 +2142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2172,7 +2152,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2182,7 +2162,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2192,7 +2172,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2202,7 +2182,7 @@
     },
     "/v1/sessions/{sessionId}/requests/{requestId}/collection": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2245,7 +2225,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2255,7 +2235,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2265,7 +2245,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2275,7 +2255,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2285,7 +2265,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2295,7 +2275,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2305,7 +2285,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2315,7 +2295,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2325,7 +2305,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2335,7 +2315,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2345,7 +2325,7 @@
     },
     "/v1/sessions/{sessionId}/exports": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2388,7 +2368,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2398,7 +2378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2408,7 +2388,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2418,7 +2398,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2428,7 +2408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2438,7 +2418,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2448,7 +2428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2458,7 +2438,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2468,7 +2448,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2478,7 +2458,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2488,7 +2468,7 @@
     },
     "/v1/sessions/{sessionId}/exports/{exportId}/content": {
       "get": {
-        "x-shipped": false,
+        "x-shipped": true,
         "x-contract-revision": "pocketcoder.managed/v1",
         "parameters": [
           {
@@ -2532,7 +2512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2542,7 +2522,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2552,7 +2532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2562,7 +2542,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2572,7 +2552,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2582,7 +2562,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2592,7 +2572,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2602,7 +2582,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2612,7 +2592,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -2622,7 +2602,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/WireError"
                 }
               }
             }
@@ -3294,8 +3274,8 @@
           },
           "mediaType": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+            "maxLength": 255,
+            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
           },
           "sizeBytes": {
             "type": "integer",
@@ -3322,8 +3302,8 @@
           },
           "mediaType": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+            "maxLength": 255,
+            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
           },
           "sizeBytes": {
             "type": "integer",
@@ -3371,8 +3351,8 @@
               },
               "mediaType": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256
+                "maxLength": 255,
+                "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
               },
               "sizeBytes": {
                 "type": "integer",
@@ -3431,8 +3411,8 @@
           },
           "mediaType": {
             "type": "string",
-            "minLength": 1,
-            "maxLength": 256
+            "maxLength": 255,
+            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
           },
           "sizeBytes": {
             "type": "integer",
@@ -3536,8 +3516,8 @@
                     },
                     "mediaType": {
                       "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
+                      "maxLength": 255,
+                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                     },
                     "sizeBytes": {
                       "type": "integer",
@@ -3676,8 +3656,8 @@
                     },
                     "mediaType": {
                       "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
+                      "maxLength": 255,
+                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                     },
                     "sizeBytes": {
                       "type": "integer",
@@ -3796,8 +3776,8 @@
                 },
                 "mediaType": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
+                  "maxLength": 255,
+                  "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                 },
                 "sizeBytes": {
                   "type": "integer",
@@ -3969,8 +3949,8 @@
                             },
                             "mediaType": {
                               "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
+                              "maxLength": 255,
+                              "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                             },
                             "sizeBytes": {
                               "type": "integer",
@@ -4109,8 +4089,8 @@
                             },
                             "mediaType": {
                               "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
+                              "maxLength": 255,
+                              "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                             },
                             "sizeBytes": {
                               "type": "integer",
@@ -4356,8 +4336,8 @@
                             },
                             "mediaType": {
                               "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
+                              "maxLength": 255,
+                              "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                             },
                             "sizeBytes": {
                               "type": "integer",
@@ -4496,8 +4476,8 @@
                             },
                             "mediaType": {
                               "type": "string",
-                              "minLength": 1,
-                              "maxLength": 256
+                              "maxLength": 255,
+                              "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                             },
                             "sizeBytes": {
                               "type": "integer",
@@ -5081,8 +5061,8 @@
                                     },
                                     "mediaType": {
                                       "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 256
+                                      "maxLength": 255,
+                                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                     },
                                     "sizeBytes": {
                                       "type": "integer",
@@ -5221,8 +5201,8 @@
                                     },
                                     "mediaType": {
                                       "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 256
+                                      "maxLength": 255,
+                                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                     },
                                     "sizeBytes": {
                                       "type": "integer",
@@ -5468,8 +5448,8 @@
                                     },
                                     "mediaType": {
                                       "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 256
+                                      "maxLength": 255,
+                                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                     },
                                     "sizeBytes": {
                                       "type": "integer",
@@ -5608,8 +5588,8 @@
                                     },
                                     "mediaType": {
                                       "type": "string",
-                                      "minLength": 1,
-                                      "maxLength": 256
+                                      "maxLength": 255,
+                                      "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                     },
                                     "sizeBytes": {
                                       "type": "integer",
@@ -5822,8 +5802,8 @@
                   },
                   "mediaType": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 255,
+                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                   },
                   "sizeBytes": {
                     "type": "integer",
@@ -5945,6 +5925,7 @@
                   "principal.name_conflict",
                   "key.not_found",
                   "request.body_too_large",
+                  "request.not_found",
                   "validation.invalid",
                   "idempotency.conflict",
                   "capacity.queue_full",
@@ -7204,8 +7185,8 @@
                 },
                 "mediaType": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
+                  "maxLength": 255,
+                  "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                 },
                 "sizeBytes": {
                   "type": "integer",

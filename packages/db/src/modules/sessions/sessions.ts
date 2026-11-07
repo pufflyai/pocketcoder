@@ -3,6 +3,7 @@ import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionStore } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
+import { placeManagedCapacity } from "../budgets/capacity-placement";
 import { authorityContext, conflict, unavailable } from "../managed/authority-context";
 import { sessionWriter } from "./observations";
 import { placementChecks } from "./placement";
@@ -90,7 +91,14 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
         if (row.bindingRevision !== expectedRevision) throw new ApiError("revision.stale", "Binding revision changed.");
         if (row.session.state === "closed") throw new ApiError("session.closed", "Session has ended.");
         await placement.previousFenced(tx, row.binding, binding);
-        if (binding) await placement.validate(tx, id, row.session, binding, row.lastGeneration);
+        if (binding) {
+          await placeManagedCapacity(context, tx, {
+            ...id,
+            workspaceId: binding.workspaceId,
+            generation: binding.generation,
+          });
+          await placement.validate(tx, id, row.session, binding, row.lastGeneration);
+        }
         await tx
           .update(sessions)
           .set({

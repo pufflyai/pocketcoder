@@ -66,11 +66,6 @@ export function runtimeTemplateDefinition(input: unknown) {
       "unsupported template format: only finite-process and request-aware service workloads are qualified for publication",
     );
   }
-  if (
-    spec.profile !== "finite-process" &&
-    Object.values(spec.operations).some((operation) => operation.outputRoots.length)
-  )
-    throw new ApiError("validation.invalid", "Service output publication is not qualified.");
   if (Object.keys(spec.credentialSlots).length)
     throw new ApiError("validation.invalid", "Workload credential slots are not qualified.");
   if (spec.lifecycle?.persistence.mounts.length && !spec.lifecycle.checkpointHook)

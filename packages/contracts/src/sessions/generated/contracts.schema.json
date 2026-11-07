@@ -241,8 +241,8 @@
         },
         "mediaType": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 256
+          "maxLength": 255,
+          "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
         },
         "sizeBytes": {
           "type": "integer",
@@ -269,8 +269,8 @@
         },
         "mediaType": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 256
+          "maxLength": 255,
+          "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
         },
         "sizeBytes": {
           "type": "integer",
@@ -318,8 +318,8 @@
             },
             "mediaType": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 256
+              "maxLength": 255,
+              "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
             },
             "sizeBytes": {
               "type": "integer",
@@ -378,8 +378,8 @@
         },
         "mediaType": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 256
+          "maxLength": 255,
+          "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
         },
         "sizeBytes": {
           "type": "integer",
@@ -483,8 +483,8 @@
                   },
                   "mediaType": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 255,
+                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                   },
                   "sizeBytes": {
                     "type": "integer",
@@ -623,8 +623,8 @@
                   },
                   "mediaType": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 256
+                    "maxLength": 255,
+                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                   },
                   "sizeBytes": {
                     "type": "integer",
@@ -743,8 +743,8 @@
               },
               "mediaType": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256
+                "maxLength": 255,
+                "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
               },
               "sizeBytes": {
                 "type": "integer",
@@ -916,8 +916,8 @@
                           },
                           "mediaType": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
+                            "maxLength": 255,
+                            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                           },
                           "sizeBytes": {
                             "type": "integer",
@@ -1056,8 +1056,8 @@
                           },
                           "mediaType": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
+                            "maxLength": 255,
+                            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                           },
                           "sizeBytes": {
                             "type": "integer",
@@ -1303,8 +1303,8 @@
                           },
                           "mediaType": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
+                            "maxLength": 255,
+                            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                           },
                           "sizeBytes": {
                             "type": "integer",
@@ -1443,8 +1443,8 @@
                           },
                           "mediaType": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 256
+                            "maxLength": 255,
+                            "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                           },
                           "sizeBytes": {
                             "type": "integer",
@@ -2028,8 +2028,8 @@
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256
+                                    "maxLength": 255,
+                                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                   },
                                   "sizeBytes": {
                                     "type": "integer",
@@ -2168,8 +2168,8 @@
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256
+                                    "maxLength": 255,
+                                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                   },
                                   "sizeBytes": {
                                     "type": "integer",
@@ -2415,8 +2415,8 @@
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256
+                                    "maxLength": 255,
+                                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                   },
                                   "sizeBytes": {
                                     "type": "integer",
@@ -2555,8 +2555,8 @@
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 256
+                                    "maxLength": 255,
+                                    "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                                   },
                                   "sizeBytes": {
                                     "type": "integer",
@@ -2769,8 +2769,8 @@
                 },
                 "mediaType": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 256
+                  "maxLength": 255,
+                  "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
                 },
                 "sizeBytes": {
                   "type": "integer",
@@ -2892,6 +2892,7 @@
                 "principal.name_conflict",
                 "key.not_found",
                 "request.body_too_large",
+                "request.not_found",
                 "validation.invalid",
                 "idempotency.conflict",
                 "capacity.queue_full",
@@ -4135,8 +4136,8 @@
               },
               "mediaType": {
                 "type": "string",
-                "minLength": 1,
-                "maxLength": 256
+                "maxLength": 255,
+                "pattern": "^[\\w.+-]+\\/[\\w.+-]+$"
               },
               "sizeBytes": {
                 "type": "integer",

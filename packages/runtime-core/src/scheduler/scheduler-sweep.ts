@@ -14,6 +14,7 @@ export class SchedulerSweep {
     const now = this.context.now();
     let rows: WorkspaceRow[];
     try {
+      await this.context.deps.store.managed.capacity.reconcile(now);
       rows = await this.context.deps.store.listNonterminal();
     } catch (err) {
       this.context.report("sweep.list", err);
@@ -58,6 +59,7 @@ export class SchedulerSweep {
         reason: "queue_timeout",
         at: now,
       });
+      await this.context.deps.store.managed.capacity.releaseUnlaunched(row.id, now);
       return;
     }
     if (now >= row.deadlineAt) {
@@ -67,6 +69,7 @@ export class SchedulerSweep {
         reason: "deadline_expired",
         at: now,
       });
+      await this.context.deps.store.managed.capacity.releaseUnlaunched(row.id, now);
     }
   }
 

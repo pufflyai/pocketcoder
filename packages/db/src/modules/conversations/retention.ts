@@ -1,7 +1,8 @@
 import { ConversationRequestIdentitySchema } from "@pstdio/pocketcoder-contracts";
 import type { ConversationRetention, ConversationTurnCommit } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, inArray, isNotNull, lte, or, type SQL, type SQLWrapper, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lte, or, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import type { DatabaseContext, QueryContext } from "../../database/context";
+import { removeRequestContent } from "../sessions/request-content";
 
 const PRUNE_BATCH = 500;
 
@@ -19,12 +20,18 @@ export async function clearConversations(
 ) {
   const { conversations, conversationRecords: records, workspaceConversations } = context.tables;
   const locked = await tx
-    .select({ id: conversations.id })
+    .select({
+      id: conversations.id,
+      principalId: conversations.principalId,
+      conversationId: conversations.conversationId,
+    })
     .from(conversations)
     .where(and(inArray(conversations.id, ids), still))
     .for("update");
   if (!locked.length) return 0;
   const documents = locked.map((row) => row.id);
+  for (const document of locked)
+    if (document.conversationId) await removeRequestContent(context, tx, document.principalId, document.conversationId);
   // The workspace quota counts stored records, so it gets their bytes back.
   const charged = await tx
     .select({ workspaceId: records.workspaceId, bytes: sql<number>`sum(${records.bytes})`.mapWith(Number) })
@@ -59,11 +66,14 @@ export function conversationIds(context: DatabaseContext, tx: QueryContext, work
     .select({ id: conversations.id })
     .from(conversations)
     .where(
-      or(
-        eq(conversations.workspaceId, workspaceId),
-        inArray(
-          conversations.id,
-          tx.select({ id: records.conversationRef }).from(records).where(eq(records.workspaceId, workspaceId)),
+      and(
+        sql`NOT EXISTS (SELECT 1 FROM ${context.tables.managedSessions} s WHERE s.principal_id = ${conversations.principalId} AND s.conversation_id = ${conversations.conversationId})`,
+        or(
+          eq(conversations.workspaceId, workspaceId),
+          inArray(
+            conversations.id,
+            tx.select({ id: records.conversationRef }).from(records).where(eq(records.workspaceId, workspaceId)),
+          ),
         ),
       ),
     );
@@ -89,6 +99,7 @@ export function createConversationRetention(
         .where(
           and(
             isNotNull(requests.workspaceId),
+            isNull(requests.managed),
             sql`coalesce(${requests.execution}->>'phase', '') <> 'accepted'`,
             sql`NOT EXISTS (SELECT 1 FROM ${conversations} c JOIN ${records} r ON r.conversation_ref = c.id
               WHERE c.principal_id = ${requests.principalId} AND c.conversation_id = ${requests.conversationId}

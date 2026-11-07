@@ -2,8 +2,51 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { link, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { digestOf } from "@pstdio/pocketcoder-contracts";
 import { FilesystemInputProjection } from "./input-projection";
 import { projectionFixture } from "./projection-fixture.test";
+
+test("session-owned canonical bytes project into replacement workspaces without changing backing ownership", async () => {
+  const f = await projectionFixture();
+  try {
+    const original = await f.input();
+    const scope = { workspaceId: randomUUID(), projectionId: randomUUID() };
+    const reference = {
+      ...original.reference,
+      storageOwnerId: original.backing.workspaceId,
+      workspaceId: scope.workspaceId,
+    };
+    const contents = { workspaceId: scope.workspaceId, incarnationId: f.incarnationId, objects: [reference] };
+    const selected = {
+      kind: "immutable-inputs/v1" as const,
+      manifestId: randomUUID(),
+      manifest: { ...contents, digest: digestOf(contents) },
+      objects: [{ reference, backing: original.backing }],
+    };
+    await f.publisher.prepare(scope);
+    await f.publisher.publish(scope, f.incarnationId, selected);
+    expect(await readFile(join(f.publisher.path(scope), selected.manifestId, original.reference.fileId), "utf8")).toBe(
+      "original",
+    );
+    await f.publisher.remove(scope);
+    await f.storage.verify(original.backing, original.reference);
+    const later = { workspaceId: randomUUID(), projectionId: randomUUID() };
+    const next = { ...reference, workspaceId: later.workspaceId };
+    const manifest = { workspaceId: later.workspaceId, incarnationId: f.incarnationId, objects: [next] };
+    await f.publisher.prepare(later);
+    const rebuilt = {
+      ...selected,
+      manifest: { ...manifest, digest: digestOf(manifest) },
+      objects: [{ reference: next, backing: original.backing }],
+    };
+    await f.publisher.publish(later, f.incarnationId, rebuilt);
+    expect(await readFile(join(f.publisher.path(later), rebuilt.manifestId, original.reference.fileId), "utf8")).toBe(
+      "original",
+    );
+  } finally {
+    await f.close();
+  }
+});
 
 test("publishes an ordered selection, rebuilds loss and keeps later additions separate", async () => {
   const f = await projectionFixture();

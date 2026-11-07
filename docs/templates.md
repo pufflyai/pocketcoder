@@ -8,7 +8,9 @@ cloud-interactive execution semantics.
 
 The Docker controller admits `finite-process` workloads and authored `service`
 workloads with request-aware `pocketcoder.execution/v1` adapters. Credential
-slots remain closed; service operations cannot declare output roots.
+slots remain closed. Service operations can declare output roots when the
+installed runtime and adapter prove `explicit-publication` support. See the
+[publication protocol](managed-session-work.md#adapter-result-publication).
 Set `POCKETCODER_WORKLOAD_LIMITS` to a JSON object with the deployment's finite
 workload ceilings, and configure [immutable input storage](input-storage.md).
 Publication retains the complete canonical manifest. Startup checks the actual

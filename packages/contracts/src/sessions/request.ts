@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CollectionResultSchema } from "./collection";
-import { InputReferenceSchema } from "./files";
+import { InputReferenceSchema, MAX_SESSION_FILE_REFERENCES } from "./files";
 
 export const RequestInputSchema = z.strictObject({
   requestId: z.uuid(),
@@ -10,7 +10,7 @@ export const RequestInputSchema = z.strictObject({
     .max(262144)
     .refine((value) => value.isWellFormed(), "Message must contain valid Unicode")
     .refine((value) => new TextEncoder().encode(value).length <= 262144, "Message exceeds 256 KiB UTF-8"),
-  attachments: z.array(InputReferenceSchema).max(1000),
+  attachments: z.array(InputReferenceSchema).max(MAX_SESSION_FILE_REFERENCES),
   dispatchDeadline: z.iso.datetime({ offset: true }),
 });
 export type RequestInput = z.infer<typeof RequestInputSchema>;

@@ -53,12 +53,14 @@ export function validateExecution(
   validateOwner(input, adapter.kind, adapter.protocol, runtime.profile);
   if (input.execution.owner === "conversation-request")
     validateServiceRoutes(spec.services, declared.service, input, identity);
-  for (const capability of new Set([
-    ...WORKLOAD_OPERATION_CAPABILITIES[runtime.profile],
-    ...operation.requiredCapabilities,
-  ]))
-    if (!adapter.capabilities.includes(capability) || !installed.capabilities.includes(capability))
-      executionConflict(`Unavailable operation capability: ${capability}`);
+  validateCapabilities(
+    runtime.profile,
+    operation.requiredCapabilities,
+    operation.outputRoots.length > 0,
+    input,
+    adapter.capabilities,
+    installed.capabilities,
+  );
   if (!matchesInput(operation.inputSchema, input.input))
     executionConflict("Operation input does not match its schema.");
   // Delegated customer grants plug in here once their authority owner exists.
@@ -169,4 +171,21 @@ function matchesInput(schema: WorkloadInputProperty, value: unknown): boolean {
 
 function matchesInputProperty(schema: WorkloadInputProperty | undefined, value: unknown) {
   return schema !== undefined && matchesInput(schema, value);
+}
+
+function validateCapabilities(
+  profile: keyof typeof WORKLOAD_OPERATION_CAPABILITIES,
+  required: string[],
+  publishes: boolean,
+  input: WorkloadAcceptance,
+  adapter: readonly string[],
+  installed: readonly string[],
+) {
+  for (const capability of new Set([
+    ...WORKLOAD_OPERATION_CAPABILITIES[profile],
+    ...required,
+    ...(input.execution.owner === "conversation-request" && publishes ? ["explicit-publication" as const] : []),
+  ]))
+    if (!adapter.includes(capability) || !installed.includes(capability))
+      executionConflict(`Unavailable operation capability: ${capability}`);
 }

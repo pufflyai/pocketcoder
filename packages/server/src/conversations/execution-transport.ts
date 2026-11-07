@@ -12,6 +12,7 @@ import {
 import {
   ExecutionRefusedError,
   type ExecutionTransport,
+  type ReadStorageCapacity,
   type Store,
   type WorkspaceDriver,
   type WorkspaceRow,
@@ -36,6 +37,7 @@ export function conversationTransport(deps: {
   hub: Hub;
   inputs?: InputStorage;
   driver: Pick<WorkspaceDriver, "publishInputs" | "releaseInputProjection">;
+  readCapacity?: ReadStorageCapacity;
 }): ExecutionTransport {
   async function call(
     record: ExecutionRecord,
@@ -85,6 +87,22 @@ export function conversationTransport(deps: {
     if (fact.phase === "absent") return "absent" as const;
     if (fact.fingerprint !== record.acceptance.fingerprint)
       throw new ApiError("operation.conflict", "Producer fingerprint conflict.");
+    if (fact.publication) {
+      const publications = fact.publication.objects.map((object) => {
+        const bytes = Buffer.from(object.contentBase64, "base64");
+        if (bytes.toString("base64") !== object.contentBase64)
+          throw new ApiError("operation.conflict", "Publication encoding is invalid.");
+        return { ...object, bytes };
+      });
+      await deps.store.exports.publish(
+        fact.execution,
+        fact.fingerprint,
+        publications,
+        fact.publication.complete,
+        new Date(),
+        await deps.readCapacity?.(),
+      );
+    }
     if (fact.phase === "accepted") return;
     const recorded = await deps.store.executions.observe(
       fact.execution,
@@ -95,6 +113,7 @@ export function conversationTransport(deps: {
       fact.outcome,
     );
     if (recorded && ["terminal", "canceled"].includes(fact.phase)) {
+      await deps.store.exports.seal(fact.execution, new Date());
       await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), control);
       await deps.store.executions.acknowledge(fact.execution, fact.fingerprint, new Date());
       await finalizeServiceExecution(deps, record, workspace);
@@ -108,6 +127,11 @@ export function conversationTransport(deps: {
       if (!latest || executionSettled(latest.record)) return;
       if (latest.record.cancel) {
         await this.cancel(latest.record, workspace);
+        return;
+      }
+      if (!(await deps.store.executions.beforeSend(record.acceptance.execution, new Date()))) {
+        const current = await deps.store.executions.get(record.acceptance.execution);
+        if (current?.finalizationBasis === "never_sent") await finalizeServiceExecution(deps, current, workspace);
         return;
       }
       const reply = await call(
@@ -128,6 +152,7 @@ export function conversationTransport(deps: {
     },
     release: (record, workspace) => finalizeServiceExecution(deps, record, workspace),
     async acknowledge(record, workspace) {
+      await deps.store.exports.seal(record.acceptance.execution, new Date());
       await call(record, workspace, "ack", executionAckEnvelope(record.acceptance), Boolean(record.cancel));
       await deps.store.executions.acknowledge(record.acceptance.execution, record.acceptance.fingerprint, new Date());
       await finalizeServiceExecution(deps, record, workspace);

@@ -370,5 +370,22 @@
     "folderMillis": 1793927140000,
     "hash": "b98f87df69257e7ec3deec1b01e537483f9e27c4771f6a1e6a5c386cfd49b318",
     "name": "20261106010540_closed_quicksilver"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"managed_capacity\" (\n\t\"workspace_id\" uuid PRIMARY KEY,\n\t\"record\" jsonb NOT NULL\n);\n",
+      "\nCREATE TABLE \"session_inputs\" (\n\t\"principal_id\" uuid,\n\t\"session_id\" uuid,\n\t\"input_id\" uuid,\n\t\"reference\" jsonb NOT NULL,\n\t\"source\" jsonb NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\tCONSTRAINT \"session_inputs_pkey\" PRIMARY KEY(\"principal_id\",\"session_id\",\"input_id\")\n);\n",
+      "\nALTER TABLE \"input_objects\" DROP CONSTRAINT \"input_objects_workspace_id_workspaces_id_fkey\";",
+      "\nALTER TABLE \"conversation_requests\" ADD COLUMN \"managed\" jsonb;",
+      "\nALTER TABLE \"export_objects\" ADD COLUMN \"session_id\" uuid;",
+      "\nALTER TABLE \"export_objects\" ADD COLUMN \"reservation_id\" uuid;",
+      "\nALTER TABLE \"input_objects\" ADD COLUMN \"session_id\" uuid;",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"next_request_sequence\" bigint DEFAULT 1 NOT NULL;",
+      "\nALTER TABLE \"session_inputs\" ADD CONSTRAINT \"session_inputs_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1794058852000,
+    "hash": "ebb33df18e064a5f1c080f87d3ef963fbe1530cdaec08a55fac7cc8798539c57",
+    "name": "20261107134052_odd_lord_tyger"
   }
 ]

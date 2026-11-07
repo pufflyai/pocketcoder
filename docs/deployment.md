@@ -1,5 +1,29 @@
 # Deployment
 
+## Managed session capacity
+
+Set explicit session queue and immutable storage bounds as described in
+[session work](managed-session-work.md). A trusted placement intent pins the
+principal, profile revision, isolation key, complete budget scope set and session
+generation before managed compute is admitted.
+
+All required scope policies must allow the start and active physical slot.
+Compatible credential-free sessions can share one physical workspace while each
+holds its own process slot. Credentialed sessions each need a physical slot.
+Capacity denial defers admission without spending a provider failure retry.
+Managed intents use cold admission; the warm path does not claim managed support.
+
+Committed launch attempts are charged once across retries. Proved non-submission
+does not consume start allowance. Cleanup keeps its reservation during uncertain
+provider deletion and rejects stale generations. Queued cancellation and expiry
+release never-launched holds, including after a controller restart.
+
+Request completion alone does not prove a retained session process exited.
+Trusted process-stop evidence releases that process slot; provider fencing releases
+the physical slot and its processes. Neither action refunds uncertain model use.
+Automatic placement/resume and provider gateway/network enforcement remain separate
+delivery gates.
+
 ## Container images
 
 The [candidate image workflow](../.github/workflows/images.yml) builds six roles

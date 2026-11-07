@@ -1,6 +1,17 @@
 import type { managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedInvocationIdentity, ManagedReservation, ManagedUsageEvidence } from "./managed-budgets";
 import type { ManagedSessionIdentity } from "./managed-sessions";
+import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore } from "./managed-work";
+
+export type {
+  ManagedCapacityIdentity,
+  ManagedCapacityRecord,
+  ManagedCapacityStore,
+  ManagedFileStore,
+  ManagedQueueLimits,
+  ManagedRequestRecord,
+  ManagedRequestStore,
+} from "./managed-work";
 
 export interface ManagedBinding {
   workspaceId: string;
@@ -97,4 +108,7 @@ export interface ManagedRuntimeStore {
   authority: ManagedAuthorityStore;
   sessions: ManagedSessionStore;
   budgets: ManagedBudgetStore;
+  requests: ManagedRequestStore;
+  files: ManagedFileStore;
+  capacity: ManagedCapacityStore;
 }

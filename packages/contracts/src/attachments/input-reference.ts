@@ -6,6 +6,7 @@ import { AttachmentMediaTypeSchema } from "./attachment";
 // Public references never contain a physical backing path. Restore needs new references.
 export const InputObjectReferenceSchema = z.strictObject({
   workspaceId: z.uuid(),
+  storageOwnerId: z.uuid().optional(),
   fileId: z.uuid(),
   objectVersion: WorkloadDigestSchema,
   name: z.string().min(1).max(255),

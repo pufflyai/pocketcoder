@@ -10,11 +10,13 @@ import { type InputStorageConfig, inputStorageConfig } from "./input-storage-con
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { kubernetesSharedConfig } from "./kubernetes-shared-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
+import { sessionQueueConfig } from "./session-queue";
 import { type StoreConfig, storeConfig } from "./store-config";
 
 type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig {
+  sessionQueueLimits?: ReturnType<typeof sessionQueueConfig>;
   kubernetesSharedStorage?: ReturnType<typeof kubernetesSharedConfig>;
   inputStorage?: InputStorageConfig;
   offNodeConfigFile?: string;
@@ -353,6 +355,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     ) as string,
     limits: resolveAdmissionLimits(env),
     workloadLimits: deploymentWorkloadLimits(env.POCKETCODER_WORKLOAD_LIMITS),
+    sessionQueueLimits: sessionQueueConfig(env.POCKETCODER_SESSION_QUEUE),
     schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
     outboxIntervalMs: intEnv(env, "POCKETCODER_OUTBOX_INTERVAL_MS", 1000),
     persistenceLimits: resolvePersistenceLimits(env),

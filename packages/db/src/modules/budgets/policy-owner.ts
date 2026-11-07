@@ -43,7 +43,10 @@ export function policyOwner(context: DatabaseContext) {
           const exposure = (await tx.select().from(invocations)).some((row) =>
             row.record.reservation.scopeIds.includes(input.scopeId),
           );
-          if (exposure)
+          const capacity = (await tx.select().from(context.tables.managedCapacity)).some(
+            (row) => row.record.scopeIds.includes(input.scopeId) && row.record.starts.some((start) => start.submitted),
+          );
+          if (exposure || capacity)
             throw new ApiError("budget.conflict", "Changing a period with exposure requires audited handover.");
         }
         const policy = { ...parsed, effectiveAt: new Date().toISOString() };

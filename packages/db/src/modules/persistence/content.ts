@@ -1,5 +1,5 @@
 import { ApiError } from "@pstdio/pocketcoder-contracts";
-import { and, eq, notInArray } from "drizzle-orm";
+import { and, eq, isNull, notInArray } from "drizzle-orm";
 import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
 import { clearConversations, conversationIds } from "../conversations/retention";
 import { purgeBinaryOutputs } from "../outputs/binary-output-delete";
@@ -39,8 +39,12 @@ export function createContentPurge(context: DatabaseContext) {
           .for("update");
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
         await purgeBinaryOutputs(context, tx, workspaceId, at);
-        await deleteExportBytes(context, tx, eq(tables.exportObjects.workspaceId, workspaceId), at);
-        await tx.delete(tables.exportObjects).where(eq(tables.exportObjects.workspaceId, workspaceId));
+        const physicalExports = and(
+          eq(tables.exportObjects.workspaceId, workspaceId),
+          isNull(tables.exportObjects.sessionId),
+        )!;
+        await deleteExportBytes(context, tx, physicalExports, at);
+        await tx.delete(tables.exportObjects).where(physicalExports);
         await purgeInputMetadata(context, tx, workspaceId);
         await purgeExecutionMetadata(context, tx, workspaceId, workspace.principalId);
         const [pending] = await tx
@@ -123,6 +127,7 @@ async function purgeExecutionMetadata(
   const requests = context.tables.conversationRequests;
   const rows = await tx.select().from(requests).where(eq(requests.principalId, principalId));
   for (const row of rows) {
+    if (row.managed) continue;
     if (row.execution?.acceptance.execution.workspaceId !== workspaceId) continue;
     await tx
       .update(requests)

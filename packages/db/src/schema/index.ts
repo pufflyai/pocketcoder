@@ -50,6 +50,7 @@ export const {
   managedCredentials,
   managedSessions,
   managedObservations,
+  managedCapacity,
   budgetPolicies,
   budgetInvocations,
   budgetAudits,
@@ -84,5 +85,6 @@ export const {
   storageReservations,
   inputObjects,
   inputManifests,
+  sessionInputs,
   controllerState,
 } = createSchema();

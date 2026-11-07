@@ -12,6 +12,7 @@ export const ERROR_CODES = {
   "principal.name_conflict": 409,
   "key.not_found": 404,
   "request.body_too_large": 413,
+  "request.not_found": 404,
   "validation.invalid": 400,
   "idempotency.conflict": 409,
   "capacity.queue_full": 429,

@@ -9,11 +9,12 @@ export async function finalizeInputManifest(context: DatabaseContext, tx: Transa
   const [row] = await tx.select().from(inputManifests).where(eq(inputManifests.id, id));
   if (!row || row.finalizedAt) return;
   for (const object of row.manifest.objects) {
-    const stored = requiredRow(await readInput(context, tx, object.workspaceId, object.fileId));
+    const owner = object.storageOwnerId ?? object.workspaceId;
+    const stored = requiredRow(await readInput(context, tx, owner, object.fileId));
     await tx
       .update(inputObjects)
       .set({ retainedUntil: new Date(at.getTime() + stored.retentionMs) })
-      .where(inputKey(context, object.workspaceId, object.fileId));
+      .where(inputKey(context, owner, object.fileId));
   }
   await tx.update(inputManifests).set({ finalizedAt: at }).where(eq(inputManifests.id, id));
 }

@@ -37,6 +37,7 @@ export class InputStorage {
     deadline: Date,
     body: ReadableStream<Uint8Array> | null,
     signal: AbortSignal,
+    sessionId?: string,
   ) {
     reference = InputObjectReferenceSchema.parse(reference);
     const now = Date.now();
@@ -45,6 +46,7 @@ export class InputStorage {
       .begin(
         {
           reference,
+          sessionId,
           principalId,
           reservationId: randomUUID(),
           transferExpiresAt: expiresAt,
@@ -133,7 +135,7 @@ export class InputStorage {
     const objects = [];
     // Pin first so a retention sweep cannot delete bytes between verification and dispatch.
     for (const reference of row.manifest.objects) {
-      const stored = await this.store.get(workspaceId, reference.fileId);
+      const stored = await this.store.get(reference.storageOwnerId ?? workspaceId, reference.fileId);
       if (!stored) throw new ApiError("attachment.not_found", "Input is unavailable.");
       await this.verify(stored);
       objects.push({ reference, backing: inputBacking(stored) });

@@ -75,7 +75,7 @@ export interface SecretFactory {
 }
 
 export interface SchedulerDeps {
-  store: WorkspaceStore & PersistenceStore & LogStore;
+  store: WorkspaceStore & PersistenceStore & LogStore & Pick<import("../types").Store, "managed">;
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
   revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;

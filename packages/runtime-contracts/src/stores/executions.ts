@@ -18,6 +18,7 @@ export interface ExecutionStore {
   pending(): Promise<ExecutionRecord[]>;
   reconcile(execution: WorkloadExecutionReference): Promise<{ first: false; record: ExecutionRecord } | null>;
   claim(execution: WorkloadExecutionReference, at: Date): Promise<{ first: boolean; record: ExecutionRecord } | null>;
+  beforeSend(execution: WorkloadExecutionReference, at: Date): Promise<boolean>;
   cancel(input: WorkloadCancel, at: Date): Promise<ExecutionRecord>;
   observe(
     execution: WorkloadExecutionReference,
