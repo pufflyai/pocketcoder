@@ -30,6 +30,10 @@ export const SCOPES = [
   "network:read",
   "terminal:attach",
   "terminal:read",
+  "sessions:read",
+  "sessions:write",
+  "budgets:read",
+  "budgets:admin",
   "admin",
 ] as const;
 

@@ -33,7 +33,9 @@ export class SchedulerSweep {
   }
 
   private async observeProvider(row: WorkspaceRow, now: Date) {
-    const observed = await this.context.deps.driver.inspect(row.providerRef as ProviderRef);
+    const driver = this.context.deps.driver;
+    const observed = await (driver.inspectState?.(row.providerRef as ProviderRef) ??
+      driver.inspect(row.providerRef as ProviderRef));
     // A refused launch never registers, so waiting for the start timeout only delays the failure.
     if (row.state === "provisioning" && observed.refused) {
       await this.lifecycle.fail(row, "launch_refused", now);
@@ -69,6 +71,7 @@ export class SchedulerSweep {
   }
 
   async sweepActive(row: WorkspaceRow, now: Date): Promise<void> {
+    if (await this.sweepFinite(row, now)) return;
     if (now >= row.deadlineAt) {
       const preserve =
         row.templateSnapshot.spec.persistence.checkpoint.onDeadline === "preserve" &&
@@ -78,6 +81,27 @@ export class SchedulerSweep {
       }
       return;
     }
+    await this.sweepIdle(row, now);
+  }
+
+  private async sweepFinite(row: WorkspaceRow, now: Date) {
+    if (row.runtimeRegistration?.profile === "finite-process" && row.processExecution) {
+      const record = row.processExecution;
+      if (["terminal", "canceled", "lost"].includes(record.phase)) {
+        const succeeded = row.finiteProcess?.phase === "exited" && row.finiteProcess.exitCode === 0 && !record.cancel;
+        await this.lifecycle.beginTermination(
+          row,
+          succeeded ? "succeeded" : "failed",
+          succeeded ? "child_exit_success" : "child_exit_failure",
+          now,
+        );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async sweepIdle(row: WorkspaceRow, now: Date) {
     const idle =
       !row.runtimeRegistration &&
       row.state === "ready" &&

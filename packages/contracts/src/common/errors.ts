@@ -75,6 +75,13 @@ export const ERROR_CODES = {
   "account.purge_pending": 503,
   "recovery.required": 503,
   "recovery.failed": 409,
+  "session.not_found": 404,
+  "session.closed": 409,
+  "profile.not_found": 404,
+  "budget.not_found": 404,
+  "budget.exhausted": 429,
+  "budget.conflict": 409,
+  "revision.stale": 412,
   "internal.error": 500,
 } as const;
 

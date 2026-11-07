@@ -8,7 +8,7 @@ export async function connectBrowser(baseUrl: string, origin: URL, cookie: strin
     ...(ca ? { tls: { ca } } : {}),
   } as unknown as string[]);
   socket.binaryType = "arraybuffer";
-  const frames: { hash: string; at: number; bytes: number }[] = [];
+  const frames: { hash: string; bytes: number }[] = [];
   const assembly = new BrowserFrames();
   const closed = new Promise<void>((resolve) => {
     socket.onclose = () => resolve();
@@ -17,7 +17,7 @@ export async function connectBrowser(baseUrl: string, origin: URL, cookie: strin
     const bytes = assembly.receive(new Uint8Array(event.data as ArrayBuffer));
     if (!bytes) return;
     if (bytes[0] !== 0xff || bytes[1] !== 0xd8) throw new Error("Invalid browser frame.");
-    frames.push({ hash: createHash("sha256").update(bytes).digest("hex"), at: Date.now(), bytes: bytes.length });
+    frames.push({ hash: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length });
     if (frames.length > 1000) throw new Error("Demo frame budget exceeded.");
   };
   await new Promise<void>((resolve, reject) => {

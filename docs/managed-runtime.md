@@ -1,0 +1,133 @@
+# Managed sessions and budget accounting
+
+PocketCoder stores logical sessions, immutable execution profiles, budget policies,
+invocation reservations and trusted usage evidence. A session can exist without
+compute. Its ID is also its canonical conversation ID. The existing conversation
+owner creates transcript records on the first turn; this adds no second transcript.
+
+Request dispatch, session file APIs, history replay, provider gateway enforcement
+and physical capacity accounting have separate owners. They are not enabled by
+creating a profile. The implemented operations are marked `x-shipped: true` in the
+[versioned contract](managed-contracts.md). The running server's `/v1/openapi.json`
+describes the installed routes and standard error envelopes.
+
+## Provision authority
+
+An owner key with `admin` provisions authority outside every workspace:
+
+1. `PUT /v1/budget-scopes/{scopeId}/grant` with `principalId` and `installation`.
+   Register exactly one installation scope per controller and grant it to every
+   execution principal. Additional opaque scopes may have several principal grants.
+2. Write each scope policy through `PUT /v1/budget-scopes/{scopeId}/policy`.
+   The first write needs `If-None-Match: *` and revision 1. Updates need
+   `If-Match: "<current revision>"` and the next revision. An identical retry returns
+   its committed revision. A different payload conflicts. The server sets
+   `effectiveAt`; callers cannot backdate it. Responses include an ETag.
+3. For business credentials, register the existing trusted runtime issuer through
+   `PUT /v1/credential-bindings/{bindingId}`. Include the target `principalId`,
+   trusted `secretName`, declared `slots`, and finite
+   `authorityExpiresAt`. The server pins its current issuer version; an owner may
+   supply a known `secretVersionId` explicitly. Identical retries retain the
+   original version. The issuer configuration and its authentication stay in
+   the encrypted control-plane vault. No issuer URL or standing bearer belongs
+   in a session, template, prompt or workspace.
+4. `PUT /v1/execution-profiles/{profileId}/revisions/{revision}?principalId=...`
+   with an `ExecutionProfile`. Its complete budget scope set must include the
+   installation scope. Its template digest, models, isolation scope and optional
+   credential binding become immutable. Publish a new revision to change them.
+
+Only an owner can register grants, bindings and profiles. Policy writes require
+`budgets:admin` and ownership of a personal scope with one grantee, or owner
+authority. Installation scopes and scopes shared by several principals require
+owner `admin` authority for every policy write, including identical replay. Reads require
+`budgets:read` and a scope grant, or owner authority. Execution keys cannot give
+themselves grants or remove a profile's scopes.
+
+## Create and look up a session
+
+`POST /v1/sessions` accepts `sessionId`, `profileId` and `profileRevision` and needs
+`sessions:write`. `GET /v1/sessions/{sessionId}` needs `sessions:read`. Both recheck
+current key, principal, template and profile authority. Foreign identities return
+no metadata. Retrying creation after a lost response returns the same session;
+changing its profile conflicts. New sessions report `provisioning` without claiming
+producer readiness. Closed sessions retain their creation identity.
+
+The internal binding port uses a revision comparison and monotonically increasing
+generation. It checks actual workspace ownership, template, incarnation, lifetime
+and required policies. Detaching or replacing compute requires the old workspace
+to have ended and every old lease to be revoked or recorded expired. A revocation
+outage keeps that operation pending. Clearing a binding never resets its generation.
+Observations follow the versioned session transition table. A failed session can
+close or return to provisioning through a fresh binding. A fenced replacement
+may also move a ready session back to provisioning; a suspended session must
+provision before it can become ready again.
+
+Business credentials require one exclusive workspace per session, even when the
+broker and profile match. Credential-free siblings require the same principal,
+immutable profile, isolation, models and scopes, plus installed parallel-conversation,
+lookup, deduplicated-accept and targeted-cancel capabilities. There is one trust
+zone inside shared compute. See [security](security.md).
+
+Lease requests bind session, profile, physical incarnation, generation, slot and
+broker version. Only slots declared by the pinned template/profile may be used.
+Renewal keeps that broker version and authority ceiling. Expiry is capped by the
+workspace deadline, delegated ceiling and existing five-minute lease maximum.
+A successor receives fresh lease IDs; stale generations cannot issue or renew.
+
+## Reserve, claim and settle
+
+The internal `store.managed.budgets` port is for the trusted runtime gateway.
+There is no consumer HTTP endpoint for reserving or reporting token usage.
+The gateway must resolve the accepted request identity and obtain trusted counts;
+PC-174 connects that producer, and PC-175 enforces its credential and network boundary.
+
+`reserve` requires the frozen provider request digest, count evidence reference,
+logical invocation identity, current workspace, allowed model, input bound and
+optional output cap. One transaction locks every applicable scope in sorted order,
+checks aggregate and model limits, records policy revisions and commits one hold.
+An identical retry consumes nothing more. Changed counted content conflicts even
+when its token count is equal. Missing policies or trustworthy counts fail closed.
+
+An explicit output cap is clamped to the strictest configured maximum. An omitted
+cap uses the strictest default and maximum. If remaining allowance cannot cover
+that cap, admission fails; the runtime does not shrink the response to spend the
+last tokens. Null is unlimited for that field; zero denies consumption.
+
+A separate durable `claimSend` returns true once. It rechecks live session and
+physical authority under locks. Only that result authorizes the one upstream send.
+A replayed reservation is not another send permission. After a claim, a crash or
+lost response leaves its full hold and in-flight slot. Only an unclaimed reservation
+can be abandoned as proved unsent. Late uncertainty cannot revive abandoned work.
+Each actual nested call or new generation attempt needs a new invocation identity.
+
+Trusted terminal evidence includes provider, provider account, response identity,
+usage and an evidence reference. Equal callbacks are idempotent. Conflicting reports
+or usage above the reservation preserve the greatest exposure, retain unresolved
+capacity and fence the affected scopes. The ledger retains report digests and
+reports. Audited owner reconciliation names the invocation, evidence and reason;
+ordinary policy updates cannot clear spend or holds.
+
+`GET /v1/budget-scopes/{scopeId}/usage` returns a consistent policy revision,
+server `asOf`, settled and held input/output totals, effective totals and remaining
+allowance. Unknown holds survive restart, cancellation and UTC boundaries. An
+invocation counts in every UTC day/month it touches. Late settlement replaces its
+hold with actual usage in each touched period. A durable clock floor prevents a
+backward wall-clock move from reopening a rolling 60-second window or past period.
+
+Workspace start/process/physical capacity counters remain the PC-170 owner's work.
+They are zero until that owner records capacity. Model settlement does not prove
+that compute stopped. Changing an accounting period with recorded exposure requires
+audited handover; lowering or raising limits never rewrites earlier charges.
+
+## Validation limits
+
+Real isolated PGlite and PostgreSQL fixtures exercise these store and HTTP owners.
+The HTTPS issuer fixture covers lost replies, exact authority, pinned renewal,
+exclusive placement and revoke outages without paid provider credentials.
+These checks do not qualify the future provider gateway or a full Docker/Kubernetes
+managed-agent deployment. PC-140 and PC-62 retain those release gates.
+
+The first accounting implementation reads the retained invocation history under
+scope locks. Its work grows with that history. Compaction and indexed period
+summaries need to preserve the same liability and replay identities before replacing
+those reads; no performance or concurrency limit is raised here.

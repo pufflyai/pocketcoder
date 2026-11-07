@@ -1,6 +1,17 @@
 import { WORKSPACE_LEASE_STATES, type WorkspaceLeaseRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, integer, type PgTableFn, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  type PgTableFn,
+  pgTable,
+  text,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { sqlValues, timestamptz } from "./columns";
 import type { createSecretTables } from "./secrets";
 import type { createWorkspaceTables } from "./workspaces";
@@ -19,6 +30,8 @@ export function createLeaseTables(
   const workspaceLeases = table(
     "workspace_leases",
     {
+      managedAuthority:
+        jsonb("managed_authority").$type<import("@pstdio/pocketcoder-runtime-contracts").ManagedLeaseAuthority>(),
       id: uuid("id").primaryKey(),
       workspaceId: uuid("workspace_id")
         .notNull()

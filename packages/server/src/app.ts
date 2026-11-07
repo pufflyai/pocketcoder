@@ -2,7 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { ApiError } from "@pstdio/pocketcoder-contracts";
 import {
   type AdmissionLimits,
-  ExecutionDispatcher,
+  type ExecutionDispatcher,
   type MetricSink,
   type ResolvedWarmPool,
   RuntimeMetrics,
@@ -23,19 +23,20 @@ import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { InputStorage, type InputStorageOptions } from "./attachments/input-storage";
+import { registerBudgetPolicyRoutes } from "./budgets/policy-routes";
+import { registerBudgetUsageRoutes } from "./budgets/usage-routes";
 import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
-import { processTransport } from "./control-channel/process-dispatch";
 import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { registerExecutionRoutes } from "./conversations/execution-routes";
-import { conversationTransport, executionTransport } from "./conversations/execution-transport";
 import { LiveTurns } from "./conversations/live-turns";
 import { composeDisplays } from "./displays/displays";
 import { registerScreenshotRoutes } from "./displays/screenshot-routes";
 import { createScreenshots, type ScreenshotOptions, type Screenshots } from "./displays/screenshots";
+import { composeExecutionDispatcher } from "./execution-runtime";
 import { journalGate } from "./http/journal-gate";
 import { type AppEnv, errorHandler, machineAuth, requestId, requestLogging, requireScope } from "./http/middleware";
 import { accountPurgeGate } from "./maintenance/account-purge";
@@ -46,6 +47,8 @@ import { createStructuredLogger, type StructuredLogger } from "./observability/o
 import { registerArtifactRoutes } from "./persistence/artifact-routes";
 import type { CheckpointTransferOptions, composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { registerCheckpointRoutes } from "./persistence/checkpoints-routes";
+import { registerExportRoutes } from "./persistence/export-routes";
+import { finiteExportCleanup, finiteExports } from "./persistence/finite-exports";
 import { type PersistenceLimits, PersistenceService } from "./persistence/persistence";
 import { registerPurgeRoutes } from "./persistence/purge-routes";
 import { registerRecoveryRoutes } from "./persistence/recovery-routes";
@@ -57,10 +60,13 @@ import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
+import { registerProfileRoutes } from "./sessions/profile-routes";
+import { registerSessionRoutes } from "./sessions/session-routes";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
 import { composeWorkspaceRuntime, workspaceSecretFactory } from "./workspace-runtime";
+import { registerLifetimeRoute } from "./workspaces/lifetime-route";
 import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
@@ -171,6 +177,12 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     ...(transferRuntime ? { transferRuntime } : {}),
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
+    completeOutputCleanup: finiteExportCleanup(store),
+    finalizeOutputs: finiteExports({
+      store,
+      storageDriver: deps.storageDriver,
+      readCapacity: deps.inputStorageOptions?.capacity,
+    }),
     connections: hub,
     secrets: secretFactory,
     limits,
@@ -180,22 +192,16 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     preserveByPolicy: async (row, trigger) => persistenceHolder.service?.preserveByPolicy(row, trigger) ?? false,
     onError: (context, err) => log(`scheduler ${context}: ${String(err)}`),
   });
-  const service = new WorkspaceService({ store, scheduler, limits });
+  const service = new WorkspaceService({
+    store,
+    scheduler,
+    limits,
+    deploymentDeadlineSeconds: deps.workloadLimits?.deadlineSeconds,
+  });
   const screenshots = composeScreenshots(deps, hub, service);
   const inputs = composeInputs(deps);
   const readiness = deps.readiness;
-  const executionDispatcher = new ExecutionDispatcher({
-    store,
-    concurrency: Math.max(1, limits.globalActiveWorkspaces),
-    canDispatch: () => !deps.maintenance?.active,
-    onError: (error) => log(`execution dispatch failed: ${String(error)}`),
-    onHealth: (failed) => readiness.set("execution-dispatch", failed ? "failed" : "ok"),
-    transport: executionTransport(
-      processTransport({ store, hub, driver, inputs }),
-      conversationTransport({ store, hub, driver, inputs }),
-    ),
-    inspect: (workspace) => driver.inspect({ kind: workspace.providerKind ?? "", id: "", ...workspace.providerRef }),
-  });
+  const executionDispatcher = composeExecutionDispatcher(deps, hub, inputs, log);
   const persistence = new PersistenceService({
     drainExecutions: (id) => executionDispatcher.drain(id),
     purgeInputs: async (id) => {
@@ -296,6 +302,10 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
+  registerSessionRoutes(app, store);
+  registerProfileRoutes(app, store);
+  registerBudgetPolicyRoutes(app, store);
+  registerBudgetUsageRoutes(app, store);
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
@@ -309,6 +319,8 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   registerArtifactRoutes({ app, store, service, persistence });
   registerConversationRoutes({ app, store, service, liveTurns, limits: deps.persistenceLimits });
   registerExecutionRoutes({ app, store, service, executionDispatcher });
+  registerExportRoutes(app, store, service);
+  registerLifetimeRoute(app, store, service);
   registerWorkspaceRoutes({ app, store, service });
   previews.register(app);
   displays.register(app);

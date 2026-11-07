@@ -27,6 +27,15 @@ export function waitingExecSpec(
     workload: {
       incarnationId,
       profile: spec.profile,
+      serviceHealth: Object.fromEntries(
+        Object.entries(spec.services).map(([name, service]) => [
+          name,
+          { baseUrl: service.baseUrl, healthPath: service.healthPath },
+        ]),
+      ),
+      manualServices: Object.entries(spec.services)
+        .filter(([, service]) => service.autostart === false)
+        .map(([name]) => name),
       operations,
       infrastructure: Object.fromEntries(
         Object.entries(spec.services).flatMap(([name, service]) => (service.process ? [[name, service.process]] : [])),
@@ -37,7 +46,7 @@ export function waitingExecSpec(
     services: spec.services,
     previews: spec.previews,
     timeouts: policy.timeouts,
-    security: { writable_memory_paths: spec.security.writableMemoryPaths },
+    security: { writable_memory_paths: policy.security.writableMemoryPaths },
     network:
       spec.network.mode === "restricted"
         ? { mode: "restricted", proxy_url: "http://127.0.0.1:18080", health_url: "http://127.0.0.1:18082/healthz" }

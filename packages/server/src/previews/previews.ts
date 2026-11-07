@@ -10,6 +10,7 @@ import type { Hub } from "../control-channel/hub";
 import { type AppEnv, requireScope } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
 import type { ViewAdmission } from "./admission";
+import { registerGrantRoutes } from "./grant-routes";
 import { previewHttp } from "./http";
 import { PreviewSessions } from "./sessions";
 import { viewExchange } from "./view-exchange";
@@ -53,6 +54,7 @@ export function composePreviews(deps: {
   };
 
   function register(app: OpenAPIHono<AppEnv>) {
+    registerGrantRoutes(app, deps.store, deps.service, sessions);
     app.get("/v1/workspaces/:id/previews", requireScope("previews:open"), async (c) => {
       const workspace = await deps.service.getOwned(c.get("principal"), c.req.param("id"));
       return c.json(
@@ -76,7 +78,15 @@ export function composePreviews(deps: {
       const parsed = PreviewOpenRequestSchema.safeParse(input);
       if (!parsed.success) throw new ApiError("validation.invalid", "Invalid preview request.");
       const url = deps.policy.mintUrl(deps.policy.requestUrl(c), id, name.data, parsed.data.session);
-      const minted = await sessions.mint(id, name.data, url.origin, c.get("keyId"), false, parsed.data.session);
+      const minted = await sessions.mint(
+        id,
+        name.data,
+        url.origin,
+        c.get("keyId"),
+        false,
+        parsed.data.session,
+        parsed.data.grantId,
+      );
       url.searchParams.set("token", minted.token);
       c.header("cache-control", "no-store");
       return c.json({ url: url.href, expires_at: new Date(minted.expires).toISOString() }, 201);

@@ -21,6 +21,7 @@ export const descriptorSchema = z.strictObject({
     artifact,
     command: z.array(z.string()).min(1),
     entrypoint: z.array(z.string()),
+    capabilities: z.array(z.enum(WORKLOAD_CAPABILITIES)).optional(),
   }),
   checkpoint: z
     .strictObject({
@@ -35,11 +36,11 @@ export const descriptorSchema = z.strictObject({
   adapters: z.record(
     z.string(),
     z.strictObject({
-      kind: z.literal("service"),
-      baseUrl: z.string(),
-      healthPath: z.string(),
+      kind: z.enum(["service", "process"]),
+      baseUrl: z.string().optional(),
+      healthPath: z.string().optional(),
       digest: pin,
-      protocol: z.literal("pocketcoder.execution/v1"),
+      protocol: z.enum(["pocketcoder.execution/v1", "pocketcoder.process/v1"]),
       artifact,
       capabilities: z.array(z.enum(WORKLOAD_CAPABILITIES)),
       command: z.array(z.string()).min(1),
@@ -95,18 +96,7 @@ export function qualifyAdapters(
       observed.kind !== declared.kind
     )
       throw new Error(`Installed workload adapter differs: ${name}`);
-    const service = declared.service ? spec.services[declared.service] : undefined;
-    const process = service?.process;
-    if (
-      !service ||
-      !process ||
-      service.baseUrl !== observed.baseUrl ||
-      service.healthPath !== observed.healthPath ||
-      canonicalJson(process.command) !== canonicalJson(observed.command) ||
-      process.cwd !== observed.cwd ||
-      Object.keys(process.env).some((key) => !observed.environment.includes(key))
-    )
-      throw new Error(`Installed adapter startup or transport differs: ${name}`);
+    validateInstalledStartup(spec, declared, observed);
     const capabilities: InstalledWorkload["capabilities"] = observed.capabilities.filter(
       (cap) => cap !== "immutable-inputs",
     );
@@ -114,7 +104,33 @@ export function qualifyAdapters(
     adapters[name] = { kind: observed.kind, digest: observed.digest, protocol: observed.protocol, capabilities };
   }
   const bound = new Set(Object.values(spec.adapters).map((adapter) => adapter.service));
-  if (Object.keys(spec.services).some((name) => !bound.has(name)))
+  if (
+    Object.keys(spec.services).some((name) => !bound.has(name)) &&
+    !descriptor.runtime.capabilities?.includes("workspace-services")
+  )
     throw new Error("Unmeasured infrastructure service.");
   return adapters;
+}
+
+function validateInstalledStartup(
+  spec: WorkloadTemplate["spec"],
+  declared: WorkloadTemplate["spec"]["adapters"][string],
+  observed: Descriptor["adapters"][string],
+) {
+  if (declared.kind === "process") {
+    if (observed.protocol !== "pocketcoder.process/v1") throw new Error("Unsupported installed process protocol");
+    return;
+  }
+  const service = declared.service ? spec.services[declared.service] : undefined;
+  const process = service?.process;
+  if (
+    !service ||
+    !process ||
+    service.baseUrl !== observed.baseUrl ||
+    service.healthPath !== observed.healthPath ||
+    canonicalJson(process.command) !== canonicalJson(observed.command) ||
+    process.cwd !== observed.cwd ||
+    Object.keys(process.env).some((key) => !observed.environment.includes(key))
+  )
+    throw new Error("Installed adapter startup or transport differs");
 }

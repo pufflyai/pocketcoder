@@ -5,7 +5,7 @@
     "": {
       "name": "pocketcoder-workspaces",
       "dependencies": {
-        "@pstdio/sdk": "0.40.0",
+        "@pstdio/sdk": "0.46.0",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -14,7 +14,9 @@
     },
   },
   "packages": {
-    "@pstdio/sdk": ["@pstdio/sdk@0.40.0", "", { "dependencies": { "mustache": "^4.2.0", "zod": "^4.3.6" }, "peerDependencies": { "@tanstack/react-query": "^5.0.0", "react": "^19.0.0" }, "optionalPeers": ["@tanstack/react-query", "react"] }, "sha512-wCOPC8yL97Hr51yRBN6EIpp1KcYwcxIXI9s7805nuzcCwisolM+qLRec/inuxjg4uYAWhx1YCycpBeTK7JrhHQ=="],
+    "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
+
+    "@pstdio/sdk": ["@pstdio/sdk@0.46.0", "", { "dependencies": { "@noble/hashes": "^2.4.0", "mustache": "^4.2.0", "zod": "^4.3.6" }, "peerDependencies": { "@tanstack/react-query": "^5.0.0", "react": "^19.0.0" }, "optionalPeers": ["@tanstack/react-query", "react"] }, "sha512-nZazfYPb+/AaENitykVHEJWIGj4X/fUIxvHNBxwvma2DKf9p6X8Cc2GHKYop+n+R0yD4bYKeTlCJ9qN0FgfIzg=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

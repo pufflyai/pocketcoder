@@ -18,14 +18,14 @@ RUN bun install --frozen-lockfile \
   && mkdir -p /out/packages \
   && dpkg-query -s coreutils > /out/packages/coreutils
 
-# Rebuild kubectl until upstream ships the October Go and HTTP/2 fixes.
+# Rebuild kubectl with the Go, HTTP/2 and HTML parser security fixes.
 FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS kubectl
 ARG TARGETARCH
 ENV GOWORK=off
 WORKDIR /src
 ADD --checksum=sha256:b390f0c5446a9414e8f0a7019ca54f858251187d193217a8051687bf7a960d01 https://github.com/kubernetes/kubernetes/archive/refs/tags/v1.35.9.tar.gz /tmp/kubernetes.tar.gz
 RUN tar -xzf /tmp/kubernetes.tar.gz --strip-components=1 \
-  && GOFLAGS=-mod=mod go get golang.org/x/net@v0.60.0 \
+  && GOFLAGS=-mod=mod go get golang.org/x/net@v0.62.0 \
   && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GOFLAGS=-mod=mod go build -trimpath \
     -ldflags='-s -w -X k8s.io/component-base/version.gitVersion=v1.35.9 -X k8s.io/component-base/version.gitMajor=1 -X k8s.io/component-base/version.gitMinor=35' \
     -o /out/kubectl ./cmd/kubectl
@@ -55,7 +55,7 @@ LABEL org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot"
   dev.pstdio.pocketcoder.coreutils.version="9.7-3" \
   dev.pstdio.pocketcoder.kubectl.version="1.35.9" \
   dev.pstdio.pocketcoder.kubectl.go.version="1.26.10" \
-  dev.pstdio.pocketcoder.kubectl.x-net.version="0.60.0"
+  dev.pstdio.pocketcoder.kubectl.x-net.version="0.62.0"
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 # The manager measures allocated volume bytes with GNU du, including hard-link deduplication.
 COPY --from=build /usr/bin/du /usr/bin/du

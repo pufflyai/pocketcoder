@@ -15,7 +15,10 @@ export async function prepareDisposableRuntimeStorage(
   shared?: WorkspaceStorageDriver,
 ) {
   const disposableKind = providerKind === "kubernetes" ? "empty-dir" : "tmpfs";
-  const kind = shared?.kind === "kubernetes-shared" ? shared.kind : disposableKind;
+  const finite = workspace.templateSnapshot.manifest?.spec.profile === "finite-process";
+  if (finite && !shared?.readExports) throw new Error("Finite output extraction requires managed storage");
+  const managed = shared?.kind === "kubernetes-shared" || finite;
+  const kind = managed && shared ? shared.kind : disposableKind;
   const mounts = workspace.templateSnapshot.spec.persistence.mounts;
   if (mounts.length === 0) return [];
   let storage = await store.getWorkspaceStorage(workspace.id);
@@ -26,7 +29,7 @@ export async function prepareDisposableRuntimeStorage(
       workspaceId: workspace.id,
       principalId: workspace.principalId,
       providerKind,
-      providerRef: kind === "kubernetes-shared" ? {} : { kind, id },
+      providerRef: managed ? {} : { kind, id },
       state: workspace.restoredFromCheckpointId ? "restoring" : "ready",
       mountManifest: mounts,
       logicalBytes: null,
@@ -38,11 +41,18 @@ export async function prepareDisposableRuntimeStorage(
       lastErrorCode: null,
     });
   }
-  if (shared?.kind === "kubernetes-shared") {
+  if (managed && shared) {
     if (storage.state === "deleted") throw new Error("Shared runtime storage is unavailable");
     if (!Object.keys(storage.providerRef).length) {
       const { uid, gid } = workspace.templateSnapshot.spec.security;
-      const allocated = await shared.allocate({ storageId: storage.id, workspaceId: workspace.id, mounts, uid, gid });
+      const allocated = await shared.allocate({
+        storageId: storage.id,
+        workspaceId: workspace.id,
+        mounts,
+        uid,
+        gid,
+        retainForExtraction: finite,
+      });
       await store.updateWorkspaceStorage(storage.id, { providerRef: allocated.ref, providerKind: shared.kind }, at);
       return allocated.mounts;
     }

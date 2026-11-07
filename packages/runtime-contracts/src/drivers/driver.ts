@@ -95,6 +95,9 @@ export interface WorkspaceDriver {
   // reference needs nothing and throws when the identity cannot be proved.
   legacyProvider?(ref: ProviderRef, owner: { id: string; templateDigest: string }): Promise<ProviderRef | null>;
   inspect(ref: ProviderRef): Promise<ProviderState>;
+  // Lifecycle observation needs current provider identity, not repeated adapter
+  // qualification. Admission and public capability inspection still use inspect.
+  inspectState?(ref: ProviderRef): Promise<ProviderState>;
   // Resolves only after the selected pinned objects and ordered manifest are published and verified.
   // Dispatch owners must await this before sending an execution to the producer.
   publishInputs?(ref: ProviderRef, input: InputProjectionRef): Promise<PublishedInputProjection>;
@@ -209,7 +212,18 @@ export interface WorkspaceStorageDriver {
   verifyCheckpoint(ref: CheckpointRef, expected: CheckpointManifest): Promise<CheckpointManifest>;
   deleteStorage(ref: StorageRef): Promise<void>;
   completeExtraction?(ref: StorageRef): Promise<void>;
+  readExports?(
+    ref: StorageRef,
+    mounts: string[],
+    limits: { bytes: number; files: number },
+    signal: AbortSignal,
+  ): Promise<ExportExtraction>;
   deleteCheckpoint(ref: CheckpointRef): Promise<void>;
   listStorage(): Promise<DiscoveredStorage[]>;
   listCheckpoints(): Promise<DiscoveredCheckpoint[]>;
+}
+
+export interface ExportExtraction {
+  files: { name: string; bytes: Uint8Array }[];
+  errors: string[];
 }

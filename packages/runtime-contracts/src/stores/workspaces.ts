@@ -65,6 +65,7 @@ export interface WorkspaceRow {
   launchAttempts: number;
   health: Record<string, string>;
   metadata: Record<string, string>;
+  lifetime?: import("@pstdio/pocketcoder-contracts").WorkspaceLifetime | null;
   deadlineAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -128,6 +129,7 @@ export interface WorkspaceInsert {
   templateSnapshot: TemplateSnapshot;
   launchInput: Record<string, unknown> | null;
   metadata: Record<string, string>;
+  lifetime?: import("@pstdio/pocketcoder-contracts").WorkspaceLifetime | null;
   deadlineAt: Date;
   createdAt: Date;
   originWorkspaceId?: string | null;
@@ -186,10 +188,17 @@ export interface TransitionRequest {
   at: Date;
   patch?: WorkspacePatch;
   expectedConnectionEpoch?: number;
+  expectedDeadlineAt?: Date;
   check?: () => void;
 }
 
 export interface WorkspaceStore {
+  extendWorkspaceDeadline(
+    id: string,
+    principalId: string,
+    input: import("@pstdio/pocketcoder-contracts").LifetimeExtension,
+    now?: () => Date,
+  ): Promise<import("@pstdio/pocketcoder-contracts").LifetimeReceipt>;
   bindWorkspaceRuntime(
     id: string,
     runtime: WorkspaceRuntimeRegistration,

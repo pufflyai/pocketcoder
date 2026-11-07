@@ -1,6 +1,6 @@
 import type { ArtifactMount, CommandContext } from "@pstdio/sdk/extensions";
 
-export const templateDirectory = ".pstdio/templates/pocketcoder";
+export const templateDirectory = ".pstdio/extension-storage/pocketcoder.pocketcoder/templates";
 const object = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a Template object.");
   return value as Record<string, unknown>;
@@ -12,8 +12,11 @@ const text = (value: unknown, field: string) => {
 
 export function parseCatalogTemplate(path: string, source: string) {
   const manifest = object(path.endsWith(".json") ? JSON.parse(source) : Bun.YAML.parse(source));
-  if (manifest.apiVersion !== "pocketcoder.dev/v1alpha1" || manifest.kind !== "Template")
-    throw new Error("Expected a pocketcoder.dev/v1alpha1 Template.");
+  if (
+    !["pocketcoder.dev/v1alpha1", "pocketcoder.dev/v1"].includes(String(manifest.apiVersion)) ||
+    manifest.kind !== "Template"
+  )
+    throw new Error("Expected a PocketCoder Template.");
   const metadata = object(manifest.metadata);
   const spec = object(manifest.spec);
   return {

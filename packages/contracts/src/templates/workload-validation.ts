@@ -101,11 +101,18 @@ function validateOperations(spec: Spec, issue: Issue) {
     if (!adapter) issue(["operations", name, "adapter"], "operation must name a pinned adapter");
     if (spec.profile === "cloud-interactive" && adapter?.kind === "process")
       issue(["operations", name], "cloud-interactive requires request-aware adapters");
-    for (const root of operation.outputRoots) {
-      if (!isWorkloadPath(root) || ["/run", "/proc", "/sys", "/dev"].some((path) => overlaps(path, root))) {
-        issue(["operations", name, "outputRoots"], "output roots must be normalized and outside protected storage");
-      }
-    }
+    validateOutputRoots(spec, name, operation.outputRoots, issue);
+  }
+}
+
+function validateOutputRoots(spec: Spec, name: string, roots: string[], issue: Issue) {
+  const path = ["operations", name, "outputRoots"];
+  for (const root of roots) {
+    if (!isWorkloadPath(root) || ["/run", "/proc", "/sys", "/dev"].some((base) => overlaps(base, root)))
+      issue(path, "output roots must be normalized and outside protected storage");
+    if (spec.lifecycle?.persistence.mounts.some((mount) => overlaps(mount.target, root)))
+      issue(path, "output roots must not overlap checkpoint storage");
+    if (roots.some((other) => other !== root && overlaps(root, other))) issue(path, "output roots must not overlap");
   }
 }
 
@@ -131,24 +138,30 @@ function isLoopbackService(url: URL) {
 
 function validateServices(spec: Spec, issue: Issue) {
   for (const [name, service] of Object.entries(spec.services)) {
+    if (service.autostart === false && service.required)
+      issue(["services", name], "manual services cannot be required for initial readiness");
     const url = serviceUrl(service.baseUrl);
     if (!url || !isLoopbackService(url)) {
       issue(["services", name], "service must use loopback HTTP without credentials or a path");
       continue;
     }
-    const routes = new Set<string>();
-    if (!isNormalizedPath(service.healthPath))
-      issue(["services", name, "healthPath"], "health path must be normalized");
-    for (const route of service.routes) {
-      const key = `${route.method} ${route.path}`;
-      if (!isNormalizedPath(route.path) || routes.has(key))
-        issue(["services", name, "routes"], "routes must be normalized and unique");
-      routes.add(key);
-    }
+    validateServiceRoutes(name, service, issue);
+    const privateTransport = Object.values(spec.adapters).some((adapter) => adapter.service === name);
     for (const [previewName, preview] of Object.entries(spec.previews)) {
-      if (preview.port === Number(url.port || 80))
+      if (privateTransport && preview.port === Number(url.port || 80))
         issue(["previews", previewName], "preview port is reserved by a service");
     }
+  }
+}
+
+function validateServiceRoutes(name: string, service: Spec["services"][string], issue: Issue) {
+  const routes = new Set<string>();
+  if (!isNormalizedPath(service.healthPath)) issue(["services", name, "healthPath"], "health path must be normalized");
+  for (const route of service.routes) {
+    const key = `${route.method} ${route.path}`;
+    if (!isNormalizedPath(route.path) || routes.has(key))
+      issue(["services", name, "routes"], "routes must be normalized and unique");
+    routes.add(key);
   }
 }
 

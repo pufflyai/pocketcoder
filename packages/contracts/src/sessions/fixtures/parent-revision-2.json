@@ -1,0 +1,266 @@
+{
+  "ExecutionProfile": {
+    "profileId": "11111111-1111-4111-8111-111111111111",
+    "revision": 1,
+    "isolationScopeId": "22222222-2222-4222-8222-222222222222",
+    "budgetScopeIds": [
+      "33333333-3333-4333-8333-333333333333",
+      "44444444-4444-4444-8444-444444444444",
+      "55555555-5555-4555-8555-555555555555"
+    ],
+    "templateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "allowedModels": ["primary"],
+    "credentialBindingId": null
+  },
+  "SessionCreate": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "profileId": "11111111-1111-4111-8111-111111111111",
+    "profileRevision": 1
+  },
+  "Session": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "profileId": "11111111-1111-4111-8111-111111111111",
+    "profileRevision": 1,
+    "revision": 1,
+    "state": "provisioning",
+    "reasonCode": null,
+    "createdAt": "2026-11-05T16:00:00Z",
+    "updatedAt": "2026-11-05T16:00:00Z"
+  },
+  "InputReference": {
+    "inputId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "name": "loans.csv",
+    "mediaType": "text/csv",
+    "sizeBytes": 1024
+  },
+  "InputUpload": {
+    "inputId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "name": "loans.csv",
+    "mediaType": "text/csv",
+    "sizeBytes": 1024,
+    "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "InputObject": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "reference": {
+      "inputId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "name": "loans.csv",
+      "mediaType": "text/csv",
+      "sizeBytes": 1024
+    },
+    "state": "ready",
+    "expiresAt": "2026-11-06T16:00:00Z"
+  },
+  "RequestInput": {
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "message": "Analyze these loans.",
+    "attachments": [],
+    "dispatchDeadline": "2026-11-05T16:10:00Z"
+  },
+  "Request": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "turnId": "88888888-8888-4888-8888-888888888888",
+    "inputFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "revision": 1,
+    "state": "accepted",
+    "outcome": null,
+    "reasonCode": null,
+    "acceptedAt": "2026-11-05T16:00:00Z",
+    "startedAt": null,
+    "endedAt": null,
+    "dispatchDeadline": "2026-11-05T16:10:00Z",
+    "finalResponse": null,
+    "collection": {
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "revision": 1,
+      "state": "pending",
+      "completeness": null,
+      "manifestDigest": null,
+      "objects": [],
+      "errors": [],
+      "settledAt": null,
+      "expiresAt": null,
+      "cleanupState": "not_required"
+    }
+  },
+  "CancelCommand": {
+    "cancelId": "99999999-9999-4999-8999-999999999999"
+  },
+  "CancelReceipt": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "cancelId": "99999999-9999-4999-8999-999999999999",
+    "scope": "request",
+    "state": "pending",
+    "acceptedAt": "2026-11-05T16:00:00Z",
+    "completedAt": null,
+    "cancelDeadline": "2026-11-05T16:01:15Z"
+  },
+  "BudgetPolicy": {
+    "scopeId": "44444444-4444-4444-8444-444444444444",
+    "revision": 1,
+    "period": "utc_day",
+    "limits": {
+      "inputTokens": 50000000,
+      "outputTokens": 10000000,
+      "workspaceStarts": null,
+      "maxActiveWorkspaces": null,
+      "maxInFlightModelRequests": null,
+      "modelRequestsPerMinute": null,
+      "modelRequestsPerMinutePerWorkspace": 50,
+      "maxRunningRequestsPerSession": 1,
+      "maxChatProcessesPerWorkspace": 5,
+      "defaultOutputTokens": 4096,
+      "maxOutputTokensPerInvocation": 8192
+    },
+    "modelLimits": [],
+    "effectiveAt": "2026-11-05T16:00:00Z"
+  },
+  "BudgetUsage": {
+    "scopeId": "44444444-4444-4444-8444-444444444444",
+    "policyRevision": 1,
+    "periodStart": "2026-11-05T00:00:00Z",
+    "periodEnd": "2026-11-06T00:00:00Z",
+    "settledInputTokens": 12000,
+    "settledOutputTokens": 3000,
+    "heldInputTokens": 2000,
+    "heldOutputTokens": 4096,
+    "effectiveInputTokens": 14000,
+    "effectiveOutputTokens": 7096,
+    "remainingInputTokens": 49986000,
+    "remainingOutputTokens": 9992904,
+    "workspaceStarts": 1,
+    "activeWorkspaces": 1,
+    "inFlightModelRequests": 1,
+    "unresolvedInvocations": 0,
+    "oldestUnresolvedAt": null,
+    "blockedReason": null,
+    "asOf": "2026-11-05T16:00:00Z"
+  },
+  "CleanupReceipt": {
+    "workspaceId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "generationId": "opaque-generation-1",
+    "revision": 1,
+    "state": "pending",
+    "basis": null,
+    "observedAt": "2026-11-05T16:00:00Z",
+    "capacityReleasedAt": null
+  },
+  "ExportObject": {
+    "exportId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "name": "analysis.csv",
+    "mediaType": "text/csv",
+    "sizeBytes": 1024,
+    "completeness": "complete",
+    "availability": "published",
+    "expiresAt": "2026-11-12T16:00:00Z"
+  },
+  "RuntimeEvent": {
+    "eventId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "cursor": "opaque-cursor-1",
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "sequence": 1,
+    "revision": 1,
+    "occurredAt": "2026-11-05T16:00:00Z",
+    "recordedAt": "2026-11-05T16:00:00Z",
+    "kind": "request.updated",
+    "data": {
+      "sessionId": "66666666-6666-4666-8666-666666666666",
+      "requestId": "77777777-7777-4777-8777-777777777777",
+      "turnId": "88888888-8888-4888-8888-888888888888",
+      "inputFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revision": 1,
+      "state": "accepted",
+      "outcome": null,
+      "reasonCode": null,
+      "acceptedAt": "2026-11-05T16:00:00Z",
+      "startedAt": null,
+      "endedAt": null,
+      "dispatchDeadline": "2026-11-05T16:10:00Z",
+      "finalResponse": null,
+      "collection": {
+        "sessionId": "66666666-6666-4666-8666-666666666666",
+        "requestId": "77777777-7777-4777-8777-777777777777",
+        "revision": 1,
+        "state": "pending",
+        "completeness": null,
+        "manifestDigest": null,
+        "objects": [],
+        "errors": [],
+        "settledAt": null,
+        "expiresAt": null,
+        "cleanupState": "not_required"
+      }
+    }
+  },
+  "Error": {
+    "error": {
+      "code": "request.conflict",
+      "message": "This request ID was already used with different input.",
+      "retry": "never",
+      "retryAfterSeconds": null,
+      "requestId": "77777777-7777-4777-8777-777777777777"
+    }
+  },
+  "BudgetPolicyWrite": {
+    "scopeId": "44444444-4444-4444-8444-444444444444",
+    "revision": 1,
+    "period": "utc_day",
+    "limits": {
+      "inputTokens": 50000000,
+      "outputTokens": 10000000,
+      "workspaceStarts": null,
+      "maxActiveWorkspaces": null,
+      "maxInFlightModelRequests": null,
+      "modelRequestsPerMinute": null,
+      "modelRequestsPerMinutePerWorkspace": 50,
+      "maxRunningRequestsPerSession": 1,
+      "maxChatProcessesPerWorkspace": 5,
+      "defaultOutputTokens": 4096,
+      "maxOutputTokensPerInvocation": 8192
+    },
+    "modelLimits": []
+  },
+  "CollectionResult": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "revision": 1,
+    "state": "pending",
+    "completeness": null,
+    "manifestDigest": null,
+    "objects": [],
+    "errors": [],
+    "settledAt": null,
+    "expiresAt": null,
+    "cleanupState": "not_required"
+  },
+  "ExportPage": {
+    "items": [
+      {
+        "exportId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "sessionId": "66666666-6666-4666-8666-666666666666",
+        "requestId": "77777777-7777-4777-8777-777777777777",
+        "versionId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "name": "analysis.csv",
+        "mediaType": "text/csv",
+        "sizeBytes": 1024,
+        "completeness": "complete",
+        "availability": "published",
+        "expiresAt": "2026-11-12T16:00:00Z"
+      }
+    ],
+    "nextCursor": null
+  }
+}

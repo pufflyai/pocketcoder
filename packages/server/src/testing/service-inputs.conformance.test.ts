@@ -12,7 +12,7 @@ import {
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "../lifecycle/lifecycle";
 import { waitFor } from "./e2e-test-support";
-import { serviceImageFixture, serviceProbeImage } from "./service-image-fixture";
+import { dockerCommand, serviceImageFixture, serviceProbeImage } from "./service-image-fixture";
 
 const available =
   Bun.spawnSync(["docker", "image", "inspect", serviceProbeImage], { stdout: "ignore", stderr: "ignore" }).exitCode ===
@@ -22,6 +22,20 @@ function freePort() {
   const port = Number(server.port);
   server.stop(true);
   return port;
+}
+
+async function serviceStatus(workspaceId: string) {
+  const container = await dockerCommand("ps", "-q", "--filter", `label=pocketcoder.workspace=${workspaceId}`);
+  const result = await dockerCommand(
+    "exec",
+    container,
+    "bun",
+    "/opt/pocketcoder/supervisor.js",
+    "service",
+    "status",
+    "agent",
+  );
+  return JSON.parse(result);
 }
 
 test.skipIf(!available)(
@@ -123,6 +137,7 @@ test.skipIf(!available)(
       const runtime = ExecutionRuntimeSchema.parse(await request(`/v1/workspaces/${workspaceId}/execution-runtime`));
       expect(runtime.template.format).toBe("pocketcoder.dev/v1");
       expect(runtime.producer.capabilities).toContain("immutable-inputs");
+      expect((await serviceStatus(workspaceId)).state).toBe("running");
       for (const prefix of ["services/agent", "agent"]) {
         const refused = await fetch(
           `http://127.0.0.1:${port}/v1/workspaces/${workspaceId}/${prefix}/executions/accept`,
@@ -202,7 +217,13 @@ test.skipIf(!available)(
         conversationIdentity: nextIdentity,
       });
     } catch (error) {
-      console.error(logs.slice(-30).join("\n"));
+      console.error(
+        logs
+          .filter((line) => !line.includes('"event":"request.completed"'))
+          .slice(-30)
+          .join("\n"),
+      );
+      if (workspaceId) console.error(await request(`/v1/workspaces/${workspaceId}`).catch(() => null));
       if (workspaceId)
         console.error(
           await request(

@@ -8,6 +8,8 @@ This extension works independently of PocketCoder Lab.
 | PocketCoder Lab | Try templates, launch local controller instances, inspect test machines |
 | PocketCoder Workspaces | Create workspaces using one operator-approved template and controller connection |
 
+Requires extension API 0.3.1. The extension depends on SDK 0.46.0 and was validated on host 0.47.0-nightly.20261105030234. The deployment connection remains text-only. Use PocketCoder Lab for the local file-aware reference workflow.
+
 ## Install
 
 From a linked Prompt Studio project:
@@ -63,10 +65,10 @@ Once ready, choose **Connect to agent**. A second connection opens its saved
 session. Send prompts and follow-ups in that conversation.
 
 ```sh
-pst pocketcoder-workspaces launch
-pst pocketcoder-workspaces launch --repository app --revision main
-pst pocketcoder-workspaces connect --workspace-id <pstdio-workspace-id>
-pst pocketcoder-workspaces delete --workspace-id <pstdio-workspace-id>
+pst pocketcoder.pocketcoder-workspaces launch
+pst pocketcoder.pocketcoder-workspaces launch --repository app --revision main
+pst pocketcoder.pocketcoder-workspaces connect --workspace-id <pstdio-workspace-id>
+pst pocketcoder.pocketcoder-workspaces delete --workspace-id <pstdio-workspace-id>
 ```
 
 The generic **Create workspace** form also exposes **PocketCoder workspace**.

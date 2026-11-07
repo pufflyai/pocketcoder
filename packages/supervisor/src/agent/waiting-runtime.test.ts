@@ -8,17 +8,23 @@ import {
   ProviderInputSchema,
   parseWorkloadTemplate,
   ServerFrameSchema,
+  ServiceSchema,
   waitingExecSpec,
   workloadSnapshotOf,
 } from "@pstdio/pocketcoder-contracts";
 import { WaitingRuntime } from "./waiting-runtime";
 
-async function fixture(code: number, operation = "run") {
+async function fixture(
+  code: number,
+  operation = "run",
+  configure?: (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => void,
+) {
   const workspaceId = randomUUID();
   const source = await Bun.file(resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json")).json();
   source.spec.network = { mode: "unrestricted" };
   source.spec.adapters.main.command = [process.execPath, "-e", `process.exit(${code})`];
   source.spec.operations = { [operation]: source.spec.operations.run };
+  configure?.(source);
   const exec = waitingExecSpec(workloadSnapshotOf(parseWorkloadTemplate(source)), "container", "create");
   const facts: FiniteProcessFact[] = [];
   const runtime = new WaitingRuntime(
@@ -84,5 +90,66 @@ test("an explicitly declared constructor operation runs its command", async () =
     expect(facts.at(-1)).toMatchObject({ phase: "exited", exitCode: 7, signal: null });
   } finally {
     await runtime.close();
+  }
+});
+
+test.each([false, true])("declared websites survive operation completion or targeted cancel (%s)", async (cancel) => {
+  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+  const port = probe.port;
+  probe.stop(true);
+  const f = await fixture(0, "run", (source) => {
+    const adapter = source.spec.adapters.main;
+    if (cancel && adapter) adapter.command = [process.execPath, "-e", "setInterval(()=>{},1000)"];
+    source.spec.services.web = {
+      ...ServiceSchema.parse({
+        baseUrl: `http://127.0.0.1:${port}`,
+        healthPath: "/",
+        routes: [{ method: "GET", path: "/" }],
+        required: false,
+      }),
+      autostart: true,
+      process: {
+        command: [process.execPath, "-e", `Bun.serve({port:${port},fetch:()=>new Response('alive')});`],
+        env: {},
+      },
+    };
+  });
+  const live = () =>
+    fetch(`http://127.0.0.1:${port}`).then(
+      async (r) => (await r.text()) === "alive",
+      () => false,
+    );
+  try {
+    expect(f.facts).toEqual([]);
+    await f.runtime.startInfrastructure();
+    const deadline = Date.now() + 2000;
+    while (!(await live()) && Date.now() < deadline) await Bun.sleep(10);
+    expect(await live()).toBe(true);
+    const frame = f.start("run");
+    f.runtime.handle(frame, true);
+    if (frame.type !== "process_start") throw new Error("Missing start frame");
+    if (cancel)
+      f.runtime.handle(
+        ServerFrameSchema.parse({
+          ...frame,
+          type: "process_cancel",
+          payload: {
+            execution: frame.payload.execution,
+            cancelId: randomUUID(),
+            signal: "SIGKILL",
+            deadlineAt: new Date(Date.now() + 1000).toISOString(),
+          },
+        }),
+        true,
+      );
+    await f.runtime.process.drained;
+    expect(f.facts.at(-1)?.phase).toBe("exited");
+    expect(await live()).toBe(true);
+    f.runtime.reconnect();
+    expect(await live()).toBe(true);
+    await f.runtime.close();
+    expect(await live()).toBe(false);
+  } finally {
+    await f.runtime.close();
   }
 });

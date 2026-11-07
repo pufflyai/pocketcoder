@@ -16,6 +16,7 @@ test("a stalled revoked upload receives 401 before its request body closes", asy
     const opened = new URL(
       (
         await fixture.publicClient.previews.open(fixture.workspace.id, "web", {
+          grantId: await fixture.grant(),
           session: { mode: "embedded", parentOrigin: fixture.publicViews.parents[0] ?? "" },
         })
       ).url,

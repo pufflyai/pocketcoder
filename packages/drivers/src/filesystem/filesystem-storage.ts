@@ -16,6 +16,7 @@ import type {
   StorageRef,
   WorkspaceStorageDriver,
 } from "@pstdio/pocketcoder-runtime-core";
+import { readExportFiles } from "./export-files";
 import {
   makeReadOnly,
   makeWritable,
@@ -301,6 +302,10 @@ export class FilesystemStorageDriver implements WorkspaceStorageDriver {
   async deleteStorage(ref: StorageRef): Promise<void> {
     const storage = this.storageRef(ref);
     await deleteStorageRoot(storage.root);
+  }
+
+  readExports(ref: StorageRef, mounts: string[], limits: { bytes: number; files: number }, signal: AbortSignal) {
+    return readExportFiles(this.storageRef(ref).root, mounts, limits, signal);
   }
 
   async deleteCheckpoint(ref: CheckpointRef): Promise<void> {

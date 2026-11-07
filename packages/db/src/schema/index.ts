@@ -5,9 +5,12 @@ import { createActivityTables } from "./activity";
 import { createBinaryOutputTables } from "./binary-outputs";
 import { createCheckpointTransferTables } from "./checkpoint-transfers";
 import { createConversationTables } from "./conversations";
+import { createExportObjectTables } from "./export-objects";
 import { createInputTables } from "./inputs";
 import { createLeaseTables } from "./leases";
+import { createManagedTables } from "./managed";
 import { createPersistenceTables } from "./persistence";
+import { createPreviewGrantTables } from "./preview-grants";
 import { createSecretTables } from "./secrets";
 import { createStorageReservationTables } from "./storage-reservations";
 import { createTransferControllerTable } from "./transfer-controller";
@@ -22,6 +25,7 @@ export function createSchema(schema?: string) {
   const reservations = createStorageReservationTables(table, access, workspaces, persistence);
   return {
     ...access,
+    ...createManagedTables(table, access),
     ...secrets,
     ...createLeaseTables(table, workspaces, secrets),
     ...workspaces,
@@ -30,6 +34,8 @@ export function createSchema(schema?: string) {
     ...persistence,
     ...reservations,
     ...createInputTables(table, access, workspaces, reservations),
+    ...createExportObjectTables(table),
+    ...createPreviewGrantTables(table),
     ...createBinaryOutputTables(table, access, workspaces, reservations),
     ...createCheckpointTransferTables(table, access, workspaces, persistence, reservations),
     ...createTransferControllerTable(table),
@@ -38,6 +44,16 @@ export function createSchema(schema?: string) {
 
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
+  managedScopes,
+  managedScopeGrants,
+  managedProfiles,
+  managedCredentials,
+  managedSessions,
+  managedObservations,
+  budgetPolicies,
+  budgetInvocations,
+  budgetAudits,
+  budgetReports,
   workspaceLeases,
   workspaceLeaseFences,
   secrets,
@@ -52,6 +68,8 @@ export const {
   warmPoolRuntimes,
   workspaceOutputs,
   binaryOutputs,
+  exportObjects,
+  previewGrants,
   workspaceConversations,
   workspaceConversationMessages,
   conversations,
