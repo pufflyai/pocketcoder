@@ -5,6 +5,7 @@ import type {
   ConversationRecordStatus,
   ConversationRequestIdentity,
   ConversationRole,
+  ExecutionRecord,
 } from "@pstdio/pocketcoder-contracts";
 
 export interface ConversationRequestRow {
@@ -93,6 +94,13 @@ export interface WorkspaceConversationMessage {
 export type ConversationRetention = (workspace: { conversationRetention: string }) => number | null;
 
 export interface ConversationStore {
+  listConversationExecutions(input: {
+    workspaceId: string;
+    principalId: string;
+    conversationId: string;
+    cursor?: string;
+    limit: number;
+  }): Promise<{ items: ExecutionRecord[]; nextCursor: string | null }>;
   acceptConversationRequest(
     workspaceId: string,
     identity: ConversationRequestIdentity,

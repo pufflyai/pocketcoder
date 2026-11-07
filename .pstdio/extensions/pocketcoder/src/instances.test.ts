@@ -6,6 +6,35 @@ import { createInstances } from "./instances";
 
 const binary = resolve(import.meta.dir, "../../../../out/native/pocketcoder");
 
+test("invalid current template limits fail before creating or starting an instance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-invalid-limits-"));
+  try {
+    const manifest = await Bun.file(
+      resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json"),
+    ).json();
+    const instances = createInstances(root);
+    for (const key of [
+      "stagedInputBytes",
+      "inputFiles",
+      "inputFileBytes",
+      "inFlightTransfers",
+      "finalizationSeconds",
+      "unreferencedInputRetentionSeconds",
+    ]) {
+      for (const value of [undefined, NaN, Infinity, 0, "10"]) {
+        const source = structuredClone(manifest);
+        source.spec.limits[key] = value;
+        await expect(
+          instances.launch({ name: "invalid", binary: "/missing-binary", manifest: source }),
+        ).rejects.toThrow(`Template limits.${key}`);
+        expect(await readdir(root)).toEqual([]);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("starts isolated 1.0 instances with private, expiring owner keys and restarts one", async () => {
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-extension-"));
   const instances = createInstances(root);

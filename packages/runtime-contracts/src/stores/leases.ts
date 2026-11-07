@@ -9,9 +9,11 @@ export interface WorkspaceLeaseRequest {
   purpose: WorkspaceLeasePurpose;
   policyDigest: string;
   requestId: string;
+  managedAuthority?: import("./managed-runtime").ManagedLeaseAuthority;
   at: Date;
 }
 export interface WorkspaceLeaseRow {
+  managedAuthority: import("./managed-runtime").ManagedLeaseAuthority | null;
   id: string;
   workspaceId: string;
   secretName: string;

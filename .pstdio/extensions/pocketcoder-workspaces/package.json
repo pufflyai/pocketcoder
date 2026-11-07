@@ -6,7 +6,7 @@
   "publisher": "pocketcoder",
   "main": "./extension.ts",
   "engines": {
-    "pstdio": "^0.1.1"
+    "pstdio": "^0.3.1"
   },
   "pstdio": {
     "scope": "user"
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pstdio/sdk": "0.40.0"
+    "@pstdio/sdk": "0.46.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

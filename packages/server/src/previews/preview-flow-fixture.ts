@@ -6,7 +6,7 @@ import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { supervise } from "@pstdio/pocketcoder-supervisor";
-import { createTestServer } from "../testing/test-server.test";
+import { authed, createTestServer } from "../testing/test-server.test";
 
 const createStore = createTestStoreFactory();
 
@@ -118,6 +118,24 @@ export async function createPreviewFlow() {
     workspace,
     publicViews,
     baseUrl,
+    async grant(subject = "fixture-user", lifetimeMs = 60_000) {
+      const id = randomUUID();
+      const response = await server.app.request(
+        `${publicViews.apiOrigin}/v1/workspaces/${workspace.id}/preview-grants`,
+        authed(server.token, {
+          method: "POST",
+          body: JSON.stringify({
+            id,
+            subject,
+            accessRevision: "r1",
+            previews: ["web"],
+            ceilingAt: new Date(Date.now() + lifetimeMs).toISOString(),
+          }),
+        }),
+      );
+      if (response.status !== 201) throw new Error(`Fixture grant failed: ${await response.text()}`);
+      return id;
+    },
     get uploadRequests() {
       return uploadRequests;
     },

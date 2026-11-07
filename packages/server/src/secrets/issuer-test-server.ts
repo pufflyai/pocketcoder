@@ -14,6 +14,7 @@ type Reply =
   | "outage-stream"
   | "deep-policy";
 type RequestIdentity = {
+  managed_authority?: Record<string, unknown>;
   workspace_id: string;
   source_url: string | null;
   source_revision: string | null;
@@ -182,6 +183,7 @@ export async function createTestIssuer(
         if (request.headers.get("authorization") !== authorization) return new Response("refused", { status: 401 });
         const input = (await request.json()) as RequestIdentity & { operation: string };
         const identity = {
+          ...(input.managed_authority ? { managed_authority: input.managed_authority } : {}),
           workspace_id: input.workspace_id,
           source_url: input.source_url,
           source_revision: input.source_revision,

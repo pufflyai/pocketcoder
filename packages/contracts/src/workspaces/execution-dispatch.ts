@@ -2,6 +2,7 @@ import { z } from "zod";
 import { digestOf } from "../common/canonical";
 import { JsonValueSchema } from "../common/json-value";
 import { ConversationRequestIdentitySchema } from "../conversations/identity";
+import { WorkloadExportReferenceSchema } from "../outputs/export-reference";
 import { type WorkloadAcceptance, WorkloadAcceptanceSchema, WorkloadCancelSchema } from "./workload-operation";
 
 export const ExecutionPhaseSchema = z.enum([
@@ -25,6 +26,7 @@ export const ExecutionRecordSchema = z.strictObject({
   settledAt: z.iso.datetime().nullable(),
   acknowledgedAt: z.iso.datetime().nullable(),
   finalizedAt: z.iso.datetime().nullable(),
+  collection: WorkloadExportReferenceSchema.optional(),
 });
 export type ExecutionRecord = z.infer<typeof ExecutionRecordSchema>;
 export const ExecutionStartSchema = z

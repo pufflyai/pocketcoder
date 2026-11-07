@@ -12,13 +12,20 @@ export class PreviewsApi {
     );
   }
 
-  open(workspaceId: string, name: string, options: RequestOptions & { session?: ViewSessionOptions } = {}) {
+  open(
+    workspaceId: string,
+    name: string,
+    options: RequestOptions & { session?: ViewSessionOptions; grantId?: string } = {},
+  ) {
     return this.transport.request(
       `/v1/workspaces/${encodeURIComponent(workspaceId)}/previews/${encodeURIComponent(name)}`,
       PreviewOpenResponseSchema,
       {
         method: "POST",
-        body: JSON.stringify({ session: options.session ?? { mode: "local" } }),
+        body: JSON.stringify({
+          session: options.session ?? { mode: "local" },
+          ...(options.grantId ? { grantId: options.grantId } : {}),
+        }),
         signal: options.signal,
       },
     );

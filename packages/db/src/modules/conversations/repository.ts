@@ -2,6 +2,7 @@ import type { ConversationRequestIdentity } from "@pstdio/pocketcoder-contracts"
 import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { createConversationDocuments } from "./documents";
+import { createExecutionReads } from "./execution-reads";
 import { createConversationReads } from "./reads";
 import { createConversationRequests } from "./request-receipts";
 import { clearConversations, conversationIds, createConversationRetention } from "./retention";
@@ -15,6 +16,7 @@ export function createConversations(context: DatabaseContext) {
     tables: { workspaceConversations, conversations },
   } = context;
   return {
+    ...createExecutionReads(context),
     acceptConversationRequest: requestReceipts.acceptConversationRequest,
     isAcceptedTurn: (workspaceId: string, identity: ConversationRequestIdentity) =>
       requestReceipts.isAccepted(workspaceId, identity),

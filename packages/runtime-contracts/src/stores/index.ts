@@ -30,10 +30,13 @@ export interface Store
     ConversationStore,
     TerminalAuditStore,
     OutboxStore {
+  managed: import("./managed-runtime").ManagedRuntimeStore;
   executions: import("./executions").ExecutionStore;
   inputs: import("./inputs").InputStore;
   checkpointTransfers: import("./checkpoint-transfers").CheckpointTransferStore;
   binaryOutputs: import("./binary-outputs").BinaryOutputStore;
+  exports: import("./retained-exports").RetainedExportStore;
+  previewGrants: import("./preview-grants").PreviewGrantStore;
   storageReservations: import("./storage-reservations").StorageReservationStore;
 }
 

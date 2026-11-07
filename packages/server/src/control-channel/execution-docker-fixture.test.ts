@@ -12,6 +12,8 @@ import {
   PROTOCOL_VERSION,
   parseWorkloadTemplate,
   type WorkloadAcceptance,
+  type WorkloadTemplate,
+  workloadLifecycle,
   workloadSnapshotOf,
 } from "@pstdio/pocketcoder-contracts";
 import { createPGliteFixture } from "@pstdio/pocketcoder-db/testing";
@@ -25,12 +27,16 @@ import { handleConnectedFrame } from "./ws-frame-handler";
 
 export const executionDockerImage =
   "oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d";
-export async function dockerExecutionFixture(command?: string[], finalizationSeconds?: number) {
+export async function dockerExecutionFixture(
+  command?: string[],
+  finalizationSeconds?: number,
+  configure?: (source: WorkloadTemplate) => void,
+) {
   const f = await createPGliteFixture("execution-docker", "disk");
   const root = await realpath(await mkdtemp(join(tmpdir(), "pc129-installed-")));
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "pc129-private-")));
   await chmod(root, 0o755);
-  const { digest, source, snapshot } = await installedFixture(root, command, finalizationSeconds);
+  const { digest, source, snapshot } = await installedFixture(root, command, finalizationSeconds, configure);
   const storage = new FilesystemInputStorage(join(privateRoot, "canonical"), []);
   const driver = new DockerDriver({
     inputDir: join(privateRoot, "launch"),
@@ -80,14 +86,11 @@ export async function dockerExecutionFixture(command?: string[], finalizationSec
     const { workspace } = await seedWaitingWorkspace(f.store, snapshot);
     const spec = {
       ...workspace.templateSnapshot.spec,
+      security: workloadLifecycle(snapshot.manifest).security,
       image: executionDockerImage,
       network: { mode: "unrestricted" as const },
       resources: source.spec.resources,
-      command: [
-        "/bin/sh",
-        "-c",
-        `while [ ! -f /fixture/go-${workspace.id} ]; do sleep 0.05; done; exec bun /fixture/index.js supervise --launch-input /run/pocketcoder/input`,
-      ],
+      command: waitingSupervisorCommand(workspace.id),
     };
     const ref = await driver.create({
       workspace: { ...workspace, templateSnapshot: { ...workspace.templateSnapshot, spec } },
@@ -300,7 +303,12 @@ function runtimeServer(f: Awaited<ReturnType<typeof createPGliteFixture>>, built
   return { server, drain: () => pipeline };
 }
 
-async function installedFixture(root: string, command?: string[], finalizationSeconds?: number) {
+async function installedFixture(
+  root: string,
+  command?: string[],
+  finalizationSeconds?: number,
+  configure?: (source: WorkloadTemplate) => void,
+) {
   const compiled = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "../../../supervisor/src/index.ts")],
     outdir: root,
@@ -321,6 +329,15 @@ async function installedFixture(root: string, command?: string[], finalizationSe
   ];
   if (command) source.spec.adapters.main.command = command;
   if (finalizationSeconds !== undefined) source.spec.limits.finalizationSeconds = finalizationSeconds;
+  configure?.(source);
   const snapshot = workloadSnapshotOf(parseWorkloadTemplate(source));
   return { digest, source, snapshot };
+}
+
+function waitingSupervisorCommand(workspaceId: string) {
+  return [
+    "/bin/sh",
+    "-c",
+    `while [ ! -f /fixture/go-${workspaceId} ]; do sleep 0.05; done; exec bun /fixture/index.js supervise --launch-input /run/pocketcoder/input`,
+  ];
 }

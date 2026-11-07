@@ -3,6 +3,7 @@ import { and, eq, notInArray } from "drizzle-orm";
 import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
 import { clearConversations, conversationIds } from "../conversations/retention";
 import { purgeBinaryOutputs } from "../outputs/binary-output-delete";
+import { deleteExportBytes } from "../outputs/retained-export-capacity";
 import { lockStorageCapacity } from "./reservation-capacity";
 
 // Writers and purge admission take the same row lock. A delayed write cannot
@@ -38,6 +39,8 @@ export function createContentPurge(context: DatabaseContext) {
           .for("update");
         if (!workspace?.purgeRequestedAt) throw new Error("Purge has not been admitted");
         await purgeBinaryOutputs(context, tx, workspaceId, at);
+        await deleteExportBytes(context, tx, eq(tables.exportObjects.workspaceId, workspaceId), at);
+        await tx.delete(tables.exportObjects).where(eq(tables.exportObjects.workspaceId, workspaceId));
         await purgeInputMetadata(context, tx, workspaceId);
         await purgeExecutionMetadata(context, tx, workspaceId, workspace.principalId);
         const [pending] = await tx

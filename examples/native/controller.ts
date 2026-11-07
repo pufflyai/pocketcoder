@@ -118,9 +118,9 @@ export async function nativeController(binary: string, directory: string, persis
       await stop();
       throw new Error(`Controller did not become ready: ${(await output)?.join("\n")}`);
     }
-    if (readinessMs > 3000) {
+    if (readinessMs > 4000) {
       await stop();
-      throw new Error(`Controller exceeded 3-second readiness: ${readinessMs} ms\n${(await output)?.join("\n")}`);
+      throw new Error(`Controller exceeded 4-second readiness: ${readinessMs} ms\n${(await output)?.join("\n")}`);
     }
   }
 

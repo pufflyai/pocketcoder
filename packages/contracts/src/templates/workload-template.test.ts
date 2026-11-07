@@ -84,3 +84,29 @@ test("rejects undeclared slots, literal secrets, protected paths, unpinned and m
   unpinned.spec.adapters.main.digest = "latest";
   expect(() => parseWorkloadTemplate(unpinned)).toThrow();
 });
+
+test("workspace websites may expose their listener while execution adapter ports stay private", () => {
+  const source = workloadFixture();
+  const spec: Record<string, unknown> = source.spec;
+  spec.services = {
+    website: {
+      baseUrl: "http://127.0.0.1:3000",
+      required: false,
+      autostart: false,
+      process: { command: ["bun", "website.ts"] },
+      routes: [{ method: "GET", path: "/" }],
+    },
+  };
+  spec.previews = { web: { port: 3000 } };
+  expect(parseWorkloadTemplate(source).manifest.spec.previews.web?.port).toBe(3000);
+  spec.profile = "service";
+  spec.adapters = {
+    main: {
+      kind: "service",
+      digest: `sha256:${"a".repeat(64)}`,
+      protocol: "pocketcoder.execution/v1",
+      service: "website",
+    },
+  };
+  expect(() => parseWorkloadTemplate(source)).toThrow("reserved");
+});

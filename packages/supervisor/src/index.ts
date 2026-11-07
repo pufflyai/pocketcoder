@@ -2,16 +2,30 @@ import { prepareStorage } from "./bootstrap/prepare-storage";
 import { supervise } from "./supervisor";
 
 // pocketcoder-supervisor CLI. `supervise` is the PID 1 entrypoint declared by
-// template commands; future subcommands (e.g. pi-adapter) hang off the same
-// binary.
+// template commands. Service commands select declared workspace processes.
 
 function usage(): never {
-  console.error("usage: pocketcoder-supervisor supervise --launch-input <path>");
+  console.error(
+    "usage: pocketcoder-supervisor supervise --launch-input <path> | service start <name> <start-id> | service stop|status <name>",
+  );
   process.exit(64);
 }
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === "service") {
+    const [action, name, startId] = rest;
+    if (!action || !["start", "stop", "status"].includes(action) || !name || !/^[a-z][a-z0-9-]{0,62}$/.test(name))
+      usage();
+    const response = await fetch(`http://localhost/${name}/${action}`, {
+      unix: process.env.POCKETCODER_SERVICES_SOCKET ?? "/run/pocketcoder/services/services.sock",
+      method: "POST",
+      ...(action === "start" ? { body: JSON.stringify({ startId }) } : {}),
+    });
+    if (!response.ok) throw new Error(`Workspace service ${action} refused (${response.status})`);
+    console.log(await response.text());
+    return;
+  }
   if (command === "prepare-storage") {
     prepareStorage(JSON.parse(rest[0] ?? "null"));
     return;

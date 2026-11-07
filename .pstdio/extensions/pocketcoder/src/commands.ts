@@ -9,6 +9,7 @@ import { catalogChoices, launchInstance } from "./instance-commands";
 import { instancesFor } from "./instances";
 import { type Machine, machineRef } from "./machines";
 import { changed, instanceKind } from "./resources";
+import { deleteTemplate, saveTemplate } from "./template-commands";
 
 export const instanceChoices = defineCommand({
   id: "instances.choices",
@@ -199,6 +200,8 @@ export const refresh = defineCommand({
 });
 
 export const commands = [
+  saveTemplate,
+  deleteTemplate,
   catalogChoices,
   instanceChoices,
   templateChoices,

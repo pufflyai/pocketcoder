@@ -91,6 +91,8 @@ export interface SchedulerDeps {
   authorizeLaunch?: (workspace: WorkspaceRow) => Promise<AdmissionDecision>;
   admissionFenced?: () => boolean;
   preserveByPolicy?: (row: WorkspaceRow, trigger: "idle" | "deadline" | "clean_exit" | "failure") => Promise<boolean>;
+  completeOutputCleanup?: (workspace: WorkspaceRow) => Promise<void>;
+  finalizeOutputs?: (row: WorkspaceRow) => Promise<void>;
   now?: () => Date;
   onError?: (context: string, err: unknown) => void;
   metrics?: MetricSink;
@@ -157,19 +159,24 @@ export class SchedulerContext {
       await this.deps.transferRuntime.cleanupWorkspace(row);
       return;
     }
-    const storageDriver = this.deps.storageDriver;
-    if (!storageDriver) return;
     const storage = await this.deps.store.getWorkspaceStorage(row.id);
     if (!storage || ["retained", "deleted"].includes(storage.state)) return;
     try {
+      const storageDriver = this.deps.storageDriver;
+      if (!storageDriver) throw new Error("Workspace storage cleanup requires its storage driver.");
       if (Object.keys(storage.providerRef).length > 0) {
         await storageDriver.deleteStorage(storage.providerRef as StorageRef);
       }
       const at = this.now();
-      await this.deps.store.updateWorkspaceStorage(storage.id, { state: "deleted", deletedAt: at }, at);
+      await this.deps.store.updateWorkspaceStorage(
+        storage.id,
+        { state: "deleted", deletedAt: at, lastErrorCode: null },
+        at,
+      );
     } catch (error) {
       await this.deps.store.updateWorkspaceStorage(storage.id, { lastErrorCode: "storage_cleanup_failed" }, this.now());
       this.report(`storage.cleanup.${row.id}`, error);
+      throw error;
     }
   }
 

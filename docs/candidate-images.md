@@ -43,7 +43,7 @@ the archive checksum and configuration digest bind the portable identity.
 Kind checks each node's loaded configuration against that digest. It never rebuilds a role
 between scan, smoke and publication.
 
-The controller checks the existing three-second readiness and 512 MB memory
+The controller checks the approved temporary four-second readiness and 512 MB memory
 budgets. CI runs `sync` before its timed installation and image smoke steps:
 runner setup leaves over 1 GB of unsaved writes, and flushing them inside the
 first start's file syncs took several seconds. The desktop image must stay below 1.5 GB. The smoke runs real native

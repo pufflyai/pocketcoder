@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { InstanceHttpError } from "./instance-http";
+import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 
 export interface Instance {
@@ -11,6 +13,7 @@ export interface Instance {
   url: string;
   agentPort: number;
   state: "running" | "stopped";
+  workloadLimits?: Record<string, number>;
 }
 
 export const instancesFor = (projectId: string) =>
@@ -38,6 +41,7 @@ export function createInstances(root: string) {
     POCKETCODER_STORAGE_BACKEND: "filesystem",
     POCKETCODER_WORKSPACE_DATA_DIR: join(directory(instance.id), "workspaces"),
     POCKETCODER_CHECKPOINT_DIR: join(directory(instance.id), "checkpoints"),
+    ...(instance.workloadLimits ? inputEnvironment(directory(instance.id), instance.workloadLimits) : {}),
   });
   const cli = async (instance: Instance, args: string[], extra: Record<string, string> = {}) => {
     const result = await runCli(instance.binary, directory(instance.id), { ...environment(instance), ...extra }, args);
@@ -71,7 +75,7 @@ export function createInstances(root: string) {
       headers: { "content-type": "application/json", authorization: `Bearer ${owner.token}`, ...options.headers },
       signal: options.signal ?? AbortSignal.timeout(35_000),
     });
-    if (!response.ok) throw new Error(`PocketCoder HTTP ${response.status}: ${await response.text()}`);
+    if (!response.ok) throw new InstanceHttpError(response.status, await response.text());
     return response.json() as Promise<T>;
   };
   return {
@@ -106,6 +110,11 @@ export function createInstances(root: string) {
       return Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => get(entry.name)));
     },
     async launch(input: { name: string; binary: string; templates?: string; manifest?: unknown }) {
+      const manifest = input.manifest as
+        | { apiVersion?: string; spec?: { limits?: Record<string, number> } }
+        | undefined;
+      const workloadLimits =
+        manifest?.apiVersion === "pocketcoder.dev/v1" ? validatedWorkloadLimits(manifest.spec?.limits) : undefined;
       const id = randomUUID();
       await mkdir(directory(id), { recursive: true, mode: 0o700 });
       await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
@@ -119,6 +128,7 @@ export function createInstances(root: string) {
         url: `http://127.0.0.1:${operatorPort}`,
         agentPort,
         state: "stopped",
+        ...(workloadLimits ? { workloadLimits } : {}),
       };
       await write(id, "instance.json", instance);
       const started = await start(id);

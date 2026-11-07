@@ -220,6 +220,31 @@ export class DockerDriver implements WorkspaceDriver {
   }
 
   async inspect(ref: ProviderRef): Promise<ProviderState> {
+    const state = await this.inspectState(ref);
+    if (!state.exists) return state;
+    const storage = this.inspectInputs(ref, state);
+    try {
+      // Both are fresh read-only observations. Neither needs to wait for the
+      // other's Docker probes, but both must settle before this call returns.
+      state.workload = await this.workloads.inspect(ref, state, storage);
+    } finally {
+      await storage;
+    }
+    return state;
+  }
+
+  private async inspectInputs(ref: ProviderRef, state: ProviderState) {
+    if (this.inputs && ref.inputProjectionId) {
+      try {
+        state.inputStorage = await this.inputs.inspect(ref);
+      } catch (error) {
+        state.detail = String(error);
+      }
+    }
+    return state.inputStorage;
+  }
+
+  async inspectState(ref: ProviderRef): Promise<ProviderState> {
     try {
       const out = await runDocker(this.opts.dockerBin, [
         "inspect",
@@ -235,14 +260,6 @@ export class DockerDriver implements WorkspaceDriver {
         running: running === "true",
         exitCode: running === "true" ? null : Number(exitCode),
       };
-      if (this.inputs && ref.inputProjectionId) {
-        try {
-          state.inputStorage = await this.inputs.inspect(ref);
-        } catch (error) {
-          state.detail = String(error);
-        }
-      }
-      state.workload = await this.workloads.inspect(ref, state, state.inputStorage);
       return state;
     } catch (error) {
       // A daemon outage is not evidence that the runtime disappeared.

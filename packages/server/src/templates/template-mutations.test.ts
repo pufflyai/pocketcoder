@@ -266,17 +266,18 @@ test("binding a source issuer requires secrets administration", async () => {
   expect((await operator.publish(privateSource)).status).toBe(201);
 });
 
-test("canonical G0 manifests cannot be published or imported into an alpha deployment", async () => {
-  const f = await fixture(["templates:write"], ["*"], ["*"]);
+test("finite-process manifests publish and import with their exact canonical identity", async () => {
+  const f = await fixture(["templates:write"], ["*"], ["*"], `egress@sha256:${"a".repeat(64)}`);
   const path = join(import.meta.dir, "../../../../examples/workloads/finite-process.json");
   const manifest = await Bun.file(path).json();
-  expect((await f.publish(manifest)).status).toBe(400);
-  expect(await f.store.listTemplates(null)).toEqual([]);
+  expect((await f.publish(manifest)).status).toBe(201);
+  expect(await f.store.listTemplates(null)).toHaveLength(1);
   const result = await loadTemplateDir(f.store, join(import.meta.dir, "../../../../examples/workloads"));
-  expect(result.loaded).toEqual([]);
-  expect(result.errors).toHaveLength(1);
-  expect(result.errors[0]?.message).toContain("unsupported template format");
-  expect(await f.store.listTemplates(null)).toEqual([]);
+  expect(result.loaded.map((row) => row.name)).toEqual([manifest.metadata.name]);
+  expect(result.errors).toEqual([]);
+  expect((await f.store.getTemplate(manifest.metadata.name))?.manifest).toEqual(
+    expect.objectContaining({ apiVersion: "pocketcoder.dev/v1" }),
+  );
 });
 
 test("publishes an authored service workload without changing its immutable format", async () => {

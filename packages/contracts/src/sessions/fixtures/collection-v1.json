@@ -1,0 +1,54 @@
+{
+  "pending": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "revision": 1,
+    "state": "pending",
+    "completeness": null,
+    "manifestDigest": null,
+    "objects": [],
+    "errors": [],
+    "settledAt": null,
+    "expiresAt": null,
+    "cleanupState": "not_required"
+  },
+  "emptyComplete": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "revision": 2,
+    "state": "settled",
+    "completeness": "complete",
+    "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "objects": [],
+    "errors": [],
+    "settledAt": "2026-11-05T16:01:00Z",
+    "expiresAt": "2026-11-06T16:01:00Z",
+    "cleanupState": "complete"
+  },
+  "lostBeforeAnyFile": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "revision": 2,
+    "state": "settled",
+    "completeness": "lost",
+    "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "objects": [],
+    "errors": ["collection.storage_unavailable"],
+    "settledAt": "2026-11-05T16:01:00Z",
+    "expiresAt": "2026-11-06T16:01:00Z",
+    "cleanupState": "complete"
+  },
+  "partialWithoutObjects": {
+    "sessionId": "66666666-6666-4666-8666-666666666666",
+    "requestId": "77777777-7777-4777-8777-777777777777",
+    "revision": 2,
+    "state": "settled",
+    "completeness": "partial",
+    "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "objects": [],
+    "errors": ["collection.deadline_exceeded"],
+    "settledAt": "2026-11-05T16:01:00Z",
+    "expiresAt": "2026-11-06T16:01:00Z",
+    "cleanupState": "pending"
+  }
+}

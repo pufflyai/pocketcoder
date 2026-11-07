@@ -16,6 +16,12 @@ The queue tests the checked-out merge result, using github.sha for builds and ar
 
 Full qualification includes embedded database checks on three platforms, native builds and clean installation, managed Docker and Kubernetes services, Helm installation, recovery and upgrade scenarios, monitoring, and image scans and smoke checks on both Linux architectures. PostgreSQL-backed store suites run whenever packages are selected. Reusable workflow gates require every dependency to pass, so adding a job does not require maintaining a second job list. The outer gate permits only deliberately unselected jobs to be skipped and rejects any failed or cancelled dependency. Job summaries record the actual gate results.
 
+Browser integration and desktop contract checks use Ubuntu 24.04 explicitly.
+This keeps their Chrome and apt prerequisites on a chosen OS release instead of
+following `ubuntu-latest` migrations. Changes to that release need full browser
+and desktop qualification. Image scans also run in full mode; update vulnerable
+image packages and keep the HIGH/CRITICAL gate enabled.
+
 Add the full-ci label to a PR to qualify a CI change before rollout. Full checks can also be requested without a merge:
 
 ```sh

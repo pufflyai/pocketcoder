@@ -110,6 +110,7 @@ export {
   STORAGE_STATES,
   type StorageState,
 } from "./persistence/persistence";
+export * from "./previews/grants";
 export * from "./previews/headers";
 export * from "./previews/preview";
 export * from "./previews/socket-flow";
@@ -239,6 +240,8 @@ export {
 export * from "./recovery/source-writer";
 export * from "./secrets/credential-slot";
 export * from "./secrets/secret";
+export * as managed from "./sessions";
+export * from "./templates/finite-outputs";
 export * from "./templates/runtime-credentials";
 export * from "./templates/template";
 export { TemplatePublishRequestSchema, TemplateVersionParamsSchema } from "./templates/template-api";
@@ -282,11 +285,14 @@ export {
   TerminalSessionPageSchema,
   TerminalSessionSchema,
 } from "./terminals/terminal";
+export * from "./workspaces/agent-request";
 export * from "./workspaces/execution-dispatch";
 export * from "./workspaces/execution-envelope";
 export * from "./workspaces/execution-runtime";
 export * from "./workspaces/finite-process";
+export * from "./workspaces/lifetime";
 export * from "./workspaces/producer-observation";
+export * from "./workspaces/service-control";
 export * from "./workspaces/workload-operation";
 export {
   ADMISSION_REASONS,

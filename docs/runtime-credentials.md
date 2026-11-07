@@ -98,3 +98,12 @@ It builds a disposable supervisor image and uses a local verified HTTPS issuer.
 The agent's resource requests succeed before and after renewal on Docker and
 Kubernetes. The fixture uses only synthetic data and removes its own cluster,
 registry, image tag and temporary files.
+
+
+## Managed session authority and accounting
+
+See [managed sessions and budget accounting](managed-runtime.md) for implemented
+profile provisioning, logical session create/lookup, scope policy and usage routes,
+exclusive business-credential placement, pinned broker renewal and trusted internal
+reservation/settlement ports. Request dispatch, provider gateway enforcement and
+physical capacity accounting retain their separate owners.

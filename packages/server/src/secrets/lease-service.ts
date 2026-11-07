@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { ApiError, digestOf } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceLeasePurpose, WorkspaceLeaseStore } from "@pstdio/pocketcoder-runtime-core";
+import type {
+  ManagedLeaseAuthority,
+  ManagedRuntimeStore,
+  ManagedSessionIdentity,
+  WorkspaceLeasePurpose,
+  WorkspaceLeaseStore,
+} from "@pstdio/pocketcoder-runtime-core";
 import type { createIssuerClient } from "./issuer-client";
 import type { createSecretVault } from "./secret-vault";
 
@@ -11,7 +17,7 @@ export function createWorkspaceLeaseService({
   now = () => new Date(),
   admissionFenced = () => false,
 }: {
-  store: WorkspaceLeaseStore;
+  store: WorkspaceLeaseStore & { managed?: ManagedRuntimeStore };
   vault: ReturnType<typeof createSecretVault>;
   issuer: ReturnType<typeof createIssuerClient>;
   now?: () => Date;
@@ -60,13 +66,15 @@ export function createWorkspaceLeaseService({
     name: string,
     purpose: WorkspaceLeasePurpose,
     requestId: string = randomUUID(),
+    managedAuthority?: ManagedLeaseAuthority,
   ) {
     if (admissionFenced()) throw unavailable();
     const existing = (await store.listWorkspaceLeases(workspaceId)).find(
       (row) => row.secretName === name && row.requestId === requestId,
     );
     if (existing) {
-      if (existing.purpose !== purpose) throw unavailable();
+      if (existing.purpose !== purpose || digestOf(existing.managedAuthority) !== digestOf(managedAuthority ?? null))
+        throw unavailable();
       // A lost reply must keep the issuer and policy of its recorded request.
       return await deliver(await vault.resolveVersion(existing.secretVersionId, purpose), existing);
     }
@@ -80,11 +88,36 @@ export function createWorkspaceLeaseService({
       policyDigest: digestOf(config.value.policy),
       requestId,
       at: now(),
+      ...(managedAuthority ? { managedAuthority } : {}),
     });
     return await deliver(config, row);
   }
+  async function issueManaged(
+    identity: ManagedSessionIdentity,
+    workspaceId: string,
+    generation: number,
+    slot: string,
+    requestId: string,
+  ) {
+    if (!store.managed) throw unavailable();
+    const bound = await store.managed.authority.leaseAuthority(identity, workspaceId, generation, slot);
+    const config = await vault.resolveVersion(bound.secretVersionId, "runtime-issuer");
+    if (config.type === "registry" || config.name !== bound.secretName) throw unavailable();
+    const row = await store.requestWorkspaceLease({
+      workspaceId,
+      secretName: bound.secretName,
+      secretVersionId: bound.secretVersionId,
+      purpose: "runtime-issuer",
+      policyDigest: digestOf(config.value.policy),
+      requestId,
+      at: now(),
+      managedAuthority: bound.authority,
+    });
+    return deliver(config, row);
+  }
   return {
     issue,
+    issueManaged,
     async replay(workspaceId: string, leaseId: string) {
       const row = await store.getWorkspaceLease(leaseId);
       if (!row || row.workspaceId !== workspaceId) throw unavailable();
@@ -95,7 +128,23 @@ export function createWorkspaceLeaseService({
       const previous = await store.getWorkspaceLease(previousLeaseId);
       if (!previous || previous.workspaceId !== workspaceId || previous.purpose !== "runtime-issuer")
         throw unavailable();
-      return await issue(workspaceId, previous.secretName, "runtime-issuer", requestId);
+      if (previous.managedAuthority) {
+        const a = previous.managedAuthority;
+        return issueManaged(
+          { principalId: a.principalId, sessionId: a.sessionId },
+          workspaceId,
+          a.generation,
+          a.slot,
+          requestId,
+        );
+      }
+      return await issue(
+        workspaceId,
+        previous.secretName,
+        "runtime-issuer",
+        requestId,
+        previous.managedAuthority ?? undefined,
+      );
     },
     async completeRenewal(workspaceId: string, previousLeaseId: string, leaseId: string) {
       const previous = await store.getWorkspaceLease(previousLeaseId);
