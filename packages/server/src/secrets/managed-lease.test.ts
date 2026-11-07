@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { insertTestWorkspace } from "@pstdio/pocketcoder-db/testing";
 import { eq } from "drizzle-orm";
 import { leaseServiceFixture } from "./lease-service-fixture";
 
@@ -107,6 +108,31 @@ test("real issuer leases bind one exclusive session and generation with a finite
         generation: 1,
       }),
     ).rejects.toThrow();
+    const { effectiveAt: _, ...budget } = await f.store.managed.budgets.readPolicy(f.key.id, scopeId);
+    await f.store.managed.budgets.writePolicy(
+      f.key.id,
+      { ...budget, revision: 2, limits: { ...budget.limits, maxActiveWorkspaces: 1 } },
+      1,
+    );
+    const additional = [];
+    for (let index = 0; index < 4; index++) {
+      const nextSession = index === 0 ? siblingId : randomUUID();
+      if (index > 0)
+        await f.store.managed.sessions.create(f.key.id, { sessionId: nextSession, profileId, profileRevision: 1 });
+      const nextWorkspace = await insertTestWorkspace({ ...f, parsed: source, template }, randomUUID());
+      const placement = {
+        principalId: f.principal.id,
+        sessionId: nextSession,
+        workspaceId: nextWorkspace.id,
+        generation: 1,
+      };
+      additional.push(placement);
+      await expect(f.store.managed.capacity.place(placement)).rejects.toThrow("budget");
+    }
+    expect((await f.store.managed.budgets.usage(f.key.id, scopeId)).activeWorkspaces).toBe(1);
+    await f.store.managed.budgets.writePolicy(f.key.id, { ...budget, revision: 3 }, 2);
+    for (const placement of additional) await f.store.managed.capacity.place(placement);
+    expect((await f.store.managed.budgets.usage(f.key.id, scopeId)).activeWorkspaces).toBe(5);
     await expect(f.service.issue(f.workspace.id, "runtime", "runtime-issuer")).rejects.toThrow();
     const current = await f.store.managed.sessions.get(f.key.id, sessionId);
     await f.store.managed.sessions.appendObservation(identity, current.revision, "closed", null);

@@ -18,6 +18,29 @@ export async function readInput(context: DatabaseContext, tx: QueryContext, work
     .where(inputKey(context, workspaceId, fileId));
   return row ?? null;
 }
+async function requireSessionRegistration(
+  context: DatabaseContext,
+  tx: Transaction,
+  sessionId: string | null | undefined,
+  principalId: string,
+  reference: InputClaim["reference"],
+) {
+  if (!sessionId) return;
+  const session = context.tables.sessionInputs;
+  const [registration] = await tx
+    .select()
+    .from(session)
+    .where(
+      and(
+        eq(session.principalId, principalId),
+        eq(session.sessionId, sessionId),
+        eq(session.inputId, reference.fileId),
+      ),
+    );
+  if (!registration || canonicalJson(registration.source) !== canonicalJson(reference))
+    throw new ApiError("attachment.not_found", "Input registration is unavailable.");
+}
+
 export function createInputObjects(context: DatabaseContext) {
   const {
     db,
@@ -30,6 +53,7 @@ export function createInputObjects(context: DatabaseContext) {
       return db.transaction(async (tx) => {
         await lockStorageCapacity(context, tx);
         const reference = InputObjectReferenceSchema.parse(input.reference);
+        await requireSessionRegistration(context, tx, input.sessionId, input.principalId, reference);
         let existing = await readInput(context, tx, reference.workspaceId, reference.fileId);
         if (existing?.state === "expired" && !existing.publishedAt) {
           await tx.delete(objects).where(inputKey(context, reference.workspaceId, reference.fileId));
@@ -46,7 +70,7 @@ export function createInputObjects(context: DatabaseContext) {
           {
             id: input.reservationId,
             purpose: "attachment",
-            workspaceId: reference.workspaceId,
+            workspaceId: input.sessionId ? null : reference.workspaceId,
             principalId: input.principalId,
             operationId: null,
             reservedBytes: reference.sizeBytes,
@@ -81,7 +105,7 @@ export function createInputObjects(context: DatabaseContext) {
           {
             id: reservationId,
             purpose: "attachment",
-            workspaceId,
+            workspaceId: row.sessionId ? null : workspaceId,
             principalId: row.principalId,
             operationId: null,
             reservedBytes: row.reference.sizeBytes,

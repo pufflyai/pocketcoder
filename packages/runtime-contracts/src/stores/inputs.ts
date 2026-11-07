@@ -20,6 +20,7 @@ export interface StoredInput {
   retentionMs: number;
 }
 export interface InputClaim {
+  sessionId?: string;
   retentionMs: number;
   reference: InputObjectReference;
   principalId: string;

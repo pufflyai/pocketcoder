@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ExportObjectSchema } from "./files";
+import { ExportObjectSchema, MAX_SESSION_FILE_REFERENCES } from "./files";
 
 const fields = z.strictObject({
   sessionId: z.uuid(),
@@ -11,7 +11,7 @@ const fields = z.strictObject({
     .string()
     .regex(/^sha256:[a-f0-9]{64}$/)
     .nullable(),
-  objects: z.array(ExportObjectSchema).max(1000),
+  objects: z.array(ExportObjectSchema).max(MAX_SESSION_FILE_REFERENCES),
   errors: z.array(z.string().min(1).max(512)).max(100),
   settledAt: z.iso.datetime({ offset: true }).nullable(),
   expiresAt: z.iso.datetime({ offset: true }).nullable(),

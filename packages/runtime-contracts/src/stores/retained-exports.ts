@@ -2,6 +2,22 @@ import type { WorkloadExportReference } from "@pstdio/pocketcoder-contracts";
 import type { StorageCapacity } from "./storage-reservations";
 
 export interface RetainedExportStore {
+  publish(
+    execution: WorkloadExportReference["execution"],
+    fingerprint: string,
+    publication: {
+      publicationId: string;
+      name: string;
+      mediaType: string;
+      sizeBytes: number;
+      digest: string;
+      bytes: Uint8Array;
+    }[],
+    complete: boolean,
+    at: Date,
+    capacity?: StorageCapacity,
+  ): Promise<void>;
+  seal(execution: WorkloadExportReference["execution"], at: Date): Promise<WorkloadExportReference>;
   commit(
     manifest: WorkloadExportReference,
     files: { objectId: string; bytes: Uint8Array }[],

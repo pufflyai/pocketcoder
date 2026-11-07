@@ -10,6 +10,8 @@ export function createExportObjectTables(table: PgTableFn<string | undefined>) {
       exportId: uuid("export_id").notNull(),
       workspaceId: uuid("workspace_id").notNull(),
       principalId: uuid("principal_id").notNull(),
+      sessionId: uuid("session_id"),
+      reservationId: uuid("reservation_id"),
       execution: jsonb("execution").$type<WorkloadExecutionReference>().notNull(),
       reference: jsonb("reference").$type<ExportObjectReference>().notNull(),
       data: bytea("data"),

@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { AttachmentMediaTypeSchema } from "../attachments/attachment";
+export const MAX_SESSION_FILE_REFERENCES = 1000;
 
 export const InputReferenceSchema = z.strictObject({
   inputId: z.uuid(),
   versionId: z.uuid(),
   sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   name: z.string().min(1).max(255),
-  mediaType: z.string().min(1).max(256),
+  mediaType: AttachmentMediaTypeSchema,
   sizeBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
 });
 export type InputReference = z.infer<typeof InputReferenceSchema>;
@@ -13,7 +15,7 @@ export type InputReference = z.infer<typeof InputReferenceSchema>;
 export const InputUploadSchema = z.strictObject({
   inputId: z.uuid(),
   name: z.string().min(1).max(255),
-  mediaType: z.string().min(1).max(256),
+  mediaType: AttachmentMediaTypeSchema,
   sizeBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
 });
@@ -34,7 +36,7 @@ export const ExportObjectSchema = z.strictObject({
   versionId: z.uuid(),
   sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   name: z.string().min(1).max(255),
-  mediaType: z.string().min(1).max(256),
+  mediaType: AttachmentMediaTypeSchema,
   sizeBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   completeness: z.enum(["complete", "partial"]),
   availability: z.enum(["published", "expired", "unavailable"]),

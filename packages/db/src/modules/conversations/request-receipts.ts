@@ -1,4 +1,5 @@
 import {
+  ApiError,
   type ConversationRequestIdentity,
   ConversationRequestIdentitySchema,
   canonicalJson,
@@ -29,6 +30,13 @@ export function createConversationRequests(context: DatabaseContext) {
           .from(workspaces)
           .where(eq(workspaces.id, workspaceId));
         const principalId = requiredRow(workspace).principalId;
+        const sessions = context.tables.managedSessions;
+        const [session] = await tx
+          .select()
+          .from(sessions)
+          .where(and(eq(sessions.principalId, principalId), eq(sessions.sessionId, identity.conversation_id)));
+        if (session)
+          throw new ApiError("operation.conflict", "Managed sessions accept requests through their logical API.");
         const [inserted] = await tx
           .insert(requests)
           .values({

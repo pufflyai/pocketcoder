@@ -5,9 +5,11 @@ invocation reservations and trusted usage evidence. A session can exist without
 compute. Its ID is also its canonical conversation ID. The existing conversation
 owner creates transcript records on the first turn; this adds no second transcript.
 
-Request dispatch, session file APIs, history replay, provider gateway enforcement
-and physical capacity accounting have separate owners. They are not enabled by
-creating a profile. The implemented operations are marked `x-shipped: true` in the
+Logical request acceptance/dispatch, session file APIs and physical capacity
+accounting extend these same owners. See [session work](managed-session-work.md).
+Creating a profile does not launch compute. Automatic placement/recovery, cancel,
+history replay and provider gateway enforcement retain their later owners.
+The implemented operations are marked `x-shipped: true` in the
 [versioned contract](managed-contracts.md). The running server's `/v1/openapi.json`
 describes the installed routes and standard error envelopes.
 
@@ -114,9 +116,13 @@ invocation counts in every UTC day/month it touches. Late settlement replaces it
 hold with actual usage in each touched period. A durable clock floor prevents a
 backward wall-clock move from reopening a rolling 60-second window or past period.
 
-Workspace start/process/physical capacity counters remain the PC-170 owner's work.
-They are zero until that owner records capacity. Model settlement does not prove
-that compute stopped. Changing an accounting period with recorded exposure requires
+Workspace starts and active physical workspaces now come from durable managed
+capacity reservations. Compatible shared sessions consume one physical slot and
+separate process slots; credentialed sessions remain exclusive. Launch admission
+reserves start allowance before storage preparation and charges it immediately
+before provider submission. Proved non-submission is audited without a start charge.
+Only generation-bound process-stop or provider-fencing evidence releases capacity.
+Model settlement does not prove that compute stopped. Changing an accounting period with recorded period exposure requires
 audited handover; lowering or raising limits never rewrites earlier charges.
 
 ## Validation limits

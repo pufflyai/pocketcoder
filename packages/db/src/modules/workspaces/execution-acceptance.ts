@@ -37,6 +37,11 @@ export function acceptExecution(context: DatabaseContext) {
         return { kind: "replayed" as const, record: previous };
       }
       await requireExecutionPrincipal(context, tx, input.callerPrincipalId);
+      const [managed] = await tx
+        .select()
+        .from(context.tables.managedCapacity)
+        .where(eq(context.tables.managedCapacity.workspaceId, workspace.id));
+      if (managed) executionConflict("Managed workspaces accept work through their logical sessions.");
       validateExecution(workspace, input, at, identity);
       if (input.execution.owner === "process" && (workspace.processExecution || workspace.finiteProcess || identity))
         executionConflict("Finite process already accepted or conversation identity supplied.");

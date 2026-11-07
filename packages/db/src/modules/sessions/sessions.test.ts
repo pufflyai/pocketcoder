@@ -78,6 +78,7 @@ test("binding comparisons retain generation history after detach and observation
     await f.store.transition(workspaceId, { from: ["ready"], to: "terminating", at: new Date() });
     await f.store.transition(workspaceId, { from: ["terminating"], to: "canceled", at: new Date() });
     expect(await f.store.managed.sessions.bind(identity, 1, null)).toBe(2);
+    await f.store.managed.capacity.cleanup(workspaceId, 0, "provider_fenced", new Date());
     const { insertTestWorkspace } = await import("../../test-fixtures");
     const successor = await insertTestWorkspace(f, randomUUID());
     const incarnationId = randomUUID();

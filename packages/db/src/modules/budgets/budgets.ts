@@ -2,6 +2,7 @@ import type { ManagedBudgetStore } from "@pstdio/pocketcoder-runtime-contracts";
 import type { DatabaseContext } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 import { usageSnapshot } from "./accounting";
+import { capacityUsage } from "./capacity-ledger";
 import { budgetLedger } from "./ledger";
 import { policyOwner } from "./policy-owner";
 import { reservationOwner } from "./reservations";
@@ -22,7 +23,12 @@ export function createManagedBudgets(context: DatabaseContext, now = () => new D
         await auth.scope(tx, keyId, scopeId, false);
         const { rows, at } = await ledger.lockScopes(tx, [scopeId]);
         const policy = await policies.latest(tx, scopeId);
-        return usageSnapshot(await ledger.records(tx), policy, at, rows[0]?.blockedReason ?? null);
+        const { workspaceStarts, activeWorkspaces } = await capacityUsage(context, tx, policy, at);
+        return {
+          ...usageSnapshot(await ledger.records(tx), policy, at, rows[0]?.blockedReason ?? null),
+          workspaceStarts,
+          activeWorkspaces,
+        };
       });
     },
   };

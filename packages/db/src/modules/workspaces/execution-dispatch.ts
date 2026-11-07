@@ -5,6 +5,7 @@ import {
   type ExecutionRecord,
   ExecutionRecordSchema,
   executionInputManifestId,
+  executionNeedsAcknowledgment,
   executionSettled,
   type WorkloadCancel,
   WorkloadCancelSchema,
@@ -14,12 +15,15 @@ import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq, isNotNull } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { requireProcessCapacity } from "../budgets/process-capacity";
 import { finalizeInputManifest } from "../persistence/inputs/finalize";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
+import { workAuthority } from "../sessions/work-authority";
 import { acceptExecution } from "./execution-acceptance";
 import { requireExecutionPrincipal } from "./execution-authority";
+import { settleExecutionFailure } from "./execution-failure";
 import { requireExecutionInputs } from "./execution-inputs";
-import { readExecution, writeExecution } from "./execution-owners";
+import { lockExecutionSession, managedExecutionOwner, readExecution, writeExecution } from "./execution-owners";
 import { executionConflict, validateExecution } from "./execution-validation";
 
 export function createExecutionDispatch(context: DatabaseContext) {
@@ -33,6 +37,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
   ) {
     return db.transaction(async (tx) => {
       await lockStorageCapacity(context, tx);
+      await lockExecutionSession(context, tx, execution);
       const [workspace] = await tx
         .select()
         .from(workspaces)
@@ -64,7 +69,8 @@ export function createExecutionDispatch(context: DatabaseContext) {
         .filter(
           (r) =>
             !executionSettled(r) ||
-            needsAcknowledgment(r) ||
+            executionNeedsAcknowledgment(r) ||
+            (r.finalizationBasis === "never_sent" && r.collection?.cleanupState === "pending") ||
             (r.acceptance.execution.owner === "conversation-request" &&
               ["terminal", "canceled"].includes(r.phase) &&
               !r.finalizedAt),
@@ -79,12 +85,12 @@ export function createExecutionDispatch(context: DatabaseContext) {
         if (record.cancel) return reconcileExecution(workspace, record);
         if (executionSettled(record)) return null;
         try {
+          if (!(await managedAdmission(context, tx, record, at))) return null;
           await requireExecutionPrincipal(context, tx, record.acceptance.callerPrincipalId);
           validateExecution(workspace, record.acceptance, at, record.conversationIdentity);
           await requireExecutionInputs(context, tx, record.acceptance);
         } catch (error) {
-          if (!(error instanceof ApiError)) throw error;
-          await writeExecution(context, tx, { ...record, phase: "lost", settledAt: at.toISOString(), outcome: null });
+          await settleClaimFailure(context, tx, record, error, at);
           return null;
         }
         const first = record.dispatchClaimedAt === null;
@@ -95,6 +101,17 @@ export function createExecutionDispatch(context: DatabaseContext) {
         };
         await writeExecution(context, tx, next);
         return { first, record: next };
+      });
+    },
+    beforeSend(execution: WorkloadExecutionReference, at: Date) {
+      return withOwner(execution, async (tx, _workspace, record) => {
+        if (executionSettled(record) || record.cancel) return false;
+        if (!(await managedAdmission(context, tx, record, at, true))) return false;
+        await writeExecution(context, tx, {
+          ...record,
+          producerSendClaimedAt: record.producerSendClaimedAt ?? at.toISOString(),
+        });
+        return true;
       });
     },
     cancel(input: WorkloadCancel, at: Date) {
@@ -113,6 +130,8 @@ export function createExecutionDispatch(context: DatabaseContext) {
             ? {}
             : { phase: "canceled", settledAt: at.toISOString(), finalizedAt: at.toISOString() }),
         };
+        if (!record.dispatchClaimedAt && (await managedExecutionOwner(context, tx, input.execution)))
+          return settleExecutionFailure(context, tx, next, "canceled_before_dispatch", at);
         await writeExecution(context, tx, next);
         if (!record.dispatchClaimedAt)
           await finalizeInputManifest(context, tx, executionInputManifestId(record.acceptance), at);
@@ -152,7 +171,11 @@ export function createExecutionDispatch(context: DatabaseContext) {
     },
     finalize(execution: WorkloadExecutionReference, at: Date) {
       return withOwner(execution, async (tx, _workspace, record) => {
-        if (!executionSettled(record) || ["unknown", "lost"].includes(record.phase) || needsAcknowledgment(record))
+        if (
+          !executionSettled(record) ||
+          ["unknown", "lost"].includes(record.phase) ||
+          executionNeedsAcknowledgment(record)
+        )
           executionConflict("Unsettled execution cannot pass finalization.");
         await finalizeInputManifest(context, tx, executionInputManifestId(record.acceptance), at);
         await writeExecution(context, tx, { ...record, finalizedAt: record.finalizedAt ?? at.toISOString() });
@@ -161,8 +184,39 @@ export function createExecutionDispatch(context: DatabaseContext) {
   };
 }
 
-function needsAcknowledgment(record: ExecutionRecord) {
-  return record.dispatchClaimedAt !== null && ["terminal", "canceled"].includes(record.phase) && !record.acknowledgedAt;
+async function managedAdmission(
+  context: DatabaseContext,
+  tx: Transaction,
+  record: ExecutionRecord,
+  at: Date,
+  sending = false,
+) {
+  if (record.acceptance.execution.owner === "process") return true;
+  const rows = await tx.select().from(context.tables.conversationRequests);
+  const row = rows.find(
+    (row) =>
+      row.managed &&
+      row.identity.turn_id === record.acceptance.execution.requestId &&
+      row.principalId === record.acceptance.callerPrincipalId,
+  );
+  if (!row?.managed) return true;
+  if (record.producerSendClaimedAt && !sending) return true;
+  let reason: string | null = null;
+  if (new Date(row.managed.request.dispatchDeadline) <= at) reason = "dispatch_deadline_exceeded";
+  else {
+    try {
+      const authority = await workAuthority(context)(tx, row.managed.keyId, row.conversationId, "sessions:write");
+      if (!authority.row.binding || authority.row.bindingRevision !== row.managed.bindingRevision)
+        throw new ApiError("operation.conflict", "Session binding changed.");
+      await requireProcessCapacity(context, tx, authority.id, authority.row.binding);
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      reason = "execution_authority_unavailable";
+    }
+  }
+  if (!reason) return true;
+  await settleExecutionFailure(context, tx, record, reason, at);
+  return false;
 }
 
 function reconcileExecution(workspace: WorkspaceRow, record: ExecutionRecord) {
@@ -178,4 +232,19 @@ function reconcileExecution(workspace: WorkspaceRow, record: ExecutionRecord) {
   )
     return null;
   return { first: false as const, record };
+}
+
+async function settleClaimFailure(
+  context: DatabaseContext,
+  tx: Transaction,
+  record: ExecutionRecord,
+  error: unknown,
+  at: Date,
+) {
+  if (!(error instanceof ApiError)) throw error;
+  if (!record.producerSendClaimedAt && (await managedExecutionOwner(context, tx, record.acceptance.execution))) {
+    await settleExecutionFailure(context, tx, record, "execution_unavailable", at);
+    return;
+  }
+  await writeExecution(context, tx, { ...record, phase: "lost", settledAt: at.toISOString(), outcome: null });
 }

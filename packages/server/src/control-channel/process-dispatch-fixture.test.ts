@@ -16,7 +16,12 @@ import { handleConnectedFrame } from "./ws-frame-handler";
 export async function processDispatchFixture(
   configure?: (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => void,
   shared?: Awaited<ReturnType<typeof executionFixture>> & { hub: Hub },
-  options: { concurrency?: number; canDispatch?: () => boolean } = {},
+  options: {
+    concurrency?: number;
+    canDispatch?: () => boolean;
+    capabilities?: import("@pstdio/pocketcoder-contracts").WorkloadCapability[];
+    readCapacity?: import("@pstdio/pocketcoder-runtime-core").ReadStorageCapacity;
+  } = {},
 ) {
   let root = "";
   const f = await executionFixture(
@@ -31,14 +36,14 @@ export async function processDispatchFixture(
       ];
       configure?.(source);
     },
-    { mode: "disk", base: shared },
+    { mode: "disk", base: shared, capabilities: options.capabilities },
   );
   root = f.directory ?? "";
   const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));
   const hub = shared?.hub ?? new Hub();
   const transport = executionTransport(
     processTransport({ store: f.store, hub, driver: {} }),
-    conversationTransport({ store: f.store, hub, driver: {} }),
+    conversationTransport({ store: f.store, hub, driver: {}, readCapacity: options.readCapacity }),
   );
   let dispatchFailed = false;
   // Each failed dispatch attempt; readiness (dispatchFailed) only reflects controller-wide trouble.

@@ -9,6 +9,7 @@ export type {
   InputStorageDriver,
   InputStore,
   ManagedLeaseAuthority,
+  ManagedQueueLimits,
   ManagedRuntimeStore,
   ManagedSessionIdentity,
   PublishedInputProjection,

@@ -159,7 +159,7 @@ export class FilesystemInputProjection {
       const reference = manifest.objects[index];
       if (
         canonicalJson(reference) !== canonicalJson(object.reference) ||
-        object.backing.workspaceId !== scope.workspaceId ||
+        object.backing.workspaceId !== (reference?.storageOwnerId ?? scope.workspaceId) ||
         object.backing.fileId !== reference?.fileId
       )
         throw new Error("Input projection backing mismatch.");

@@ -3,6 +3,7 @@ import type { ActiveCounts, WorkspaceAdmissionClaim } from "@pstdio/pocketcoder-
 import { and, count, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, notifyChange, type QueryContext } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { capacityAdmission, reserveCapacityAdmission } from "../budgets/capacity-admission";
 import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
 
@@ -67,14 +68,12 @@ export function createAdmission(context: DatabaseContext) {
     async claimWorkspaceAdmission(claim: WorkspaceAdmissionClaim) {
       const workspace = await db.transaction(async (tx) => {
         await lock(tx, `${schema}:workspace-admission`, 7351);
+        if (!(await capacityAdmission(context, tx, claim.workspaceId, claim.at))) return null;
         const [current] = await tx.select().from(workspaces).where(eq(workspaces.id, claim.workspaceId)).for("update");
         if (current?.state !== "queued" || current.purgeRequestedAt) return null;
         const counts = await countActive(tx);
-        if (counts.global >= claim.limits.globalActiveWorkspaces) return null;
-        if ((counts.byPrincipal[current.principalId] ?? 0) >= claim.limits.perPrincipalActiveWorkspaces) return null;
-        const limit =
-          claim.limits.perTemplateActiveWorkspaces[current.templateName] ?? claim.limits.globalActiveWorkspaces;
-        if ((counts.byTemplate[current.templateName] ?? 0) >= limit) return null;
+        if (!admissionRoom(counts, current, claim.limits)) return null;
+        await reserveCapacityAdmission(context, tx, current.id, current.launchAttempts + 1);
         const [row] = await tx
           .update(workspaces)
           .set({
@@ -98,4 +97,17 @@ export function createAdmission(context: DatabaseContext) {
       return workspace;
     },
   };
+}
+
+function admissionRoom(
+  counts: ActiveCounts,
+  row: { principalId: string; templateName: string },
+  limits: WorkspaceAdmissionClaim["limits"],
+) {
+  const templateLimit = limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
+  return (
+    counts.global < limits.globalActiveWorkspaces &&
+    (counts.byPrincipal[row.principalId] ?? 0) < limits.perPrincipalActiveWorkspaces &&
+    (counts.byTemplate[row.templateName] ?? 0) < templateLimit
+  );
 }

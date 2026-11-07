@@ -15,9 +15,34 @@ export async function validateConversationExecution(
   input: WorkloadAcceptance,
   identity: ConversationRequestIdentity | undefined,
   parallelConversations: boolean,
+  managed = false,
 ) {
   const parsed = ConversationRequestIdentitySchema.parse(identity);
-  if (parsed.request_id !== input.execution.requestId) executionConflict("Conversation request ID mismatch.");
+  const sessions = context.tables.managedSessions;
+  const [session] = await tx
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.principalId, input.callerPrincipalId), eq(sessions.sessionId, parsed.conversation_id)));
+  if (session && !managed) executionConflict("Managed sessions use the logical request API.");
+  if (parsed.request_id !== input.execution.requestId) {
+    const requests = context.tables.conversationRequests;
+    const [row] = await tx
+      .select()
+      .from(requests)
+      .where(
+        and(
+          eq(requests.principalId, input.callerPrincipalId),
+          eq(requests.conversationId, parsed.conversation_id),
+          eq(requests.requestId, parsed.request_id),
+        ),
+      );
+    if (
+      !row?.managed ||
+      row.identity.turn_id !== input.execution.requestId ||
+      canonicalJson(row.identity) !== canonicalJson(parsed)
+    )
+      executionConflict("Conversation request ID mismatch.");
+  }
   // One request at a time per workspace, or per conversation when the adapter runs conversations in parallel.
   const requests = context.tables.conversationRequests;
   const scope = [eq(requests.principalId, input.callerPrincipalId), isNotNull(requests.execution)];

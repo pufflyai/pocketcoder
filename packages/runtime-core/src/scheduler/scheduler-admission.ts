@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  ApiError,
   type ProviderInput,
   parseWorkloadTemplate,
   runtimeCredentialReferences,
@@ -10,6 +11,7 @@ import type { RuntimeMountRef, StorageRef } from "../driver";
 
 import type { ActiveCounts, WorkspaceRow } from "../types";
 import { capacityReason, recordAdmissionReason, recordCapacityReasons } from "./admission-feedback";
+import { launchInput } from "./launch-input";
 import { cleanupUncommittedProvider } from "./provider-termination";
 import type { SchedulerContext } from "./scheduler-base";
 import { prepareWaitingRuntime } from "./waiting-runtime";
@@ -134,31 +136,9 @@ export class SchedulerAdmission {
     const secret = secrets.generate();
     const registrationDigest = secrets.digest(secret);
     const registrationExpiresAt = new Date(now.getTime() + this.context.timeoutMs(row, "start"));
-    const input: ProviderInput = {
-      workspace_id: row.id,
-      server_url: this.context.deps.workspaceServerUrl,
-      registration_secret: secret,
-      template_digest: row.templateDigest,
-      template_name: row.templateName,
-      template_version: row.templateVersion,
-      launch_mode: row.launchMode,
-      ...(row.sourceDescriptor ? { source: row.sourceDescriptor } : {}),
-      ...(row.restoredFromCheckpointId && row.originWorkspaceId
-        ? {
-            restore: {
-              checkpoint_id: row.restoredFromCheckpointId,
-              origin_workspace_id: row.originWorkspaceId,
-            },
-          }
-        : {}),
-      ...(row.launchInput ? { launch_input: row.launchInput } : {}),
-    };
-    if (this.context.deps.warmPool) {
-      const hit = await this.context.deps.warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
-      if (hit === "leased") return true;
-      if (hit === "deferred") return false;
-      if (this.context.deps.warmPool.missDecision(row) === "wait") return false;
-    }
+    const input = launchInput(row, this.context.deps.workspaceServerUrl, secret);
+    const warm = await this.tryWarmLease(row, input, registrationDigest, registrationExpiresAt);
+    if (warm !== undefined) return warm;
     const claimed = await store.claimWorkspaceAdmission({
       workspaceId: row.id,
       at: now,
@@ -171,6 +151,7 @@ export class SchedulerAdmission {
     try {
       const mounts = await this.prepareStorage(claimed);
       const runtimeSecrets = await this.resolveRuntimeSecrets(claimed);
+      await store.managed.capacity.claimLaunch(claimed.id, claimed.launchAttempts, this.context.now());
       providerCreationStarted = true;
       const ref = await driver.create({
         workspace: claimed,
@@ -182,6 +163,17 @@ export class SchedulerAdmission {
       await this.prepareRuntime({ ...claimed, providerKind: driver.kind, providerRef: ref });
       return true;
     } catch (err) {
+      if (capacityDenied(err, providerCreationStarted)) {
+        await store.managed.capacity.notSubmitted(claimed.id, claimed.launchAttempts, this.context.now());
+        await store.transition(row.id, {
+          from: ["provisioning"],
+          to: "queued",
+          at: this.context.now(),
+          reason: "admission_denied",
+          patch: { launchAttempts: claimed.launchAttempts - 1, registrationDigest: null, registrationExpiresAt: null },
+        });
+        return false;
+      }
       this.context.report(`launch.${row.id}`, err);
       const at = this.context.now();
       if (!(await this.cleanupFailedLaunch(claimed, providerCreationStarted, err))) return false;
@@ -198,6 +190,20 @@ export class SchedulerAdmission {
       }
       return false;
     }
+  }
+
+  private async tryWarmLease(
+    row: WorkspaceRow,
+    input: ProviderInput,
+    registrationDigest: Uint8Array,
+    registrationExpiresAt: Date,
+  ) {
+    const { store, warmPool } = this.context.deps;
+    if (!warmPool || (await store.managed.capacity.managed(row.id))) return undefined;
+    const hit = await warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
+    if (hit === "leased") return true;
+    if (hit === "deferred" || warmPool.missDecision(row) === "wait") return false;
+    return undefined;
   }
 
   private async failLaunch(row: WorkspaceRow, error: unknown, at: Date) {
@@ -248,13 +254,23 @@ export class SchedulerAdmission {
 
   private async cleanupFailedLaunch(row: WorkspaceRow, providerCreationStarted: boolean, error: unknown) {
     // The driver proved it submitted nothing, so there is no provider object to clean up.
-    if (!providerCreationStarted || error instanceof ProviderNotSubmittedError) return true;
+    if (!providerCreationStarted || error instanceof ProviderNotSubmittedError) {
+      await this.context.deps.store.managed.capacity.notSubmitted(row.id, row.launchAttempts, this.context.now());
+      return true;
+    }
     try {
+      await this.context.deps.store.managed.capacity.cleanupPending(row.id, row.launchAttempts, this.context.now());
       await cleanupUncommittedProvider(
         this.context.deps.store,
         this.context.deps.driver,
         row,
         this.context.graceSeconds(row),
+        this.context.now(),
+      );
+      await this.context.deps.store.managed.capacity.cleanup(
+        row.id,
+        row.launchAttempts,
+        "provider_fenced",
         this.context.now(),
       );
       return true;
@@ -329,4 +345,12 @@ export class SchedulerAdmission {
     }
     return await storageDriver.runtimeMounts(ref, mounts);
   }
+}
+
+function capacityDenied(error: unknown, submitted: boolean) {
+  return (
+    !submitted &&
+    error instanceof ApiError &&
+    ["budget.exhausted", "budget.conflict", "budget.not_found", "profile.not_found"].includes(error.code)
+  );
 }

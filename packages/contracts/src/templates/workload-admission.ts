@@ -81,6 +81,7 @@ function operationSupport(spec: WorkloadTemplate["spec"], installed: InstalledWo
     for (const capability of new Set([
       ...WORKLOAD_OPERATION_CAPABILITIES[spec.profile],
       ...operation.requiredCapabilities,
+      ...(spec.profile !== "finite-process" && operation.outputRoots.length ? ["explicit-publication" as const] : []),
     ])) {
       if (!producer.capabilities.includes(capability) || !installed.capabilities.includes(capability)) {
         reasons.push(`operation ${name} capability unavailable: ${capability}`);

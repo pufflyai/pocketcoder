@@ -109,8 +109,7 @@ export async function startPocketCoderServer(
   let admin: Awaited<ReturnType<typeof startLocalAdmin>> | undefined;
   let agentServer: ReturnType<typeof Bun.serve> | undefined;
   try {
-    await requireNormalController(initialized);
-    if (await store.recovery.recoveryState()) throw new RecoveryRequiredError();
+    await requireReadyController(initialized);
     const assertAccountAllowed = initialized.accountPurge ? accountPurgeFence(initialized.accountPurge) : undefined;
     const maintenance = createMaintenance();
     const transferOptions = checkpointTransferOptions(config);
@@ -146,6 +145,7 @@ export async function startPocketCoderServer(
       egressImage: config.egressImage,
       limits: config.limits,
       workloadLimits: config.workloadLimits,
+      sessionQueueLimits: config.sessionQueueLimits,
       workspaceServerUrl: config.workspaceServerUrl,
       persistenceLimits: config.persistenceLimits,
       checkpointTransferOptions: transferOptions,
@@ -321,4 +321,11 @@ export async function runPocketCoderServerUntilSignal(
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
   });
+}
+
+async function requireReadyController(
+  initialized: Awaited<ReturnType<typeof initializeStartupController>>["initialized"],
+) {
+  await requireNormalController(initialized);
+  if (await initialized.store.recovery.recoveryState()) throw new RecoveryRequiredError();
 }

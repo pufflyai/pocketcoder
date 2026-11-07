@@ -1,15 +1,14 @@
 import {
   canonicalJson,
-  executionSettled,
   type FiniteProcessFact,
   FiniteProcessFactSchema,
   isTerminal,
 } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRuntimeRegistration } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { type DatabaseContext, notifyChange } from "../../database/context";
-
 import { acceptsProcessFact, observedProcessExecution } from "./process-execution-facts";
+import { endWorkspaceRuntime } from "./runtime-end";
 
 function canRecord(previous: FiniteProcessFact | null, next: FiniteProcessFact) {
   if (!previous) return true;
@@ -111,51 +110,7 @@ export function createFiniteProcesses(context: DatabaseContext) {
       if (result) notifyChange(context, id);
       return result;
     },
-    async endWorkspaceRuntime(id: string, incarnationId: string, at: Date) {
-      await db.transaction(async (tx) => {
-        const [row] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
-        if (!row || row.runtimeRegistration?.incarnationId !== incarnationId || row.runtimeRegistration.endedAt) return;
-        const requests = context.tables.conversationRequests;
-        const owned = await tx.select().from(requests).where(eq(requests.principalId, row.principalId));
-        for (const request of owned) {
-          const record = request.execution;
-          if (
-            record &&
-            record.acceptance.execution.workspaceId === id &&
-            record.acceptance.execution.incarnationId === incarnationId &&
-            !executionSettled(record)
-          )
-            await tx
-              .update(requests)
-              .set({ execution: { ...record, phase: "lost", settledAt: at.toISOString() } })
-              .where(
-                and(
-                  eq(requests.principalId, request.principalId),
-                  eq(requests.conversationId, request.conversationId),
-                  eq(requests.requestId, request.requestId),
-                ),
-              );
-        }
-        const fact = row.finiteProcess;
-        const uncertain = fact && fact.phase !== "exited" && fact.phase !== "lost";
-        const endedFact: FiniteProcessFact | null = uncertain
-          ? { ...fact, phase: "lost", endedAt: at.toISOString(), exitCode: null, signal: null }
-          : fact;
-        await tx
-          .update(workspaces)
-          .set({
-            runtimeRegistration: { ...row.runtimeRegistration, endedAt: at.toISOString() },
-            processExecution:
-              row.processExecution && !executionSettled(row.processExecution)
-                ? { ...row.processExecution, phase: "lost", settledAt: at.toISOString(), outcome: endedFact }
-                : row.processExecution,
-            finiteProcess: endedFact,
-            changeSeq: sql`${workspaces.changeSeq}+1`,
-            updatedAt: at,
-          })
-          .where(eq(workspaces.id, id));
-      });
-      notifyChange(context, id);
-    },
+    endWorkspaceRuntime: (id: string, incarnationId: string, at: Date) =>
+      endWorkspaceRuntime(context, id, incarnationId, at),
   };
 }

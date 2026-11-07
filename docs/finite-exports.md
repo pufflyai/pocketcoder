@@ -39,9 +39,10 @@ workspace ownership, purge, expiry and deletion. Explicit deletion removes bytes
 and releases retained storage capacity in one transaction. Expiry does the same
 through background retention. Receipts keep their immutable object references so
 an unavailable result is not mistaken for successful empty output. Workspace
-content purge still removes this physical API's retained content. PC-165 will add
-logical session ownership so replacement workspace purge cannot remove session
-objects; that API is not implemented here.
+content purge still removes this physical API's retained content. The
+[session file API](managed-session-work.md) keeps separate logical ownership of
+canonical inputs and retained results, so replacement workspace purge cannot remove
+live session objects. Their own retention and explicit content deletion still apply.
 
 Shared publication lives in `db/src/modules/outputs/retained-exports.ts` and accepts
 an existing execution reference. Interactive collection can reuse it. Finite
