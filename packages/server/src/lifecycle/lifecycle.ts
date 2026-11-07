@@ -326,6 +326,7 @@ export async function runPocketCoderServerUntilSignal(
 async function requireReadyController(
   initialized: Awaited<ReturnType<typeof initializeStartupController>>["initialized"],
 ) {
+  const { store } = initialized;
   await requireNormalController(initialized);
-  if (await initialized.store.recovery.recoveryState()) throw new RecoveryRequiredError();
+  if (await store.recovery.recoveryState()) throw new RecoveryRequiredError();
 }
