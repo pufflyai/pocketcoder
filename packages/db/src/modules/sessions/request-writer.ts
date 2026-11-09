@@ -66,17 +66,11 @@ export async function writeManagedRequest(
     data: next.request,
   });
 }
-// Facts from stop commands and the gateway that the producer cannot report itself.
+// Facts from stop commands that the producer cannot report itself.
 function stopFacts(next: ManagedRecord, at: string): ManagedRecord {
   const { cancel, request } = next;
-  if (request.state === "terminal") {
-    const budget = next.budgetExhaustedAt && request.outcome !== "completed" && request.outcome !== "canceled";
-    return {
-      ...next,
-      ...(cancel && !cancel.completedAt ? { cancel: { ...cancel, completedAt: at } } : {}),
-      request: budget ? { ...request, reasonCode: "budget.exhausted" } : request,
-    };
-  }
+  if (request.state === "terminal")
+    return cancel && !cancel.completedAt ? { ...next, cancel: { ...cancel, completedAt: at } } : next;
   // A missed stop deadline stays pending; the request says why instead of claiming completion.
   if (cancel && !cancel.completedAt && cancel.cancelDeadline <= at)
     return { ...next, request: { ...request, reasonCode: "cancel_deadline_exceeded" } };

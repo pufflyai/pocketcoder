@@ -3,7 +3,6 @@ import type { DatabaseContext } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 import { usageSnapshot } from "./accounting";
 import { capacityUsage } from "./capacity-ledger";
-import { invocationObserver } from "./invocations";
 import { budgetLedger } from "./ledger";
 import { policyOwner } from "./policy-owner";
 import { reservationOwner } from "./reservations";
@@ -19,7 +18,6 @@ export function createManagedBudgets(context: DatabaseContext, now = () => new D
     ...reservationOwner(context, now),
     ...settlementOwner(context, now),
     ...sendClaimOwner(context, now),
-    ...invocationObserver(context, now),
     async usage(keyId, scopeId) {
       return context.db.transaction(async (tx) => {
         await auth.scope(tx, keyId, scopeId, false);

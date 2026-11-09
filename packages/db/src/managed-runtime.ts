@@ -4,7 +4,6 @@ import { createManagedBudgets } from "./modules/budgets/budgets";
 import { createManagedCapacity } from "./modules/budgets/capacity";
 import { createManagedAuthority } from "./modules/managed/authority";
 import { createManagedFiles } from "./modules/sessions/files";
-import { createGatewayGrants } from "./modules/sessions/gateway-grants";
 import { createManagedHistory } from "./modules/sessions/history";
 import { createManagedRecovery } from "./modules/sessions/recovery";
 import { createManagedRequests } from "./modules/sessions/requests";
@@ -15,7 +14,6 @@ export function createManagedRuntime(context: DatabaseContext): ManagedRuntimeSt
     authority: createManagedAuthority(context),
     history: createManagedHistory(context),
     recovery: createManagedRecovery(context),
-    grants: createGatewayGrants(context),
     sessions: createManagedSessions(context),
     budgets: createManagedBudgets(context),
     requests: createManagedRequests(context),

@@ -152,26 +152,7 @@ export function createManagedTables(
     next: jsonb("next").$type<InvocationRecord>().notNull(),
     createdAt: timestamptz("created_at").notNull(),
   });
-  // Workspace-readable gateway credentials. Only a digest is stored; each grant is bound to one
-  // workspace incarnation and expires no later than that workspace.
-  const modelGatewayGrants = table(
-    "model_gateway_grants",
-    {
-      id: uuid("id").primaryKey(),
-      tokenDigest: text("token_digest").notNull(),
-      principalId: uuid("principal_id")
-        .notNull()
-        .references(() => principals.id),
-      workspaceId: uuid("workspace_id").notNull(),
-      incarnationId: text("incarnation_id").notNull(),
-      expiresAt: timestamptz("expires_at").notNull(),
-      revokedAt: timestamptz("revoked_at"),
-      createdAt: timestamptz("created_at").notNull(),
-    },
-    (row) => [uniqueIndex("model_gateway_grant_token").on(row.tokenDigest)],
-  );
   return {
-    modelGatewayGrants,
     managedScopes,
     managedScopeGrants,
     managedProfiles,

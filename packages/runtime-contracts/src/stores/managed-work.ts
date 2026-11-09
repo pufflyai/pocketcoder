@@ -28,8 +28,6 @@ export interface ManagedRequestRecord {
     neverStartedAt: string;
   }[];
   cancel?: ManagedCancelRecord;
-  // A gateway refused a model call for budget; the terminal outcome reports budget.exhausted.
-  budgetExhaustedAt?: string;
   request: managed.Request;
   sequence: number;
   queueBytes: number;
@@ -62,7 +60,6 @@ export interface ManagedRequestStore {
     windowMs: number,
     at: Date,
   ): Promise<ManagedStopResult>;
-  budgetDenied(identity: import("./managed-sessions").ManagedRequestIdentity, at: Date): Promise<void>;
   prepare(at: Date): Promise<void>;
 }
 export interface ManagedFileStore {

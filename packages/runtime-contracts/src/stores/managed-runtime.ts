@@ -60,13 +60,7 @@ export interface InvocationRecord {
   settledOutput: number;
   evidence: ManagedUsageEvidence | null;
   evidenceDigest: string | null;
-  // The provider response identity, persisted as soon as the gateway observes it.
-  responseId?: string;
   touchedUntil: Date;
-}
-export interface OpenInvocation {
-  identity: ManagedInvocationIdentity;
-  state: "reserved" | "send_claimed";
 }
 export interface ManagedAuthorityStore {
   registerScope(keyId: string, scopeId: string, principalId: string, installation?: boolean): Promise<void>;
@@ -117,9 +111,6 @@ export interface ManagedBudgetStore {
   abandonUnsent(identity: ManagedInvocationIdentity): Promise<void>;
   settle(input: ManagedUsageEvidence): Promise<void>;
   retainUncertain(identity: ManagedInvocationIdentity): Promise<void>;
-  // Invocations that a stopped gateway left without a send decision or without usage.
-  openInvocations(): Promise<OpenInvocation[]>;
-  observeResponse(identity: ManagedInvocationIdentity, responseId: string): Promise<void>;
   reconcile(keyId: string, input: ManagedUsageEvidence, reason: string): Promise<void>;
   usage(keyId: string, scopeId: string): Promise<managed.BudgetUsage>;
 }
@@ -153,17 +144,6 @@ export interface ManagedRecoveryStore {
     reasonCode: string | null,
   ): Promise<managed.Session>;
 }
-export interface ManagedGatewayGrant {
-  identity: ManagedSessionIdentity & { requestId: string };
-  workspaceId: string;
-  incarnationId: string;
-  generation: number;
-  allowedModels: string[];
-}
-export interface ManagedGatewayGrantStore {
-  issue(workspaceId: string, incarnationId: string, at: Date): Promise<{ token: string; expiresAt: Date }>;
-  resolve(token: string, turnId: string | null, at: Date): Promise<ManagedGatewayGrant>;
-}
 export interface ManagedHistoryStore {
   history(keyId: string, sessionId: string, cursor: string | null, limit: number): Promise<managed.HistoryPage>;
   events(keyId: string, sessionId: string, after: string | null, limit: number): Promise<managed.RuntimeEvent[]>;
@@ -172,7 +152,6 @@ export interface ManagedHistoryStore {
 export interface ManagedRuntimeStore {
   history: ManagedHistoryStore;
   recovery: ManagedRecoveryStore;
-  grants: ManagedGatewayGrantStore;
   authority: ManagedAuthorityStore;
   sessions: ManagedSessionStore;
   budgets: ManagedBudgetStore;

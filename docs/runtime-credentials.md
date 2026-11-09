@@ -105,29 +105,5 @@ registry, image tag and temporary files.
 See [managed sessions and budget accounting](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
 exclusive business-credential placement, pinned broker renewal and trusted internal
-reservation/settlement ports.
-
-## Model gateway credentials
-
-When the [model gateway](model-gateway.md) is configured, a workspace placed for a
-managed session receives a gateway credential at registration. It is a file at
-`/run/pocketcoder/secrets/leases/model-gateway` with purpose `model-gateway`.
-
-- It proves one workspace incarnation. The controller stores only its digest.
-- It expires with the workspace and is never renewed. A new registration mints a
-  fresh credential and revokes the earlier one, so a lost delivery never leaves a
-  second valid copy.
-- Each call names the physical turn it serves in the `x-pocketcoder-turn` header.
-  The controller maps that turn to its logical request. The turn must be
-  unfinished, bound to this exact incarnation and belong to an open session.
-- A turn with a pending cancel, or a closed session's turn, cannot make calls.
-  This never fences sibling sessions. Compute placed for a session that has
-  closed receives no gateway credential.
-- Ending or replacing the workspace ends every credential of the old incarnation.
-- Session, budget scope and model authority come from the registered profile,
-  never from the request body or the credential.
-
-Credential-free sessions that share one workspace share one trust boundary: a
-valid credential can name any unfinished turn of that workspace. A credential
-from another workspace cannot. The standing provider key stays in controller
-configuration and never reaches a workspace, event, history record or log.
+reservation/settlement ports. Model access goes through a gateway the deployment
+provides; see [security](security.md#model-access-is-a-gateway-concern).

@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "19d906ef-74ce-4cd3-9366-27596de7a00c",
+  "id": "d1aa5f75-4f37-42a8-a98e-6147aa67560f",
   "prevIds": [
     "b51b6fd9-3af7-4fd3-b96c-91c6be7b90ce"
   ],
@@ -135,12 +135,6 @@
     {
       "isRlsEnabled": false,
       "name": "managed_sessions",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "model_gateway_grants",
       "entityType": "tables",
       "schema": "public"
     },
@@ -2501,110 +2495,6 @@
       "entityType": "columns",
       "schema": "public",
       "table": "managed_sessions"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "token_digest",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "principal_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "workspace_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "incarnation_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "expires_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "revoked_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "model_gateway_grants"
     },
     {
       "type": "uuid",
@@ -6280,27 +6170,6 @@
       "nameExplicit": true,
       "columns": [
         {
-          "value": "token_digest",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "model_gateway_grant_token",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
           "value": "state",
           "isExpression": false,
           "asc": true,
@@ -7287,23 +7156,6 @@
     {
       "nameExplicit": false,
       "columns": [
-        "principal_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "principals",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "model_gateway_grants_principal_id_principals_id_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "model_gateway_grants"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
         "version_id",
         "name",
         "type"
@@ -8086,16 +7938,6 @@
       "name": "managed_scopes_pkey",
       "schema": "public",
       "table": "managed_scopes",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "model_gateway_grants_pkey",
-      "schema": "public",
-      "table": "model_gateway_grants",
       "entityType": "pks"
     },
     {

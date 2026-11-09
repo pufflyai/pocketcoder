@@ -5,8 +5,7 @@ for PC-162 draft revision 2. `MANAGED_CONTRACT_REVISION` is
 `pocketcoder.managed/v1`. The authoritative Zod types live under
 `packages/contracts/src/sessions` and `budgets`. Session create/lookup, execution profile provisioning, budget policy writes/reads
 usage reads, bounded session requests, retained files and physical capacity are implemented.
-Resume, cancel/close and history/event replay are implemented too, and the [model gateway](model-gateway.md)
-admits every model call. See the [implemented runtime](managed-runtime.md) and [session work](managed-session-work.md).
+Resume, cancel/close and history/event replay are implemented too. See the [implemented runtime](managed-runtime.md) and [session work](managed-session-work.md).
 
 | Artifact | Purpose |
 | --- | --- |

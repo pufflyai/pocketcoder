@@ -94,7 +94,6 @@ retries never extend the deadline.
   makes a stopped request `completed`.
 - A stop does not settle model usage. A sent model call keeps its hold until
   trusted usage evidence arrives.
-- A request with a pending stop cannot start new model calls through the gateway.
 - Close fences new requests, stops this session's queued and running work and
   leaves sibling sessions on shared compute running. The placement owner then
   stops every workspace the session owns alone: compute it placed for this

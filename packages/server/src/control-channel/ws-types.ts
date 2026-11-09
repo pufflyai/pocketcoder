@@ -20,8 +20,6 @@ export interface WsDeps {
   log?: (msg: string) => void;
   persistence?: PersistenceService;
   checkpointTransfers?: CheckpointTransferService;
-  // Set when the budgeted model gateway is configured; managed workspaces then receive its credential.
-  modelGateway?: boolean;
 }
 
 export interface WsAuth {

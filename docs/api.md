@@ -815,8 +815,7 @@ exclusive business-credential placement, pinned broker renewal and trusted inter
 reservation/settlement ports. [Session work](managed-session-work.md) describes
 implemented request acceptance, file readiness, collection, adapter publication,
 cancel and close, history and event replay, and automatic placement and
-replacement. The [model gateway](model-gateway.md) admits every model call against
-the budget ledger.
+replacement.
 
 ### Cancel and close receipts
 

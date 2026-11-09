@@ -112,33 +112,6 @@ test("resume is idempotent, placement waits for capacity and a closed session is
   }
 });
 
-test("a budgeted profile on unrestricted egress fails before any compute is created", async () => {
-  const producer = fakeProducer();
-  const m = await managedFixture(producer.server.port);
-  const created: string[] = [];
-  const launcher: PlacementLauncher = {
-    async create(_principal, _body, key) {
-      created.push(key);
-      throw new Error("not expected");
-    },
-    stop: async () => {},
-  };
-  try {
-    const sessionId = crypto.randomUUID();
-    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
-    await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
-    await createSessionRecovery({ store: m.f.store, launcher, providerHosts: ["api.openai.com"] }).tick();
-    expect(created).toEqual([]);
-    expect(await m.f.store.managed.sessions.get(m.keyId, sessionId)).toMatchObject({
-      state: "failed",
-      reasonCode: "network_unrestricted",
-    });
-  } finally {
-    await m.f.dispose();
-    await producer.server.stop(true);
-  }
-});
-
 // The workspace service stamps this metadata on compute the placement owner creates.
 async function placed(m: Awaited<ReturnType<typeof managedFixture>>, sessionId: string) {
   const next = await m.launch();
@@ -172,10 +145,6 @@ test("a close during placement stops the placed workspace and completes only aft
     const cancelId = crypto.randomUUID();
     const close = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());
     expect(close.receipt.state).toBe("pending");
-    // Compute placed for a closed session never receives model authority.
-    await expect(
-      m.f.store.managed.grants.issue(workspace.id, workspace.runtime.incarnationId, new Date()),
-    ).rejects.toMatchObject({ code: "secret.unavailable" });
     await recovery.tick(); // stops the placed workspace
     await m.f.store.managed.requests.prepare(new Date());
     const replay = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());

@@ -55,7 +55,6 @@ export const {
   budgetInvocations,
   budgetAudits,
   budgetReports,
-  modelGatewayGrants,
   workspaceLeases,
   workspaceLeaseFences,
   secrets,

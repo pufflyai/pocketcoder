@@ -58,12 +58,7 @@ import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
-import {
-  composeModelGateway,
-  composeSessionRecovery,
-  type ManagedSessionDeps,
-  registerManagedSessionRoutes,
-} from "./sessions/compose";
+import { composeSessionRecovery, type ManagedSessionDeps, registerManagedSessionRoutes } from "./sessions/compose";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
@@ -260,9 +255,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const activity = controlActivity(() => poolHub.fence());
   const producerStore = controlStore(store, deps.assertAccountAllowed);
   const liveTurns = new LiveTurns(producerStore);
-  const modelGateway = composeModelGateway(store, deps.modelGateway);
   const wsDeps = {
-    modelGateway: Boolean(modelGateway),
     activity,
     executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
@@ -287,7 +280,6 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     eventSigningKey: deps.eventSigningKey ?? pepper,
     logger,
     upgradeWebSocket,
-    modelGateway,
   });
   app.all("/v1/agent/*", (c) => c.notFound());
   app.all("/v1/internal/*", (c) => c.notFound());
@@ -339,7 +331,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
 
   registerRelayRoutes(app, { store, hub, service, inputs });
   return {
-    sessionRecovery: composeSessionRecovery(store, service, deps.modelGateway, log),
+    sessionRecovery: composeSessionRecovery(store, service, log),
     executionDispatcher,
     liveTurns,
     inputs,

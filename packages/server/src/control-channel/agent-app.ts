@@ -23,7 +23,6 @@ interface AgentAppDeps {
   eventSigningKey: string;
   logger: StructuredLogger;
   upgradeWebSocket: ReturnType<typeof createBunWebSocket<ServerWebSocket>>["upgradeWebSocket"];
-  modelGateway: ((request: Request) => Promise<Response>) | undefined;
 }
 
 export function createAgentApp({
@@ -36,7 +35,6 @@ export function createAgentApp({
   eventSigningKey,
   logger,
   upgradeWebSocket,
-  modelGateway,
 }: AgentAppDeps) {
   const { store, pepper, log } = connection;
   const app = new Hono<AppEnv>();
@@ -61,8 +59,6 @@ export function createAgentApp({
       ),
     );
   }
-  // Workspaces reach the controller on this listener, so the model route needs no extra egress rule.
-  if (modelGateway) app.post("/v1/model-gateway/v1/responses", (c) => modelGateway(c.req.raw));
   if (screenshots) app.put("/v1/agent/screenshots/:id", (c) => screenshots.upload(c.req.raw, c.req.param("id")));
   if (checkpointTransfers) {
     app.put("/v1/agent/checkpoints/:operationId/archive", (c) =>

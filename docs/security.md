@@ -153,18 +153,8 @@ for the permission model, content inventory, and backup replay rules.
 
 ## Model access is a gateway concern
 
-For managed sessions, PocketCoder runs the [model gateway](model-gateway.md):
-the controller holds the provider key, admits every call against the budget
-ledger and gives workspaces only an expiring, incarnation-bound credential (see
-[runtime credentials](runtime-credentials.md#model-gateway-credentials)). Route-level
-checks alone do not stop a workspace from calling a provider directly, so managed
-templates must use restricted egress that cannot reach the provider host. The
-controller refuses placement otherwise. Do not allowlist tool endpoints that proxy
-models: their spend would bypass the ledger.
-
-Outside managed sessions, PocketCoder core does not operate a shared model
-gateway. A deployment provides one, and it is the only place provider API keys
-exist. The repository includes
+PocketCoder core does not operate a shared model gateway. A deployment provides
+one, and it is the only place provider API keys exist. The repository includes
 a [single-session example](../deploy/digitalocean/PI.md); a multi-workspace
 service can instead use a dedicated gateway such as
 [agentgateway](https://agentgateway.dev/). Because the workspace is one trust

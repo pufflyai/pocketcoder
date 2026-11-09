@@ -1,9 +1,4 @@
-import {
-  ApiError,
-  managed,
-  managedModelEgressRefusal,
-  type WorkspaceCreateRequest,
-} from "@pstdio/pocketcoder-contracts";
+import { ApiError, managed, type WorkspaceCreateRequest } from "@pstdio/pocketcoder-contracts";
 import type { PrincipalRow, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 
 type Candidate = Awaited<ReturnType<Store["managed"]["recovery"]["candidates"]>>[number];
@@ -34,8 +29,6 @@ const ended = (workspace: WorkspaceRow | null) =>
 export function createSessionRecovery(deps: {
   store: Store;
   launcher: PlacementLauncher;
-  // Hosts of the configured budgeted model provider. Set only when the model gateway is enabled.
-  providerHosts?: string[];
   now?: () => Date;
   onError?: (error: unknown) => void;
 }) {
@@ -109,12 +102,6 @@ export function createSessionRecovery(deps: {
     if (candidate.placement) return continuePlacement(candidate, candidate.placement);
     const template = (await store.listTemplates(null)).find((row) => row.digest === candidate.templateDigest);
     if (!template) throw new ApiError("template.not_found", "The pinned template is unavailable.");
-    // Unqualified network isolation fails before any compute is admitted for the budgeted profile.
-    const refusal = deps.providerHosts && managedModelEgressRefusal(template.spec.network, deps.providerHosts);
-    if (refusal) {
-      await recovery.transition(candidate.id, "failed", refusal);
-      return;
-    }
     if (candidate.session.state === "failed") await recovery.transition(candidate.id, "provisioning", null);
     const generation = candidate.lastGeneration + 1;
     // The same key after a crash returns the same workspace instead of launching another.

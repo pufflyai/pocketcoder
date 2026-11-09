@@ -1,11 +1,4 @@
-import { randomUUID } from "node:crypto";
-import {
-  ApiError,
-  managed,
-  runtimeCredentialPath,
-  runtimeCredentialReferences,
-  type WorkspaceCredential,
-} from "@pstdio/pocketcoder-contracts";
+import { ApiError, runtimeCredentialPath, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { createWorkspaceLeaseService } from "../secrets/lease-service";
 import type { WsDeps } from "./ws-types";
@@ -22,31 +15,12 @@ export function credentialDelivery(
   };
 }
 
-export const MODEL_GATEWAY_CREDENTIAL_PATH = "/run/pocketcoder/secrets/leases/model-gateway";
-
-// Only workspaces placed for managed sessions call the budgeted model gateway. The token proves
-// this workspace incarnation and expires with it; the provider key never leaves the controller.
-async function gatewayCredentials(deps: WsDeps, row: WorkspaceRow) {
-  const incarnationId = row.runtimeRegistration?.incarnationId;
-  if (!deps.modelGateway || !row.metadata[managed.MANAGED_SESSION_METADATA] || !incarnationId) return [];
-  const grant = await deps.store.managed.grants.issue(row.id, incarnationId, new Date());
-  return [
-    {
-      lease_id: randomUUID(),
-      path: MODEL_GATEWAY_CREDENTIAL_PATH,
-      purpose: "model-gateway" as const,
-      credential: grant.token,
-      expires_at: grant.expiresAt.toISOString(),
-    },
-  ];
-}
-
 export async function workspaceCredentialsFor(deps: WsDeps, row: WorkspaceRow) {
   const names = runtimeCredentialReferences(row.templateSnapshot.spec);
-  const credentials: WorkspaceCredential[] = await gatewayCredentials(deps, row);
-  if (!names.length) return credentials;
+  if (!names.length) return [];
   if (!deps.workspaceLeases) throw new ApiError("secret.unavailable", "Runtime issuer is unavailable.");
   const pending = await deps.store.listPendingWorkspaceLeases(row.id);
+  const credentials = [];
   for (const name of names) {
     const previous = pending.findLast(
       (lease) =>

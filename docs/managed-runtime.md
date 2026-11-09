@@ -9,8 +9,7 @@ Logical request acceptance/dispatch, session file APIs and physical capacity
 accounting extend these same owners. See [session work](managed-session-work.md).
 Creating a profile does not launch compute. Placement and replacement, cancel and
 close, and history replay are described in [session work](managed-session-work.md).
-The [model gateway](model-gateway.md) is the trusted producer of reservations and
-usage evidence.
+PocketCoder does not provide a model gateway; see [security](security.md#model-access-is-a-gateway-concern).
 The implemented operations are marked `x-shipped: true` in the
 [versioned contract](managed-contracts.md). The running server's `/v1/openapi.json`
 describes the installed routes and standard error envelopes.
@@ -82,9 +81,9 @@ A successor receives fresh lease IDs; stale generations cannot issue or renew.
 
 The internal `store.managed.budgets` port is for the trusted runtime gateway.
 There is no consumer HTTP endpoint for reserving or reporting token usage.
-The [model gateway](model-gateway.md) resolves the accepted request identity and
-obtains trusted counts. Its workspace credential and network boundary are
-described in [runtime credentials](runtime-credentials.md#model-gateway-credentials).
+PocketCoder does not ship a gateway that calls this port. Reference deployments
+route model traffic through [agentgateway](https://agentgateway.dev/); connecting
+a gateway to these reservations is not implemented yet.
 
 `reserve` requires the frozen provider request digest, count evidence reference,
 logical invocation identity, current workspace, allowed model, input bound and
@@ -133,7 +132,7 @@ audited handover; lowering or raising limits never rewrites earlier charges.
 Real isolated PGlite and PostgreSQL fixtures exercise these store and HTTP owners.
 The HTTPS issuer fixture covers lost replies, exact authority, pinned renewal,
 exclusive placement and revoke outages without paid provider credentials.
-These checks do not qualify the future provider gateway or a full Docker/Kubernetes
+These checks do not qualify a gateway integration or a full Docker/Kubernetes
 managed-agent deployment. PC-140 and PC-62 retain those release gates.
 
 The first accounting implementation reads the retained invocation history under
