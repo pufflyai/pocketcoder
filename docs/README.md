@@ -86,5 +86,5 @@ benchmark measures 40 real admissions, includes first-use costs, and keeps the
 80% p95 target. Running it alongside builds or other tests adds CPU scheduling
 delays to the measured database work.
 
-- [Managed sessions and budget accounting](managed-runtime.md): provision authority,
-  retain logical identity, reserve model allowance and reconcile trusted usage.
+- [Managed sessions and capacity budgets](managed-runtime.md): provision authority,
+  retain logical identity and limit physical capacity per scope.

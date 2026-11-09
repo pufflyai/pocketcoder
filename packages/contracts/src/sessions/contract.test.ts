@@ -24,7 +24,7 @@ describe("managed integration revision 1", () => {
       expect(
         accepts("BudgetPolicyWrite", {
           ...examples.BudgetPolicyWrite,
-          limits: { ...examples.BudgetPolicyWrite.limits, inputTokens: value },
+          limits: { ...examples.BudgetPolicyWrite.limits, workspaceStarts: value },
         }),
       ).toBe(false);
     }

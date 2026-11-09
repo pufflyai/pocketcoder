@@ -10,11 +10,6 @@ export const ExecutionProfileSchema = z.strictObject({
     .max(1000)
     .refine((items) => new Set(items).size === items.length, "Values must be unique"),
   templateDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-  allowedModels: z
-    .array(z.string().min(1).max(256))
-    .min(1)
-    .max(1000)
-    .refine((items) => new Set(items).size === items.length, "Values must be unique"),
   credentialBindingId: z.uuid().nullable(),
 });
 export type ExecutionProfile = z.infer<typeof ExecutionProfileSchema>;

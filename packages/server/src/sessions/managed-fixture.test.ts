@@ -118,7 +118,6 @@ export async function managedFixture(port: number | undefined) {
     isolationScopeId: randomUUID(),
     budgetScopeIds: [scopeId],
     templateDigest: f.runtime.template.digest,
-    allowedModels: ["fixture/model"],
     credentialBindingId: null,
   });
   const policy = managedPolicy(scopeId);

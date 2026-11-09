@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d1aa5f75-4f37-42a8-a98e-6147aa67560f",
+  "id": "4c1769a2-455a-45f4-89aa-b46eba5d7da2",
   "prevIds": [
     "b51b6fd9-3af7-4fd3-b96c-91c6be7b90ce"
   ],
@@ -14,25 +14,7 @@
     },
     {
       "isRlsEnabled": false,
-      "name": "budget_audits",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "budget_invocations",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": false,
       "name": "budget_policies",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "budget_reports",
       "entityType": "tables",
       "schema": "public"
     },
@@ -454,136 +436,6 @@
       "default": null,
       "generated": null,
       "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "invocation_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "actor_key_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "reason",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "previous",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "next",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "invocation_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_invocations"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "record",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_invocations"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "reserved_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_invocations"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
       "name": "scope_id",
       "entityType": "columns",
       "schema": "public",
@@ -614,58 +466,6 @@
       "entityType": "columns",
       "schema": "public",
       "table": "budget_policies"
-    },
-    {
-      "type": "uuid",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "invocation_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_reports"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "digest",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_reports"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "evidence",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_reports"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "recorded_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "budget_reports"
     },
     {
       "type": "uuid",
@@ -2284,19 +2084,6 @@
       "generated": null,
       "identity": null,
       "name": "installation",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "managed_scopes"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "blocked_reason",
       "entityType": "columns",
       "schema": "public",
       "table": "managed_scopes"
@@ -6748,23 +6535,6 @@
     {
       "nameExplicit": false,
       "columns": [
-        "invocation_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "budget_invocations",
-      "columnsTo": [
-        "invocation_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "budget_audits_j7QHV8Ue4LZo_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "budget_audits"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
         "scope_id"
       ],
       "schemaTo": "public",
@@ -6778,23 +6548,6 @@
       "entityType": "fks",
       "schema": "public",
       "table": "budget_policies"
-    },
-    {
-      "nameExplicit": false,
-      "columns": [
-        "invocation_id"
-      ],
-      "schemaTo": "public",
-      "tableTo": "budget_invocations",
-      "columnsTo": [
-        "invocation_id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "NO ACTION",
-      "name": "budget_reports_nlISV9kK3JCn_fkey",
-      "entityType": "fks",
-      "schema": "public",
-      "table": "budget_reports"
     },
     {
       "nameExplicit": false,
@@ -7667,17 +7420,6 @@
     },
     {
       "columns": [
-        "invocation_id",
-        "digest"
-      ],
-      "nameExplicit": false,
-      "name": "budget_reports_pkey",
-      "entityType": "pks",
-      "schema": "public",
-      "table": "budget_reports"
-    },
-    {
-      "columns": [
         "principal_id",
         "conversation_id",
         "request_id"
@@ -7808,26 +7550,6 @@
       "name": "binary_outputs_pkey",
       "schema": "public",
       "table": "binary_outputs",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "budget_audits_pkey",
-      "schema": "public",
-      "table": "budget_audits",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "invocation_id"
-      ],
-      "nameExplicit": false,
-      "name": "budget_invocations_pkey",
-      "schema": "public",
-      "table": "budget_invocations",
       "entityType": "pks"
     },
     {

@@ -16,7 +16,6 @@ Resume, cancel/close and history/event replay are implemented too. See the [impl
 | [Fingerprint vectors](../packages/contracts/src/sessions/fixtures/fingerprints-v1.json) | Portable canonical UTF-8 JSON and SHA-256 expectations |
 | [Implemented store ports](../packages/runtime-contracts/src/stores/managed-runtime.ts) | Narrow live authority/session/accounting ports; DB feature helpers pass the owning transaction |
 | [Store ports](../packages/runtime-contracts/src/stores/managed-sessions.ts) | Transaction, authority, input pins, canonical requests, bindings, observations and history |
-| [Budget ports](../packages/runtime-contracts/src/stores/managed-budgets.ts) | Invocation reservations, usage evidence, uncertain liability and cleanup settlement |
 
 Run `bun run contracts:generate` after changing a schema. `bun run check` rejects
 stale artifacts. Runtime schema tests cover cross-field identity, event revisions,
@@ -37,8 +36,8 @@ publishes its actual API at `/v1/openapi.json`. Implemented routes use the exist
 | Retained result and zero-file receipt | `CollectionResult`, `ExportObject`, `ExportPage` | PC-165 ships logical mappings and retained reads; PC-132 adds service publication to PC-131 collection |
 | Retained history snapshot | `HistoryPage` | PC-173 ships it on canonical `ConversationRecordDocument`; outer fields are exactly `records`, `nextCursor`, `eventCursor` |
 | Ordered observations | `RuntimeEvent` | PC-164 writes revisions/observations; PC-173 ships the SSE replay reader |
-| Budget scopes and policies | `BudgetPolicyWrite`, `BudgetPolicy`, `BudgetUsage` | PC-167/168/169 ship policy and token accounting; PC-170 ships physical capacity; no consumer-writable settlement |
-| Runtime cleanup evidence | `CleanupReceipt` | Trusted accounting input, separate from model usage evidence |
+| Budget scopes and policies | `BudgetPolicyWrite`, `BudgetPolicy`, `BudgetUsage` | Physical capacity only (PC-167/PC-170). Model usage belongs to the deployment's model gateway |
+| Runtime cleanup evidence | `CleanupReceipt` | Trusted input for physical capacity release |
 | Workspace service tool | `ServiceStart`, `ServiceReceipt` | PC-133 ships supervisor-local `service start/stop/status`; no public remote shell |
 | Bounded physical extension | `LifetimeExtension`, `LifetimeReceipt` | PC-133 ships `/workspaces/{id}/lifetime`; camel-case request/receipt fields |
 | Browser grants | Existing physical preview grant schemas | PC-138 ships workspace/incarnation grants; PC-139 resolves logical sessions |
@@ -107,12 +106,11 @@ appear in these resources, templates, history, events or logs.
 Capability admission still uses installed producer evidence and `workloadAdmission`.
 Declaring a schema or capability name never enables an unsupported adapter.
 
-The internal invocation port also freezes requestDigest/countEvidenceRef and the
-physical binding revision. It separates reservation from a once-only send claim.
-Trusted usage evidence records provider/account/response identity and report
-digests. See [accounting and reconciliation](managed-runtime.md#reserve-claim-and-settle).
+Profiles carry no model fields and budgets count no model usage. Model access and
+spend belong to the deployment's model gateway; reference deployments use
+agentgateway.
 
-The broad generic ManagedSessionPorts/ManagedBudgetPorts describe later composition.
+The broad generic ManagedSessionPorts describe later composition.
 The implemented subset is ManagedRuntimeStore in managed-runtime.ts. Session-level
 binding compares a durable binding revision and keeps a separate highest generation.
 Its stored conversationId is the canonical public conversation identity; the existing

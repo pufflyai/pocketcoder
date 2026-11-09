@@ -1,7 +1,7 @@
-# Managed sessions and budget accounting
+# Managed sessions and capacity budgets
 
-PocketCoder stores logical sessions, immutable execution profiles, budget policies,
-invocation reservations and trusted usage evidence. A session can exist without
+PocketCoder stores logical sessions, immutable execution profiles and budget
+policies for physical capacity. A session can exist without
 compute. Its ID is also its canonical conversation ID. The existing conversation
 owner creates transcript records on the first turn; this adds no second transcript.
 
@@ -9,7 +9,9 @@ Logical request acceptance/dispatch, session file APIs and physical capacity
 accounting extend these same owners. See [session work](managed-session-work.md).
 Creating a profile does not launch compute. Placement and replacement, cancel and
 close, and history replay are described in [session work](managed-session-work.md).
-PocketCoder does not provide a model gateway; see [security](security.md#model-access-is-a-gateway-concern).
+PocketCoder does not manage model usage. Model access, model choice, token limits
+and model spend belong to the deployment's model gateway; reference deployments use
+[agentgateway](https://agentgateway.dev/). See [security](security.md#model-access-is-a-gateway-concern).
 The implemented operations are marked `x-shipped: true` in the
 [versioned contract](managed-contracts.md). The running server's `/v1/openapi.json`
 describes the installed routes and standard error envelopes.
@@ -36,7 +38,7 @@ An owner key with `admin` provisions authority outside every workspace:
    in a session, template, prompt or workspace.
 4. `PUT /v1/execution-profiles/{profileId}/revisions/{revision}?principalId=...`
    with an `ExecutionProfile`. Its complete budget scope set must include the
-   installation scope. Its template digest, models, isolation scope and optional
+   installation scope. Its template digest, isolation scope and optional
    credential binding become immutable. Publish a new revision to change them.
 
 Only an owner can register grants, bindings and profiles. Policy writes require
@@ -67,7 +69,7 @@ provision before it can become ready again.
 
 Business credentials require one exclusive workspace per session, even when the
 broker and profile match. Credential-free siblings require the same principal,
-immutable profile, isolation, models and scopes, plus installed parallel-conversation,
+immutable profile, isolation and scopes, plus installed parallel-conversation,
 lookup, deduplicated-accept and targeted-cancel capabilities. There is one trust
 zone inside shared compute. See [security](security.md).
 
@@ -77,65 +79,34 @@ Renewal keeps that broker version and authority ceiling. Expiry is capped by the
 workspace deadline, delegated ceiling and existing five-minute lease maximum.
 A successor receives fresh lease IDs; stale generations cannot issue or renew.
 
-## Reserve, claim and settle
+## Capacity budgets
 
-The internal `store.managed.budgets` port is for the trusted runtime gateway.
-There is no consumer HTTP endpoint for reserving or reporting token usage.
-PocketCoder does not ship a gateway that calls this port. Reference deployments
-route model traffic through [agentgateway](https://agentgateway.dev/); connecting
-a gateway to these reservations is not implemented yet.
+A budget policy limits physical capacity for one scope: workspace starts per UTC
+day or month, active physical workspaces, and agent processes per workspace. A
+request runs only when every scope of its profile allows it. Model calls are not
+counted here.
 
-`reserve` requires the frozen provider request digest, count evidence reference,
-logical invocation identity, current workspace, allowed model, input bound and
-optional output cap. One transaction locks every applicable scope in sorted order,
-checks aggregate and model limits, records policy revisions and commits one hold.
-An identical retry consumes nothing more. Changed counted content conflicts even
-when its token count is equal. Missing policies or trustworthy counts fail closed.
+`GET /v1/budget-scopes/{scopeId}/usage` returns the policy revision, the current
+period, workspace starts in that period, active workspaces and the server `asOf`.
+A durable clock floor stops a backward wall-clock move from reopening a past
+period.
 
-An explicit output cap is clamped to the strictest configured maximum. An omitted
-cap uses the strictest default and maximum. If remaining allowance cannot cover
-that cap, admission fails; the runtime does not shrink the response to spend the
-last tokens. Null is unlimited for that field; zero denies consumption.
-
-A separate durable `claimSend` returns true once. It rechecks live session and
-physical authority under locks. Only that result authorizes the one upstream send.
-A replayed reservation is not another send permission. After a claim, a crash or
-lost response leaves its full hold and in-flight slot. Only an unclaimed reservation
-can be abandoned as proved unsent. Late uncertainty cannot revive abandoned work.
-Each actual nested call or new generation attempt needs a new invocation identity.
-
-Trusted terminal evidence includes provider, provider account, response identity,
-usage and an evidence reference. Equal callbacks are idempotent. Conflicting reports
-or usage above the reservation preserve the greatest exposure, retain unresolved
-capacity and fence the affected scopes. The ledger retains report digests and
-reports. Audited owner reconciliation names the invocation, evidence and reason;
-ordinary policy updates cannot clear spend or holds.
-
-`GET /v1/budget-scopes/{scopeId}/usage` returns a consistent policy revision,
-server `asOf`, settled and held input/output totals, effective totals and remaining
-allowance. Unknown holds survive restart, cancellation and UTC boundaries. An
-invocation counts in every UTC day/month it touches. Late settlement replaces its
-hold with actual usage in each touched period. A durable clock floor prevents a
-backward wall-clock move from reopening a rolling 60-second window or past period.
-
-Workspace starts and active physical workspaces now come from durable managed
+Workspace starts and active physical workspaces come from durable managed
 capacity reservations. Compatible shared sessions consume one physical slot and
 separate process slots; credentialed sessions remain exclusive. Launch admission
 reserves start allowance before storage preparation and charges it immediately
 before provider submission. Proved non-submission is audited without a start charge.
 Only generation-bound process-stop or provider-fencing evidence releases capacity.
-Model settlement does not prove that compute stopped. Changing an accounting period with recorded period exposure requires
-audited handover; lowering or raising limits never rewrites earlier charges.
+Changing the period of a scope with recorded starts requires audited handover;
+lowering or raising limits never rewrites earlier charges.
 
 ## Validation limits
 
 Real isolated PGlite and PostgreSQL fixtures exercise these store and HTTP owners.
 The HTTPS issuer fixture covers lost replies, exact authority, pinned renewal,
 exclusive placement and revoke outages without paid provider credentials.
-These checks do not qualify a gateway integration or a full Docker/Kubernetes
-managed-agent deployment. PC-140 and PC-62 retain those release gates.
+These checks do not qualify a full Docker/Kubernetes managed-agent deployment.
+PC-140 and PC-62 retain those release gates.
 
-The first accounting implementation reads the retained invocation history under
-scope locks. Its work grows with that history. Compaction and indexed period
-summaries need to preserve the same liability and replay identities before replacing
-those reads; no performance or concurrency limit is raised here.
+Capacity usage reads every capacity record under scope locks. Its work grows with
+the number of managed workspaces; no performance or concurrency limit is raised here.

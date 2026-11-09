@@ -20,7 +20,7 @@ release never-launched holds, including after a controller restart.
 
 Request completion alone does not prove a retained session process exited.
 Trusted process-stop evidence releases that process slot; provider fencing releases
-the physical slot and its processes. Neither action refunds uncertain model use.
+the physical slot and its processes.
 The placement owner creates, binds and replaces session compute; see
 [placement and replacement](managed-session-work.md#placement-and-replacement).
 

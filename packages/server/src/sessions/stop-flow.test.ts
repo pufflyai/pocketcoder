@@ -112,18 +112,6 @@ test("close fences new work, stops this session only and keeps its history reada
     const sibling = await m.submit(b, "run b");
     await m.settle();
 
-    // A model call that was already sent keeps its hold through the stop.
-    const invocation = { principalId: m.f.principal.id, sessionId: a, requestId: running, invocationId: randomUUID() };
-    await m.f.store.managed.budgets.reserve({
-      requestDigest: `sha256:${"a".repeat(64)}`,
-      countEvidenceRef: "fixture-count",
-      identity: invocation,
-      workspaceId: m.f.id,
-      model: "fixture/model",
-      inputTokens: 10,
-      requestedOutputTokens: 20,
-    });
-    expect(await m.f.store.managed.budgets.claimSend(invocation)).toBe(true);
     const cancelId = randomUUID();
     const close = await m.f.store.managed.sessions.close(m.keyId, a, { cancelId }, WINDOW, new Date());
     expect(close.receipt).toMatchObject({ scope: "session", requestId: null, state: "pending" });
@@ -145,10 +133,6 @@ test("close fences new work, stops this session only and keeps its history reada
     expect(await m.request(a, finished)).toMatchObject({ outcome: "completed", finalResponse: "done:complete first" });
     expect((await m.request(b, sibling)).state).toBe("running");
     expect(producer.sent("run queued")).toEqual([]);
-    expect(await m.f.store.managed.budgets.usage(m.keyId, m.scopeId)).toMatchObject({
-      heldInputTokens: 10,
-      inFlightModelRequests: 1,
-    });
   } finally {
     await m.f.dispose();
     await producer.server.stop(true);

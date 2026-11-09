@@ -2,6 +2,7 @@ import { ApiError, hasScope, type managed, type Scope } from "@pstdio/pocketcode
 import { and, eq } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { lockKeyAuthority } from "../auth/authority";
+import { storedProfile } from "./stored-records";
 
 export const unavailable = () => new ApiError("profile.not_found", "Execution authority is unavailable.");
 export const conflict = () => new ApiError("idempotency.conflict", "The immutable identity has changed.");
@@ -32,7 +33,7 @@ export function authorityContext({ tables }: DatabaseContext) {
       .from(profiles)
       .where(and(eq(profiles.profileId, id), eq(profiles.revision, revision), eq(profiles.principalId, principalId)));
     if (!row) throw unavailable();
-    return row;
+    return { ...row, profile: storedProfile(row.profile) };
   }
   async function validateScopes(tx: Transaction, principalId: string, profile: managed.ExecutionProfile) {
     const rows = await tx.select().from(scopes);

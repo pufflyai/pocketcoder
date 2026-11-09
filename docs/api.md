@@ -807,12 +807,12 @@ workspace, principal and conversation. Legacy text-only agent routes still rejec
 attachments.
 
 
-## Managed session authority and accounting
+## Managed session authority and capacity
 
-See [managed sessions and budget accounting](managed-runtime.md) for implemented
+See [managed sessions and capacity budgets](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement, pinned broker renewal and trusted internal
-reservation/settlement ports. [Session work](managed-session-work.md) describes
+exclusive business-credential placement and pinned broker renewal. Budgets cover
+physical capacity only; model usage belongs to the model gateway. [Session work](managed-session-work.md) describes
 implemented request acceptance, file readiness, collection, adapter publication,
 cancel and close, history and event replay, and automatic placement and
 replacement.

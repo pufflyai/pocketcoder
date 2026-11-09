@@ -1,5 +1,4 @@
 import type { managed } from "@pstdio/pocketcoder-contracts";
-import type { ManagedInvocationIdentity, ManagedReservation, ManagedUsageEvidence } from "./managed-budgets";
 import type { ManagedSessionIdentity } from "./managed-sessions";
 import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore, ManagedStopResult } from "./managed-work";
 
@@ -37,30 +36,6 @@ export interface ManagedLeaseAuthority extends ManagedSessionIdentity {
   bindingId: string;
   slot: string;
   authorityExpiresAt: string;
-}
-export interface InvocationInput {
-  requestDigest: string;
-  countEvidenceRef: string;
-  identity: ManagedInvocationIdentity;
-  workspaceId: string;
-  model: string;
-  inputTokens: number;
-  requestedOutputTokens: number | null;
-}
-export interface InvocationRecord {
-  reservation: ManagedReservation;
-  workspaceId: string;
-  fingerprint: string;
-  bindingRevision: number;
-  generation: number;
-  incarnationId: string;
-  policyRevisions: Record<string, number>;
-  state: "reserved" | "send_claimed" | "uncertain" | "settled" | "conflict" | "abandoned";
-  settledInput: number;
-  settledOutput: number;
-  evidence: ManagedUsageEvidence | null;
-  evidenceDigest: string | null;
-  touchedUntil: Date;
 }
 export interface ManagedAuthorityStore {
   registerScope(keyId: string, scopeId: string, principalId: string, installation?: boolean): Promise<void>;
@@ -106,12 +81,6 @@ export interface ManagedBudgetStore {
     expectedRevision: number | null,
   ): Promise<managed.BudgetPolicy>;
   readPolicy(keyId: string, scopeId: string): Promise<managed.BudgetPolicy>;
-  reserve(input: InvocationInput): Promise<{ replayed: boolean; reservation: ManagedReservation }>;
-  claimSend(identity: ManagedInvocationIdentity): Promise<boolean>;
-  abandonUnsent(identity: ManagedInvocationIdentity): Promise<void>;
-  settle(input: ManagedUsageEvidence): Promise<void>;
-  retainUncertain(identity: ManagedInvocationIdentity): Promise<void>;
-  reconcile(keyId: string, input: ManagedUsageEvidence, reason: string): Promise<void>;
   usage(keyId: string, scopeId: string): Promise<managed.BudgetUsage>;
 }
 export interface ManagedRecoveryCandidate {

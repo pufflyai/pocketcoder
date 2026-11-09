@@ -27,7 +27,6 @@ async function managedServer(options: { stop?: number } = {}) {
     isolationScopeId: randomUUID(),
     budgetScopeIds: [scopeId],
     templateDigest: template.digest,
-    allowedModels: ["local/model"],
     credentialBindingId: null,
   });
   await store.managed.budgets.writePolicy(server.keyId, managedPolicy(scopeId), null);

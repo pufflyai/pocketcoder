@@ -15,7 +15,7 @@ test("concurrent policy creation, lost replies and stale changes retain one immu
     await expect(
       f.store.managed.budgets.writePolicy(f.keyId, { ...input, period: "utc_month" }, null),
     ).rejects.toThrow();
-    const next = { ...input, revision: 2, limits: { ...input.limits, outputTokens: 0 } };
+    const next = { ...input, revision: 2, limits: { ...input.limits, workspaceStarts: 0 } };
     expect((await f.store.managed.budgets.writePolicy(f.keyId, next, 1)).revision).toBe(2);
     await expect(f.store.managed.budgets.writePolicy(f.keyId, { ...next, revision: 3 }, 1)).rejects.toThrow();
   } finally {

@@ -92,8 +92,6 @@ retries never extend the deadline.
 - Running work gets a targeted cancel through the existing dispatcher. The
   producer's own terminal report decides the outcome. Final text alone never
   makes a stopped request `completed`.
-- A stop does not settle model usage. A sent model call keeps its hold until
-  trusted usage evidence arrives.
 - Close fences new requests, stops this session's queued and running work and
   leaves sibling sessions on shared compute running. The placement owner then
   stops every workspace the session owns alone: compute it placed for this

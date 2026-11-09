@@ -6,7 +6,7 @@ import { unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
 import { requireCapacityLaunch } from "./capacity-admission";
 import { placeManagedCapacity } from "./capacity-placement";
-import { budgetLedger } from "./ledger";
+import { lockScopes } from "./scope-locks";
 
 export function createManagedCapacity(context: DatabaseContext, now = () => new Date()): ManagedCapacityStore {
   const { db, tables } = context;
@@ -31,8 +31,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
         principalId: known.record.principalId,
         sessionId: participant.sessionId,
       });
-    const effective = await budgetLedger(context, () => at).lockScopes(tx, known.record.scopeIds);
-    at.setTime(effective.at.getTime());
+    at.setTime((await lockScopes(context, tx, known.record.scopeIds, at)).getTime());
     const [current] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId)).for("update");
     return current?.record ?? null;
   }
