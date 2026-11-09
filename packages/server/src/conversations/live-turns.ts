@@ -122,6 +122,7 @@ export class LiveTurns {
         if (!permanent(error)) this.turns.set(key, { ...turn, terminal });
         throw error;
       });
+    if (!record) return;
     this.emit(turn.workspaceId, {
       type: "committed",
       conversation_id: turn.request.conversation_id,

@@ -7,8 +7,10 @@ owner creates transcript records on the first turn; this adds no second transcri
 
 Logical request acceptance/dispatch, session file APIs and physical capacity
 accounting extend these same owners. See [session work](managed-session-work.md).
-Creating a profile does not launch compute. Automatic placement/recovery, cancel,
-history replay and provider gateway enforcement retain their later owners.
+Creating a profile does not launch compute. Placement and replacement, cancel and
+close, and history replay are described in [session work](managed-session-work.md).
+The [model gateway](model-gateway.md) is the trusted producer of reservations and
+usage evidence.
 The implemented operations are marked `x-shipped: true` in the
 [versioned contract](managed-contracts.md). The running server's `/v1/openapi.json`
 describes the installed routes and standard error envelopes.
@@ -80,8 +82,9 @@ A successor receives fresh lease IDs; stale generations cannot issue or renew.
 
 The internal `store.managed.budgets` port is for the trusted runtime gateway.
 There is no consumer HTTP endpoint for reserving or reporting token usage.
-The gateway must resolve the accepted request identity and obtain trusted counts;
-PC-174 connects that producer, and PC-175 enforces its credential and network boundary.
+The [model gateway](model-gateway.md) resolves the accepted request identity and
+obtains trusted counts. Its workspace credential and network boundary are
+described in [runtime credentials](runtime-credentials.md#model-gateway-credentials).
 
 `reserve` requires the frozen provider request digest, count evidence reference,
 logical invocation identity, current workspace, allowed model, input bound and

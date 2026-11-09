@@ -1,4 +1,4 @@
-import { ApiError } from "@pstdio/pocketcoder-contracts";
+import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedCapacityRecord } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
@@ -16,7 +16,14 @@ export async function capacityAdmission(context: DatabaseContext, tx: Transactio
     .select()
     .from(tables.managedCapacity)
     .where(eq(tables.managedCapacity.workspaceId, workspaceId));
-  if (!row) return true;
+  if (!row) {
+    // A session placement records its capacity right after creating the workspace; launch waits for it.
+    const [workspace] = await tx
+      .select({ metadata: tables.workspaces.metadata })
+      .from(tables.workspaces)
+      .where(eq(tables.workspaces.id, workspaceId));
+    return !workspace?.metadata[managed.MANAGED_SESSION_METADATA];
+  }
   const [principal] = await tx
     .select()
     .from(tables.principals)

@@ -1,16 +1,19 @@
 import type { managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedInvocationIdentity, ManagedReservation, ManagedUsageEvidence } from "./managed-budgets";
 import type { ManagedSessionIdentity } from "./managed-sessions";
-import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore } from "./managed-work";
+import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore, ManagedStopResult } from "./managed-work";
 
 export type {
+  ManagedCancelRecord,
   ManagedCapacityIdentity,
   ManagedCapacityRecord,
   ManagedCapacityStore,
   ManagedFileStore,
+  ManagedPlacementIntent,
   ManagedQueueLimits,
   ManagedRequestRecord,
   ManagedRequestStore,
+  ManagedStopResult,
 } from "./managed-work";
 
 export interface ManagedBinding {
@@ -57,7 +60,13 @@ export interface InvocationRecord {
   settledOutput: number;
   evidence: ManagedUsageEvidence | null;
   evidenceDigest: string | null;
+  // The provider response identity, persisted as soon as the gateway observes it.
+  responseId?: string;
   touchedUntil: Date;
+}
+export interface OpenInvocation {
+  identity: ManagedInvocationIdentity;
+  state: "reserved" | "send_claimed";
 }
 export interface ManagedAuthorityStore {
   registerScope(keyId: string, scopeId: string, principalId: string, installation?: boolean): Promise<void>;
@@ -88,6 +97,13 @@ export interface ManagedSessionStore {
     state: managed.Session["state"],
     reasonCode: string | null,
   ): Promise<managed.Session>;
+  close(
+    keyId: string,
+    sessionId: string,
+    command: managed.CancelCommand,
+    windowMs: number,
+    at: Date,
+  ): Promise<ManagedStopResult>;
 }
 export interface ManagedBudgetStore {
   writePolicy(
@@ -101,10 +117,59 @@ export interface ManagedBudgetStore {
   abandonUnsent(identity: ManagedInvocationIdentity): Promise<void>;
   settle(input: ManagedUsageEvidence): Promise<void>;
   retainUncertain(identity: ManagedInvocationIdentity): Promise<void>;
+  // Invocations that a stopped gateway left without a send decision or without usage.
+  openInvocations(): Promise<OpenInvocation[]>;
+  observeResponse(identity: ManagedInvocationIdentity, responseId: string): Promise<void>;
   reconcile(keyId: string, input: ManagedUsageEvidence, reason: string): Promise<void>;
   usage(keyId: string, scopeId: string): Promise<managed.BudgetUsage>;
 }
+export interface ManagedRecoveryCandidate {
+  id: ManagedSessionIdentity;
+  session: managed.Session;
+  binding: ManagedBinding | null;
+  bindingRevision: number;
+  lastGeneration: number;
+  queueCount: number;
+  placement: import("./managed-work").ManagedPlacementIntent | null;
+  resumeRequested: boolean;
+  templateDigest: string;
+}
+export interface ManagedRecoveryStore {
+  candidates(): Promise<ManagedRecoveryCandidate[]>;
+  resume(keyId: string, sessionId: string, at: Date): Promise<managed.Session>;
+  recordPlacement(
+    identity: ManagedSessionIdentity,
+    intent: import("./managed-work").ManagedPlacementIntent,
+  ): Promise<import("./managed-work").ManagedPlacementIntent>;
+  clearPlacement(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
+  placed(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
+  transition(
+    identity: ManagedSessionIdentity,
+    state: managed.Session["state"],
+    reasonCode: string | null,
+  ): Promise<managed.Session>;
+}
+export interface ManagedGatewayGrant {
+  identity: ManagedSessionIdentity & { requestId: string };
+  workspaceId: string;
+  incarnationId: string;
+  generation: number;
+  allowedModels: string[];
+}
+export interface ManagedGatewayGrantStore {
+  issue(workspaceId: string, incarnationId: string, at: Date): Promise<{ token: string; expiresAt: Date }>;
+  revoke(workspaceId: string, at: Date): Promise<void>;
+  resolve(token: string, turnId: string | null, at: Date): Promise<ManagedGatewayGrant>;
+}
+export interface ManagedHistoryStore {
+  history(keyId: string, sessionId: string, cursor: string | null, limit: number): Promise<managed.HistoryPage>;
+  events(keyId: string, sessionId: string, after: string | null, limit: number): Promise<managed.RuntimeEvent[]>;
+  prune(keepEvents: number): Promise<number>;
+}
 export interface ManagedRuntimeStore {
+  history: ManagedHistoryStore;
+  recovery: ManagedRecoveryStore;
+  grants: ManagedGatewayGrantStore;
   authority: ManagedAuthorityStore;
   sessions: ManagedSessionStore;
   budgets: ManagedBudgetStore;

@@ -23,8 +23,6 @@ import { registerKeyRoutes } from "./administration/keys-routes";
 import { registerPrincipalRoutes } from "./administration/principals-routes";
 import { registerOperatorRecoveryRoutes } from "./administration/recovery-routes";
 import { InputStorage, type InputStorageOptions } from "./attachments/input-storage";
-import { registerBudgetPolicyRoutes } from "./budgets/policy-routes";
-import { registerBudgetUsageRoutes } from "./budgets/usage-routes";
 import { type ControlActivity, controlActivity } from "./control-channel/activity";
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
@@ -60,9 +58,12 @@ import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
 import { createSecretVault } from "./secrets/secret-vault";
-import { registerProfileRoutes } from "./sessions/profile-routes";
-import { registerSessionRoutes } from "./sessions/session-routes";
-import { registerSessionWorkRoutes } from "./sessions/work-routes";
+import {
+  composeModelGateway,
+  composeSessionRecovery,
+  type ManagedSessionDeps,
+  registerManagedSessionRoutes,
+} from "./sessions/compose";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
@@ -71,8 +72,7 @@ import { registerLifetimeRoute } from "./workspaces/lifetime-route";
 import { WorkspaceService } from "./workspaces/service";
 import { registerWorkspaceRoutes } from "./workspaces/workspaces-routes";
 
-export interface BuildDeps {
-  sessionQueueLimits?: import("@pstdio/pocketcoder-runtime-core").ManagedQueueLimits;
+export interface BuildDeps extends ManagedSessionDeps {
   assertAccountAllowed?: () => Promise<void>;
   inputStorageOptions?: InputStorageOptions;
   screenshotOptions?: ScreenshotOptions;
@@ -101,6 +101,7 @@ export interface BuildDeps {
 }
 
 export interface BuiltServer {
+  sessionRecovery: ReturnType<typeof composeSessionRecovery>;
   executionDispatcher: ExecutionDispatcher;
   liveTurns: LiveTurns;
   inputs?: InputStorage;
@@ -259,7 +260,9 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const activity = controlActivity(() => poolHub.fence());
   const producerStore = controlStore(store, deps.assertAccountAllowed);
   const liveTurns = new LiveTurns(producerStore);
+  const modelGateway = composeModelGateway(store, deps.modelGateway);
   const wsDeps = {
+    modelGateway: Boolean(modelGateway),
     activity,
     executionDispatcher,
     assertAccountAllowed: deps.assertAccountAllowed,
@@ -284,6 +287,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     eventSigningKey: deps.eventSigningKey ?? pepper,
     logger,
     upgradeWebSocket,
+    modelGateway,
   });
   app.all("/v1/agent/*", (c) => c.notFound());
   app.all("/v1/internal/*", (c) => c.notFound());
@@ -304,11 +308,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
-  registerSessionRoutes(app, store);
-  registerSessionWorkRoutes(app, store, { inputs, storage: deps.inputStorageOptions, queue: deps.sessionQueueLimits });
-  registerProfileRoutes(app, store);
-  registerBudgetPolicyRoutes(app, store);
-  registerBudgetUsageRoutes(app, store);
+  registerManagedSessionRoutes(app, { ...deps, store, service, executionDispatcher, inputs });
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
@@ -338,8 +338,8 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   );
 
   registerRelayRoutes(app, { store, hub, service, inputs });
-
   return {
+    sessionRecovery: composeSessionRecovery(store, service, deps.modelGateway, log),
     executionDispatcher,
     liveTurns,
     inputs,

@@ -147,7 +147,7 @@ export class WorkspaceCredentials {
         return;
       }
       next = Math.min(next, expiry);
-      if (row.value.purpose === "setup-issuer" || this.quiescing) continue;
+      if (row.value.purpose !== "runtime-issuer" || this.quiescing) continue;
       if (now >= row.renewAt && now >= row.retryAt) {
         row.requestId ??= randomUUID();
         this.callbacks.send({

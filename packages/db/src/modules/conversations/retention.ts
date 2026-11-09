@@ -31,7 +31,18 @@ export async function clearConversations(
   if (!locked.length) return 0;
   const documents = locked.map((row) => row.id);
   for (const document of locked)
-    if (document.conversationId) await removeRequestContent(context, tx, document.principalId, document.conversationId);
+    if (document.conversationId) {
+      await removeRequestContent(context, tx, document.principalId, document.conversationId);
+      // Session events carry final text too; replay from before the deletion reports cursor_expired.
+      await tx
+        .delete(context.tables.managedObservations)
+        .where(
+          and(
+            eq(context.tables.managedObservations.principalId, document.principalId),
+            eq(context.tables.managedObservations.sessionId, document.conversationId),
+          ),
+        );
+    }
   // The workspace quota counts stored records, so it gets their bytes back.
   const charged = await tx
     .select({ workspaceId: records.workspaceId, bytes: sql<number>`sum(${records.bytes})`.mapWith(Number) })

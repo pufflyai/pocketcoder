@@ -1,6 +1,20 @@
 import type { InputObjectReference, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionIdentity } from "./managed-sessions";
 
+// One durable stop command. Its identity and deadline never change after acceptance.
+export interface ManagedCancelRecord {
+  cancelId: string;
+  scope: "request" | "session";
+  acceptedAt: string;
+  cancelDeadline: string;
+  completedAt: string | null;
+}
+// The workspace the placement owner created for a session before it could bind it.
+export interface ManagedPlacementIntent {
+  workspaceId: string;
+  generation: number;
+  requestedAt: string;
+}
 // Stored on the existing canonical conversation request, including after content retention ends.
 export interface ManagedRequestRecord {
   keyId: string;
@@ -13,6 +27,9 @@ export interface ManagedRequestRecord {
     bindingRevision: number | null;
     neverStartedAt: string;
   }[];
+  cancel?: ManagedCancelRecord;
+  // A gateway refused a model call for budget; the terminal outcome reports budget.exhausted.
+  budgetExhaustedAt?: string;
   request: managed.Request;
   sequence: number;
   queueBytes: number;
@@ -23,6 +40,13 @@ export interface ManagedQueueLimits {
   count: number;
   bytes: number;
 }
+// A stop command reports the execution records that now need a targeted producer cancel.
+export interface ManagedStopResult {
+  receipt: managed.CancelReceipt;
+  executions: import("@pstdio/pocketcoder-contracts").ExecutionRecord[];
+  // Exclusive compute that close must stop, with its credentials.
+  releaseWorkspaceId: string | null;
+}
 export interface ManagedRequestStore {
   completeCleanup(workspaceId: string): Promise<void>;
   accept(
@@ -32,6 +56,15 @@ export interface ManagedRequestStore {
     limits: ManagedQueueLimits,
   ): Promise<{ replayed: boolean; request: managed.Request }>;
   get(keyId: string, sessionId: string, requestId: string): Promise<managed.Request>;
+  cancel(
+    keyId: string,
+    sessionId: string,
+    requestId: string,
+    command: managed.CancelCommand,
+    windowMs: number,
+    at: Date,
+  ): Promise<ManagedStopResult>;
+  budgetDenied(identity: import("./managed-sessions").ManagedRequestIdentity, at: Date): Promise<void>;
   prepare(at: Date): Promise<void>;
 }
 export interface ManagedFileStore {

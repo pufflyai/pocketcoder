@@ -387,5 +387,19 @@
     "folderMillis": 1794058852000,
     "hash": "ebb33df18e064a5f1c080f87d3ef963fbe1530cdaec08a55fac7cc8798539c57",
     "name": "20261107134052_odd_lord_tyger"
+  },
+  {
+    "sql": [
+      "CREATE TABLE \"model_gateway_grants\" (\n\t\"id\" uuid PRIMARY KEY,\n\t\"token_digest\" text NOT NULL,\n\t\"principal_id\" uuid NOT NULL,\n\t\"workspace_id\" uuid NOT NULL,\n\t\"incarnation_id\" text NOT NULL,\n\t\"expires_at\" timestamp with time zone NOT NULL,\n\t\"revoked_at\" timestamp with time zone,\n\t\"created_at\" timestamp with time zone NOT NULL\n);\n",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"close\" jsonb;",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"placement\" jsonb;",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"resume_requested_at\" timestamp with time zone;",
+      "\nCREATE UNIQUE INDEX \"model_gateway_grant_token\" ON \"model_gateway_grants\" (\"token_digest\");",
+      "\nALTER TABLE \"model_gateway_grants\" ADD CONSTRAINT \"model_gateway_grants_principal_id_principals_id_fkey\" FOREIGN KEY (\"principal_id\") REFERENCES \"principals\"(\"id\");"
+    ],
+    "bps": true,
+    "folderMillis": 1794213004000,
+    "hash": "b8a5b349369c126021d9870cc9e387ade56e45223ed7baf3a0e2b97533059b34",
+    "name": "20261109083004_light_dagger"
   }
 ]

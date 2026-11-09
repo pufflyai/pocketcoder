@@ -2,8 +2,10 @@ import type { managed } from "@pstdio/pocketcoder-contracts";
 import type {
   InvocationRecord,
   ManagedBinding,
+  ManagedCancelRecord,
   ManagedCapacityRecord,
   ManagedCredentialBinding,
+  ManagedPlacementIntent,
   ManagedUsageEvidence,
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
@@ -86,6 +88,11 @@ export function createManagedTables(
       nextRequestSequence: bigint("next_request_sequence", { mode: "number" }).notNull().default(1),
       queueCount: integer("queue_count").notNull().default(0),
       queueBytes: bigint("queue_bytes", { mode: "number" }).notNull().default(0),
+      // Close is persisted once; retries keep its identity and deadline.
+      close: jsonb("close").$type<ManagedCancelRecord>(),
+      // The placement owner records the workspace it created before binding, so a restart reuses it.
+      placement: jsonb("placement").$type<ManagedPlacementIntent>(),
+      resumeRequestedAt: timestamptz("resume_requested_at"),
     },
     (row) => [primaryKey({ columns: [row.principalId, row.sessionId] })],
   );
@@ -145,7 +152,26 @@ export function createManagedTables(
     next: jsonb("next").$type<InvocationRecord>().notNull(),
     createdAt: timestamptz("created_at").notNull(),
   });
+  // Workspace-readable gateway credentials. Only a digest is stored; each grant is bound to one
+  // workspace incarnation and expires no later than that workspace.
+  const modelGatewayGrants = table(
+    "model_gateway_grants",
+    {
+      id: uuid("id").primaryKey(),
+      tokenDigest: text("token_digest").notNull(),
+      principalId: uuid("principal_id")
+        .notNull()
+        .references(() => principals.id),
+      workspaceId: uuid("workspace_id").notNull(),
+      incarnationId: text("incarnation_id").notNull(),
+      expiresAt: timestamptz("expires_at").notNull(),
+      revokedAt: timestamptz("revoked_at"),
+      createdAt: timestamptz("created_at").notNull(),
+    },
+    (row) => [uniqueIndex("model_gateway_grant_token").on(row.tokenDigest)],
+  );
   return {
+    modelGatewayGrants,
     managedScopes,
     managedScopeGrants,
     managedProfiles,

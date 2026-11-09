@@ -21,8 +21,20 @@ release never-launched holds, including after a controller restart.
 Request completion alone does not prove a retained session process exited.
 Trusted process-stop evidence releases that process slot; provider fencing releases
 the physical slot and its processes. Neither action refunds uncertain model use.
-Automatic placement/resume and provider gateway/network enforcement remain separate
-delivery gates.
+The placement owner creates, binds and replaces session compute; see
+[placement and replacement](managed-session-work.md#placement-and-replacement).
+
+| Variable | Purpose |
+| --- | --- |
+| `POCKETCODER_SESSION_QUEUE` | Per-session queue `count` and `bytes` |
+| `POCKETCODER_SESSION_STOP_SECONDS` | How long cancel and close may stay pending |
+| `POCKETCODER_SESSION_EVENT_RETENTION` | Recent events kept per session for replay |
+| `POCKETCODER_MODEL_GATEWAY`, `POCKETCODER_MODEL_GATEWAY_API_KEY` | The [model gateway](model-gateway.md) |
+
+None of them has a default. When the model gateway is configured, managed
+templates must use restricted egress that cannot reach the provider host;
+placement fails with `network_unrestricted` or `provider_route_allowed` before any
+compute is created.
 
 ## Container images
 

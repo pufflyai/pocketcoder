@@ -813,6 +813,45 @@ See [managed sessions and budget accounting](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
 exclusive business-credential placement, pinned broker renewal and trusted internal
 reservation/settlement ports. [Session work](managed-session-work.md) describes
-implemented request acceptance, file readiness, collection and adapter publication.
-Provider gateway enforcement, automatic placement/recovery, cancellation and
-history replay retain their later owners.
+implemented request acceptance, file readiness, collection, adapter publication,
+cancel and close, history and event replay, and automatic placement and
+replacement. The [model gateway](model-gateway.md) admits every model call against
+the budget ledger.
+
+### Cancel and close receipts
+
+`POST /v1/sessions/{sessionId}/requests/{requestId}/cancel` and
+`POST /v1/sessions/{sessionId}/close` take `{ "cancelId": "<uuid>" }` and need
+`sessions:write`. They return a `CancelReceipt`: `202` while the stop is pending,
+`200` once it completed. Retry with the same `cancelId` after a lost reply; the
+receipt keeps its first `acceptedAt` and `cancelDeadline`. A different `cancelId`
+for the same target returns `409 idempotency.conflict`. Set
+`POCKETCODER_SESSION_STOP_SECONDS`; without it these routes return
+`503 runtime.unavailable`.
+
+A queued request ends `canceled` without reaching the producer. A running
+request stays pending until the producer reports its own terminal state. A
+request that completed first keeps `completed`, and the receipt reports the stop
+as completed. A missed deadline keeps the receipt pending and sets the request's
+`reasonCode` to `cancel_deadline_exceeded`. Closing a session moves it to
+`closed`, rejects new requests with `409 session.closed`, stops only this
+session's work and keeps its history and receipts readable.
+
+### History and events
+
+`GET /v1/sessions/{sessionId}/history?limit=1..200&cursor=...` returns
+`records`, `nextCursor` and `eventCursor`. Records are the canonical conversation
+records. Every page of one snapshot keeps the same `eventCursor`.
+
+`GET /v1/sessions/{sessionId}/events?after=<eventCursor>` is a Server-Sent Events
+stream of durable `RuntimeEvent` observations. Each frame's `id` is its cursor;
+`Last-Event-ID` also works. Delivery is at least once: ignore resource revisions
+you already applied. Disconnecting never affects the session's work.
+
+| Status / code | Meaning | Client action |
+| --- | --- | --- |
+| 400 `events.cursor_invalid` | Cursor belongs to another session or is ahead of it | Use a cursor from this session |
+| 410 `events.cursor_expired` | Events after the cursor were pruned or deleted | Read a new history snapshot, then look up open requests |
+
+`POST /v1/sessions/{sessionId}/resume` records a wish for compute and returns the
+session. It never names a workspace.

@@ -2963,6 +2963,9 @@
                 "budget.exhausted",
                 "budget.conflict",
                 "revision.stale",
+                "events.cursor_invalid",
+                "events.cursor_expired",
+                "runtime.unavailable",
                 "internal.error"
               ]
             },

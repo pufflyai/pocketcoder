@@ -53,6 +53,7 @@ export {
   DisplaySchema,
 } from "./displays/display";
 export * from "./displays/screenshot";
+export { managedModelEgressRefusal } from "./network/managed-model-egress";
 export {
   findNetworkRule,
   isPrivateAddress,

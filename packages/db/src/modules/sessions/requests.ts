@@ -5,10 +5,12 @@ import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { sessionWriter } from "./observations";
+import { managedStops } from "./request-cancel";
 import { completeManagedCleanup } from "./request-cleanup";
 import { availableCollection } from "./request-collection";
 import { prepareManagedRequests } from "./request-dispatch";
 import { pinSessionInputs } from "./request-inputs";
+import { writeManagedRequest } from "./request-writer";
 import { workAuthority } from "./work-authority";
 
 export function createManagedRequests(context: DatabaseContext): ManagedRequestStore {
@@ -16,6 +18,7 @@ export function createManagedRequests(context: DatabaseContext): ManagedRequestS
   const requests = tables.conversationRequests;
   const writer = sessionWriter(context);
   const authorize = workAuthority(context);
+  const stops = managedStops(context);
   return {
     completeCleanup: (workspaceId) => completeManagedCleanup(context, workspaceId),
     async accept(keyId, sessionId, input, limits) {
@@ -150,6 +153,28 @@ export function createManagedRequests(context: DatabaseContext): ManagedRequestS
         };
       });
     },
-    prepare: (at) => prepareManagedRequests(context, at),
+    cancel: (keyId, sessionId, requestId, command, windowMs, at) =>
+      stops.cancel(keyId, sessionId, requestId, command, windowMs, at),
+    async budgetDenied(identity, at) {
+      await db.transaction(async (tx) => {
+        await writer.read(tx, identity);
+        const [row] = await tx
+          .select()
+          .from(requests)
+          .where(
+            and(
+              eq(requests.principalId, identity.principalId),
+              eq(requests.conversationId, identity.sessionId),
+              eq(requests.requestId, identity.requestId),
+            ),
+          );
+        if (!row?.managed || row.managed.budgetExhaustedAt) return;
+        await writeManagedRequest(context, tx, row, { ...row.managed, budgetExhaustedAt: at.toISOString() });
+      });
+    },
+    async prepare(at) {
+      await stops.sweep(at);
+      await prepareManagedRequests(context, at);
+    },
   };
 }

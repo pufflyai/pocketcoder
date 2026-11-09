@@ -5,6 +5,7 @@ import { buildServer } from "../app";
 import { composeBackups } from "../backup/backup-composition";
 import { startManagedPrincipals } from "../bootstrap/managed-principals/startup";
 import { configSummary, listenerOrigin, loadConfig, type ServerConfig } from "../config/config";
+import { managedSessionDeps } from "../config/session-queue";
 import { recordInterruptedTurns } from "../conversations/live-turns";
 import { composeAccountLifecycle } from "../maintenance/account-composition";
 import { AccountPurgeRequiredError, accountPurgeFence, requireNormalController } from "../maintenance/account-purge";
@@ -17,7 +18,7 @@ import { createStructuredLogger, type StructuredLogger } from "../observability/
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { createSecretVault } from "../secrets/secret-vault";
-import { startBackgroundTimers } from "./background-timers";
+import { builtTimerDeps, startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { inputStorageOptions } from "./input-storage-config";
 import { loadLaunchPolicy } from "./launch-policy";
@@ -145,7 +146,7 @@ export async function startPocketCoderServer(
       egressImage: config.egressImage,
       limits: config.limits,
       workloadLimits: config.workloadLimits,
-      sessionQueueLimits: config.sessionQueueLimits,
+      ...managedSessionDeps(config),
       workspaceServerUrl: config.workspaceServerUrl,
       persistenceLimits: config.persistenceLimits,
       checkpointTransferOptions: transferOptions,
@@ -215,10 +216,7 @@ export async function startPocketCoderServer(
       scheduler,
       persistence,
       workspaceLeases,
-      checkpointTransfers: built.checkpointTransfers,
-      inputs: built.inputs,
-      liveTurns: built.liveTurns,
-      executionDispatcher: built.executionDispatcher,
+      ...builtTimerDeps(built),
       readiness,
       metrics,
       ...("checkSharedStorage" in driver ? { sharedStorageCheck: () => driver.checkSharedStorage() } : {}),

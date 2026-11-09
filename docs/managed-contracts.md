@@ -5,7 +5,8 @@ for PC-162 draft revision 2. `MANAGED_CONTRACT_REVISION` is
 `pocketcoder.managed/v1`. The authoritative Zod types live under
 `packages/contracts/src/sessions` and `budgets`. Session create/lookup, execution profile provisioning, budget policy writes/reads
 usage reads, bounded session requests, retained files and physical capacity are implemented.
-Automatic replacement, cancel/close, history replay and the gateway retain their separate owners. See the [implemented runtime](managed-runtime.md).
+Resume, cancel/close and history/event replay are implemented too, and the [model gateway](model-gateway.md)
+admits every model call. See the [implemented runtime](managed-runtime.md) and [session work](managed-session-work.md).
 
 | Artifact | Purpose |
 | --- | --- |
@@ -32,11 +33,11 @@ publishes its actual API at `/v1/openapi.json`. Implemented routes use the exist
 | Immutable execution profile | `ExecutionProfile` | PC-137 provisions and pins authority; PC-164 references it |
 | Logical identity and state | `SessionCreate`, `Session` | PC-164 ships create/lookup and generation binding; canonical conversation owns its transcript |
 | Durable logical acceptance | `RequestInput`, `Request` | PC-166 ships bounded logical acceptance on `conversation_requests`; the controller creates physical envelopes |
-| Cancel and close | `CancelCommand`, `CancelReceipt` | PC-172 composes existing targeted execution cancellation and workspace lifecycle |
+| Cancel and close | `CancelCommand`, `CancelReceipt` | PC-172 ships request cancel and session close on the existing targeted execution cancellation and workspace lifecycle |
 | Immutable session inputs | `InputUpload`, `InputObject`, `InputReference` | PC-165 ships session namespaces on the existing immutable input owner |
 | Retained result and zero-file receipt | `CollectionResult`, `ExportObject`, `ExportPage` | PC-165 ships logical mappings and retained reads; PC-132 adds service publication to PC-131 collection |
-| Retained history snapshot | `HistoryPage` | PC-173 reuses canonical `ConversationRecordDocument`; outer fields are exactly `records`, `nextCursor`, `eventCursor` |
-| Ordered observations | `RuntimeEvent` | PC-164 writes revisions/observations; PC-173 adds snapshot/replay readers |
+| Retained history snapshot | `HistoryPage` | PC-173 ships it on canonical `ConversationRecordDocument`; outer fields are exactly `records`, `nextCursor`, `eventCursor` |
+| Ordered observations | `RuntimeEvent` | PC-164 writes revisions/observations; PC-173 ships the SSE replay reader |
 | Budget scopes and policies | `BudgetPolicyWrite`, `BudgetPolicy`, `BudgetUsage` | PC-167/168/169 ship policy and token accounting; PC-170 ships physical capacity; no consumer-writable settlement |
 | Runtime cleanup evidence | `CleanupReceipt` | Trusted accounting input, separate from model usage evidence |
 | Workspace service tool | `ServiceStart`, `ServiceReceipt` | PC-133 ships supervisor-local `service start/stop/status`; no public remote shell |

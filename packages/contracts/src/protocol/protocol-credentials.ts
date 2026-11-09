@@ -10,7 +10,8 @@ export const WorkspaceCredentialSchema = z.object({
     .max(SOURCE_CREDENTIAL_MAX_BYTES)
     .refine((value) => !value.includes("\0")),
   expires_at: z.iso.datetime(),
-  purpose: z.enum(["setup-issuer", "runtime-issuer"]),
+  // model-gateway grants expire with their workspace and are never renewed.
+  purpose: z.enum(["setup-issuer", "runtime-issuer", "model-gateway"]),
 });
 export type WorkspaceCredential = z.infer<typeof WorkspaceCredentialSchema>;
 export const CredentialRenewPayload = z.object({ lease_id: z.uuid(), request_id: z.uuid() });

@@ -1,0 +1,139 @@
+import { expect, test } from "bun:test";
+import type { PrincipalRow, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import { fakeProducer, managedFixture } from "./managed-fixture.test";
+import { createSessionRecovery, type PlacementLauncher } from "./recovery";
+
+async function terminate(store: Awaited<ReturnType<typeof managedFixture>>["f"]["store"], id: string) {
+  await store.transition(id, { from: ["ready", "connected"], to: "terminating", at: new Date() });
+  await store.transition(id, { from: ["terminating"], to: "canceled", at: new Date() });
+  // The scheduler records this after its driver removed the workspace's input projections.
+  await store.managed.requests.completeCleanup(id);
+}
+
+test("replacing lost compute keeps the session, never re-dispatches started work and resumes unstarted work", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
+  const created: string[] = [];
+  // The fixture driver stands in for the scheduler launch; everything else is the production owner.
+  const launcher: PlacementLauncher = {
+    async create(_principal: PrincipalRow, body, key) {
+      created.push(key);
+      expect(body.metadata?.["pocketcoder.managed-session"]).toBeDefined();
+      const next = launched[0] ?? (await m.launch());
+      launched[0] = next;
+      return (await m.f.store.getWorkspace(next.id)) as WorkspaceRow;
+    },
+    stop: async (_principal, id) => terminate(m.f.store, id),
+  };
+  try {
+    const sessionId = await m.session();
+    const started = await m.submit(sessionId, "run started");
+    await m.settle();
+    const waiting = await m.submit(sessionId, "run waiting");
+    expect((await m.request(sessionId, started)).state).toBe("running");
+
+    await m.f.store.endWorkspaceRuntime(m.f.id, m.f.runtime.incarnationId, new Date());
+    expect(await m.request(sessionId, started)).toMatchObject({ state: "terminal", outcome: "lost" });
+
+    const recovery = createSessionRecovery({ store: m.f.store, launcher });
+    await recovery.tick(); // fences the old writer
+    await recovery.tick(); // detaches the ended binding
+    expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).state).toBe("suspended");
+    await recovery.tick(); // records a placement and its capacity
+    // A restarted controller continues from the recorded placement instead of launching again.
+    const restarted = createSessionRecovery({ store: m.f.store, launcher });
+    await restarted.tick(); // binds generation 2
+    await restarted.tick(); // observes it ready
+    expect(created).toEqual([`managed-session:${sessionId}:2`]);
+    const session = await m.f.store.managed.sessions.get(m.keyId, sessionId);
+    expect(session).toMatchObject({ sessionId, state: "ready" });
+
+    const replacement = launched[0];
+    if (!replacement) throw Error("Missing replacement");
+    for (let i = 0; i < 3; i++) {
+      await replacement.dispatcher.tick();
+      await replacement.dispatcher.drain();
+    }
+    expect((await m.request(sessionId, waiting)).state).toBe("running");
+    expect(producer.sent("run started")).toHaveLength(1);
+    expect(producer.sent("run waiting")).toHaveLength(1);
+    const physical = producer.journal.find((entry) => entry.message === "run waiting");
+    expect(physical?.requestId).toBe((await m.request(sessionId, waiting)).turnId);
+    // The stale generation cannot bind again.
+    await expect(
+      m.f.store.managed.sessions.bind({ principalId: m.f.principal.id, sessionId }, 99, {
+        workspaceId: m.f.id,
+        incarnationId: m.f.runtime.incarnationId,
+        generation: 1,
+      }),
+    ).rejects.toMatchObject({ code: "revision.stale" });
+    const history = await m.f.store.managed.history.history(m.keyId, sessionId, null, 50);
+    expect(history.records.map((record) => record.status)).toEqual(["lost"]);
+    await replacement.dispose();
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+test("resume is idempotent, placement waits for capacity and a closed session is never placed", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const created: string[] = [];
+  const launcher: PlacementLauncher = {
+    async create(_principal, _body, key) {
+      created.push(key);
+      throw new Error("not expected");
+    },
+    stop: async () => {},
+  };
+  try {
+    const sessionId = (
+      await m.f.store.managed.sessions.create(m.keyId, {
+        sessionId: crypto.randomUUID(),
+        profileId: m.profileId,
+        profileRevision: 1,
+      })
+    ).sessionId;
+    const first = await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    const again = await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    expect(again.revision).toBe(first.revision);
+    await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId: crypto.randomUUID() }, 30000, new Date());
+    await createSessionRecovery({ store: m.f.store, launcher }).tick();
+    expect(created).toEqual([]);
+    await expect(m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date())).rejects.toMatchObject({
+      code: "session.closed",
+    });
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+test("a budgeted profile on unrestricted egress fails before any compute is created", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const created: string[] = [];
+  const launcher: PlacementLauncher = {
+    async create(_principal, _body, key) {
+      created.push(key);
+      throw new Error("not expected");
+    },
+    stop: async () => {},
+  };
+  try {
+    const sessionId = crypto.randomUUID();
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    await createSessionRecovery({ store: m.f.store, launcher, providerHosts: ["api.openai.com"] }).tick();
+    expect(created).toEqual([]);
+    expect(await m.f.store.managed.sessions.get(m.keyId, sessionId)).toMatchObject({
+      state: "failed",
+      reasonCode: "network_unrestricted",
+    });
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
