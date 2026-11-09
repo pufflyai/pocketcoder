@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { issueMachineKey } from "@pstdio/pocketcoder-auth";
-import { digestOf, snapshotOf } from "@pstdio/pocketcoder-contracts";
+import { digestOf, runtimeTemplateDefinition, snapshotOf, type TemplateSnapshot } from "@pstdio/pocketcoder-contracts";
 import { createPGliteFixture } from "@pstdio/pocketcoder-db/testing";
 import { createIssuerClient } from "./issuer-client";
 import { createTestIssuer } from "./issuer-test-server";
@@ -12,6 +12,8 @@ export async function leaseServiceFixture(
   sourceUrl = "https://source.example/private.git",
   resourceHost?: string,
   runtime = false,
+  // A workload template whose fixed-scope slots name the issuer secrets it may receive.
+  workload?: unknown,
 ) {
   const db = await createPGliteFixture("issuer-service", mode);
   try {
@@ -42,7 +44,17 @@ export async function leaseServiceFixture(
       };
       await vault.put(key.id, "source", config);
       const id = randomUUID();
-      const snapshot = snapshotOf(db.parsed);
+      const definition = workload ? runtimeTemplateDefinition(workload) : null;
+      // The same snapshot shape the workspace service stores for a published workload template.
+      const snapshot: TemplateSnapshot = definition?.workload
+        ? {
+            name: definition.manifest.metadata.name,
+            version: definition.manifest.spec.version,
+            digest: definition.digest,
+            spec: definition.policy,
+            manifest: definition.workload,
+          }
+        : snapshotOf(db.parsed);
       if (runtime) snapshot.spec.env.RUNTIME_TOKEN_FILE = "secretRef:runtime";
       snapshot.spec.source = {
         kind: "git",

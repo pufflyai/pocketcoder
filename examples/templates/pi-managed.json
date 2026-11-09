@@ -1,0 +1,100 @@
+{
+  "apiVersion": "pocketcoder.dev/v1",
+  "kind": "Template",
+  "metadata": {
+    "name": "pi-managed",
+    "description": "Pi as a managed-session producer over pocketcoder.execution/v1"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "image": "registry.example/pocketcoder-pi-starter@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "protocol": "pocketcoder.workload/v1"
+    },
+    "profile": "service",
+    "adapters": {
+      "main": {
+        "kind": "service",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocol": "pocketcoder.execution/v1",
+        "service": "agent"
+      }
+    },
+    "operations": {
+      "message": {
+        "adapter": "main",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "message": { "type": "string" } },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "requiredCapabilities": ["immutable-inputs"],
+        "outputRoots": ["/workspace/.pocketcoder/outputs"]
+      }
+    },
+    "services": {
+      "agent": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "healthPath": "/status",
+        "required": true,
+        "process": {
+          "command": ["bun", "/opt/pocketcoder/pi-adapter.js"],
+          "env": {
+            "PI_ADAPTER_PORT": "3284",
+            "PI_PUBLICATION_MAX_BYTES": "4194304",
+            "PI_GATEWAY_URL": "http://agentgateway.internal:8080/v1",
+            "PI_GATEWAY_MODEL": "replace-with-your-model",
+            "PI_GATEWAY_BEARER_FILE": "credentialSlot:model-gateway"
+          }
+        },
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/executions/accept",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          { "method": "POST", "path": "/executions/lookup", "maxResponseBytes": 8388608, "deadlineSeconds": 30 },
+          { "method": "POST", "path": "/executions/cancel", "maxResponseBytes": 8388608, "deadlineSeconds": 30 },
+          { "method": "POST", "path": "/executions/ack", "deadlineSeconds": 30 }
+        ]
+      }
+    },
+    "previews": {},
+    "credentialSlots": {
+      "model-gateway": {
+        "policyRef": "model-gateway",
+        "policyVersion": "1",
+        "binding": "fixed-scope",
+        "delivery": "workspace-expiring-file",
+        "maxLeaseSeconds": 600
+      }
+    },
+    "resources": { "cpu": "2", "memory": "2Gi" },
+    "network": {
+      "mode": "restricted",
+      "allow": [{ "domain": "agentgateway.internal", "ports": [8080], "allowPrivate": true }]
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"]
+    },
+    "limits": {
+      "deadlineSeconds": 600,
+      "finalizationSeconds": 30,
+      "inputFileBytes": 1048576,
+      "stagedInputBytes": 8388608,
+      "inputFiles": 16,
+      "inFlightTransfers": 2,
+      "exportBytes": 4194304,
+      "exportFiles": 16,
+      "unreferencedInputRetentionSeconds": 600,
+      "exportRetentionSeconds": 900
+    }
+  }
+}

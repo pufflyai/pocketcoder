@@ -73,6 +73,8 @@ export interface ManagedSessionStore {
     windowMs: number,
     at: Date,
   ): Promise<ManagedStopResult>;
+  // The current physical binding behind a logical session, after the caller's read authority is rechecked.
+  binding(keyId: string, sessionId: string): Promise<(ManagedBinding & { bindingRevision: number }) | null>;
 }
 export interface ManagedBudgetStore {
   writePolicy(

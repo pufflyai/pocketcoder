@@ -1,6 +1,7 @@
 import { AdministrationApi } from "./resources/admin/admin";
 import { AgentApi } from "./resources/agent/agent";
 import { AttachmentsApi } from "./resources/attachments/attachments";
+import { ManagedAuthorityApi } from "./resources/budgets/budgets";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
@@ -9,6 +10,9 @@ import { KeysApi, RecoveryApi } from "./resources/keys/keys";
 import { PreviewsApi } from "./resources/previews/previews";
 import { PrincipalsApi } from "./resources/principals/principals";
 import { SecretsApi } from "./resources/secrets/secrets";
+import { SessionFilesApi } from "./resources/sessions/files";
+import { SessionRequestsApi } from "./resources/sessions/requests";
+import { SessionsApi } from "./resources/sessions/sessions";
 import { TemplatesApi } from "./resources/templates/templates";
 import { TerminalsApi } from "./resources/terminals/terminals";
 import { WorkspacesApi } from "./resources/workspaces/workspaces";
@@ -34,6 +38,11 @@ export class PocketCoderClient {
   readonly principals: PrincipalsApi;
   readonly keys: KeysApi;
   readonly recovery: RecoveryApi;
+  // Managed sessions: the application-facing runtime boundary.
+  readonly sessions: SessionsApi;
+  readonly requests: SessionRequestsApi;
+  readonly files: SessionFilesApi;
+  readonly authority: ManagedAuthorityApi;
 
   constructor(config: PocketCoderClientConfig, fetchImpl: typeof fetch = fetch) {
     this.transport = new PocketCoderTransport(config, fetchImpl);
@@ -55,6 +64,10 @@ export class PocketCoderClient {
     this.principals = new PrincipalsApi(this.transport);
     this.keys = new KeysApi(this.transport);
     this.recovery = new RecoveryApi(this.transport);
+    this.sessions = new SessionsApi(this.transport);
+    this.requests = new SessionRequestsApi(this.transport);
+    this.files = new SessionFilesApi(this.transport);
+    this.authority = new ManagedAuthorityApi(this.transport);
   }
 
   raw(path: string, init: RequestInit = {}) {

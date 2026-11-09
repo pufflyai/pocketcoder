@@ -854,3 +854,18 @@ you already applied. Disconnecting never affects the session's work.
 
 `POST /v1/sessions/{sessionId}/resume` records a wish for compute and returns the
 session. It never names a workspace.
+
+### Session previews
+
+`POST /v1/sessions/{sessionId}/previews/{name}` needs `previews:open` and `sessions:read`.
+The body is `{ "session": { "mode": ... }, "grant": { "id", "subject", "accessRevision", "ceilingAt" } }`;
+`grant` is required for cloud view sessions and covers only this preview. The controller
+resolves the session's current compute, creates the [preview grant](preview-grants.md) for
+that exact incarnation and returns `{ url, expires_at, grantId }` with 201. If the session
+has no ready compute it returns `409 workspace.not_ready`. If compute was replaced during
+the open, it revokes the new grant and returns `409 operation.conflict`: retry with a new
+grant id. A grant id is never retargeted to other compute.
+
+The SDK covers every managed route (`client.sessions`, `client.requests`, `client.files`,
+`client.authority`) and `pcd sessions` / `pcd budgets` expose them on the command line.
+See the [reference consumer](../examples/clients/managed-runtime/README.md).

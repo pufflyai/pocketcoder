@@ -8,6 +8,7 @@ import { authorityContext, conflict, unavailable } from "../managed/authority-co
 import { sessionWriter } from "./observations";
 import { placementChecks } from "./placement";
 import { managedStops } from "./request-cancel";
+import { workAuthority } from "./work-authority";
 
 export function createManagedSessions(context: DatabaseContext): ManagedSessionStore {
   const { db, tables } = context;
@@ -117,5 +118,11 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
       return db.transaction((tx) => writer.update(tx, id, revision, state, reason));
     },
     close: (keyId, sessionId, command, windowMs, at) => stops.close(keyId, sessionId, command, windowMs, at),
+    async binding(keyId, sessionId) {
+      return db.transaction(async (tx) => {
+        const { row } = await workAuthority(context)(tx, keyId, sessionId, "sessions:read");
+        return row.binding ? { ...row.binding, bindingRevision: row.bindingRevision } : null;
+      });
+    },
   };
 }

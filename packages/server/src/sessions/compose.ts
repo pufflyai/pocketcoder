@@ -6,6 +6,7 @@ import { registerBudgetUsageRoutes } from "../budgets/usage-routes";
 import type { AppEnv } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
 import { registerSessionHistoryRoutes } from "./history-routes";
+import { registerSessionPreviewRoutes } from "./preview-routes";
 import { registerProfileRoutes } from "./profile-routes";
 import { createSessionRecovery } from "./recovery";
 import { registerSessionRoutes } from "./session-routes";
@@ -26,6 +27,7 @@ export function registerManagedSessionRoutes(
     executionDispatcher: ExecutionDispatcher;
     inputs?: InputStorage;
     inputStorageOptions?: InputStorageOptions;
+    previews: Parameters<typeof registerSessionPreviewRoutes>[2];
   },
 ) {
   const { store, executionDispatcher } = deps;
@@ -40,6 +42,7 @@ export function registerManagedSessionRoutes(
   registerProfileRoutes(app, store);
   registerBudgetPolicyRoutes(app, store);
   registerBudgetUsageRoutes(app, store);
+  registerSessionPreviewRoutes(app, store, deps.previews);
 }
 
 // Placement uses the ordinary workspace service, so admission, capacity and lifecycle stay with their owners.

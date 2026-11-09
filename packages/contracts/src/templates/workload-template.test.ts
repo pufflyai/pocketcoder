@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
+import { waitingExecSpec } from "../protocol/waiting-exec";
+import { templateCredentialReferences } from "./runtime-credentials";
 import { workloadFixture } from "./workload-fixtures.test";
-import { parseWorkloadTemplate } from "./workload-template";
+import { runtimeTemplateDefinition } from "./workload-policy";
+import { parseWorkloadTemplate, workloadSnapshotOf } from "./workload-template";
 
 test("one versioned contract accepts both minimum profiles and arbitrary credential-free commands", () => {
   for (const profile of ["finite-process", "cloud-interactive"] as const) {
@@ -109,4 +112,22 @@ test("workspace websites may expose their listener while execution adapter ports
     },
   };
   expect(() => parseWorkloadTemplate(source)).toThrow("reserved");
+});
+
+test("fixed-scope workload slots publish as issuer-backed runtime credentials; delegated grants stay refused", async () => {
+  const raw = await Bun.file(new URL("../../../../examples/templates/pi-managed.json", import.meta.url)).json();
+  const parsed = runtimeTemplateDefinition(raw);
+  const manifest = parseWorkloadTemplate(raw).manifest;
+  expect(templateCredentialReferences({ spec: parsed.policy, manifest })).toEqual(["model-gateway"]);
+  expect(parsed.policy.security.writableMemoryPaths).toContain("/run/pocketcoder/secrets");
+  const exec = waitingExecSpec({ ...workloadSnapshotOf(parseWorkloadTemplate(raw)) }, "incarnation", "create");
+  expect(exec.workload?.infrastructure.agent?.env.PI_GATEWAY_BEARER_FILE).toBe(
+    "/run/pocketcoder/secrets/leases/model-gateway",
+  );
+  const delegated = structuredClone(raw);
+  delegated.spec.credentialSlots["model-gateway"].binding = "post-create-grant";
+  expect(() => runtimeTemplateDefinition(delegated)).toThrow("Post-create credential grants are not qualified.");
+  const pathRef = structuredClone(raw);
+  pathRef.spec.credentialSlots["model-gateway"].policyRef = "model-gateway/bearer";
+  expect(() => runtimeTemplateDefinition(pathRef)).toThrow("must name an issuer secret");
 });
