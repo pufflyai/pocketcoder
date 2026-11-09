@@ -12,6 +12,8 @@ export interface TurnIntent {
 // before it is sent, so a crash or lost reply is retried with the identical body and the same
 // request ID. This is application state, not runtime state: it never tracks dispatch or outcomes.
 export class IntentFile {
+  private writing = Promise.resolve();
+
   private constructor(
     private readonly path: string,
     private readonly intents: Map<string, TurnIntent>,
@@ -30,10 +32,16 @@ export class IntentFile {
     return [...this.intents.values()].filter((intent) => intent.sessionId === sessionId);
   }
 
-  async save(intent: TurnIntent) {
+  // Saves are written one at a time: concurrent requests share one temporary file and one target.
+  save(intent: TurnIntent) {
     this.intents.set(intent.body.requestId, intent);
-    const temporary = `${this.path}.tmp`;
-    await writeFile(temporary, JSON.stringify([...this.intents.values()], null, 2));
-    await rename(temporary, this.path);
+    this.writing = this.writing
+      .catch(() => {})
+      .then(async () => {
+        const temporary = `${this.path}.tmp`;
+        await writeFile(temporary, JSON.stringify([...this.intents.values()], null, 2));
+        await rename(temporary, this.path);
+      });
+    return this.writing;
   }
 }
