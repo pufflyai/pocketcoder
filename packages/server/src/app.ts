@@ -308,7 +308,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
-  registerManagedSessionRoutes(app, { ...deps, store, service, executionDispatcher, inputs });
+  registerManagedSessionRoutes(app, { ...deps, store, executionDispatcher, inputs });
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);

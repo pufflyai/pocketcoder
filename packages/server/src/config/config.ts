@@ -4,23 +4,18 @@ import { type AdmissionLimits, DEFAULT_LIMITS, type WarmPoolConfigEntry } from "
 import { managedPrincipalsConfig } from "../bootstrap/managed-principals/startup";
 import { conversationRetentionPolicy } from "../conversations/conversation-retention";
 import { launchPolicyConfig } from "../lifecycle/launch-policy";
-import { parseModelGatewayConfig } from "../model-gateway/config";
 import { DEFAULT_PERSISTENCE_LIMITS, type PersistenceLimits } from "../persistence/persistence";
 import { parseHttpAddress } from "./http-address";
 import { type InputStorageConfig, inputStorageConfig } from "./input-storage-config";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { kubernetesSharedConfig } from "./kubernetes-shared-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
-import { sessionEventRetentionConfig, sessionQueueConfig, sessionStopConfig } from "./session-queue";
+import { type SessionConfig, sessionConfig } from "./session-queue";
 import { type StoreConfig, storeConfig } from "./store-config";
 
 type Environment = Record<string, string | undefined>;
 
-export interface ServerConfig {
-  sessionQueueLimits?: ReturnType<typeof sessionQueueConfig>;
-  sessionStopSeconds?: number;
-  sessionEventRetention?: number;
-  modelGateway?: import("../model-gateway/config").ModelGatewayConfig | null;
+export interface ServerConfig extends Partial<SessionConfig> {
   kubernetesSharedStorage?: ReturnType<typeof kubernetesSharedConfig>;
   inputStorage?: InputStorageConfig;
   offNodeConfigFile?: string;
@@ -359,10 +354,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     ) as string,
     limits: resolveAdmissionLimits(env),
     workloadLimits: deploymentWorkloadLimits(env.POCKETCODER_WORKLOAD_LIMITS),
-    sessionQueueLimits: sessionQueueConfig(env.POCKETCODER_SESSION_QUEUE),
-    sessionStopSeconds: sessionStopConfig(env.POCKETCODER_SESSION_STOP_SECONDS),
-    sessionEventRetention: sessionEventRetentionConfig(env.POCKETCODER_SESSION_EVENT_RETENTION),
-    modelGateway: parseModelGatewayConfig(env),
+    ...sessionConfig(env),
     schedulerIntervalMs: intEnv(env, "POCKETCODER_SCHEDULER_INTERVAL_MS", 1000),
     outboxIntervalMs: intEnv(env, "POCKETCODER_OUTBOX_INTERVAL_MS", 1000),
     persistenceLimits: resolvePersistenceLimits(env),

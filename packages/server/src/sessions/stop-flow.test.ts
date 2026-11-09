@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { fakeProducer, managedFixture } from "./managed-fixture.test";
+import { createSessionRecovery } from "./recovery";
 
 const WINDOW = 30000;
 
@@ -126,10 +127,15 @@ test("close fences new work, stops this session only and keeps its history reada
     const cancelId = randomUUID();
     const close = await m.f.store.managed.sessions.close(m.keyId, a, { cancelId }, WINDOW, new Date());
     expect(close.receipt).toMatchObject({ scope: "session", requestId: null, state: "pending" });
-    expect(close.releaseWorkspaceId).toBeNull();
     await expect(m.submit(a, "after close")).rejects.toMatchObject({ code: "session.closed" });
     for (const record of close.executions) m.f.dispatcher.cancel(record);
     await m.settle();
+    // On shared compute, close completes once this session's process stop is recorded.
+    const pending = await m.f.store.managed.sessions.close(m.keyId, a, { cancelId }, WINDOW, new Date());
+    expect(pending.receipt.state).toBe("pending");
+    const launcher = { create: async () => Promise.reject(Error("not expected")), stop: async () => {} };
+    await createSessionRecovery({ store: m.f.store, launcher }).tick();
+    await m.f.store.managed.requests.prepare(new Date());
 
     const replay = await m.f.store.managed.sessions.close(m.keyId, a, { cancelId }, WINDOW, new Date());
     expect(replay.receipt).toMatchObject({ state: "completed", cancelDeadline: close.receipt.cancelDeadline });

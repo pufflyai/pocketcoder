@@ -7,6 +7,7 @@ import type {
 import { and, eq, gt, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { sessionWriter } from "./observations";
+import { ownedWorkspaces } from "./session-workspaces";
 import { workAuthority } from "./work-authority";
 
 // Durable placement and resume intents. The server placement owner reads these on every tick,
@@ -28,22 +29,36 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
         .select()
         .from(sessions)
         .where(
-          and(
-            ne(sql`${sessions.session}->>'state'`, "closed"),
-            or(
-              sql`${sessions.binding} IS NOT NULL`,
-              gt(sessions.queueCount, 0),
-              sql`${sessions.resumeRequestedAt} IS NOT NULL`,
+          or(
+            and(
+              ne(sql`${sessions.session}->>'state'`, "closed"),
+              or(
+                sql`${sessions.binding} IS NOT NULL`,
+                gt(sessions.queueCount, 0),
+                sql`${sessions.resumeRequestedAt} IS NOT NULL`,
+              ),
             ),
+            // A close stays a candidate until its compute has stopped.
+            sql`${sessions.close} IS NOT NULL AND ${sessions.close}->>'completedAt' IS NULL`,
           ),
         );
       const profiles = await db.select().from(tables.managedProfiles);
-      return rows.map(
-        (row): ManagedRecoveryCandidate => ({
+      const requests = tables.conversationRequests;
+      const open = await db
+        .select({ principalId: requests.principalId, sessionId: requests.conversationId })
+        .from(requests)
+        .where(sql`${requests.managed} IS NOT NULL AND ${requests.managed}->'request'->>'state' <> 'terminal'`);
+      const candidates: ManagedRecoveryCandidate[] = [];
+      for (const row of rows) {
+        const id = { principalId: row.principalId, sessionId: row.sessionId };
+        candidates.push({
+          closing: row.close !== null,
+          ownedWorkspaceIds: row.close ? await ownedWorkspaces(context, db, id, row.session, row.binding) : [],
+          openRequests: open.filter((r) => r.principalId === row.principalId && r.sessionId === row.sessionId).length,
           templateDigest:
             profiles.find((p) => p.profileId === row.session.profileId && p.revision === row.session.profileRevision)
               ?.profile.templateDigest ?? "",
-          id: { principalId: row.principalId, sessionId: row.sessionId },
+          id,
           session: row.session,
           binding: row.binding,
           bindingRevision: row.bindingRevision,
@@ -51,8 +66,9 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
           queueCount: row.queueCount,
           placement: row.placement,
           resumeRequested: row.resumeRequestedAt !== null,
-        }),
-      );
+        });
+      }
+      return candidates;
     },
     // Resume records a desire for compute; it never names or reuses a physical workspace.
     async resume(keyId, sessionId, at) {
@@ -73,11 +89,23 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
         return intent;
       });
     },
-    async clearPlacement(id, workspaceId) {
-      await db
-        .update(sessions)
-        .set({ placement: null })
-        .where(and(writer.where(id), sql`${sessions.placement}->>'workspaceId' = ${workspaceId}`));
+    // A placement whose workspace ended before it was ready consumes its generation, so the next
+    // attempt gets a new idempotency key instead of replaying the ended workspace. Resume tries again.
+    async failPlacement(id, workspaceId) {
+      await db.transaction(async (tx) => {
+        const row = await writer.read(tx, id);
+        if (row.placement?.workspaceId !== workspaceId) return;
+        await tx
+          .update(sessions)
+          .set({
+            placement: null,
+            resumeRequestedAt: null,
+            lastGeneration: Math.max(row.lastGeneration, row.placement.generation),
+          })
+          .where(writer.where(id));
+        if (row.session.state !== "closed" && row.session.state !== "failed")
+          await writer.update(tx, id, row.session.revision, "failed", "placement_failed");
+      });
     },
     async placed(id, workspaceId) {
       await db

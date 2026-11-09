@@ -44,8 +44,6 @@ export interface ManagedQueueLimits {
 export interface ManagedStopResult {
   receipt: managed.CancelReceipt;
   executions: import("@pstdio/pocketcoder-contracts").ExecutionRecord[];
-  // Exclusive compute that close must stop, with its credentials.
-  releaseWorkspaceId: string | null;
 }
 export interface ManagedRequestStore {
   completeCleanup(workspaceId: string): Promise<void>;

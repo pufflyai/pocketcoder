@@ -120,9 +120,10 @@ managed session receives a gateway credential at registration. It is a file at
 - Each call names the physical turn it serves in the `x-pocketcoder-turn` header.
   The controller maps that turn to its logical request. The turn must be
   unfinished, bound to this exact incarnation and belong to an open session.
-- Closing a session ends its turns, so its calls stop working without fencing
-  sibling sessions. Ending or replacing the workspace ends every credential of
-  the old incarnation.
+- A turn with a pending cancel, or a closed session's turn, cannot make calls.
+  This never fences sibling sessions. Compute placed for a session that has
+  closed receives no gateway credential.
+- Ending or replacing the workspace ends every credential of the old incarnation.
 - Session, budget scope and model authority come from the registered profile,
   never from the request body or the credential.
 

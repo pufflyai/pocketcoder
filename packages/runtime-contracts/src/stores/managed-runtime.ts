@@ -133,6 +133,10 @@ export interface ManagedRecoveryCandidate {
   placement: import("./managed-work").ManagedPlacementIntent | null;
   resumeRequested: boolean;
   templateDigest: string;
+  closing: boolean;
+  // Compute a closing session owns alone and must stop.
+  ownedWorkspaceIds: string[];
+  openRequests: number;
 }
 export interface ManagedRecoveryStore {
   candidates(): Promise<ManagedRecoveryCandidate[]>;
@@ -141,7 +145,7 @@ export interface ManagedRecoveryStore {
     identity: ManagedSessionIdentity,
     intent: import("./managed-work").ManagedPlacementIntent,
   ): Promise<import("./managed-work").ManagedPlacementIntent>;
-  clearPlacement(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
+  failPlacement(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
   placed(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
   transition(
     identity: ManagedSessionIdentity,
@@ -158,7 +162,6 @@ export interface ManagedGatewayGrant {
 }
 export interface ManagedGatewayGrantStore {
   issue(workspaceId: string, incarnationId: string, at: Date): Promise<{ token: string; expiresAt: Date }>;
-  revoke(workspaceId: string, at: Date): Promise<void>;
   resolve(token: string, turnId: string | null, at: Date): Promise<ManagedGatewayGrant>;
 }
 export interface ManagedHistoryStore {

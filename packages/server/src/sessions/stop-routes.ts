@@ -3,7 +3,6 @@ import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ExecutionDispatcher, ManagedStopResult, Store } from "@pstdio/pocketcoder-runtime-core";
 import { MANAGED_ERROR_RESPONSES, managedBodyLimit } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
-import type { WorkspaceService } from "../workspaces/service";
 
 const sessionParams = z.object({ sessionId: z.uuid() });
 const receipts = {
@@ -24,12 +23,11 @@ export function registerSessionStopRoutes(
   app: OpenAPIHono<AppEnv>,
   deps: {
     store: Store;
-    service: WorkspaceService;
     executionDispatcher: Pick<ExecutionDispatcher, "cancel" | "tick">;
     stopSeconds?: number;
   },
 ) {
-  const { store, service, executionDispatcher } = deps;
+  const { store, executionDispatcher } = deps;
   const base = "/v1/sessions/{sessionId}";
   app.use("/v1/sessions/:sessionId/close", managedBodyLimit(1024));
   app.use("/v1/sessions/:sessionId/requests/:requestId/cancel", managedBodyLimit(1024));
@@ -84,9 +82,8 @@ export function registerSessionStopRoutes(
         windowMs(),
         new Date(),
       );
+      // The placement owner stops compute this session owns alone, also after a controller restart.
       dispatch(result);
-      // Exclusive credentialed compute belongs to this session alone; stopping it revokes its credentials.
-      if (result.releaseWorkspaceId) await service.cancel(c.get("principal"), result.releaseWorkspaceId);
       return c.json(result.receipt, result.receipt.state === "completed" ? 200 : 202);
     },
   );

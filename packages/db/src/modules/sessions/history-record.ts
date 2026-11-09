@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationFact, ConversationMessageIdentity } from "@pstdio/pocketcoder-contracts";
 import type { ConversationMessageRow, ManagedRequestRecord } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { insertRecord, lockDocument } from "../conversations/documents";
 
@@ -58,7 +58,7 @@ export async function commitManagedHistory(
     outcome: request.outcome,
     ...(reason ? { reason } : {}),
   });
-  await insertRecord(context, tx, document, {
+  const record = await insertRecord(context, tx, document, {
     workspaceId,
     recordKey: row.identity.turn_id,
     request: row.identity,
@@ -69,4 +69,14 @@ export async function commitManagedHistory(
     endedAt,
     createdAt: endedAt,
   });
+  // Charged like any record so a later deletion refunds exactly these bytes. The terminal truth is
+  // never refused for quota: the request is already over.
+  await tx
+    .insert(context.tables.workspaceConversations)
+    .values({ workspaceId, status: "retained", updatedAt: endedAt })
+    .onConflictDoNothing({ target: context.tables.workspaceConversations.workspaceId });
+  await tx
+    .update(context.tables.workspaceConversations)
+    .set({ bytes: sql`${context.tables.workspaceConversations.bytes} + ${record.bytes}`, updatedAt: endedAt })
+    .where(eq(context.tables.workspaceConversations.workspaceId, workspaceId));
 }

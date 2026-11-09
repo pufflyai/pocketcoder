@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseModelGatewayConfig } from "../model-gateway/config";
 
 const queue = z.strictObject({
   count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -28,5 +29,16 @@ export function managedSessionDeps(config: {
     sessionQueueLimits: config.sessionQueueLimits,
     sessionStopSeconds: config.sessionStopSeconds,
     modelGateway: config.modelGateway ?? undefined,
+  };
+}
+
+export type SessionConfig = ReturnType<typeof sessionConfig>;
+// Managed session and model gateway settings. None of them has a default.
+export function sessionConfig(env: Record<string, string | undefined>) {
+  return {
+    sessionQueueLimits: sessionQueueConfig(env.POCKETCODER_SESSION_QUEUE),
+    sessionStopSeconds: sessionStopConfig(env.POCKETCODER_SESSION_STOP_SECONDS),
+    sessionEventRetention: sessionEventRetentionConfig(env.POCKETCODER_SESSION_EVENT_RETENTION),
+    modelGateway: parseModelGatewayConfig(env),
   };
 }

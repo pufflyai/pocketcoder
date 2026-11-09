@@ -18,7 +18,21 @@ export async function clearConversations(
   at: Date,
   still?: SQL,
 ) {
-  const { conversations, conversationRecords: records, workspaceConversations } = context.tables;
+  const { conversations, conversationRecords: records, workspaceConversations, managedSessions } = context.tables;
+  // A managed terminal commit holds its session row, then the document. Take them in that order too.
+  const owners = await tx
+    .select({ principalId: conversations.principalId, conversationId: conversations.conversationId })
+    .from(conversations)
+    .where(and(inArray(conversations.id, ids), still));
+  for (const owner of owners.sort((a, b) => String(a.conversationId).localeCompare(String(b.conversationId))))
+    if (owner.conversationId)
+      await tx
+        .select({ sessionId: managedSessions.sessionId })
+        .from(managedSessions)
+        .where(
+          and(eq(managedSessions.principalId, owner.principalId), eq(managedSessions.sessionId, owner.conversationId)),
+        )
+        .for("update");
   const locked = await tx
     .select({
       id: conversations.id,

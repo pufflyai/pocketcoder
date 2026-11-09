@@ -35,7 +35,10 @@ export function composeModelGateway(store: Store, config: ModelGatewayConfig | u
   });
   let reconciled: Promise<unknown> | null = null;
   return async (request: Request) => {
-    reconciled ??= reconcileGatewayInvocations(store.managed.budgets);
+    reconciled ??= reconcileGatewayInvocations(store.managed.budgets).catch((error) => {
+      reconciled = null;
+      throw error;
+    });
     await reconciled;
     return gateway(request);
   };
@@ -45,20 +48,19 @@ export function registerManagedSessionRoutes(
   app: OpenAPIHono<AppEnv>,
   deps: ManagedSessionDeps & {
     store: Store;
-    service: WorkspaceService;
     executionDispatcher: ExecutionDispatcher;
     inputs?: InputStorage;
     inputStorageOptions?: InputStorageOptions;
   },
 ) {
-  const { store, service, executionDispatcher } = deps;
+  const { store, executionDispatcher } = deps;
   registerSessionRoutes(app, store);
   registerSessionWorkRoutes(app, store, {
     inputs: deps.inputs,
     storage: deps.inputStorageOptions,
     queue: deps.sessionQueueLimits,
   });
-  registerSessionStopRoutes(app, { store, service, executionDispatcher, stopSeconds: deps.sessionStopSeconds });
+  registerSessionStopRoutes(app, { store, executionDispatcher, stopSeconds: deps.sessionStopSeconds });
   registerSessionHistoryRoutes(app, store, { pollMs: deps.sessionEventPollMs ?? 250 });
   registerProfileRoutes(app, store);
   registerBudgetPolicyRoutes(app, store);

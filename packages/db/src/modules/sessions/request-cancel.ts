@@ -11,6 +11,7 @@ import { pendingWorkspaceLeases } from "../secrets/lease-fence";
 import { cancelExecution } from "../workspaces/execution-cancel";
 import { sessionWriter } from "./observations";
 import { writeManagedRequest } from "./request-writer";
+import { ownedWorkspaces } from "./session-workspaces";
 import { workAuthority } from "./work-authority";
 
 type RequestRow = DatabaseContext["tables"]["conversationRequests"]["$inferSelect"];
@@ -144,36 +145,25 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
     )
     .limit(1);
   if (open.length) return session.close;
-  const exclusive = await exclusiveWorkspace(context, tx, id, session.session, session.binding?.workspaceId);
-  if (exclusive) {
-    const [workspace] = await tx.select().from(tables.workspaces).where(eq(tables.workspaces.id, exclusive));
-    const leases = await tx.select().from(tables.workspaceLeases).where(pendingWorkspaceLeases(tables, exclusive));
-    if (!workspace?.terminalAt || leases.length) return session.close;
+  const owned = await ownedWorkspaces(context, tx, id, session.session, session.binding);
+  for (const workspaceId of owned) {
+    const [workspace] = await tx.select().from(tables.workspaces).where(eq(tables.workspaces.id, workspaceId));
+    const leases = await tx.select().from(tables.workspaceLeases).where(pendingWorkspaceLeases(tables, workspaceId));
+    if ((workspace && !workspace.terminalAt) || leases.length) return session.close;
+  }
+  // On shared compute only this session's process must have stopped; siblings keep the workspace.
+  const shared = session.binding && !owned.includes(session.binding.workspaceId) ? session.binding : null;
+  if (shared) {
+    const [capacity] = await tx
+      .select()
+      .from(tables.managedCapacity)
+      .where(eq(tables.managedCapacity.workspaceId, shared.workspaceId));
+    const participant = capacity?.record.sessions.find((s) => s.sessionId === id.sessionId);
+    if (participant && !participant.stoppedAt) return session.close;
   }
   const close = { ...session.close, completedAt: at.toISOString() };
   await tx.update(tables.managedSessions).set({ close }).where(writer.where(id));
   return close;
-}
-
-async function exclusiveWorkspace(
-  context: DatabaseContext,
-  tx: Transaction,
-  id: ManagedSessionIdentity,
-  session: managed.Session,
-  workspaceId: string | undefined,
-) {
-  if (!workspaceId) return null;
-  const [profile] = await tx
-    .select()
-    .from(context.tables.managedProfiles)
-    .where(
-      and(
-        eq(context.tables.managedProfiles.profileId, session.profileId),
-        eq(context.tables.managedProfiles.revision, session.profileRevision),
-        eq(context.tables.managedProfiles.principalId, id.principalId),
-      ),
-    );
-  return profile?.profile.credentialBindingId ? workspaceId : null;
 }
 
 // Every unfinished request of the closing session gets the close as its own stop command.
@@ -234,7 +224,6 @@ export function managedStops(context: DatabaseContext) {
         return {
           receipt: cancelReceipt(sessionId, requestId, cancel),
           executions: execution ? [execution] : [],
-          releaseWorkspaceId: null,
         };
       });
     },
@@ -256,17 +245,13 @@ export function managedStops(context: DatabaseContext) {
         if (!row.close) {
           // Closing fences acceptance first; history and receipts stay readable.
           await writer.update(tx, id, row.session.revision, "closed", "closed_by_caller");
-          await tx
-            .update(tables.managedSessions)
-            .set({ close, placement: null, resumeRequestedAt: null })
-            .where(writer.where(id));
+          await tx.update(tables.managedSessions).set({ close, resumeRequestedAt: null }).where(writer.where(id));
         }
         const executions = await stopSessionRequests(context, tx, id, close, at);
         const settled = (await settleClose(context, tx, id, at)) ?? close;
         return {
           receipt: cancelReceipt(sessionId, null, settled),
           executions,
-          releaseWorkspaceId: await exclusiveWorkspace(context, tx, id, row.session, row.binding?.workspaceId),
         };
       });
     },

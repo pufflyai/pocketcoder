@@ -71,8 +71,7 @@ export function createSessionRecovery(deps: {
   async function continuePlacement(candidate: Candidate, placement: NonNullable<Candidate["placement"]>) {
     const workspace = await store.getWorkspace(placement.workspaceId);
     if (!workspace || workspace.terminalAt) {
-      await recovery.clearPlacement(candidate.id, placement.workspaceId);
-      await recovery.transition(candidate.id, "failed", "placement_failed");
+      await recovery.failPlacement(candidate.id, placement.workspaceId);
       return;
     }
     await store.managed.capacity.place({
@@ -88,6 +87,20 @@ export function createSessionRecovery(deps: {
       generation: placement.generation,
     });
     await recovery.placed(candidate.id, workspace.id);
+  }
+
+  // Close is durable: every tick stops compute the session owns alone until it has ended, and
+  // records this session's process stop on shared compute once its requests are terminal.
+  async function stopClosed(candidate: Candidate) {
+    for (const id of candidate.ownedWorkspaceIds) {
+      const workspace = await store.getWorkspace(id);
+      if (workspace && !workspace.terminalAt && workspace.state !== "terminating")
+        await launcher.stop(await principalOf(candidate), id);
+    }
+    const binding = candidate.binding;
+    if (!binding || candidate.ownedWorkspaceIds.includes(binding.workspaceId) || candidate.openRequests) return;
+    const identity = { ...candidate.id, workspaceId: binding.workspaceId, generation: binding.generation };
+    await store.managed.capacity.processStopped(identity, binding.incarnationId, now());
   }
 
   async function place(candidate: Candidate) {
@@ -127,7 +140,8 @@ export function createSessionRecovery(deps: {
     async tick() {
       for (const candidate of await recovery.candidates()) {
         try {
-          if (candidate.binding) await replace(candidate, candidate.binding);
+          if (candidate.closing) await stopClosed(candidate);
+          else if (candidate.binding) await replace(candidate, candidate.binding);
           else await place(candidate);
         } catch (error) {
           // One session's refusal must not stop placement or recovery of the others.

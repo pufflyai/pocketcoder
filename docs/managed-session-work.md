@@ -94,11 +94,15 @@ retries never extend the deadline.
   makes a stopped request `completed`.
 - A stop does not settle model usage. A sent model call keeps its hold until
   trusted usage evidence arrives.
+- A request with a pending stop cannot start new model calls through the gateway.
 - Close fences new requests, stops this session's queued and running work and
-  leaves sibling sessions on shared compute running. Close completes when every
-  request of the session is terminal. For a credentialed session, which owns its
-  workspace alone, close also stops that workspace and completes only after it
-  ended and every credential was revoked or expired.
+  leaves sibling sessions on shared compute running. The placement owner then
+  stops every workspace the session owns alone: compute it placed for this
+  session, including a placement that was not bound yet, and the workspace of a
+  credentialed session. It retries on every tick, also after a controller
+  restart. Close completes when every request is terminal, every owned workspace
+  has ended with its credentials revoked or expired, and, on shared compute, this
+  session's process stop is recorded.
 
 ## History and events
 
@@ -137,7 +141,8 @@ Replacement never authorizes a second send. Work that was proved never sent is
 dispatched to the new compute with its original identities, authority and
 deadline. Work that may have started stays `checking_outcome` or ends `lost`. A
 workspace that ends before it became ready fails the placement with
-`placement_failed`; `resume` tries again.
+`placement_failed` and uses up that generation. The session waits; `resume`
+tries again with the next generation and a new workspace.
 
 ## Adapter result publication
 

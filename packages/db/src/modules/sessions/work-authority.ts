@@ -12,7 +12,7 @@ export function workAuthority(context: DatabaseContext) {
   return async (tx: Transaction, keyId: string, sessionId: string, scope: Scope, allowClosed = false) => {
     const actor = await auth.caller(tx, keyId, scope);
     const id = { principalId: actor.authority.principalId, sessionId };
-    const row = await writer.read(tx, id);
+    const row = await writer.read(tx, id, scope === "sessions:read" ? "share" : "update");
     const profile = await auth.profile(tx, id.principalId, row.session.profileId, row.session.profileRevision);
     await auth.validateScopes(tx, id.principalId, profile.profile);
     const [template] = await tx

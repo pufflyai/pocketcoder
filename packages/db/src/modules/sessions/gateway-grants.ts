@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { ApiError } from "@pstdio/pocketcoder-contracts";
+import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedGatewayGrantStore } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import type { DatabaseContext } from "../../database/context";
+import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 
 const digest = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -15,6 +15,21 @@ export function createGatewayGrants(context: DatabaseContext): ManagedGatewayGra
   const { db, tables } = context;
   const grants = tables.modelGatewayGrants;
   const auth = authorityContext(context);
+  // Compute placed for a session that has since closed never receives model authority.
+  async function closedPlacement(tx: Transaction, workspace: typeof tables.workspaces.$inferSelect) {
+    const sessionId = workspace.metadata[managed.MANAGED_SESSION_METADATA];
+    if (!sessionId) return false;
+    const [session] = await tx
+      .select({ session: tables.managedSessions.session })
+      .from(tables.managedSessions)
+      .where(
+        and(
+          eq(tables.managedSessions.principalId, workspace.principalId),
+          eq(tables.managedSessions.sessionId, sessionId),
+        ),
+      );
+    return session?.session.state === "closed";
+  }
   return {
     // Each registration mints a fresh grant and revokes the earlier ones, so a lost delivery
     // never leaves a second valid copy behind.
@@ -31,7 +46,8 @@ export function createGatewayGrants(context: DatabaseContext): ManagedGatewayGra
           workspace.purgeRequestedAt ||
           workspace.runtimeRegistration?.endedAt ||
           workspace.runtimeRegistration?.incarnationId !== incarnationId ||
-          workspace.deadlineAt <= at
+          workspace.deadlineAt <= at ||
+          (await closedPlacement(tx, workspace))
         )
           throw new ApiError("secret.unavailable", "Workspace cannot receive gateway credentials.");
         await tx
@@ -51,12 +67,6 @@ export function createGatewayGrants(context: DatabaseContext): ManagedGatewayGra
         });
         return { token, expiresAt };
       });
-    },
-    async revoke(workspaceId, at) {
-      await db
-        .update(grants)
-        .set({ revokedAt: at })
-        .where(and(eq(grants.workspaceId, workspaceId), isNull(grants.revokedAt)));
     },
     async resolve(token, turnId, at) {
       return db.transaction(async (tx) => {
@@ -89,7 +99,8 @@ export function createGatewayGrants(context: DatabaseContext): ManagedGatewayGra
           !row?.managed ||
           physical?.workspaceId !== grant.workspaceId ||
           physical.incarnationId !== grant.incarnationId ||
-          row.managed.request.state === "terminal"
+          row.managed.request.state === "terminal" ||
+          row.managed.cancel
         )
           throw denied();
         const [session] = await tx

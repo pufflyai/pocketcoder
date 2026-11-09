@@ -168,7 +168,7 @@ export function createManagedRequests(context: DatabaseContext): ManagedRequestS
               eq(requests.requestId, identity.requestId),
             ),
           );
-        if (!row?.managed || row.managed.budgetExhaustedAt) return;
+        if (!row?.managed || row.managed.budgetExhaustedAt || row.managed.request.state === "terminal") return;
         await writeManagedRequest(context, tx, row, { ...row.managed, budgetExhaustedAt: at.toISOString() });
       });
     },

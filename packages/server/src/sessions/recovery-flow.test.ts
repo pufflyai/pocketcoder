@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { PrincipalRow, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import { eq } from "drizzle-orm";
 import { fakeProducer, managedFixture } from "./managed-fixture.test";
 import { createSessionRecovery, type PlacementLauncher } from "./recovery";
 
@@ -132,6 +133,100 @@ test("a budgeted profile on unrestricted egress fails before any compute is crea
       state: "failed",
       reasonCode: "network_unrestricted",
     });
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+// The workspace service stamps this metadata on compute the placement owner creates.
+async function placed(m: Awaited<ReturnType<typeof managedFixture>>, sessionId: string) {
+  const next = await m.launch();
+  await m.f.context.db
+    .update(m.f.context.tables.workspaces)
+    .set({ metadata: { "pocketcoder.managed-session": sessionId } })
+    .where(eq(m.f.context.tables.workspaces.id, next.id));
+  return next;
+}
+
+test("a close during placement stops the placed workspace and completes only after it ended", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
+  const sessionId = crypto.randomUUID();
+  const launcher: PlacementLauncher = {
+    async create() {
+      const next = await placed(m, sessionId);
+      launched.push(next);
+      return (await m.f.store.getWorkspace(next.id)) as WorkspaceRow;
+    },
+    stop: async (_principal, id) => terminate(m.f.store, id),
+  };
+  try {
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.submit(sessionId, "run queued");
+    const recovery = createSessionRecovery({ store: m.f.store, launcher });
+    await recovery.tick(); // creates and records the placement, before any binding
+    const workspace = launched[0];
+    if (!workspace) throw Error("Missing placement");
+    const cancelId = crypto.randomUUID();
+    const close = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());
+    expect(close.receipt.state).toBe("pending");
+    // Compute placed for a closed session never receives model authority.
+    await expect(
+      m.f.store.managed.grants.issue(workspace.id, workspace.runtime.incarnationId, new Date()),
+    ).rejects.toMatchObject({ code: "secret.unavailable" });
+    await recovery.tick(); // stops the placed workspace
+    await m.f.store.managed.requests.prepare(new Date());
+    const replay = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());
+    expect(replay.receipt.state).toBe("completed");
+    expect((await m.f.store.getWorkspace(workspace.id))?.terminalAt).not.toBeNull();
+    await workspace.dispose();
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+test("a failed placement consumes its generation, waits for resume and then launches new compute", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const keys: string[] = [];
+  const sessionId = crypto.randomUUID();
+  const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
+  const launcher: PlacementLauncher = {
+    async create(_principal, _body, key) {
+      keys.push(key);
+      const next = await placed(m, sessionId);
+      launched.push(next);
+      // The first launch ends before it was ready.
+      if (keys.length === 1) await terminate(m.f.store, next.id);
+      return (await m.f.store.getWorkspace(next.id)) as WorkspaceRow;
+    },
+    stop: async (_principal, id) => terminate(m.f.store, id),
+  };
+  try {
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    const recovery = createSessionRecovery({ store: m.f.store, launcher });
+    await recovery.tick(); // places the first workspace
+    await recovery.tick(); // sees it ended
+    expect(await m.f.store.managed.sessions.get(m.keyId, sessionId)).toMatchObject({
+      state: "failed",
+      reasonCode: "placement_failed",
+    });
+    const revision = (await m.f.store.managed.sessions.get(m.keyId, sessionId)).revision;
+    await recovery.tick();
+    await recovery.tick();
+    // No retry loop without a new resume.
+    expect(keys).toHaveLength(1);
+    expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).revision).toBe(revision);
+    await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    await recovery.tick(); // places a new workspace under the next generation
+    await recovery.tick(); // binds it
+    expect(keys).toEqual([`managed-session:${sessionId}:1`, `managed-session:${sessionId}:2`]);
+    expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).state).not.toBe("failed");
+    for (const next of launched) await next.dispose();
   } finally {
     await m.f.dispose();
     await producer.server.stop(true);

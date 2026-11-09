@@ -78,6 +78,15 @@ test("gateway credentials bind one workspace incarnation and resolve only its un
     expect((await m.f.store.managed.budgets.usage(m.keyId, m.scopeId)).settledInputTokens).toBe(30);
     expect((await call(foreign.token, turnA)).status).toBe(401);
 
+    // A request with a pending stop cannot start new model calls.
+    const c = await m.session();
+    const rc = await m.submit(c, "run c");
+    await m.settle();
+    const turnC = (await m.request(c, rc)).turnId;
+    expect((await resolve(token, turnC)).identity.sessionId).toBe(c);
+    await m.f.store.managed.requests.cancel(m.keyId, c, rc, { cancelId: randomUUID() }, 30000, new Date());
+    await expect(resolve(token, turnC)).rejects.toMatchObject({ code: "auth.invalid_key" });
+
     // Closing one session ends its authority without fencing its sibling.
     await m.f.store.managed.sessions.close(m.keyId, a, { cancelId: randomUUID() }, 30000, new Date());
     await expect(resolve(token, turnA)).rejects.toMatchObject({ code: "auth.invalid_key" });
