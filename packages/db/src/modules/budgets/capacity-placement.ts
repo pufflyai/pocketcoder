@@ -4,10 +4,9 @@ import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext, unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
-import { assertRoom } from "./accounting";
-import { capacityUsage } from "./capacity-ledger";
-import { budgetLedger } from "./ledger";
+import { assertRoom, capacityUsage } from "./capacity-ledger";
 import { policyOwner } from "./policy-owner";
+import { lockScopes } from "./scope-locks";
 
 function knownParticipant(
   record: ManagedCapacityRecord | undefined,
@@ -32,7 +31,6 @@ export async function placeManagedCapacity(
   const { tables } = context;
   const table = tables.managedCapacity;
   const auth = authorityContext(context);
-  const ledger = budgetLedger(context, () => new Date());
   const policies = policyOwner(context);
   const write = async (tx: Transaction, workspaceId: string, record: ManagedCapacityRecord) => {
     await tx
@@ -51,7 +49,7 @@ export async function placeManagedCapacity(
     throw new ApiError("session.closed", "Invalid placement generation.");
   const profile = await auth.profile(tx, id.principalId, session.session.profileId, session.session.profileRevision);
   await auth.validateScopes(tx, id.principalId, profile.profile);
-  const { at } = await ledger.lockScopes(tx, profile.profile.budgetScopeIds);
+  const at = await lockScopes(context, tx, profile.profile.budgetScopeIds, new Date());
   const [workspace] = await tx
     .select()
     .from(tables.workspaces)

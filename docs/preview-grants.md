@@ -39,5 +39,6 @@ on the same backend key keeps access.
 Grant and revocation records survive controller restart. Browser token/cookie
 exchange state is local to the controller, so restart needs a fresh open. Restored
 or replaced workspaces need fresh grants and origins. Old cookies and tokens never
-retarget a new incarnation. Session-facing preview resolution belongs to PC-139;
-this physical API does not perform successor-workspace lookup.
+retarget a new incarnation. This physical API does not look up successor
+workspaces; applications that use managed sessions open previews by session through
+[`POST /v1/sessions/{sessionId}/previews/{name}`](api.md#session-previews).

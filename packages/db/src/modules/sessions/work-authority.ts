@@ -8,10 +8,11 @@ import { sessionWriter } from "./observations";
 export function workAuthority(context: DatabaseContext) {
   const auth = authorityContext(context);
   const writer = sessionWriter(context);
-  return async (tx: Transaction, keyId: string, sessionId: string, scope: Scope) => {
+  // Close retries pass allowClosed so a lost close reply can still return its receipt.
+  return async (tx: Transaction, keyId: string, sessionId: string, scope: Scope, allowClosed = false) => {
     const actor = await auth.caller(tx, keyId, scope);
     const id = { principalId: actor.authority.principalId, sessionId };
-    const row = await writer.read(tx, id);
+    const row = await writer.read(tx, id, scope === "sessions:read" ? "share" : "update");
     const profile = await auth.profile(tx, id.principalId, row.session.profileId, row.session.profileRevision);
     await auth.validateScopes(tx, id.principalId, profile.profile);
     const [template] = await tx
@@ -20,7 +21,7 @@ export function workAuthority(context: DatabaseContext) {
       .where(eq(context.tables.templates.digest, profile.profile.templateDigest));
     if (!template || !actor.authority.templateNames.some((name) => name === "*" || name === template.name))
       throw unavailable();
-    if (scope === "sessions:write" && row.session.state === "closed")
+    if (scope === "sessions:write" && !allowClosed && row.session.state === "closed")
       throw new ApiError("session.closed", "Session is closed.");
     return { id, row, profile: profile.profile };
   };

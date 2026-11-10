@@ -102,8 +102,8 @@ registry, image tag and temporary files.
 
 ## Managed session authority and accounting
 
-See [managed sessions and budget accounting](managed-runtime.md) for implemented
+See [managed sessions and capacity budgets](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement, pinned broker renewal and trusted internal
-reservation/settlement ports. Request dispatch, provider gateway enforcement and
-physical capacity accounting retain their separate owners.
+exclusive business-credential placement and pinned broker renewal. Model access and
+model usage limits belong to the deployment's model gateway; see
+[security](security.md#model-access-is-a-gateway-concern).

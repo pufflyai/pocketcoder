@@ -23,7 +23,6 @@ export async function managedFixture(mode: "memory" | "disk" = "memory") {
     isolationScopeId: randomUUID(),
     budgetScopeIds: [scopeId],
     templateDigest: f.template.digest,
-    allowedModels: ["fixture/model"],
     credentialBindingId: null,
   };
   return { ...f, keyId, scopeId, profile, sessionId: randomUUID() };
@@ -34,19 +33,11 @@ export function policy(scopeId: string, revision = 1): managed.BudgetPolicyWrite
     revision,
     period: "utc_day",
     limits: {
-      inputTokens: 100,
-      outputTokens: 100,
       workspaceStarts: 10,
       maxActiveWorkspaces: 2,
-      maxInFlightModelRequests: 2,
-      modelRequestsPerMinute: 10,
-      modelRequestsPerMinutePerWorkspace: 10,
       maxRunningRequestsPerSession: 1,
       maxChatProcessesPerWorkspace: 5,
-      defaultOutputTokens: 20,
-      maxOutputTokensPerInvocation: 40,
     },
-    modelLimits: [],
   };
 }
 export async function provision(f: Awaited<ReturnType<typeof managedFixture>>) {

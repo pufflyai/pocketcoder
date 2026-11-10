@@ -140,7 +140,7 @@ async function commitAcrossGenerations(
   };
   const committed = await store.commitConversationTurn(turn);
   expect(committed.created).toBe(true);
-  const activity = requiredActivity(requiredIdentity(committed.record.document.messages[0]?.identity).fact);
+  const activity = requiredActivity(requiredIdentity(committed.record?.document.messages[0]?.identity).fact);
   activity.label = "altered display label";
   expect(message.identity.fact.label).toBe("Read selected files");
   expect(await store.commitConversationTurn(turn)).toMatchObject({ created: false });

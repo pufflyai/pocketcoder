@@ -1,4 +1,4 @@
-import { TERMINAL_STATES } from "@pstdio/pocketcoder-contracts";
+import { ApiError, managed, TERMINAL_STATES } from "@pstdio/pocketcoder-contracts";
 import type {
   WorkspaceInsert,
   WorkspaceInsertResult,
@@ -8,6 +8,7 @@ import type { SQL } from "drizzle-orm";
 import { and, count, desc, eq, gte, lt, notInArray, sql } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
+import { sessionWriter } from "../sessions/observations";
 import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
 
@@ -46,6 +47,17 @@ export function createWorkspaces(context: DatabaseContext) {
       options: { maxQueuedWorkspaces?: number } = {},
     ): Promise<WorkspaceInsertResult> {
       return db.transaction(async (tx) => {
+        const sessionId = input.metadata[managed.MANAGED_SESSION_METADATA];
+        if (sessionId) {
+          await tx
+            .select({ id: context.tables.principals.id })
+            .from(context.tables.principals)
+            .where(eq(context.tables.principals.id, input.principalId))
+            .for("update");
+          const session = await sessionWriter(context).read(tx, { principalId: input.principalId, sessionId });
+          // Close must either see this queued workspace or fence its insertion before it completes.
+          if (session.session.state === "closed") throw new ApiError("session.closed", "Session has ended.");
+        }
         await lock(tx, `${schema}:workspace-queue`, 7350);
         const existing = await conflict(tx, input);
         if (existing) return existing;

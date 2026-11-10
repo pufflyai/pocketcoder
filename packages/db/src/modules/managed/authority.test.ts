@@ -10,7 +10,10 @@ test("profiles are immutable, require installation scope and recheck caller gran
     expect(profile).toEqual(f.profile);
     expect(await f.store.managed.authority.provisionProfile(f.keyId, f.principal.id, f.profile)).toEqual(profile);
     await expect(
-      f.store.managed.authority.provisionProfile(f.keyId, f.principal.id, { ...f.profile, allowedModels: ["other"] }),
+      f.store.managed.authority.provisionProfile(f.keyId, f.principal.id, {
+        ...f.profile,
+        isolationScopeId: randomUUID(),
+      }),
     ).rejects.toThrow();
     await expect(
       f.store.managed.authority.provisionProfile(f.keyId, f.principal.id, {

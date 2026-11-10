@@ -21,6 +21,7 @@ import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { workAuthority } from "../sessions/work-authority";
 import { acceptExecution } from "./execution-acceptance";
 import { requireExecutionPrincipal } from "./execution-authority";
+import { cancelExecution } from "./execution-cancel";
 import { settleExecutionFailure } from "./execution-failure";
 import { requireExecutionInputs } from "./execution-inputs";
 import { lockExecutionSession, managedExecutionOwner, readExecution, writeExecution } from "./execution-owners";
@@ -117,26 +118,9 @@ export function createExecutionDispatch(context: DatabaseContext) {
     cancel(input: WorkloadCancel, at: Date) {
       input = WorkloadCancelSchema.parse(input);
       if (input.scope !== "operation") executionConflict("Use workspace release for workspace cancellation.");
-      return withOwner(input.execution, async (tx, _workspace, record) => {
-        if (record.cancel) {
-          if (record.cancel.cancelId !== input.cancelId) executionConflict("Cancel identity conflict.");
-          return record;
-        }
-        if (executionSettled(record)) return record;
-        const next: ExecutionRecord = {
-          ...record,
-          cancel: { cancelId: input.cancelId, requestedAt: at.toISOString() },
-          ...(record.dispatchClaimedAt
-            ? {}
-            : { phase: "canceled", settledAt: at.toISOString(), finalizedAt: at.toISOString() }),
-        };
-        if (!record.dispatchClaimedAt && (await managedExecutionOwner(context, tx, input.execution)))
-          return settleExecutionFailure(context, tx, next, "canceled_before_dispatch", at);
-        await writeExecution(context, tx, next);
-        if (!record.dispatchClaimedAt)
-          await finalizeInputManifest(context, tx, executionInputManifestId(record.acceptance), at);
-        return next;
-      });
+      return withOwner(input.execution, (tx, _workspace, record) =>
+        cancelExecution(context, tx, record, input.cancelId, at),
+      );
     },
     observe(
       execution: WorkloadExecutionReference,

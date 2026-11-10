@@ -7,6 +7,8 @@ import { placeManagedCapacity } from "../budgets/capacity-placement";
 import { authorityContext, conflict, unavailable } from "../managed/authority-context";
 import { sessionWriter } from "./observations";
 import { placementChecks } from "./placement";
+import { managedStops } from "./request-cancel";
+import { workAuthority } from "./work-authority";
 
 export function createManagedSessions(context: DatabaseContext): ManagedSessionStore {
   const { db, tables } = context;
@@ -14,6 +16,7 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
   const auth = authorityContext(context);
   const writer = sessionWriter(context);
   const placement = placementChecks(context);
+  const stops = managedStops(context);
   return {
     async create(keyId, input) {
       const parsed = managed.SessionCreateSchema.parse(input);
@@ -113,6 +116,13 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
     },
     async appendObservation(id, revision, state, reason) {
       return db.transaction((tx) => writer.update(tx, id, revision, state, reason));
+    },
+    close: (keyId, sessionId, command, windowMs, at) => stops.close(keyId, sessionId, command, windowMs, at),
+    async binding(keyId, sessionId) {
+      return db.transaction(async (tx) => {
+        const { row } = await workAuthority(context)(tx, keyId, sessionId, "sessions:read");
+        return row.binding ? { ...row.binding, bindingRevision: row.bindingRevision } : null;
+      });
     },
   };
 }

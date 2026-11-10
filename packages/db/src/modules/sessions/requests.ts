@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { sessionWriter } from "./observations";
+import { managedStops } from "./request-cancel";
 import { completeManagedCleanup } from "./request-cleanup";
 import { availableCollection } from "./request-collection";
 import { prepareManagedRequests } from "./request-dispatch";
@@ -16,6 +17,7 @@ export function createManagedRequests(context: DatabaseContext): ManagedRequestS
   const requests = tables.conversationRequests;
   const writer = sessionWriter(context);
   const authorize = workAuthority(context);
+  const stops = managedStops(context);
   return {
     completeCleanup: (workspaceId) => completeManagedCleanup(context, workspaceId),
     async accept(keyId, sessionId, input, limits) {
@@ -150,6 +152,11 @@ export function createManagedRequests(context: DatabaseContext): ManagedRequestS
         };
       });
     },
-    prepare: (at) => prepareManagedRequests(context, at),
+    cancel: (keyId, sessionId, requestId, command, windowMs, at) =>
+      stops.cancel(keyId, sessionId, requestId, command, windowMs, at),
+    async prepare(at) {
+      await stops.sweep(at);
+      await prepareManagedRequests(context, at);
+    },
   };
 }

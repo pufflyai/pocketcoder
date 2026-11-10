@@ -69,7 +69,7 @@ test("hundreds of turns write one record each and read back in order", async () 
   for (let index = 0; index < 300; index++) {
     const { record, created } = await turn(f, workspace.id, conversation, `q${index}`);
     expect(created).toBe(true);
-    expect([record.recordSeq, record.firstSeq, record.lastSeq]).toEqual([index + 1, 2 * index + 1, 2 * index + 2]);
+    expect([record?.recordSeq, record?.firstSeq, record?.lastSeq]).toEqual([index + 1, 2 * index + 1, 2 * index + 2]);
   }
   const document = await documentOf(f, conversation);
   expect(document).toMatchObject({ recordCount: 300, messageCount: 600, lastSeq: 600 });

@@ -1,4 +1,4 @@
-import { runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
+import { templateCredentialReferences } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceLeasePurpose, WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 
 export function leaseWorkspaceActive(owner: WorkspaceRow, purpose: WorkspaceLeasePurpose, at: Date) {
@@ -8,7 +8,7 @@ export function leaseWorkspaceActive(owner: WorkspaceRow, purpose: WorkspaceLeas
 
 export function leaseSourceIdentity(owner: WorkspaceRow, purpose: WorkspaceLeasePurpose, name: string) {
   if (purpose === "runtime-issuer") {
-    if (!runtimeCredentialReferences(owner.templateSnapshot.spec).includes(name))
+    if (!templateCredentialReferences(owner.templateSnapshot).includes(name))
       throw new Error("Runtime lease reference is unavailable");
     return { sourceUrl: null, sourceRevision: null };
   }

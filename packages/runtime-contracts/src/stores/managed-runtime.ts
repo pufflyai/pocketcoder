@@ -1,16 +1,18 @@
 import type { managed } from "@pstdio/pocketcoder-contracts";
-import type { ManagedInvocationIdentity, ManagedReservation, ManagedUsageEvidence } from "./managed-budgets";
 import type { ManagedSessionIdentity } from "./managed-sessions";
-import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore } from "./managed-work";
+import type { ManagedCapacityStore, ManagedFileStore, ManagedRequestStore, ManagedStopResult } from "./managed-work";
 
 export type {
+  ManagedCancelRecord,
   ManagedCapacityIdentity,
   ManagedCapacityRecord,
   ManagedCapacityStore,
   ManagedFileStore,
+  ManagedPlacementIntent,
   ManagedQueueLimits,
   ManagedRequestRecord,
   ManagedRequestStore,
+  ManagedStopResult,
 } from "./managed-work";
 
 export interface ManagedBinding {
@@ -34,30 +36,6 @@ export interface ManagedLeaseAuthority extends ManagedSessionIdentity {
   bindingId: string;
   slot: string;
   authorityExpiresAt: string;
-}
-export interface InvocationInput {
-  requestDigest: string;
-  countEvidenceRef: string;
-  identity: ManagedInvocationIdentity;
-  workspaceId: string;
-  model: string;
-  inputTokens: number;
-  requestedOutputTokens: number | null;
-}
-export interface InvocationRecord {
-  reservation: ManagedReservation;
-  workspaceId: string;
-  fingerprint: string;
-  bindingRevision: number;
-  generation: number;
-  incarnationId: string;
-  policyRevisions: Record<string, number>;
-  state: "reserved" | "send_claimed" | "uncertain" | "settled" | "conflict" | "abandoned";
-  settledInput: number;
-  settledOutput: number;
-  evidence: ManagedUsageEvidence | null;
-  evidenceDigest: string | null;
-  touchedUntil: Date;
 }
 export interface ManagedAuthorityStore {
   registerScope(keyId: string, scopeId: string, principalId: string, installation?: boolean): Promise<void>;
@@ -88,6 +66,15 @@ export interface ManagedSessionStore {
     state: managed.Session["state"],
     reasonCode: string | null,
   ): Promise<managed.Session>;
+  close(
+    keyId: string,
+    sessionId: string,
+    command: managed.CancelCommand,
+    windowMs: number,
+    at: Date,
+  ): Promise<ManagedStopResult>;
+  // The current physical binding behind a logical session, after the caller's read authority is rechecked.
+  binding(keyId: string, sessionId: string): Promise<(ManagedBinding & { bindingRevision: number }) | null>;
 }
 export interface ManagedBudgetStore {
   writePolicy(
@@ -96,15 +83,46 @@ export interface ManagedBudgetStore {
     expectedRevision: number | null,
   ): Promise<managed.BudgetPolicy>;
   readPolicy(keyId: string, scopeId: string): Promise<managed.BudgetPolicy>;
-  reserve(input: InvocationInput): Promise<{ replayed: boolean; reservation: ManagedReservation }>;
-  claimSend(identity: ManagedInvocationIdentity): Promise<boolean>;
-  abandonUnsent(identity: ManagedInvocationIdentity): Promise<void>;
-  settle(input: ManagedUsageEvidence): Promise<void>;
-  retainUncertain(identity: ManagedInvocationIdentity): Promise<void>;
-  reconcile(keyId: string, input: ManagedUsageEvidence, reason: string): Promise<void>;
   usage(keyId: string, scopeId: string): Promise<managed.BudgetUsage>;
 }
+export interface ManagedRecoveryCandidate {
+  id: ManagedSessionIdentity;
+  session: managed.Session;
+  binding: ManagedBinding | null;
+  bindingRevision: number;
+  lastGeneration: number;
+  queueCount: number;
+  placement: import("./managed-work").ManagedPlacementIntent | null;
+  resumeRequested: boolean;
+  templateDigest: string;
+  closing: boolean;
+  // Compute a closing session owns alone and must stop.
+  ownedWorkspaceIds: string[];
+  openRequests: number;
+}
+export interface ManagedRecoveryStore {
+  candidates(): Promise<ManagedRecoveryCandidate[]>;
+  resume(keyId: string, sessionId: string, at: Date): Promise<managed.Session>;
+  recordPlacement(
+    identity: ManagedSessionIdentity,
+    intent: import("./managed-work").ManagedPlacementIntent,
+  ): Promise<import("./managed-work").ManagedPlacementIntent>;
+  failPlacement(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
+  placed(identity: ManagedSessionIdentity, workspaceId: string): Promise<void>;
+  transition(
+    identity: ManagedSessionIdentity,
+    state: managed.Session["state"],
+    reasonCode: string | null,
+  ): Promise<managed.Session>;
+}
+export interface ManagedHistoryStore {
+  history(keyId: string, sessionId: string, cursor: string | null, limit: number): Promise<managed.HistoryPage>;
+  events(keyId: string, sessionId: string, after: string | null, limit: number): Promise<managed.RuntimeEvent[]>;
+  prune(keepEvents: number): Promise<number>;
+}
 export interface ManagedRuntimeStore {
+  history: ManagedHistoryStore;
+  recovery: ManagedRecoveryStore;
   authority: ManagedAuthorityStore;
   sessions: ManagedSessionStore;
   budgets: ManagedBudgetStore;

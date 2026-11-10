@@ -4,12 +4,16 @@ import { createManagedBudgets } from "./modules/budgets/budgets";
 import { createManagedCapacity } from "./modules/budgets/capacity";
 import { createManagedAuthority } from "./modules/managed/authority";
 import { createManagedFiles } from "./modules/sessions/files";
+import { createManagedHistory } from "./modules/sessions/history";
+import { createManagedRecovery } from "./modules/sessions/recovery";
 import { createManagedRequests } from "./modules/sessions/requests";
 import { createManagedSessions } from "./modules/sessions/sessions";
 
 export function createManagedRuntime(context: DatabaseContext): ManagedRuntimeStore {
   return {
     authority: createManagedAuthority(context),
+    history: createManagedHistory(context),
+    recovery: createManagedRecovery(context),
     sessions: createManagedSessions(context),
     budgets: createManagedBudgets(context),
     requests: createManagedRequests(context),

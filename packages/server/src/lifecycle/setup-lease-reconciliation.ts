@@ -9,15 +9,22 @@ export async function reconcileSetupLeases(
 ) {
   if (!leases) return 0;
   const pending = await store.listPendingWorkspaceLeases();
+  // Setup authority is one-shot: after a restart its interrupted setup cannot resume. A delivered
+  // runtime credential stays valid across the restart and the reconnecting workspace keeps it.
+  const interrupted = (row: (typeof pending)[number]) => startup && row.purpose === "setup-issuer";
   const cleanup = pending.filter(
-    (row) => startup || row.state === "revoking" || (row.issuerExpiresAt !== null && row.issuerExpiresAt <= new Date()),
+    (row) =>
+      interrupted(row) ||
+      row.state === "revoking" ||
+      (row.issuerExpiresAt !== null && row.issuerExpiresAt <= new Date()),
   );
   for (const id of new Set(cleanup.map((row) => row.workspaceId))) {
     const workspace = await store.getWorkspace(id);
     if (!workspace) throw new Error("Lease workspace is unavailable.");
     try {
       // The preserve operation owns capture and removal of its source bytes.
-      if (workspace.state !== "preserving" && (startup || (await store.hasWorkspaceLeaseFence(id)))) {
+      const setup = cleanup.some((row) => row.workspaceId === id && interrupted(row));
+      if (workspace.state !== "preserving" && (setup || (await store.hasWorkspaceLeaseFence(id)))) {
         await scheduler.finalize(
           workspace,
           workspace.terminalIntent ?? "failed",

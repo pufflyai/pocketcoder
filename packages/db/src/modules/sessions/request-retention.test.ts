@@ -76,17 +76,13 @@ test("logical results survive physical purge and history deletion retains only a
     expect((await f.store.managed.requests.get(f.keyId, f.sessionId, input.requestId)).collection).toEqual(
       before.collection,
     );
-    await f.context.db.insert(f.context.tables.conversations).values({
-      id: randomUUID(),
-      principalId: f.principal.id,
-      conversationId: f.sessionId,
-      workspaceId: f.id,
-      legacy: false,
-      status: "retained",
-      createdAt: at,
-      updatedAt: at,
-    });
+    // The terminal request committed its canonical record, which outlives the workspace purge.
+    expect((await f.store.managed.history.history(f.keyId, f.sessionId, null, 10)).records).toHaveLength(1);
     expect(await f.store.deleteConversationById(f.principal.id, f.sessionId, at)).toBe(true);
+    expect((await f.store.managed.history.history(f.keyId, f.sessionId, null, 10)).records).toEqual([]);
+    await expect(f.store.managed.history.events(f.keyId, f.sessionId, `${f.sessionId}:0`, 10)).rejects.toMatchObject({
+      code: "events.cursor_expired",
+    });
     const [row] = await f.context.db
       .select()
       .from(f.context.tables.conversationRequests)

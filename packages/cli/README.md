@@ -35,6 +35,27 @@ initialize deployment prerequisites.
 
 See the full [CLI reference](https://github.com/pufflyai/pocketcoder/blob/main/docs/cli.md).
 
+## Managed sessions
+
+`pcd sessions` and `pcd budgets` use `POCKETCODER_URL` and `POCKETCODER_KEY` and print JSON.
+
+| Command | Purpose |
+| --- | --- |
+| `pcd budgets grant --scope --principal [--installation]` | Grant a budget scope |
+| `pcd budgets set-policy --file [--expected-revision]` | Write a capacity policy revision |
+| `pcd budgets policy --scope` / `usage --scope` | Read the policy and capacity usage |
+| `pcd budgets profile --principal --file` | Provision an execution profile revision |
+| `pcd budgets credential-binding --file` | Register a business credential binding |
+| `pcd sessions create --profile --revision [--session]` | Create a session |
+| `pcd sessions get` / `resume` / `close --session` | Read, resume or close a session |
+| `pcd sessions upload --session --file` | Register and upload one input file |
+| `pcd sessions submit --session --message [--input] --deadline-seconds` | Submit a request; its body is printed on stderr for replay |
+| `pcd sessions request` / `cancel` / `collection --session --request` | Observe, cancel or collect one request |
+| `pcd sessions history --session [--all]` | Retained history and its event cursor |
+| `pcd sessions events --session [--after] [--count]` | Stream events as JSON lines |
+| `pcd sessions exports` / `download` | List and download retained exports |
+| `pcd sessions preview --session --name` | Open a local preview of current compute |
+
 ## Command layout
 
 Each command lives under `src/commands/<resource>/<action>.ts`. The resource

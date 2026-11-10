@@ -46,7 +46,6 @@ test("public provisioning and session/policy routes enforce ownership, precondit
     isolationScopeId: randomUUID(),
     budgetScopeIds: [scopeId],
     templateDigest: template.digest,
-    allowedModels: ["local/model"],
     credentialBindingId: null,
   };
   expect(
@@ -71,19 +70,11 @@ test("public provisioning and session/policy routes enforce ownership, precondit
     revision: 1,
     period: "utc_day",
     limits: {
-      inputTokens: null,
-      outputTokens: 0,
       workspaceStarts: 0,
       maxActiveWorkspaces: 0,
-      maxInFlightModelRequests: 0,
-      modelRequestsPerMinute: 0,
-      modelRequestsPerMinutePerWorkspace: 0,
       maxRunningRequestsPerSession: 1,
       maxChatProcessesPerWorkspace: 1,
-      defaultOutputTokens: 1,
-      maxOutputTokensPerInvocation: 2,
     },
-    modelLimits: [],
   };
   const path = `/v1/budget-scopes/${scopeId}/policy`;
   expect((await request(path, "PUT", policy)).status).toBe(412);

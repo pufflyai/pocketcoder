@@ -4,7 +4,6 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, r
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { listenerOrigin, loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
-import { runPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/lifecycle";
 
 interface ServerState {
   version: 1;
@@ -165,6 +164,8 @@ function timeoutSeconds(value: number | undefined, fallback: number): number {
 
 export async function startManagedServer(options: ServerProcessOptions): Promise<void> {
   if (options.foreground) {
+    // API commands register server commands too, but do not need the controller runtime.
+    const { runPocketCoderServerUntilSignal } = await import("@pstdio/pocketcoder-server/lifecycle");
     await runPocketCoderServerUntilSignal(loadConfig());
     return;
   }
@@ -220,6 +221,7 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
 }
 
 export async function runManagedServer(instanceToken: string): Promise<void> {
+  const { runPocketCoderServerUntilSignal } = await import("@pstdio/pocketcoder-server/lifecycle");
   await runPocketCoderServerUntilSignal(loadConfig(), { instanceId: instanceToken });
 }
 

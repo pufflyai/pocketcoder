@@ -63,8 +63,12 @@ export function validateExecution(
   );
   if (!matchesInput(operation.inputSchema, input.input))
     executionConflict("Operation input does not match its schema.");
-  // Delegated customer grants plug in here once their authority owner exists.
-  if (Object.keys(spec.credentialSlots).length || input.bindingSetDigest !== digestOf([]))
+  // Fixed-scope slots are delivered to the workspace at registration. Delegated customer
+  // grants plug in here once their authority owner exists.
+  if (
+    Object.values(spec.credentialSlots).some((slot) => slot.binding !== "fixed-scope") ||
+    input.bindingSetDigest !== digestOf([])
+  )
     executionConflict("This boundary requires the explicit empty binding set.");
   if (input.inputs.objects.length && !installed.capabilities.includes("immutable-inputs"))
     executionConflict("Installed immutable input support is required.");

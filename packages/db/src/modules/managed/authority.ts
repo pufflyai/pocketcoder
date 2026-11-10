@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { authorityContext, conflict, unavailable } from "./authority-context";
 import { credentialBindings } from "./credential-bindings";
+import { storedProfile } from "./stored-records";
 
 export function createManagedAuthority(context: DatabaseContext): ManagedAuthorityStore {
   const { db, tables } = context;
@@ -51,7 +52,6 @@ export function createManagedAuthority(context: DatabaseContext): ManagedAuthori
     async provisionProfile(keyId, principalId, input) {
       const profile = managed.ExecutionProfileSchema.parse(input);
       profile.budgetScopeIds.sort();
-      profile.allowedModels.sort();
       return db.transaction(async (tx) => {
         const actor = await auth.caller(tx, keyId, "admin", principalId);
         if (!actor.target || actor.target.disabledAt) throw unavailable();
@@ -67,8 +67,9 @@ export function createManagedAuthority(context: DatabaseContext): ManagedAuthori
           .from(profiles)
           .where(and(eq(profiles.profileId, profile.profileId), eq(profiles.revision, profile.revision)));
         if (known) {
-          if (known.principalId !== principalId || digestOf(known.profile) !== digestOf(profile)) throw conflict();
-          return known.profile;
+          const stored = storedProfile(known.profile);
+          if (known.principalId !== principalId || digestOf(stored) !== digestOf(profile)) throw conflict();
+          return stored;
         }
         await tx.insert(profiles).values({
           profileId: profile.profileId,

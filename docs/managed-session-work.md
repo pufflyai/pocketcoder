@@ -5,9 +5,10 @@ physical fingerprints to applications. Sessions are optional: standalone finite
 processes still use the workspace execution API without an agent or conversation.
 
 Creating a session does not launch compute. Requests can queue while compute is
-absent. A trusted placement owner binds an owned runtime through the internal
-session port. Automatic placement and replacement are the later PC-171 slice;
-SDK/CLI clients are PC-139.
+absent. The controller's placement owner launches and binds compute when a
+session has queued work or a resume request, and replaces compute whose runtime
+ended. See [placement and replacement](#placement-and-replacement). SDK/CLI
+clients are PC-139.
 
 ## Configure bounded queues and storage
 
@@ -77,9 +78,68 @@ terminal result, and retains queue charges until required cleanup is proved.
 
 Logical files and result references survive physical workspace purge. Their own
 retention still applies. Transcript deletion removes completed request text and
-keeps content-free identity receipts; artifact retention remains separate.
-Cancellation, close and retained history/event replay are the later PC-172/173
-owners.
+session events, and keeps content-free identity receipts; artifact retention
+remains separate.
+
+## Cancel and close
+
+Set `POCKETCODER_SESSION_STOP_SECONDS` to the time a stop may stay pending before
+it reports a missed deadline. There is no default. A cancel or close is stored once
+with its identity and deadline. A controller restart replays the same command;
+retries never extend the deadline.
+
+- Queued work ends `canceled` and is never sent.
+- Running work gets a targeted cancel through the existing dispatcher. The
+  producer's own terminal report decides the outcome. Final text alone never
+  makes a stopped request `completed`.
+- Close fences new requests, stops this session's queued and running work and
+  leaves sibling sessions on shared compute running. The placement owner then
+  stops every workspace the session owns alone: compute it placed for this
+  session, including a placement that was not bound yet, and the workspace of a
+  credentialed session. It retries on every tick, also after a controller
+  restart. Close completes when every request is terminal, every owned workspace
+  has ended with its credentials revoked or expired, and, on shared compute, this
+  session's process stop is recorded.
+
+## History and events
+
+The terminal request, its canonical history record and its event commit in one
+transaction, before the producer is acknowledged. A record the producer already
+committed is kept. A request that never reached compute has no history record;
+its receipt still shows the outcome. A controller restart does not write an
+`interrupted` placeholder for a managed request: recovery waits for the
+producer's real outcome or proved loss.
+
+A history snapshot locks the session row, so it sees every terminal commit up to
+its `eventCursor`. Subscribe after that cursor to see everything later.
+`POCKETCODER_SESSION_EVENT_RETENTION` keeps that many recent events per session;
+older cursors return `410 events.cursor_expired`. Without it, events are kept
+until the transcript is deleted.
+
+## Placement and replacement
+
+A session needs compute when it has queued requests or a resume request. The
+placement owner then:
+
+1. Creates a workspace from the pinned template through the ordinary workspace
+   service, with a deterministic idempotency key and the
+   `pocketcoder.managed-session` metadata. Launch admission waits until the
+   session's capacity is placed.
+2. Records the workspace as the session's placement intent. A restarted
+   controller continues from this record instead of creating another workspace.
+3. Binds the ready workspace as the next generation and marks the session `ready`.
+
+When a bound runtime ends, the owner stops its workspace, waits until it ended and
+its credentials were revoked, records the process stop and detaches it. The
+session becomes `suspended` and is placed again if work is waiting. A socket
+failure alone is not a replacement.
+
+Replacement never authorizes a second send. Work that was proved never sent is
+dispatched to the new compute with its original identities, authority and
+deadline. Work that may have started stays `checking_outcome` or ends `lost`. A
+workspace that ends before it became ready fails the placement with
+`placement_failed` and uses up that generation. The session waits; `resume`
+tries again with the next generation and a new workspace.
 
 ## Adapter result publication
 

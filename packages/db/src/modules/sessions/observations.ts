@@ -9,8 +9,9 @@ export function sessionWriter({ tables }: DatabaseContext) {
   const { managedSessions: sessions, managedObservations: observations } = tables;
   const where = (id: ManagedSessionIdentity) =>
     and(eq(sessions.principalId, id.principalId), eq(sessions.sessionId, id.sessionId));
-  async function read(tx: Transaction, id: ManagedSessionIdentity) {
-    const [row] = await tx.select().from(sessions).where(where(id)).for("update");
+  // Readers take a share lock: they still wait for an in-flight terminal commit but not for each other.
+  async function read(tx: Transaction, id: ManagedSessionIdentity, mode: "update" | "share" = "update") {
+    const [row] = await tx.select().from(sessions).where(where(id)).for(mode);
     if (!row) throw new ApiError("session.not_found", "Unknown session.");
     return row;
   }

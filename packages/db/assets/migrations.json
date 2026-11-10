@@ -387,5 +387,22 @@
     "folderMillis": 1794058852000,
     "hash": "ebb33df18e064a5f1c080f87d3ef963fbe1530cdaec08a55fac7cc8798539c57",
     "name": "20261107134052_odd_lord_tyger"
+  },
+  {
+    "sql": [
+      "ALTER TABLE \"budget_audits\" DROP CONSTRAINT \"budget_audits_j7QHV8Ue4LZo_fkey\";",
+      "\nALTER TABLE \"budget_reports\" DROP CONSTRAINT \"budget_reports_nlISV9kK3JCn_fkey\";",
+      "\nDROP TABLE \"budget_audits\";",
+      "\nDROP TABLE \"budget_invocations\";",
+      "\nDROP TABLE \"budget_reports\";",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"close\" jsonb;",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"placement\" jsonb;",
+      "\nALTER TABLE \"managed_sessions\" ADD COLUMN \"resume_requested_at\" timestamp with time zone;",
+      "\nALTER TABLE \"managed_scopes\" DROP COLUMN \"blocked_reason\";"
+    ],
+    "bps": true,
+    "folderMillis": 1794222975000,
+    "hash": "0cb07ee319fd6a7b2d3e8334acade84422a49b95bfa1209a3ffab92344fede34",
+    "name": "20261109111615_outstanding_professor_monster"
   }
 ]

@@ -10,3 +10,6 @@ export function managedPlacement(principalId: string, sessionId: string, input: 
     key: digestOf({ principalId, profile, sessionId: mode === "exclusive" ? sessionId : null }),
   };
 }
+
+// Workspace metadata naming the session whose placement owner created it. Launch waits for its capacity.
+export const MANAGED_SESSION_METADATA = "pocketcoder.managed-session";

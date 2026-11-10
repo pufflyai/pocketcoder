@@ -120,3 +120,28 @@ test.each([false, true])("lease reconciliation leaves the preserving runtime own
     await f.close();
   }
 });
+
+test("a controller restart keeps a workspace that holds a live runtime credential", async () => {
+  const f = await leaseServiceFixture("memory", undefined, undefined, true);
+  const built = buildServer({
+    store: f.store,
+    driver: new FakeDriver(),
+    pepper: f.pepper,
+    secretKey: f.encryptionKey.toString("base64url"),
+    issuerClient: createIssuerClient({ ca: f.issuer.ca }),
+    limits: DEFAULT_LIMITS,
+    workspaceServerUrl: "http://127.0.0.1:1",
+  });
+  try {
+    await f.vault.put(f.key.id, "runtime", { ...f.config, type: "runtime-issuer" });
+    await f.store.transition(f.workspace.id, { from: ["provisioning"], to: "connected", at: new Date() });
+    const issued = await f.service.issue(f.workspace.id, "runtime", "runtime-issuer");
+    // Only setup authority is one-shot; a delivered runtime lease survives the restart.
+    expect(await reconcileSetupLeases(f.store, built.workspaceLeases, built.scheduler, true)).toBe(0);
+    expect((await f.store.getWorkspace(f.workspace.id))?.state).toBe("connected");
+    expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(200);
+  } finally {
+    await built.scheduler.drain();
+    await f.close();
+  }
+});

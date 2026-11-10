@@ -1,4 +1,4 @@
-import { ApiError, runtimeCredentialPath, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
+import { ApiError, runtimeCredentialPath, templateCredentialReferences } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { createWorkspaceLeaseService } from "../secrets/lease-service";
 import type { WsDeps } from "./ws-types";
@@ -16,7 +16,7 @@ export function credentialDelivery(
 }
 
 export async function workspaceCredentialsFor(deps: WsDeps, row: WorkspaceRow) {
-  const names = runtimeCredentialReferences(row.templateSnapshot.spec);
+  const names = templateCredentialReferences(row.templateSnapshot);
   if (!names.length) return [];
   if (!deps.workspaceLeases) throw new ApiError("secret.unavailable", "Runtime issuer is unavailable.");
   const pending = await deps.store.listPendingWorkspaceLeases(row.id);

@@ -3,11 +3,13 @@ import { canonicalJson, type ExecutionRecord } from "@pstdio/pocketcoder-contrac
 import type { ManagedRequestRecord } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
+import { commitManagedHistory } from "./history-record";
 import { sessionWriter } from "./observations";
 import { withoutRequestContent } from "./request-content";
 import { requestObservation } from "./request-observation";
 
 type RequestRow = DatabaseContext["tables"]["conversationRequests"]["$inferSelect"];
+type ManagedRecord = ManagedRequestRecord;
 export async function writeManagedRequest(
   context: DatabaseContext,
   tx: Transaction,
@@ -32,8 +34,12 @@ export async function writeManagedRequest(
       .where(writer.where(id));
   }
   if (next.queueReleased && next.contentRemoved) next = withoutRequestContent(next);
+  const at = new Date().toISOString();
+  next = stopFacts(next, at);
   if (canonicalJson(row.managed) === canonicalJson(next)) return;
-  next = { ...next, request: { ...next.request, revision: next.request.revision + 1 } };
+  // Internal bookkeeping such as a cancel record does not change the public resource revision.
+  const changed = canonicalJson(row.managed?.request) !== canonicalJson(next.request);
+  if (changed) next = { ...next, request: { ...next.request, revision: next.request.revision + 1 } };
   const table = context.tables.conversationRequests;
   await tx
     .update(table)
@@ -45,7 +51,8 @@ export async function writeManagedRequest(
         eq(table.requestId, row.requestId),
       ),
     );
-  const at = new Date().toISOString();
+  if (!changed) return;
+  if (next.request.state === "terminal") await commitManagedHistory(context, tx, row, next);
   await writer.append(tx, id, {
     eventId: randomUUID(),
     cursor: `${id.sessionId}:${session.nextSequence}`,
@@ -58,6 +65,16 @@ export async function writeManagedRequest(
     kind: "request.updated",
     data: next.request,
   });
+}
+// Facts from stop commands that the producer cannot report itself.
+function stopFacts(next: ManagedRecord, at: string): ManagedRecord {
+  const { cancel, request } = next;
+  if (request.state === "terminal")
+    return cancel && !cancel.completedAt ? { ...next, cancel: { ...cancel, completedAt: at } } : next;
+  // A missed stop deadline stays pending; the request says why instead of claiming completion.
+  if (cancel && !cancel.completedAt && cancel.cancelDeadline <= at)
+    return { ...next, request: { ...request, reasonCode: "cancel_deadline_exceeded" } };
+  return next;
 }
 export async function syncManagedExecution(
   context: DatabaseContext,

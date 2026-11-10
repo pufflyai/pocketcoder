@@ -12,6 +12,7 @@ export type {
   ManagedQueueLimits,
   ManagedRuntimeStore,
   ManagedSessionIdentity,
+  ManagedStopResult,
   PublishedInputProjection,
   ReadStorageCapacity,
   StoredInput,

@@ -108,7 +108,10 @@ export interface ConversationStore {
   ): Promise<ConversationRequestResult>;
   // Producers may only write turns that a caller's request opened.
   isAcceptedTurn(workspaceId: string, identity: ConversationRequestIdentity): Promise<boolean>;
-  commitConversationTurn(turn: ConversationTurnCommit): Promise<{ record: ConversationRecordRow; created: boolean }>;
+  // Null when a managed request owns its terminal history instead of the controller placeholder.
+  commitConversationTurn(
+    turn: ConversationTurnCommit,
+  ): Promise<{ record: ConversationRecordRow | null; created: boolean }>;
   // Messages without identity have no turn; each one is its own record in the workspace history.
   appendWorkspaceMessage(message: ConversationMessageRow): Promise<{ record: ConversationRecordRow; created: boolean }>;
   readWorkspaceConversation(
