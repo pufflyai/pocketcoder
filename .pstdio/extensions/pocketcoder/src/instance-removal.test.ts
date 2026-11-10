@@ -109,6 +109,10 @@ test("an instance whose saved executable is gone can be removed once its control
     await writeFile(join(root, id, "state/server.json"), JSON.stringify({ pid: process.pid }));
     await expect(remove.run(ctx, { instanceId: id })).rejects.toThrow("Stop the instance before removing it");
 
+    // PID 1 is alive but owned by root, so probing it fails with EPERM instead of ESRCH.
+    await writeFile(join(root, id, "state/server.json"), JSON.stringify({ pid: 1 }));
+    await expect(remove.run(ctx, { instanceId: id })).rejects.toThrow("Stop the instance before removing it");
+
     const exited = Bun.spawn(["true"]);
     await exited.exited;
     await writeFile(join(root, id, "state/server.json"), JSON.stringify({ pid: exited.pid }));

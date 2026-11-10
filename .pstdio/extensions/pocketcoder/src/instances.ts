@@ -87,8 +87,9 @@ export function createInstances(root: string) {
     try {
       process.kill(pid, 0);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      // EPERM means the process exists but belongs to another user, so only ESRCH proves it exited.
+      return (error as NodeJS.ErrnoException).code !== "ESRCH";
     }
   };
   const start = async (id: string, binary?: string) => {
