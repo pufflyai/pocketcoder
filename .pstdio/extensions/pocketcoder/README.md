@@ -51,7 +51,7 @@ The template keeps Prompt Studio in the foreground and publishes its private run
 Run the adjacent Docker regression to build the exact image, check readiness, initialize the real Codex app server without a model call, and verify shutdown:
 
 ```sh
-bun --no-env-file test ./.pstdio/extensions/pocketcoder/src/codex-template/startup.test.ts
+bun --no-env-file test ./.pstdio/extensions/pocketcoder/src/codex-template/startup.conformance.test.ts
 ```
 
 This check proves local startup. A live Cloud relay session still requires safe guest enrollment from Prompt Studio; machine command tokens do not enroll Cloud devices.
