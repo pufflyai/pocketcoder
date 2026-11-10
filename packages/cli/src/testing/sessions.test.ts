@@ -20,7 +20,8 @@ const withoutIntent = (output: string) =>
       .join("\n"),
   );
 
-test("session and budget commands drive the managed API without opening the database", async () => {
+// Every CLI call spawns a new process, so each test keeps its call count small enough for the default timeout.
+async function managedCli() {
   const f = await managedFixture();
   const directory = await mkdtemp(join(tmpdir(), "pc-cli-sessions-"));
   const pepper = "cli-sessions-test-pepper";
@@ -71,61 +72,75 @@ test("session and budget commands drive the managed API without opening the data
     return result.output;
   };
   const json = async (args: string[]) => JSON.parse(await cli(args));
-  try {
-    const scopeId = randomUUID();
-    await cli(["budgets", "grant", "--scope", scopeId, "--principal", f.principal.id]);
-    const policyFile = join(directory, "policy.json");
-    const policy = {
-      scopeId,
-      revision: 1,
-      period: "utc_day",
-      limits: {
-        workspaceStarts: 2,
-        maxActiveWorkspaces: 1,
-        maxRunningRequestsPerSession: 1,
-        maxChatProcessesPerWorkspace: 1,
-      },
-    };
-    await writeFile(policyFile, JSON.stringify(policy));
-    expect((await json(["budgets", "set-policy", "--file", policyFile])).revision).toBe(1);
-    await writeFile(policyFile, JSON.stringify({ ...policy, revision: 2 }));
-    expect((await json(["budgets", "set-policy", "--file", policyFile, "--expected-revision", "1"])).revision).toBe(2);
-    expect((await json(["budgets", "policy", "--scope", scopeId])).revision).toBe(2);
-    expect(await json(["budgets", "usage", "--scope", f.scopeId])).toMatchObject({ scopeId: f.scopeId });
+  return {
+    f,
+    directory,
+    cli,
+    json,
+    async [Symbol.asyncDispose]() {
+      listener.stop(true);
+      await f.dispose();
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
 
-    const sessionId = f.sessionId;
-    expect((await json(["sessions", "get", "--session", sessionId])).state).toBe("provisioning");
-    const notes = join(directory, "notes.txt");
-    await writeFile(notes, "late input");
-    const input = await json(["sessions", "upload", "--session", sessionId, "--file", notes]);
-    expect(input.state).toBe("ready");
-    const requestId = randomUUID();
-    const submit = ["sessions", "submit", "--session", sessionId, "--request", requestId, "--message", "hello"];
-    const deadline = new Date(Date.now() + 60_000).toISOString();
-    const output = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
-    const accepted = withoutIntent(output);
-    expect(accepted).toMatchObject({ requestId, state: "accepted" });
-    // A retried submit with the same body replays the original request.
-    const replay = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
-    expect(withoutIntent(replay).turnId).toBe(accepted.turnId);
-    expect((await json(["sessions", "request", "--session", sessionId, "--request", requestId])).requestId).toBe(
-      requestId,
-    );
-    const cancelId = randomUUID();
-    const cancel = ["sessions", "cancel", "--session", sessionId, "--request", requestId, "--cancel-id", cancelId];
-    expect((await json(cancel)).state).toBe("completed");
-    expect(await json(["sessions", "collection", "--session", sessionId, "--request", requestId])).toMatchObject({
-      completeness: "lost",
-    });
-    const history = await json(["sessions", "history", "--session", sessionId, "--all"]);
-    expect(history.eventCursor).toStartWith(`${sessionId}:`);
-    const events = (await cli(["sessions", "events", "--session", sessionId, "--count", "2"])).trim().split("\n");
-    expect(events.map((line) => JSON.parse(line).sequence)).toEqual([1, 2]);
-    expect((await json(["sessions", "resume", "--session", sessionId])).sessionId).toBe(sessionId);
-    expect((await json(["sessions", "close", "--session", sessionId])).scope).toBe("session");
-  } finally {
-    listener.stop(true);
-    await f.dispose();
-    await rm(directory, { recursive: true, force: true });
-  }
+test("budget commands drive the managed API without opening the database", async () => {
+  await using managed = await managedCli();
+  const { f, directory, cli, json } = managed;
+  const scopeId = randomUUID();
+  await cli(["budgets", "grant", "--scope", scopeId, "--principal", f.principal.id]);
+  const policyFile = join(directory, "policy.json");
+  const policy = {
+    scopeId,
+    revision: 1,
+    period: "utc_day",
+    limits: {
+      workspaceStarts: 2,
+      maxActiveWorkspaces: 1,
+      maxRunningRequestsPerSession: 1,
+      maxChatProcessesPerWorkspace: 1,
+    },
+  };
+  await writeFile(policyFile, JSON.stringify(policy));
+  expect((await json(["budgets", "set-policy", "--file", policyFile])).revision).toBe(1);
+  await writeFile(policyFile, JSON.stringify({ ...policy, revision: 2 }));
+  expect((await json(["budgets", "set-policy", "--file", policyFile, "--expected-revision", "1"])).revision).toBe(2);
+  expect((await json(["budgets", "policy", "--scope", scopeId])).revision).toBe(2);
+  expect(await json(["budgets", "usage", "--scope", f.scopeId])).toMatchObject({ scopeId: f.scopeId });
+});
+
+test("session commands drive the managed API without opening the database", async () => {
+  await using managed = await managedCli();
+  const { f, directory, cli, json } = managed;
+  const sessionId = f.sessionId;
+  expect((await json(["sessions", "get", "--session", sessionId])).state).toBe("provisioning");
+  const notes = join(directory, "notes.txt");
+  await writeFile(notes, "late input");
+  const input = await json(["sessions", "upload", "--session", sessionId, "--file", notes]);
+  expect(input.state).toBe("ready");
+  const requestId = randomUUID();
+  const submit = ["sessions", "submit", "--session", sessionId, "--request", requestId, "--message", "hello"];
+  const deadline = new Date(Date.now() + 60_000).toISOString();
+  const output = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
+  const accepted = withoutIntent(output);
+  expect(accepted).toMatchObject({ requestId, state: "accepted" });
+  // A retried submit with the same body replays the original request.
+  const replay = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
+  expect(withoutIntent(replay).turnId).toBe(accepted.turnId);
+  expect((await json(["sessions", "request", "--session", sessionId, "--request", requestId])).requestId).toBe(
+    requestId,
+  );
+  const cancelId = randomUUID();
+  const cancel = ["sessions", "cancel", "--session", sessionId, "--request", requestId, "--cancel-id", cancelId];
+  expect((await json(cancel)).state).toBe("completed");
+  expect(await json(["sessions", "collection", "--session", sessionId, "--request", requestId])).toMatchObject({
+    completeness: "lost",
+  });
+  const history = await json(["sessions", "history", "--session", sessionId, "--all"]);
+  expect(history.eventCursor).toStartWith(`${sessionId}:`);
+  const events = (await cli(["sessions", "events", "--session", sessionId, "--count", "2"])).trim().split("\n");
+  expect(events.map((line) => JSON.parse(line).sequence)).toEqual([1, 2]);
+  expect((await json(["sessions", "resume", "--session", sessionId])).sessionId).toBe(sessionId);
+  expect((await json(["sessions", "close", "--session", sessionId])).scope).toBe("session");
 });
