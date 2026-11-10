@@ -182,12 +182,14 @@ export function createConversationDocuments(context: DatabaseContext) {
   // close it with a placeholder while recovery may still observe the producer's real outcome.
   async function managedPlaceholder(turn: ConversationTurnCommit) {
     if (withTerminalFact(turn) === turn.messages) return false;
-    const requests = context.tables.conversationRequests;
+    const { conversationRequests: requests, workspaces } = context.tables;
     const [row] = await db
       .select({ managed: requests.managed })
       .from(requests)
+      .innerJoin(workspaces, eq(workspaces.principalId, requests.principalId))
       .where(
         and(
+          eq(workspaces.id, turn.workspaceId),
           eq(requests.conversationId, turn.identity.conversation_id),
           eq(requests.requestId, turn.identity.request_id),
         ),
