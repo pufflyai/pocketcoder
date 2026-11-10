@@ -28,7 +28,10 @@ export const launchInstance = defineCommand({
   palette: [{ group: "PocketCoder Lab", label: "Launch PocketCoder instance" }],
   params: {
     name: params.text({ label: "Instance name", required: true }),
-    binary: params.text({ label: "PocketCoder executable", required: true, defaultValue: "pocketcoder" }),
+    binary: params.text({
+      label: "PocketCoder executable (optional)",
+      description: "Defaults to this project's out/native/pocketcoder, then PATH.",
+    }),
     template: params.select({
       label: "Agent template",
       required: true,
@@ -37,9 +40,11 @@ export const launchInstance = defineCommand({
   },
   async run(ctx, input) {
     const template = await selectedTemplate(catalogFiles(ctx), input.template);
+    const workspace = await ctx.workspaces.getDefault();
     const instance = await instancesFor(ctx.projectId).launch({
       name: input.name,
       binary: input.binary,
+      projectRoot: workspace?.rootPath ?? workspace?.root_path ?? undefined,
       manifest: template.manifest,
     });
     await ctx.events.emit(changed, {});

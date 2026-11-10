@@ -7,8 +7,7 @@ import type {
   HarnessStartInput,
   SessionMessage,
 } from "@pstdio/sdk/extensions";
-import { InstanceHttpError } from "./instance-http";
-import type { createInstances } from "./instances";
+import { type createInstances, PocketCoderHttpError } from "./instances";
 
 type Instances = ReturnType<typeof createInstances>;
 type Target = { instanceId: string; machineId: string; sessionId: string; instances: Instances };
@@ -33,7 +32,7 @@ export async function supportsFileTurns(ref: Target, signal?: AbortSignal) {
       { signal },
     );
   } catch (error) {
-    if (error instanceof InstanceHttpError && [404, 410, 422].includes(error.status))
+    if (error instanceof PocketCoderHttpError && error.status === 422 && error.code === "relay.route_not_allowed")
       return { requests: false, attachments: false };
     throw error;
   }
@@ -206,7 +205,7 @@ async function observeFileTurn(
     } catch (error) {
       // A replay can follow a lost acceptance response. Only a rejected first
       // submission proves that this saved request never reached execution.
-      if (firstSubmission && error instanceof InstanceHttpError && [400, 413, 422].includes(error.status)) {
+      if (firstSubmission && error instanceof PocketCoderHttpError && [400, 413, 422].includes(error.status)) {
         await ctx.state.delete(key(input.sessionId));
         ctx.logger.warn(error.message);
         return { status: "failed" as const };

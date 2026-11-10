@@ -1,14 +1,13 @@
-import {
-  type CommandContext,
-  defineCommand,
-  params,
-  workbenchPages,
-  workbenchResourceKinds,
-} from "@pstdio/sdk/extensions";
+import { type CommandContext, defineCommand, params } from "@pstdio/sdk/extensions";
+import { resolveExecutable } from "./executable";
 import { catalogChoices, launchInstance } from "./instance-commands";
+import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
-import { type Machine, machineRef } from "./machines";
-import { changed, instanceKind } from "./resources";
+import { labCommands } from "./lab-commands";
+import { connectMachine, deleteMachine, launchMachine } from "./machine-commands";
+import type { Machine } from "./machines";
+
+import { changed } from "./resources";
 import { deleteTemplate, saveTemplate } from "./template-commands";
 
 export const instanceChoices = defineCommand({
@@ -56,7 +55,15 @@ export const startInstance = defineCommand({
   mutating: true,
   params: { instanceId: instanceIdParam },
   async run(ctx, input) {
-    const instance = await instancesFor(ctx.projectId).start(resourceId(ctx, input.instanceId, "instance"));
+    const instances = instancesFor(ctx.projectId);
+    const id = resourceId(ctx, input.instanceId, "instance");
+    const saved = await instances.get(id);
+    const workspace = await ctx.workspaces.getDefault();
+    const binary = await resolveExecutable({
+      binary: saved.binary,
+      projectRoot: workspace?.rootPath ?? workspace?.root_path ?? undefined,
+    });
+    const instance = await instances.start(id, binary);
     await ctx.events.emit(changed, {});
     return instance;
   },
@@ -98,97 +105,6 @@ export const importTemplates = defineCommand({
   },
 });
 
-export const launchMachine = defineCommand({
-  id: "machines.launch",
-  title: "Launch agent machine",
-  cli: true,
-  mutating: true,
-  palette: [{ group: "PocketCoder Lab", label: "Launch agent machine" }],
-  params: {
-    instance: instanceParam,
-    template: params.select({
-      label: "Agent template",
-      required: true,
-      options: {
-        command: templateChoices.ref,
-        valueField: "value",
-        labelField: "label",
-        params: { instance: params.valueOf("instance") },
-      },
-    }),
-  },
-  async run(ctx, input) {
-    const separator = input.template.lastIndexOf("@");
-    if (separator < 1) throw new Error("Choose a versioned agent template.");
-    const workspace = await ctx.workspaces.create({
-      project_id: ctx.projectId,
-      shorthand_base: "PC-MACHINE",
-      provider_id: `${ctx.extensionId}.workspace-type.machine`,
-      params: {
-        instance: input.instance,
-        template: input.template.slice(0, separator),
-        templateVersion: input.template.slice(separator + 1),
-      },
-      anchors: [{ type: instanceKind.id, extensionId: ctx.extensionId, id: input.instance, role: "context" }],
-    });
-    await ctx.events.emit(changed, {});
-    return { workspaceId: workspace.id };
-  },
-});
-export const connectMachine = defineCommand({
-  id: "machines.connect",
-  title: "Connect to PocketCoder agent",
-  cli: true,
-  mutating: true,
-  params: { workspaceId: params.text({ label: "pstdio workspace ID", resolvedFrom: "resource" }) },
-  async run(ctx, input) {
-    const workspace = await ctx.workspaces.get(resourceId(ctx, input.workspaceId, "workspace"));
-    if (workspace?.provider_id !== `${ctx.extensionId}.workspace-type.machine`)
-      throw new Error("Choose a PocketCoder machine workspace.");
-    const resolved = await ctx.workspaces.resolve(workspace.id);
-    if (resolved.state !== "ready" || !resolved.providerRef)
-      throw new Error(`Machine is ${resolved.state}. Wait until it is ready.`);
-    machineRef(resolved.providerRef);
-    const connectionKey = `machine-session:${workspace.id}`;
-    const sessionId = await ctx.storage.get<string>(connectionKey);
-    const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
-    const session =
-      existing ??
-      (await ctx.sessions.create({
-        title: `PocketCoder: ${workspace.workspace_shorthand}`,
-        workspaceId: workspace.id,
-        harness: { harnessId: `${ctx.extensionId}.harness.agent` },
-      }));
-    await ctx.storage.set(connectionKey, session.id);
-    ctx.navigation.open({
-      kind: "page",
-      page: workbenchPages.session,
-      resource: {
-        type: workbenchResourceKinds.session.id,
-        extensionId: "pstdio",
-        projectId: ctx.projectId,
-        id: session.id,
-        label: session.title,
-      },
-    });
-    return { workspaceId: workspace.id, sessionId: session.id };
-  },
-});
-export const deleteMachine = defineCommand({
-  id: "machines.delete",
-  title: "Delete agent machine",
-  cli: true,
-  mutating: true,
-  params: { workspaceId: params.text({ label: "pstdio workspace ID", resolvedFrom: "resource" }) },
-  async run(ctx, input) {
-    const workspace = await ctx.workspaces.get(resourceId(ctx, input.workspaceId, "workspace"));
-    if (workspace?.provider_id !== `${ctx.extensionId}.workspace-type.machine`)
-      throw new Error("Choose a PocketCoder machine workspace.");
-    await ctx.workspaces.delete(workspace.id);
-    await ctx.events.emit(changed, {});
-    return { workspaceId: workspace.id };
-  },
-});
 export const refresh = defineCommand({
   id: "refresh",
   title: "Refresh PocketCoder",
@@ -200,6 +116,7 @@ export const refresh = defineCommand({
 });
 
 export const commands = [
+  ...Object.values(labCommands),
   saveTemplate,
   deleteTemplate,
   catalogChoices,
@@ -208,6 +125,7 @@ export const commands = [
   launchInstance,
   startInstance,
   stopInstance,
+  removeInstance,
   importTemplates,
   launchMachine,
   connectMachine,

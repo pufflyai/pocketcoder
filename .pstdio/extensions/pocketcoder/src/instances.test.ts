@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInstances } from "./instances";
@@ -60,3 +61,19 @@ test("starts isolated 1.0 instances with private, expiring owner keys and restar
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("starting with a missing executable keeps the saved one", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-bad-override-"));
+  const id = randomUUID();
+  try {
+    await mkdir(join(root, id));
+    const saved = { id, name: "saved", binary, url: "http://127.0.0.1:1", agentPort: 2, state: "stopped" };
+    await writeFile(join(root, id, "instance.json"), JSON.stringify(saved));
+    await expect(createInstances(root).start(id, join(root, "missing"))).rejects.toThrow(
+      "PocketCoder executable not found",
+    );
+    expect(JSON.parse(await readFile(join(root, id, "instance.json"), "utf8")).binary).toBe(binary);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

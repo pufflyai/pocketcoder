@@ -13,6 +13,7 @@ import { fileTurnMessages, reconnectFileTurn, startFileTurn, supportsFileTurns }
 import { createHarnessRuns } from "./harness-runs";
 import { instancesFor } from "./instances";
 import { isTerminal, type Machine, machinePath, machineRef } from "./machines";
+import { onefinTranscriptText } from "./onefin-transcript";
 
 interface AgentMessage {
   id?: number;
@@ -28,7 +29,9 @@ export const normalizeMessages = (id: string, messages: AgentMessage[]) =>
         id: `pocketcoder:${id}:${message.id ?? index}`,
         role: (assistant(message) ? "assistant" : message.role) as SessionMessageRole,
         index,
-        parts: [{ type: "text" as const, text: message.content }],
+        parts: [
+          { type: "text" as const, text: assistant(message) ? onefinTranscriptText(message.content) : message.content },
+        ],
       }) satisfies SessionMessage,
   );
 
@@ -49,24 +52,33 @@ const pause = (signal: AbortSignal) =>
 
 export function createMachineHarness(getInstances = instancesFor) {
   const runs = createHarnessRuns();
-  const target = (
+  const target = async (
     ctx: HarnessContext,
-    input: { workspace?: HarnessStartInput["workspace"]; agentSessionId?: string },
+    input: {
+      workspace?: HarnessStartInput["workspace"];
+      agentSessionId?: string;
+      sessionId?: string;
+    },
   ) => {
     const execution = input.workspace?.executionTarget;
-    if (
-      !ctx.projectId ||
-      execution?.kind !== "remote" ||
-      execution.providerId !== `${ctx.extensionId}.workspace-type.machine`
-    )
-      throw new Error("Choose a PocketCoder agent machine.");
-    const ref = machineRef(execution.providerRef);
+    if (!ctx.projectId) throw new Error("Choose a PocketCoder project.");
+    const instances = getInstances(ctx.projectId);
+    let ref: { instanceId: string; machineId: string };
+    if (execution?.kind === "remote" && execution.providerId === `${ctx.extensionId}.workspace-type.machine`) {
+      ref = machineRef(execution.providerRef);
+    } else if (input.agentSessionId) {
+      const [instanceId, machineId] = input.agentSessionId.split(":");
+      if (!instanceId || !machineId) throw new Error("Invalid PocketCoder agent session.");
+      ref = { instanceId, machineId };
+    } else if (input.sessionId) {
+      ref = await instances.sessionTarget(input.sessionId);
+    } else throw new Error("Choose a PocketCoder agent machine.");
     const sessionId = `${ref.instanceId}:${ref.machineId}`;
     if (input.agentSessionId && input.agentSessionId !== sessionId && !input.agentSessionId.startsWith(`${sessionId}:`))
       throw new Error("This agent session belongs to another machine.");
-    return { ...ref, sessionId, instances: getInstances(ctx.projectId) };
+    return { ...ref, sessionId, instances };
   };
-  type Target = ReturnType<typeof target>;
+  type Target = Awaited<ReturnType<typeof target>>;
   const readMessages = async (ref: Target, signal?: AbortSignal) => {
     const response = await ref.instances.request<{ messages: AgentMessage[] }>(
       ref.instanceId,
@@ -90,7 +102,12 @@ export function createMachineHarness(getInstances = instancesFor) {
           id: `pocketcoder:${ref.machineId}:${message.message_id}`,
           role: message.role,
           index: messages.length,
-          parts: [{ type: "text", text: message.content }],
+          parts: [
+            {
+              type: "text",
+              text: message.role === "assistant" ? onefinTranscriptText(message.content) : message.content,
+            },
+          ],
           createdAt: Date.parse(message.occurred_at),
         });
       cursor = page.next_cursor;
@@ -155,7 +172,7 @@ export function createMachineHarness(getInstances = instancesFor) {
     return { agentSessionId: ref.sessionId, done, stop, timeoutStrategy: "provider" } satisfies HarnessSession;
   };
   const send = async (ctx: HarnessContext, input: HarnessStartInput & { agentSessionId?: string }) => {
-    const ref = target(ctx, input);
+    const ref = await target(ctx, input);
     let machine = await ref.instances.request<Machine>(ref.instanceId, machinePath(ref.machineId), {
       signal: input.signal,
     });
@@ -206,7 +223,7 @@ export function createMachineHarness(getInstances = instancesFor) {
     resume: (ctx, input) => runs.run(ctx, input, (active) => send(ctx, active)),
     reattach(ctx, input) {
       return runs.run(ctx, input, async (active) => {
-        const ref = target(ctx, active);
+        const ref = await target(ctx, active);
         const fileTurn = await reconnectFileTurn(ctx, active, ref);
         if (fileTurn) return fileTurn;
         const cursor = await ctx.state.get<{ target: string; baseline: number }>(`turn:${active.sessionId}`);
@@ -217,7 +234,7 @@ export function createMachineHarness(getInstances = instancesFor) {
     },
     dispose: runs.dispose,
     async getMessages(ctx, input) {
-      const ref = target(ctx, input);
+      const ref = await target(ctx, input);
       const machine = await ref.instances.request<Machine>(ref.instanceId, machinePath(ref.machineId));
       if ((await supportsFileTurns(ref)).requests)
         return fileTurnMessages(ctx, ref, input.agentSessionId.slice(ref.sessionId.length + 1));
