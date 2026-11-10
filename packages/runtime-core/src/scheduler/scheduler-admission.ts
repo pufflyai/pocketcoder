@@ -3,7 +3,7 @@ import {
   ApiError,
   type ProviderInput,
   parseWorkloadTemplate,
-  runtimeCredentialReferences,
+  templateCredentialReferences,
   workloadSnapshotOf,
 } from "@pstdio/pocketcoder-contracts";
 import { ProviderNotSubmittedError } from "@pstdio/pocketcoder-runtime-contracts";
@@ -247,7 +247,7 @@ export class SchedulerAdmission {
     const spec = row.templateSnapshot.spec;
     if (spec.setup.some((step) => Object.values(step.env).some((value) => value.startsWith("secretRef:"))))
       throw new Error("secret.unavailable: setup environment credentials are not supported");
-    if (runtimeCredentialReferences(spec).length && !this.context.deps.revokeWorkspaceLeases)
+    if (templateCredentialReferences(row.templateSnapshot).length && !this.context.deps.revokeWorkspaceLeases)
       throw new Error("secret.unavailable: no runtime issuer configured");
     return [];
   }

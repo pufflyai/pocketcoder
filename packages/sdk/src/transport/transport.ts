@@ -87,9 +87,9 @@ export class PocketCoderTransport {
   }
 
   // Long-lived reads such as event streams run until the caller aborts, without timeout or retries.
-  async stream(path: string, signal?: AbortSignal) {
+  async stream(path: string, signal?: AbortSignal, headers: Record<string, string> = {}) {
     const response = await this.fetchImpl(`${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`, {
-      headers: { authorization: `Bearer ${this.apiKey}`, accept: "text/event-stream" },
+      headers: { authorization: `Bearer ${this.apiKey}`, accept: "text/event-stream", ...headers },
       ...(signal ? { signal } : {}),
     });
     if (!response.ok) {

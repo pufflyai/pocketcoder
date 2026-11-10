@@ -18,7 +18,21 @@ export async function clearConversations(
   at: Date,
   still?: SQL,
 ) {
-  const { conversations, conversationRecords: records, workspaceConversations } = context.tables;
+  const { conversations, conversationRecords: records, workspaceConversations, managedSessions } = context.tables;
+  // A managed terminal commit holds its session row, then the document. Take them in that order too.
+  const owners = await tx
+    .select({ principalId: conversations.principalId, conversationId: conversations.conversationId })
+    .from(conversations)
+    .where(and(inArray(conversations.id, ids), still));
+  for (const owner of owners.sort((a, b) => String(a.conversationId).localeCompare(String(b.conversationId))))
+    if (owner.conversationId)
+      await tx
+        .select({ sessionId: managedSessions.sessionId })
+        .from(managedSessions)
+        .where(
+          and(eq(managedSessions.principalId, owner.principalId), eq(managedSessions.sessionId, owner.conversationId)),
+        )
+        .for("update");
   const locked = await tx
     .select({
       id: conversations.id,
@@ -31,7 +45,18 @@ export async function clearConversations(
   if (!locked.length) return 0;
   const documents = locked.map((row) => row.id);
   for (const document of locked)
-    if (document.conversationId) await removeRequestContent(context, tx, document.principalId, document.conversationId);
+    if (document.conversationId) {
+      await removeRequestContent(context, tx, document.principalId, document.conversationId);
+      // Session events carry final text too; replay from before the deletion reports cursor_expired.
+      await tx
+        .delete(context.tables.managedObservations)
+        .where(
+          and(
+            eq(context.tables.managedObservations.principalId, document.principalId),
+            eq(context.tables.managedObservations.sessionId, document.conversationId),
+          ),
+        );
+    }
   // The workspace quota counts stored records, so it gets their bytes back.
   const charged = await tx
     .select({ workspaceId: records.workspaceId, bytes: sql<number>`sum(${records.bytes})`.mapWith(Number) })

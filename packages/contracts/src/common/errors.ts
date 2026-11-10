@@ -83,6 +83,9 @@ export const ERROR_CODES = {
   "budget.exhausted": 429,
   "budget.conflict": 409,
   "revision.stale": 412,
+  "events.cursor_invalid": 400,
+  "events.cursor_expired": 410,
+  "runtime.unavailable": 503,
   "internal.error": 500,
 } as const;
 

@@ -34,6 +34,14 @@ type IssuedLease = {
   expiresAt: string;
 };
 
+// A gateway fixture authenticates workspace bearers against live leases, as a real gateway would.
+function liveWorkspace(requests: Map<string, IssuedLease>, credential: string) {
+  const row = [...requests.values()].find(
+    (r) => r.credential === credential && !r.revoked && r.expiresAt > new Date().toISOString(),
+  );
+  return row?.identity.workspace_id ?? null;
+}
+
 export async function createTestIssuer(
   options: { directoryRoot?: string; sourceUrl?: string; opensslBin?: string; resourceHost?: string } = {},
 ) {
@@ -229,6 +237,7 @@ export async function createTestIssuer(
             request.headers.get("authorization") === `Bearer ${row.credential}`,
         );
       },
+      workspaceOf: (credential: string) => liveWorkspace(requests, credential),
       async resource(credential: string, workspaceId: string, resource = policy.resource) {
         const url = new URL(`https://127.0.0.1:${server.port}/resource`);
         url.searchParams.set("workspace", workspaceId);

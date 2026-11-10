@@ -153,11 +153,11 @@ for the permission model, content inventory, and backup replay rules.
 
 ## Model access is a gateway concern
 
-PocketCoder core does not operate a shared model gateway. A deployment provides
-one, and it is the only place provider API keys exist. The repository includes
-a [single-session example](../deploy/digitalocean/PI.md); a multi-workspace
-service can instead use a dedicated gateway such as
-[agentgateway](https://agentgateway.dev/). Because the workspace is one trust
+PocketCoder does not operate a model gateway or manage model usage. A deployment
+provides the gateway, and it is the only place provider API keys, model choice,
+token limits and model spend are enforced. Reference deployments use
+[agentgateway](https://agentgateway.dev/); the repository also includes a
+[single-session example](../deploy/digitalocean/PI.md). Because the workspace is one trust
 zone, the gateway must not assume requests come from the harness — agent-written
 code can reach it with the same credential. Enforce policy per *workspace
 identity* so that this does not matter:
@@ -272,10 +272,9 @@ credentials must expire with their workspace and be reissued after replacement;
 no long-lived authority may enter templates, request JSON, history or logs.
 
 
-## Managed session authority and accounting
+## Managed session authority and capacity
 
-See [managed sessions and budget accounting](managed-runtime.md) for implemented
+See [managed sessions and capacity budgets](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement, pinned broker renewal and trusted internal
-reservation/settlement ports. Request dispatch, provider gateway enforcement and
-physical capacity accounting retain their separate owners.
+exclusive business-credential placement and pinned broker renewal. Model usage is
+not managed by PocketCoder; see [model access](#model-access-is-a-gateway-concern).

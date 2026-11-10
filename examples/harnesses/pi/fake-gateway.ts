@@ -19,14 +19,17 @@ interface ChatMessage {
   content?: string | Array<{ type: string; text?: string }>;
 }
 
-interface ChatRequest {
+export interface ChatRequest {
   model?: string;
   stream?: boolean;
   messages?: ChatMessage[];
 }
 
+// Only this turn counts: a session's earlier turns also carry tool results.
 function hasToolResult(body: ChatRequest): boolean {
-  return body.messages?.some((message) => message.role === "tool") ?? false;
+  const messages = body.messages ?? [];
+  const lastUser = messages.findLastIndex((message) => message.role === "user");
+  return messages.slice(lastUser + 1).some((message) => message.role === "tool");
 }
 
 function lastUserPrompt(body: ChatRequest): string {
@@ -41,10 +44,32 @@ function lastUserPrompt(body: ChatRequest): string {
   return prompt?.trim() ?? "";
 }
 
+// The managed producer tells Pi where returned files go; the fixture reads it back from there.
+const OUTPUT_DIR = /Save every file you want to return to the user in (\S+)\. /;
+const WRITE_PROMPT = /^Write (\S+) containing: (.+)$/s;
+
+function textOf(content: ChatMessage["content"]) {
+  return typeof content === "string" ? content : (content?.map((part) => part.text ?? "").join("") ?? "");
+}
+
+function writeCompletion(body: ChatRequest, name: string, text: string) {
+  if (hasToolResult(body))
+    return { delta: { role: "assistant", content: `Saved ${name}` }, finishReason: "stop" as const };
+  const system = body.messages?.find((message) => message.role === "system" || message.role === "developer");
+  const directory = OUTPUT_DIR.exec(textOf(system?.content))?.[1] ?? "/workspace";
+  const call = { name: "write", arguments: JSON.stringify({ path: `${directory}/${name}`, content: text }) };
+  return {
+    delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_write_output", type: "function", function: call }] },
+    finishReason: "tool_calls" as const,
+  };
+}
+
 function completion(body: ChatRequest): {
   delta: Record<string, unknown>;
   finishReason: "stop" | "tool_calls";
 } {
+  const write = WRITE_PROMPT.exec(lastUserPrompt(body).split("\n\nAttached files")[0] ?? "");
+  if (write?.[1] && write[2]) return writeCompletion(body, write[1], write[2]);
   const token = /^Reply with exactly this diagnostic token: (pocketcoder-doctor-[\da-f-]+)$/.exec(
     lastUserPrompt(body),
   )?.[1];
@@ -107,7 +132,11 @@ function heldReply(model: string, created: number): Response {
   return new Response(stream, { headers: EVENT_STREAM_HEADERS });
 }
 
-export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof Bun.serve> {
+// `observe` sees every authorized completion request, so tests can count model calls.
+export function startFakePiGateway(
+  expectedBearer?: string,
+  observe?: (body: ChatRequest) => void,
+): ReturnType<typeof Bun.serve> {
   return Bun.serve({
     hostname: "0.0.0.0",
     port: 0,
@@ -123,9 +152,10 @@ export function startFakePiGateway(expectedBearer?: string): ReturnType<typeof B
         return new Response("unauthorized", { status: 401 });
       }
       const body = (await request.json()) as ChatRequest;
+      observe?.(body);
       const model = body.model ?? "pocketcoder-test";
       const created = Math.floor(Date.now() / 1000);
-      if (body.stream && lastUserPrompt(body) === PI_INTERRUPT_PROMPT) return heldReply(model, created);
+      if (body.stream && lastUserPrompt(body).startsWith(PI_INTERRUPT_PROMPT)) return heldReply(model, created);
       const next = completion(body);
       if (!body.stream) {
         return Response.json({

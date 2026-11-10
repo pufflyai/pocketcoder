@@ -78,7 +78,6 @@ test("a producer forgetting an observed running request leaves an uncertain outc
       isolationScopeId: randomUUID(),
       budgetScopeIds: [scopeId],
       templateDigest: f.runtime.template.digest,
-      allowedModels: ["fixture/model"],
       credentialBindingId: null,
     });
     await f.store.managed.budgets.writePolicy(keyId, managedPolicy(scopeId), null);
@@ -224,7 +223,6 @@ test.each([1, 5, 20])(
         isolationScopeId: randomUUID(),
         budgetScopeIds: [scopeId],
         templateDigest: f.runtime.template.digest,
-        allowedModels: ["fixture/model"],
         credentialBindingId: null,
       });
       const policy = managedPolicy(scopeId);

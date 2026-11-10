@@ -178,8 +178,28 @@ export function createConversationDocuments(context: DatabaseContext) {
     });
   }
 
+  // A managed request's history is committed with its terminal request. The controller does not
+  // close it with a placeholder while recovery may still observe the producer's real outcome.
+  async function managedPlaceholder(turn: ConversationTurnCommit) {
+    if (withTerminalFact(turn) === turn.messages) return false;
+    const { conversationRequests: requests, workspaces } = context.tables;
+    const [row] = await db
+      .select({ managed: requests.managed })
+      .from(requests)
+      .innerJoin(workspaces, eq(workspaces.principalId, requests.principalId))
+      .where(
+        and(
+          eq(workspaces.id, turn.workspaceId),
+          eq(requests.conversationId, turn.identity.conversation_id),
+          eq(requests.requestId, turn.identity.request_id),
+        ),
+      );
+    return Boolean(row?.managed);
+  }
+
   return {
-    commitConversationTurn(turn: ConversationTurnCommit) {
+    async commitConversationTurn(turn: ConversationTurnCommit) {
+      if (await managedPlaceholder(turn)) return { record: null, created: false };
       return writeRecord(turn.identity.conversation_id, {
         workspaceId: turn.workspaceId,
         recordKey: turn.identity.turn_id,

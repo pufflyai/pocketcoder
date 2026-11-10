@@ -15,3 +15,4 @@ export const ManagedExportPageSchema = z.strictObject({
   items: z.array(ExportObjectSchema),
   nextCursor: z.string().min(1).max(4096).nullable(),
 });
+export type HistoryPage = z.infer<typeof ManagedHistoryPageSchema>;

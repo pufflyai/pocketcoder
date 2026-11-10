@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
   ApiError,
   normalizeTemplateSnapshot,
-  runtimeCredentialReferences,
   runtimeTemplateDefinition,
   type TemplateManifest,
   TemplateSpecSchema,
+  templateCredentialReferences,
   type WorkloadTemplate,
 } from "@pstdio/pocketcoder-contracts";
 import type { TemplateUpsert } from "@pstdio/pocketcoder-runtime-contracts";
@@ -65,7 +65,8 @@ export function createTemplates({ db, journal, tables: { templates, principals, 
         const authority = await authorize(tx, actorKeyId, metadata.name);
         if (
           spec.imagePullSecret ||
-          runtimeCredentialReferences(spec).length > 0 ||
+          templateCredentialReferences({ spec, ...(parsed.workload ? { manifest: parsed.workload } : {}) }).length >
+            0 ||
           Object.values(spec.source?.repositories ?? {}).some((repository) => repository.credential)
         )
           assertAuthorityScope(authority, "secrets:write");

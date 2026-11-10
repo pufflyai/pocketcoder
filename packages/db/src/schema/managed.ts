@@ -1,10 +1,10 @@
 import type { managed } from "@pstdio/pocketcoder-contracts";
 import type {
-  InvocationRecord,
   ManagedBinding,
+  ManagedCancelRecord,
   ManagedCapacityRecord,
   ManagedCredentialBinding,
-  ManagedUsageEvidence,
+  ManagedPlacementIntent,
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
 import {
@@ -34,7 +34,6 @@ export function createManagedTables(
         .notNull()
         .references(() => principals.id),
       installation: boolean("installation").notNull(),
-      blockedReason: text("blocked_reason"),
       lastClockAt: timestamptz("last_clock_at").notNull(),
     },
     (row) => [uniqueIndex("managed_installation_scope").on(row.installation).where(sql`${row.installation} = true`)],
@@ -86,6 +85,11 @@ export function createManagedTables(
       nextRequestSequence: bigint("next_request_sequence", { mode: "number" }).notNull().default(1),
       queueCount: integer("queue_count").notNull().default(0),
       queueBytes: bigint("queue_bytes", { mode: "number" }).notNull().default(0),
+      // Close is persisted once; retries keep its identity and deadline.
+      close: jsonb("close").$type<ManagedCancelRecord>(),
+      // The placement owner records the workspace it created before binding, so a restart reuses it.
+      placement: jsonb("placement").$type<ManagedPlacementIntent>(),
+      resumeRequestedAt: timestamptz("resume_requested_at"),
     },
     (row) => [primaryKey({ columns: [row.principalId, row.sessionId] })],
   );
@@ -116,35 +120,6 @@ export function createManagedTables(
     workspaceId: uuid("workspace_id").primaryKey(),
     record: jsonb("record").$type<ManagedCapacityRecord>().notNull(),
   });
-  // The single invocation owner retains holds, rates and settlement evidence together.
-  const budgetInvocations = table("budget_invocations", {
-    invocationId: uuid("invocation_id").primaryKey(),
-    record: jsonb("record").$type<InvocationRecord>().notNull(),
-    reservedAt: timestamptz("reserved_at").notNull(),
-  });
-  const budgetReports = table(
-    "budget_reports",
-    {
-      invocationId: uuid("invocation_id")
-        .notNull()
-        .references(() => budgetInvocations.invocationId),
-      digest: text("digest").notNull(),
-      evidence: jsonb("evidence").$type<ManagedUsageEvidence>().notNull(),
-      recordedAt: timestamptz("recorded_at").notNull(),
-    },
-    (row) => [primaryKey({ columns: [row.invocationId, row.digest] })],
-  );
-  const budgetAudits = table("budget_audits", {
-    id: uuid("id").primaryKey(),
-    invocationId: uuid("invocation_id")
-      .notNull()
-      .references(() => budgetInvocations.invocationId),
-    actorKeyId: uuid("actor_key_id").notNull(),
-    reason: text("reason").notNull(),
-    previous: jsonb("previous").$type<InvocationRecord>().notNull(),
-    next: jsonb("next").$type<InvocationRecord>().notNull(),
-    createdAt: timestamptz("created_at").notNull(),
-  });
   return {
     managedScopes,
     managedScopeGrants,
@@ -154,8 +129,5 @@ export function createManagedTables(
     managedObservations,
     managedCapacity,
     budgetPolicies,
-    budgetInvocations,
-    budgetAudits,
-    budgetReports,
   };
 }

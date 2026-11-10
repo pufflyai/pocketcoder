@@ -1,13 +1,12 @@
-import { ApiError } from "@pstdio/pocketcoder-contracts";
+import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedCapacityRecord } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
-import { assertRoom } from "./accounting";
-import { capacityUsage } from "./capacity-ledger";
-import { budgetLedger } from "./ledger";
+import { assertRoom, capacityUsage } from "./capacity-ledger";
 import { policyOwner } from "./policy-owner";
+import { lockScopes } from "./scope-locks";
 
 // Runs before the admission owner locks the workspace or spends a launch attempt.
 export async function capacityAdmission(context: DatabaseContext, tx: Transaction, workspaceId: string, now: Date) {
@@ -16,7 +15,14 @@ export async function capacityAdmission(context: DatabaseContext, tx: Transactio
     .select()
     .from(tables.managedCapacity)
     .where(eq(tables.managedCapacity.workspaceId, workspaceId));
-  if (!row) return true;
+  if (!row) {
+    // A session placement records its capacity right after creating the workspace; launch waits for it.
+    const [workspace] = await tx
+      .select({ metadata: tables.workspaces.metadata })
+      .from(tables.workspaces)
+      .where(eq(tables.workspaces.id, workspaceId));
+    return !workspace?.metadata[managed.MANAGED_SESSION_METADATA];
+  }
   const [principal] = await tx
     .select()
     .from(tables.principals)
@@ -25,8 +31,7 @@ export async function capacityAdmission(context: DatabaseContext, tx: Transactio
   if (!principal || principal.disabledAt) return false;
   for (const participant of [...row.record.sessions].sort((a, b) => a.sessionId.localeCompare(b.sessionId)))
     await sessionWriter(context).read(tx, { principalId: row.record.principalId, sessionId: participant.sessionId });
-  const { at, rows: scopes } = await budgetLedger(context, () => now).lockScopes(tx, row.record.scopeIds);
-  if (scopes.some((scope) => scope.blockedReason)) return false;
+  const at = await lockScopes(context, tx, row.record.scopeIds, now);
   try {
     const auth = authorityContext(context);
     const profile = await auth.profile(tx, principal.id, row.record.profileId, row.record.profileRevision);
@@ -74,9 +79,7 @@ export async function requireCapacityLaunch(
   const auth = authorityContext(context);
   const profile = await auth.profile(tx, record.principalId, record.profileId, record.profileRevision);
   await auth.validateScopes(tx, record.principalId, profile.profile);
-  const scopes = await budgetLedger(context, () => at).lockScopes(tx, record.scopeIds);
-  if (scopes.rows.some((scope) => scope.blockedReason))
-    throw new ApiError("budget.conflict", "Managed scope is blocked.");
+  await lockScopes(context, tx, record.scopeIds, at);
   if (!Number.isSafeInteger(attempt) || attempt < 1 || record.starts.some((start) => start.attempt > attempt))
     throw new ApiError("revision.stale", "Launch attempt changed.");
   for (const scopeId of record.scopeIds) {

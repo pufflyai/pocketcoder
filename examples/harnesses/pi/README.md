@@ -1,6 +1,11 @@
 # Pi through AgentAPI
 
-This example exercises PocketCoder's intended coding-agent integration path:
+For managed sessions, use the [Pi starter](starter/README.md) instead. It runs Pi as a
+`pocketcoder.execution/v1` producer with structured outcomes, targeted cancel and file
+publication, against a deployment-provided model gateway such as agentgateway. This
+page describes the older interactive AgentAPI path.
+
+This example exercises PocketCoder's interactive coding-agent integration path:
 
 ```text
 local client → PocketCoder → AgentAPI → remote Pi CLI → model gateway
@@ -42,6 +47,20 @@ cd examples/harnesses/pi
 bun install --frozen-lockfile
 bun run typecheck
 bun test
+```
+
+## Validate the managed producer
+
+`managed-producer.test.ts` drives the real pinned Pi CLI through the adapter
+protocol, with model calls answered by the deterministic fixture gateway. It covers
+accept deduplication, lookup after a lost reply, session continuity, one-file and
+zero-file publication, targeted cancel and credential failures.
+
+The Docker check builds the starter from a copy outside the repository and runs Pi
+turns in the container:
+
+```sh
+POCKETCODER_PI_STARTER_CONFORMANCE=1 bun test starter-image.conformance.test.ts
 ```
 
 ## Run the full local E2E

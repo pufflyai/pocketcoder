@@ -4,6 +4,7 @@ import {
   PREVIEW_MIN_PROTOCOL_VERSION,
   PreviewNameSchema,
   PreviewOpenRequestSchema,
+  type ViewSessionOptions,
 } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import type { Hub } from "../control-channel/hub";
@@ -11,6 +12,7 @@ import { type AppEnv, requireScope } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
 import type { ViewAdmission } from "./admission";
 import { registerGrantRoutes } from "./grant-routes";
+import { PreviewGrants } from "./grants";
 import { previewHttp } from "./http";
 import { PreviewSessions } from "./sessions";
 import { viewExchange } from "./view-exchange";
@@ -25,6 +27,7 @@ export function composePreviews(deps: {
   policy: ViewPolicy;
 }) {
   const sessions = new PreviewSessions(deps.store, deps.service);
+  const grants = new PreviewGrants(deps.store);
 
   const browser: import("hono").MiddlewareHandler<AppEnv> = async (c, next) => {
     const url = deps.policy.requestUrl(c);
@@ -54,7 +57,7 @@ export function composePreviews(deps: {
   };
 
   function register(app: OpenAPIHono<AppEnv>) {
-    registerGrantRoutes(app, deps.store, deps.service, sessions);
+    registerGrantRoutes(app, deps.store, deps.service, sessions, grants);
     app.get("/v1/workspaces/:id/previews", requireScope("previews:open"), async (c) => {
       const workspace = await deps.service.getOwned(c.get("principal"), c.req.param("id"));
       return c.json(
@@ -92,7 +95,10 @@ export function composePreviews(deps: {
       return c.json({ url: url.href, expires_at: new Date(minted.expires).toISOString() }, 201);
     });
   }
-  return { browser, register };
+  // Session-facing preview open reuses these owners against the session's current binding.
+  const mintUrl = (c: import("hono").Context<AppEnv>, workspaceId: string, name: string, session: ViewSessionOptions) =>
+    deps.policy.mintUrl(deps.policy.requestUrl(c), workspaceId, name, session);
+  return { browser, register, grants, sessions, mintUrl };
 }
 
 function validatePreviewRequest(request: Request, url: URL) {

@@ -20,9 +20,62 @@ release never-launched holds, including after a controller restart.
 
 Request completion alone does not prove a retained session process exited.
 Trusted process-stop evidence releases that process slot; provider fencing releases
-the physical slot and its processes. Neither action refunds uncertain model use.
-Automatic placement/resume and provider gateway/network enforcement remain separate
-delivery gates.
+the physical slot and its processes.
+The placement owner creates, binds and replaces session compute; see
+[placement and replacement](managed-session-work.md#placement-and-replacement).
+
+| Variable | Purpose |
+| --- | --- |
+| `POCKETCODER_SESSION_QUEUE` | Per-session queue `count` and `bytes` |
+| `POCKETCODER_SESSION_STOP_SECONDS` | How long cancel and close may stay pending |
+| `POCKETCODER_SESSION_EVENT_RETENTION` | Recent events kept per session for replay |
+
+None of them has a default.
+
+### Managed Pi conformance on Docker
+
+`packages/server/src/testing/managed-pi.conformance.test.ts` and
+`managed-pi-capacity.conformance.test.ts` run the whole managed chain on real
+Docker:
+
+- a controller with the Docker driver and restricted egress;
+- a real HTTPS runtime issuer that delivers the Pi template's `model-gateway`
+  credential slot;
+- the Pi starter image built from `examples/harnesses/pi/starter`;
+- the independent reference consumer.
+
+A deterministic model gateway fixture stands in for agentgateway. It accepts only
+bearers the issuer minted for a live workspace.
+
+```sh
+docker pull --platform linux/amd64 ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
+POCKETCODER_MANAGED_PI_CONFORMANCE=1 bun --no-env-file test \
+  packages/server/src/testing/managed-pi.conformance.test.ts \
+  packages/server/src/testing/managed-pi-capacity.conformance.test.ts
+```
+
+The suites cover:
+
+- files and explicit publication;
+- zero-file collection;
+- events and history;
+- a scoped cancel while a sibling session runs;
+- close;
+- capacity usage;
+- a controller restart while Pi keeps running;
+- replacement of removed compute without resending started work;
+- model egress from inside the workspace: only the gateway route works.
+
+The capacity suite runs 1, 5 and 20 sessions. Each run has its own scope, and
+that scope's `maxActiveWorkspaces` equals the run size.
+
+Measured on Docker 29.9.2 with 4 CPUs and 16 GiB, Pi 0.83.0, source `0f5aa77`:
+
+| Sessions | Completed | Wall time | Peak workspaces | Peak CPU | Peak memory | Cleanup |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 16 s | 1 | 2% | 102 MiB | 3 s |
+| 5 | 5 | 29 s | 5 | 58% | 232 MiB | 4 s |
+| 20 | 20 | 86 s | 20 | 165% | 1875 MiB | 4 s |
 
 ## Container images
 

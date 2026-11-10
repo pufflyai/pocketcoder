@@ -1,4 +1,5 @@
 import type { LaunchMode } from "../persistence/persistence";
+import { materializeSlotEnv } from "../templates/runtime-credentials";
 import { workloadLifecycle } from "../templates/workload-policy";
 import { type WorkloadTemplateSnapshot, WorkloadTemplateSnapshotSchema } from "../templates/workload-template";
 import { ExecSpecSchema } from "./protocol-exec";
@@ -18,7 +19,7 @@ export function waitingExecSpec(
     Object.entries(spec.operations).flatMap(([name, operation]) => {
       const adapter = spec.adapters[operation.adapter];
       return adapter?.kind === "process" && adapter.command
-        ? [[name, { command: adapter.command, cwd: adapter.cwd, env: adapter.env }]]
+        ? [[name, { command: adapter.command, cwd: adapter.cwd, env: materializeSlotEnv(manifest, adapter.env) }]]
         : [];
     }),
   );
@@ -38,7 +39,11 @@ export function waitingExecSpec(
         .map(([name]) => name),
       operations,
       infrastructure: Object.fromEntries(
-        Object.entries(spec.services).flatMap(([name, service]) => (service.process ? [[name, service.process]] : [])),
+        Object.entries(spec.services).flatMap(([name, service]) =>
+          service.process
+            ? [[name, { ...service.process, env: materializeSlotEnv(manifest, service.process.env) }]]
+            : [],
+        ),
       ),
     },
     setup: [],

@@ -3,7 +3,7 @@ import { ApiError } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
-import { PreviewGrants } from "./grants";
+import type { PreviewGrants } from "./grants";
 import type { PreviewSessions } from "./sessions";
 
 export function registerGrantRoutes(
@@ -11,8 +11,8 @@ export function registerGrantRoutes(
   store: Store,
   service: WorkspaceService,
   sessions: PreviewSessions,
+  grants: PreviewGrants,
 ) {
-  const grants = new PreviewGrants(store);
   const base = "/v1/workspaces/:id/preview-grants";
   const invalid = () => {
     throw new ApiError("validation.invalid", "Invalid preview grant JSON.");

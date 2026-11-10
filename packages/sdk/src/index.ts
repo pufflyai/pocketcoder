@@ -48,6 +48,7 @@ export type {
   WorkspaceResource,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
+export { managed } from "@pstdio/pocketcoder-contracts";
 export { PocketCoderClient } from "./client";
 export { AdministrationApi } from "./resources/admin/admin";
 export { AgentApi, type AgentMessageInput } from "./resources/agent/agent";
@@ -57,6 +58,7 @@ export {
   type AttachmentUploadInput,
   splitAttachmentManifest,
 } from "./resources/attachments/attachments";
+export { type BudgetScopeGrant, type CredentialBinding, ManagedAuthorityApi } from "./resources/budgets/budgets";
 export { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 export type { ConversationMessage, ConversationPage } from "./resources/conversations/conversations";
 export { ConversationsApi } from "./resources/conversations/conversations";
@@ -64,6 +66,10 @@ export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/d
 export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
 export { PrincipalsApi } from "./resources/principals/principals";
 export { SecretsApi } from "./resources/secrets/secrets";
+export type { SessionEventOptions } from "./resources/sessions/events";
+export { SessionFilesApi } from "./resources/sessions/files";
+export { SessionRequestsApi } from "./resources/sessions/requests";
+export { type SessionPreviewOptions, SessionsApi, type StopReceipt } from "./resources/sessions/sessions";
 export { type TemplateSummary, TemplatesApi } from "./resources/templates/templates";
 export {
   TerminalConnection,

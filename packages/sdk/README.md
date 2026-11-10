@@ -52,6 +52,38 @@ Use `client.raw(path, init)` for endpoints not yet represented by a typed
 resource client. API failures throw `PocketCoderError`; expired or deleted
 conversation history throws the more specific `ConversationGoneError`.
 
+## Managed sessions
+
+Applications that use PocketCoder as their agent runtime work with logical sessions
+and never name a workspace. PocketCoder places, replaces and stops compute itself.
+
+```ts
+const session = await client.sessions.create({ sessionId, profileId, profileRevision: 1 });
+const file = await client.files.put(session.sessionId, { inputId, name: "notes.txt", mediaType: "text/plain", bytes });
+// Store this body before sending it. After a lost reply, send the identical body again.
+const body = { requestId, message: "Summarize the notes", attachments: [file.reference], dispatchDeadline };
+await client.requests.submit(session.sessionId, body);
+
+const { records, eventCursor } = await client.sessions.snapshot(session.sessionId);
+for await (const event of client.sessions.events(session.sessionId, { after: eventCursor, signal })) {
+  // Delivered at least once: skip resource revisions you already applied, keep event.cursor.
+}
+```
+
+| Resource | Methods |
+| --- | --- |
+| `client.sessions` | `create`, `get`, `resume`, `close`, `history`, `snapshot`, `events`, `openPreview` |
+| `client.requests` | `submit`, `get`, `cancel`, `collection` |
+| `client.files` | `put`, `register`, `upload`, `get`, `exports`, `content` |
+| `client.authority` | `grantScope`, `putPolicy`, `getPolicy`, `usage`, `putProfile`, `putCredentialBinding` |
+
+`events` resumes after the last delivered cursor (also sent as `Last-Event-ID`) when a
+stream ends. It throws `events.cursor_expired` when the cursor is no longer retained:
+read a new snapshot and follow its `eventCursor`. `cancel` and `close` return a receipt
+that stays `pending` until the stop has evidence; retry with the same `cancelId`.
+Budgets cover physical capacity only; model usage belongs to the model gateway. See the
+[reference consumer](../../examples/clients/managed-runtime/README.md).
+
 ## Resolve one user turn after preservation
 
 Create one long-lived `WorkspaceTurnResolver` in a trusted backend. Call it

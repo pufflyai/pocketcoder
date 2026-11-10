@@ -37,16 +37,6 @@
           "type": "string",
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
-        "allowedModels": {
-          "minItems": 1,
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
-        },
         "credentialBindingId": {
           "anyOf": [
             {
@@ -66,7 +56,6 @@
         "isolationScopeId",
         "budgetScopeIds",
         "templateDigest",
-        "allowedModels",
         "credentialBindingId"
       ],
       "additionalProperties": false
@@ -2963,6 +2952,9 @@
                 "budget.exhausted",
                 "budget.conflict",
                 "revision.stale",
+                "events.cursor_invalid",
+                "events.cursor_expired",
+                "runtime.unavailable",
                 "internal.error"
               ]
             },
@@ -3010,30 +3002,6 @@
         "limits": {
           "type": "object",
           "properties": {
-            "inputTokens": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "outputTokens": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "workspaceStarts": {
               "anyOf": [
                 {
@@ -3058,42 +3026,6 @@
                 }
               ]
             },
-            "maxInFlightModelRequests": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "modelRequestsPerMinute": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "modelRequestsPerMinutePerWorkspace": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "maxRunningRequestsPerSession": {
               "type": "number",
               "const": 1
@@ -3102,72 +3034,15 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
-            },
-            "defaultOutputTokens": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            },
-            "maxOutputTokensPerInvocation": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           },
           "required": [
-            "inputTokens",
-            "outputTokens",
             "workspaceStarts",
             "maxActiveWorkspaces",
-            "maxInFlightModelRequests",
-            "modelRequestsPerMinute",
-            "modelRequestsPerMinutePerWorkspace",
             "maxRunningRequestsPerSession",
-            "maxChatProcessesPerWorkspace",
-            "defaultOutputTokens",
-            "maxOutputTokensPerInvocation"
+            "maxChatProcessesPerWorkspace"
           ],
           "additionalProperties": false
-        },
-        "modelLimits": {
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "model": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256
-              },
-              "inputTokens": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "outputTokens": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": ["model", "inputTokens", "outputTokens"],
-            "additionalProperties": false
-          }
         },
         "effectiveAt": {
           "type": "string",
@@ -3175,7 +3050,7 @@
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
         }
       },
-      "required": ["scopeId", "revision", "period", "limits", "modelLimits", "effectiveAt"],
+      "required": ["scopeId", "revision", "period", "limits", "effectiveAt"],
       "additionalProperties": false
     },
     "BudgetPolicyWrite": {
@@ -3199,30 +3074,6 @@
         "limits": {
           "type": "object",
           "properties": {
-            "inputTokens": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "outputTokens": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "workspaceStarts": {
               "anyOf": [
                 {
@@ -3247,42 +3098,6 @@
                 }
               ]
             },
-            "maxInFlightModelRequests": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "modelRequestsPerMinute": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "modelRequestsPerMinutePerWorkspace": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
             "maxRunningRequestsPerSession": {
               "type": "number",
               "const": 1
@@ -3291,75 +3106,18 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
-            },
-            "defaultOutputTokens": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            },
-            "maxOutputTokensPerInvocation": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           },
           "required": [
-            "inputTokens",
-            "outputTokens",
             "workspaceStarts",
             "maxActiveWorkspaces",
-            "maxInFlightModelRequests",
-            "modelRequestsPerMinute",
-            "modelRequestsPerMinutePerWorkspace",
             "maxRunningRequestsPerSession",
-            "maxChatProcessesPerWorkspace",
-            "defaultOutputTokens",
-            "maxOutputTokensPerInvocation"
+            "maxChatProcessesPerWorkspace"
           ],
           "additionalProperties": false
-        },
-        "modelLimits": {
-          "maxItems": 1000,
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "model": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256
-              },
-              "inputTokens": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "outputTokens": {
-                "anyOf": [
-                  {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": ["model", "inputTokens", "outputTokens"],
-            "additionalProperties": false
-          }
         }
       },
-      "required": ["scopeId", "revision", "period", "limits", "modelLimits"],
+      "required": ["scopeId", "revision", "period", "limits"],
       "additionalProperties": false
     },
     "BudgetUsage": {
@@ -3386,60 +3144,6 @@
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
         },
-        "settledInputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "settledOutputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "heldInputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "heldOutputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "effectiveInputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "effectiveOutputTokens": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "remainingInputTokens": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "remainingOutputTokens": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "workspaceStarts": {
           "type": "integer",
           "minimum": 0,
@@ -3449,40 +3153,6 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
-        },
-        "inFlightModelRequests": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "unresolvedInvocations": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "oldestUnresolvedAt": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blockedReason": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "asOf": {
           "type": "string",
@@ -3495,20 +3165,8 @@
         "policyRevision",
         "periodStart",
         "periodEnd",
-        "settledInputTokens",
-        "settledOutputTokens",
-        "heldInputTokens",
-        "heldOutputTokens",
-        "effectiveInputTokens",
-        "effectiveOutputTokens",
-        "remainingInputTokens",
-        "remainingOutputTokens",
         "workspaceStarts",
         "activeWorkspaces",
-        "inFlightModelRequests",
-        "unresolvedInvocations",
-        "oldestUnresolvedAt",
-        "blockedReason",
         "asOf"
       ],
       "additionalProperties": false

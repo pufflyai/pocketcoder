@@ -12,6 +12,7 @@
         "deploy/digitalocean/production/run-access.ts",
         "examples/resume/extension.ts",
         "examples/resume/daemon.ts",
+        "examples/clients/managed-runtime/run.ts",
         "examples/native/artifact-memory-fixture.ts",
         "scripts/native-startup-runner.ts",
         "scripts/upgrade/seed-previous-release.ts",
@@ -56,7 +57,15 @@
       "entry": ["src/bin.ts", "src/**/*.test.ts"]
     },
     "examples/harnesses/*": {
-      "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]
+      // The Pi starter's build scripts run only inside its Dockerfile.
+      "entry": [
+        "agentapi-compat.ts",
+        "gateway.ts",
+        "*.test.ts",
+        "starter/write-workload.ts",
+        "starter/src/check-pi.ts",
+        "starter/src/execution-adapter.ts"
+      ]
     },
     "examples/harnesses/oss": {
       "entry": ["*.test.ts"],

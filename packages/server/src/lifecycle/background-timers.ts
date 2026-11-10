@@ -24,6 +24,7 @@ export function startBackgroundTimers(
     config: ServerConfig;
     inputs?: import("../attachments/input-storage").InputStorage;
     liveTurns: import("../conversations/live-turns").LiveTurns;
+    sessionRecovery: { tick(): Promise<void> };
     maintenance: Maintenance;
     log: ServerLog;
     managedPrincipals?: () => Promise<void>;
@@ -40,12 +41,14 @@ export function startBackgroundTimers(
     start(config.schedulerIntervalMs, createCoordinatorTick(deps), "scheduler tick failed"),
     start(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed"),
     start(config.schedulerIntervalMs, () => closeEndedTurns(deps), "conversation sweep failed"),
+    start(config.schedulerIntervalMs, () => deps.sessionRecovery.tick(), "session placement failed"),
     start(
       60_000,
       async () => {
         await deps.inputs?.reconcile();
         await deps.store.binaryOutputs.prune(new Date());
         await deps.store.exports.prune(new Date());
+        if (config.sessionEventRetention) await deps.store.managed.history.prune(config.sessionEventRetention);
         const { deleted, skipped } = await persistence.pruneExpired();
         if (deleted > 0 || skipped > 0) log(`retention: deleted=${deleted} skipped=${skipped}`);
       },
@@ -85,5 +88,16 @@ export function startBackgroundTimers(
       await policyReconciliation?.drain();
       await deps.executionDispatcher?.stop();
     },
+  };
+}
+
+// The parts of the built server that the background timers drive.
+export function builtTimerDeps(built: import("../app").BuiltServer) {
+  return {
+    checkpointTransfers: built.checkpointTransfers,
+    inputs: built.inputs,
+    liveTurns: built.liveTurns,
+    executionDispatcher: built.executionDispatcher,
+    sessionRecovery: built.sessionRecovery,
   };
 }

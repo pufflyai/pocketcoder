@@ -9,7 +9,6 @@
       "55555555-5555-4555-8555-555555555555"
     ],
     "templateDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "allowedModels": ["primary"],
     "credentialBindingId": null
   },
   "SessionCreate": {
@@ -107,19 +106,11 @@
     "revision": 1,
     "period": "utc_day",
     "limits": {
-      "inputTokens": 50000000,
-      "outputTokens": 10000000,
       "workspaceStarts": null,
       "maxActiveWorkspaces": null,
-      "maxInFlightModelRequests": null,
-      "modelRequestsPerMinute": null,
-      "modelRequestsPerMinutePerWorkspace": 50,
       "maxRunningRequestsPerSession": 1,
-      "maxChatProcessesPerWorkspace": 5,
-      "defaultOutputTokens": 4096,
-      "maxOutputTokensPerInvocation": 8192
+      "maxChatProcessesPerWorkspace": 5
     },
-    "modelLimits": [],
     "effectiveAt": "2026-11-05T16:00:00Z"
   },
   "BudgetUsage": {
@@ -127,20 +118,8 @@
     "policyRevision": 1,
     "periodStart": "2026-11-05T00:00:00Z",
     "periodEnd": "2026-11-06T00:00:00Z",
-    "settledInputTokens": 12000,
-    "settledOutputTokens": 3000,
-    "heldInputTokens": 2000,
-    "heldOutputTokens": 4096,
-    "effectiveInputTokens": 14000,
-    "effectiveOutputTokens": 7096,
-    "remainingInputTokens": 49986000,
-    "remainingOutputTokens": 9992904,
     "workspaceStarts": 1,
     "activeWorkspaces": 1,
-    "inFlightModelRequests": 1,
-    "unresolvedInvocations": 0,
-    "oldestUnresolvedAt": null,
-    "blockedReason": null,
     "asOf": "2026-11-05T16:00:00Z"
   },
   "CleanupReceipt": {
@@ -218,19 +197,11 @@
     "revision": 1,
     "period": "utc_day",
     "limits": {
-      "inputTokens": 50000000,
-      "outputTokens": 10000000,
       "workspaceStarts": null,
       "maxActiveWorkspaces": null,
-      "maxInFlightModelRequests": null,
-      "modelRequestsPerMinute": null,
-      "modelRequestsPerMinutePerWorkspace": 50,
       "maxRunningRequestsPerSession": 1,
-      "maxChatProcessesPerWorkspace": 5,
-      "defaultOutputTokens": 4096,
-      "maxOutputTokensPerInvocation": 8192
-    },
-    "modelLimits": []
+      "maxChatProcessesPerWorkspace": 5
+    }
   },
   "CollectionResult": {
     "sessionId": "66666666-6666-4666-8666-666666666666",

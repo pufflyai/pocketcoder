@@ -47,7 +47,6 @@ test("real issuer leases bind one exclusive session and generation with a finite
       isolationScopeId: randomUUID(),
       budgetScopeIds: [scopeId],
       templateDigest: source.digest,
-      allowedModels: ["local/model"],
       credentialBindingId: bindingId,
     };
     await f.store.managed.authority.provisionProfile(f.key.id, f.principal.id, profile);
@@ -66,19 +65,11 @@ test("real issuer leases bind one exclusive session and generation with a finite
         revision: 1,
         period: "utc_day",
         limits: {
-          inputTokens: 100,
-          outputTokens: 100,
           workspaceStarts: 10,
           maxActiveWorkspaces: 5,
-          maxInFlightModelRequests: 5,
-          modelRequestsPerMinute: 10,
-          modelRequestsPerMinutePerWorkspace: 10,
           maxRunningRequestsPerSession: 1,
           maxChatProcessesPerWorkspace: 5,
-          defaultOutputTokens: 20,
-          maxOutputTokensPerInvocation: 40,
         },
-        modelLimits: [],
       },
       null,
     );

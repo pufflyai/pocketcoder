@@ -39,4 +39,23 @@ export function registerSessionRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
     }),
     async (c) => c.json(await store.managed.sessions.get(c.get("keyId"), c.req.valid("param").sessionId), 200),
   );
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/v1/sessions/{sessionId}/resume",
+      operationId: "resumeManagedSession",
+      tags: ["Managed sessions"],
+      middleware: [requireScope("sessions:write")] as const,
+      request: { params: z.object({ sessionId: z.uuid() }) },
+      responses: {
+        200: {
+          description: "Resume recorded; placement continues in the background",
+          content: { "application/json": { schema: managed.SessionSchema } },
+        },
+        ...MANAGED_ERROR_RESPONSES,
+      },
+    }),
+    async (c) =>
+      c.json(await store.managed.recovery.resume(c.get("keyId"), c.req.valid("param").sessionId, new Date()), 200),
+  );
 }
