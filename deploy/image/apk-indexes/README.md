@@ -6,8 +6,8 @@ for a reviewed build. Upstream mirrors can still remove old package files; refre
 indexes when a pinned entry returns HTTP 404, then qualify both architectures.
 The cache filenames come from apk and depend on the repository URL and architecture. Do not rename them.
 
-The current main revision is `v3.24.4`. The community revision
-is `v3.24.3-145-ga0a9bdb42c0`. Both architectures were downloaded with `apk update`
+The current main revision is `v3.24.4-45-g95ecd1043f7`. The community revision
+is `v3.24.4-43-g95f64bd8df3`. Both architectures were downloaded with `apk update`
 in the exact pinned Bun base, which verifies their repository signatures.
 `SHA256SUMS` binds the copied bytes. Installation still verifies the signed
 indexes and each downloaded package against the base image's trusted keys.
