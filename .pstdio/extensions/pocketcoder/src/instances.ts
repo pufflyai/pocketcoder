@@ -94,8 +94,10 @@ export function createInstances(root: string) {
   };
   const start = async (id: string, binary?: string) => {
     if (binary) {
+      // Check the new path before saving it, so a bad path cannot break an instance that worked before.
+      const resolved = await resolveExecutable({ binary });
       const saved = await read<Instance>(id, "instance.json");
-      await write(id, "instance.json", { ...saved, binary });
+      await write(id, "instance.json", { ...saved, binary: resolved });
     }
     const instance = await get(id);
     if (instance.error) throw new Error(instance.error);
