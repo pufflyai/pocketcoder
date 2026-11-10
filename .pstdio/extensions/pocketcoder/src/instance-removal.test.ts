@@ -84,3 +84,37 @@ test("a failed launch with a missing executable can be removed without changing 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("an instance whose saved executable is gone can be removed once its controller process has exited", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-remove-moved-instance-"));
+  const id = randomUUID();
+  try {
+    await mkdir(join(root, id, "state"), { recursive: true });
+    await writeFile(
+      join(root, id, "instance.json"),
+      JSON.stringify({
+        id,
+        name: "moved",
+        binary: join(root, "missing"),
+        url: "http://127.0.0.1:1",
+        agentPort: 2,
+        state: "stopped",
+      }),
+    );
+    const instances = createInstances(root);
+    const ctx = makeCommandContext({ params: {}, storage: createMemoryStorage(), projectId: randomUUID() });
+    const remove = createRemoveInstance(() => instances);
+
+    // This test process is alive, so removal must still refuse.
+    await writeFile(join(root, id, "state/server.json"), JSON.stringify({ pid: process.pid }));
+    await expect(remove.run(ctx, { instanceId: id })).rejects.toThrow("Stop the instance before removing it");
+
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    await writeFile(join(root, id, "state/server.json"), JSON.stringify({ pid: exited.pid }));
+    expect(await remove.run(ctx, { instanceId: id })).toEqual({ instanceId: id, removed: true });
+    expect(await instances.list()).toEqual([]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

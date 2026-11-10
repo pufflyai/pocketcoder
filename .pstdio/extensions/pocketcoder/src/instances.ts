@@ -72,6 +72,25 @@ export function createInstances(root: string) {
     }
     return instance;
   };
+  const controllerRunning = async (instance: Instance) => {
+    const instanceDirectory = directory(instance.id);
+    const serverFile = join(instanceDirectory, "state/server.json");
+    if (!(await Bun.file(serverFile).exists())) return false;
+    const binary = await resolveExecutable({ binary: instance.binary }).catch(() => undefined);
+    if (binary) {
+      const result = await runCli(binary, instanceDirectory, environment(instance), ["server", "status", "--json"]);
+      return !["not_running", "stale"].includes((JSON.parse(result.stdout) as { state: string }).state);
+    }
+    // A moved or deleted executable cannot report status, so check the recorded process directly.
+    // Otherwise the instance could be neither started nor removed.
+    const { pid } = JSON.parse(await readFile(serverFile, "utf8")) as { pid: number };
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const start = async (id: string, binary?: string) => {
     if (binary) {
       const saved = await read<Instance>(id, "instance.json");
@@ -158,13 +177,8 @@ export function createInstances(root: string) {
     },
     async remove(id: string) {
       const instance = await read<Instance>(id, "instance.json");
-      if (await Bun.file(join(directory(id), "state/server.json")).exists()) {
-        const binary = await resolveExecutable({ binary: instance.binary });
-        const result = await runCli(binary, directory(id), environment(instance), ["server", "status", "--json"]);
-        const status = JSON.parse(result.stdout) as { state: string };
-        if (!["not_running", "stale"].includes(status.state))
-          throw new Error("Stop the instance before removing it. Its controller process is still running.");
-      }
+      if (await controllerRunning(instance))
+        throw new Error("Stop the instance before removing it. Its controller process is still running.");
       // Keep the controller database and checkpoints so saved conversations and recovery data survive removal.
       await write(id, "instance.json", { ...instance, removed: true });
     },
