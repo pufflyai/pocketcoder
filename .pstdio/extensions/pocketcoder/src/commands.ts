@@ -50,7 +50,7 @@ export const templateChoices = defineCommand({
 
 export const startInstance = defineCommand({
   id: "instances.start",
-  title: "Start instance or renew its key",
+  title: "Start instance",
   cli: true,
   mutating: true,
   params: { instanceId: instanceIdParam },

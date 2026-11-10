@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkPackageCommands } from "./check-package-commands";
@@ -17,9 +17,8 @@ export async function packPackage(packageDir: string, destination: string, label
   return join(destination, tarballName);
 }
 
-export async function installPackedDependencies(tempDir: string, tarballs: Record<string, string>) {
+async function installPackedDependencies(tempDir: string, tarballs: Record<string, string>) {
   const dependencies = Object.fromEntries(Object.entries(tarballs).map(([name, path]) => [name, `file:${path}`]));
-  // Manifest checks validate the ranges first. Overrides also use these unpublished tarballs transitively.
   await Bun.write(
     join(tempDir, "package.json"),
     `${JSON.stringify(
@@ -28,7 +27,6 @@ export async function installPackedDependencies(tempDir: string, tarballs: Recor
         private: true,
         type: "module",
         dependencies,
-        overrides: dependencies,
       },
       null,
       2,
@@ -37,12 +35,11 @@ export async function installPackedDependencies(tempDir: string, tarballs: Recor
   await run(["bun", "install", "--ignore-scripts", "--force", "--cache-dir", join(tempDir, "cache")], tempDir);
 }
 
-export async function checkSdkPackage(packageDir: string, remotePackageDir: string, cliPackageDir: string) {
+export async function checkSdkPackage(packageDir: string, cliPackageDir: string) {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-package-tarballs-"));
   try {
     await checkPackedPackages({
       "@pstdio/pocketcoder-sdk": await packPackage(packageDir, directory, "SDK"),
-      "@pstdio/pocketcoder-remote": await packPackage(remotePackageDir, directory, "remote"),
       "@pstdio/pocketcoder-cli": await packPackage(cliPackageDir, directory, "CLI"),
     });
   } finally {
@@ -76,7 +73,6 @@ export async function checkPackedPackages(tarballs: Record<string, string>) {
     await Bun.write(
       join(tempDir, "consumer.ts"),
       `import { PocketCoderClient, type RestoreRequest, type WorkspaceResource, WorkspaceTurnResolver } from "@pstdio/pocketcoder-sdk";
-import { createRemoteExtension, type RemoteExtensionOptions, RemoteAgentClient } from "@pstdio/pocketcoder-remote/extension";
 
 const restore: RestoreRequest = {
   external_id: "restored-workspace",
@@ -91,14 +87,10 @@ const resolver = new WorkspaceTurnResolver({
   client,
   resumeWorkspace: async ({ source }) => source,
 });
-const extensionOptions: RemoteExtensionOptions = { resolver };
-const extension = createRemoteExtension(extensionOptions);
-const agent = new RemoteAgentClient({ serviceUrl: "https://agent.test", key: "synthetic" });
-void agent.sendTurn;
 
 void restore;
 void useWorkspace;
-void extension;
+void resolver;
 void client.templates.list();
 `,
     );
@@ -108,10 +100,6 @@ void client.templates.list();
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
-import { createRemoteExtension } from "@pstdio/pocketcoder-remote/extension";
-
-assert.equal(typeof createRemoteExtension, "function");
-assert.equal(typeof createRemoteExtension(), "function");
 
 let request;
 const server = createServer((incoming, response) => {
@@ -151,13 +139,6 @@ try {
     );
 
     await installPackedDependencies(tempDir, tarballs);
-    const declaration = await readFile(
-      join(tempDir, "node_modules", "@pstdio", "pocketcoder-remote", "dist", "extension.d.ts"),
-      "utf8",
-    );
-    if (/pocketcoder-contracts|(?:^|\/)packages\/|(?:^|\/)src\//.test(declaration)) {
-      throw new Error("remote extension declaration refers to monorepo-only sources");
-    }
     await run([join(import.meta.dir, "../node_modules/.bin/tsc"), "--project", "tsconfig.json"], tempDir);
     await checkPackageCommands(tempDir);
   } finally {

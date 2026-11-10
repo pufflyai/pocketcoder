@@ -1,11 +1,6 @@
 # Pi through AgentAPI
 
-For managed sessions, use the [Pi starter](starter/README.md) instead. It runs Pi as a
-`pocketcoder.execution/v1` producer with structured outcomes, targeted cancel and file
-publication, against a deployment-provided model gateway such as agentgateway. This
-page describes the older interactive AgentAPI path.
-
-This example exercises PocketCoder's interactive coding-agent integration path:
+This example exercises PocketCoder's intended coding-agent integration path:
 
 ```text
 local client → PocketCoder → AgentAPI → remote Pi CLI → model gateway
@@ -49,20 +44,6 @@ bun run typecheck
 bun test
 ```
 
-## Validate the managed producer
-
-`managed-producer.test.ts` drives the real pinned Pi CLI through the adapter
-protocol, with model calls answered by the deterministic fixture gateway. It covers
-accept deduplication, lookup after a lost reply, session continuity, one-file and
-zero-file publication, targeted cancel and credential failures.
-
-The Docker check builds the starter from a copy outside the repository and runs Pi
-turns in the container:
-
-```sh
-POCKETCODER_PI_STARTER_CONFORMANCE=1 bun test starter-image.conformance.test.ts
-```
-
 ## Run the full local E2E
 
 No credentials are needed for the deterministic path:
@@ -78,7 +59,7 @@ terminal and serves the conversation API. Before that, the run starts a turn
 whose reply never finishes, closes an event stream to show the turn keeps
 running, interrupts it, and checks that Pi accepts the next message.
 
-To test a real OpenAI connection without opening the interactive UI:
+To test a real OpenAI connection:
 
 ```sh
 OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:e2e:pi:openai
@@ -111,23 +92,7 @@ request counts and bytes. The [DigitalOcean Pi guide](../../../deploy/digitaloce
 shows how to deploy it for one short-lived workspace session. A shared or paid
 service still needs durable identity, usage, revocation, and budget controls.
 
-## Open the workspace agent in local Pi
-
-The [Pi client runbook](../../../docs/pi-client-runbook.md) covers reconnect,
-attachments, preserve/resume and cleanup. For a deterministic interactive UI
-without a provider key, run `bun examples/e2e/local.ts --harness pi --ui`.
-
-From the repository root:
-
-```sh
-OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:pi:ui
-```
-
-This opens a Pi TUI on the host using
-[`@pstdio/pocketcoder-remote`](../../../packages/remote/).
-The local Pi process disables its own coding tools and sends turns through
-PocketCoder's relay to AgentAPI. The coding agent and all file operations stay
-inside the disposable workspace. Exit Pi to cancel the workspace.
+## Deploy the template
 
 The shared checked-in
 [`pi-harness` template](../../templates/pi-harness.json) contains a placeholder

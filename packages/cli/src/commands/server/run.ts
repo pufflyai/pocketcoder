@@ -15,5 +15,6 @@ export function addRunCommand(parser: Argv) {
         hidden: true,
       }),
     async (flags) => runManagedServer(need(flags, "instance-token")),
+    { loadEnvironment: false },
   );
 }

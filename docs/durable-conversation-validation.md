@@ -2,7 +2,7 @@
 
 Use this playbook to validate the durable agent-session history and resume
 changes on a clean checkout. Run commands from the repository root with Bun
-1.4.4 and Docker available.
+1.4.2 and Docker available.
 
 ## 1. Install and run the repository gate
 
@@ -90,16 +90,12 @@ These checks prove consumer support; they do not prove installed producer emissi
 ## 6. Validate explicit provider facts
 
 ```sh
-bun test packages/remote/src/stream/agentapi-events.test.ts \
-  packages/remote/src/client/identified-turn.test.ts \
-  packages/supervisor/src/agent/agentapi.test.ts
+bun test packages/supervisor/src/agent/agentapi.test.ts
 ```
 
-Expected: explicit intermediate/final/tool-only/activity/terminal facts decode;
-final text survives interruption; duplicate or stale revisions and unrelated turns
-do not replace the accepted turn; canonical facts survive checkpoint-history
-projection; finishing a reader releases its stream. The store tests in step 5
-also round-trip activity facts against PGlite.
+Expected: supplied final-response and terminal facts and their IDs survive
+checkpoint-history projection, and malformed messages are dropped. The store
+tests in step 5 also round-trip activity facts against PGlite.
 No installed producer or deployment capability is claimed by these fixtures.
 
 ## 7. Inspect a running workspace manually

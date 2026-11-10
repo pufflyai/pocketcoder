@@ -50,7 +50,7 @@ const instanceTab = (label: string): PlacementTabPresentation => ({
               ? [
                   {
                     id: "start",
-                    label: "Start / renew key",
+                    label: "Start instance",
                     icon: "play",
                     action: {
                       kind: "command" as const,

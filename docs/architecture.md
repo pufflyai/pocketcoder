@@ -23,7 +23,6 @@ neither callers nor templates can select them.
 | pocketcoder-supervisor | `packages/supervisor` | PID 1 in every workspace: registration, setup, waiting runtime/process ownership, accepted-input capture, health, relay, checkpoint quiescing, TERM/KILL |
 | pocketcoder-egress | `packages/egress` | Sidecar HTTP/CONNECT proxy for `network.mode: restricted` templates: rule matching, default-deny, durable egress audit |
 | pcd | `packages/cli` | Published bundled operator CLI: principals/keys, template validation, workspace inspection, chat, doctor |
-| remote | `packages/remote` | Published Pi terminal UI: local Pi as a thin client over the relay |
 | sdk | `packages/sdk` | Published runtime-validated TypeScript client for the control-plane API |
 | contracts | `packages/contracts` | Published zod schemas: template v1alpha1, workspace states, WSS protocol frames, events, error codes |
 | runtime-core | `packages/runtime-core` | Store contract, scheduler (admission/fairness/sweeps), template registry, outbox dispatcher, restart reconciliation |

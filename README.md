@@ -21,8 +21,6 @@ started](docs/getting-started.md), then the [CLI reference](docs/cli.md),
 [Node SDK](packages/sdk/README.md), [templates](docs/templates.md), [HTTP API](docs/api.md),
 [deployment](docs/deployment.md), and [architecture](docs/architecture.md).
 
-For development, read the [contributor guidance](AGENTS.md) and [CI guide](docs/ci.md).
-
 ## AgentAPI-native workspaces
 
 Templates declare the coding agent; PocketCoder owns AgentAPI startup,
@@ -167,7 +165,6 @@ bun run example:e2e:pi     # remote Pi reads a workspace fixture through AgentAP
 bun run example:e2e:codex  # real Codex CLI through AgentAPI and the live relay
 bun run example:e2e:opencode # real OpenCode ACP harness through AgentAPI
 bun run example:e2e:oss    # combined Codex and OpenCode full-stack matrix
-bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses OpenAI)
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
@@ -181,20 +178,18 @@ regression. That Linux-only regression is skipped on Darwin. Docker suites
 require a running daemon, and
 `POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
 
-Harness and client integrations live under [`examples/`](examples/). The
+Harness integrations live under [`examples/`](examples/). The
 deterministic Pi E2E runs the remote Pi CLI through AgentAPI and proves a real
-workspace file read. The interactive variant runs Pi on the host as the UI,
-while the coding agent and tools remain inside the workspace. Consumer
-applications remain separate projects and integrate through the machine API.
+workspace file read. Consumer applications remain separate projects and
+integrate through the machine API.
 
 ## Releasing packages
 
-Three npm packages are public:
+Two npm packages are public:
 
 | Package | What it is |
 |---------|------------|
 | `@pstdio/pocketcoder-cli` | the `pcd` operator and diagnostics CLI |
-| `@pstdio/pocketcoder-remote` | Pi-based terminal UI for workspaces |
 | `@pstdio/pocketcoder-sdk` | Node ESM and TypeScript client for the control plane |
 
 Every other workspace remains private, is linked by Bun with `workspace:*`, and
@@ -203,10 +198,6 @@ packages bundle the private packages they use at build time, so they do not
 declare a private workspace dependency at runtime — `bun run check` fails if
 one ever does. The server, agent, and egress proxy are distributed as container
 images.
-
-`packages/remote` ships two bundles: the launcher and the extension entry that
-Pi loads with jiti at runtime. Only `@earendil-works/*` stays external, because
-the extension shares those modules with the Pi process hosting it.
 
 `packages/sdk` ships Node ESM and bundled TypeScript declarations. Its only
 runtime dependency is `zod`; private workspace packages are bundled. The

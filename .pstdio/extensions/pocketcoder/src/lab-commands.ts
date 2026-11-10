@@ -57,13 +57,15 @@ export function createLabCommands(getInstances = instancesFor) {
     title: "Select PocketCoder instance",
     cli: true,
     mutating: true,
-    params: { instance: params.text({ label: "Instance ID", required: true, resolvedFrom: "resource" }) },
+    params: { instance: params.text({ label: "Instance ID", resolvedFrom: "resource" }) },
     async run(ctx, input) {
-      const instance = await getInstances(ctx.projectId).get(input.instance);
-      await ctx.storage.set("selected-instance", input.instance);
+      const id = input.instance ?? (ctx.resource?.type === "instance" ? ctx.resource.id : undefined);
+      if (!id) throw new Error("Choose a PocketCoder instance.");
+      const instance = await getInstances(ctx.projectId).get(id);
+      await ctx.storage.set("selected-instance", id);
       await ctx.events.emit(changed, {});
       ctx.navigation.open(instanceTarget(ctx.projectId, instance));
-      return { instanceId: input.instance };
+      return { instanceId: id };
     },
   });
   const open = defineCommand({

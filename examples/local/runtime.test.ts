@@ -6,7 +6,7 @@ import { LOCAL_PI_PRINCIPAL_SCOPES, requireOpenAIKey, resolveLocalPiOptions } fr
 import { type LocalCommandRunner, preparePiRuntime } from "./runtime";
 
 describe("local Pi operator options", () => {
-  test("grants the local Pi client permission to upload attachments", () => {
+  test("grants the local principal permission to upload attachments", () => {
     expect(LOCAL_PI_PRINCIPAL_SCOPES).toContain("attachments:write");
   });
 

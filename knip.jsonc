@@ -6,14 +6,9 @@
       "entry": [
         "scripts/ci/*.ts",
         "deploy/image/echo-harness.ts",
-        "examples/harnesses/file-agent/adapter.ts",
         "deploy/image/desktop-harness.ts",
         "deploy/image/browser-harness.ts",
         "deploy/digitalocean/production/run-access.ts",
-        "examples/resume/extension.ts",
-        "examples/resume/daemon.ts",
-        "examples/clients/managed-runtime/run.ts",
-        "examples/native/artifact-memory-fixture.ts",
         "scripts/native-startup-runner.ts",
         "scripts/upgrade/seed-previous-release.ts",
         "examples/e2e/managed-interruption-child.ts",
@@ -25,9 +20,6 @@
     },
     ".pstdio/extensions/*": {
       "entry": ["extension.ts", "**/*.test.ts"]
-    },
-    ".pstdio/extensions/pocketcoder": {
-      "entry": ["extension.ts", "**/*.test.ts", "src/codex-template/prepare.ts", "src/codex-template/start.ts"]
     },
     "packages/db": {
       "entry": [
@@ -50,22 +42,11 @@
         "src/displays/client/browser-viewer.ts"
       ]
     },
-    "packages/remote": {
-      "entry": ["src/**/*.test.ts"]
-    },
     "packages/cli": {
       "entry": ["src/bin.ts", "src/**/*.test.ts"]
     },
     "examples/harnesses/*": {
-      // The Pi starter's build scripts run only inside its Dockerfile.
-      "entry": [
-        "agentapi-compat.ts",
-        "gateway.ts",
-        "*.test.ts",
-        "starter/write-workload.ts",
-        "starter/src/check-pi.ts",
-        "starter/src/execution-adapter.ts"
-      ]
+      "entry": ["agentapi-compat.ts", "gateway.ts", "*.test.ts"]
     },
     "examples/harnesses/oss": {
       "entry": ["*.test.ts"],

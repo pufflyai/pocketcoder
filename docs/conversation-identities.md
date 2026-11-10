@@ -57,19 +57,6 @@ The provider SSE event is `conversation_message`, with a canonical message as
 its data. Provider history may contain the same canonical records; supervisor
 checkpoint synchronization preserves them. Legacy AgentAPI records remain valid.
 
-`RemoteAgentClient` is exported from `@pstdio/pocketcoder-remote/extension`.
-`sendTurn(prompt, identity, { signal, attachmentIds, onEvent })`
-is the explicit adapter path. Use it only with a verified v2 producer and a
-previously accepted request context. It forwards that context, filters unrelated
-requests, emits each event revision once, and waits for `turn_terminal`. Its
-result contains `identity`, `outcome`, nullable `finalResponse`, and `toolOnly`.
-A stream reconnect retains the last final response and replay filter. A stable
-status or an old assistant message cannot complete this path. Cancellation and
-transport failure remain errors; observed facts have already reached `onEvent`.
-
-`send` remains the legacy adapter path for producers lacking explicit facts.
-Consumer tests alone do not allow callers to enable the capable path in a release.
-
 ## Capability and existing history
 
 The history page advertises protocol transport and persistence support under
@@ -84,7 +71,7 @@ message envelope. Older binaries must not consume v2 identified history until
 upgraded; rolling back a producer to legacy emission does not rewrite saved IDs.
 
 See [durable conversation validation](durable-conversation-validation.md) for
-public contract, adapter, API, and SDK checks. Installed producer validation is a
+public contract, API, and SDK checks. Installed producer validation is a
 separate release responsibility.
 
 ## Durable conversation history

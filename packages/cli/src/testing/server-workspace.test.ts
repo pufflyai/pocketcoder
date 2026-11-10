@@ -11,6 +11,7 @@ describe("pcd server lifecycle", () => {
     const env = {
       POCKETCODER_HOST: "127.0.0.1",
       POCKETCODER_PORT: String(port),
+      POCKETCODER_AGENT_HTTP: `127.0.0.1:${freePort()}`,
       POCKETCODER_STATE_DIR: directory,
       POCKETCODER_DIR: join(directory, "data"),
       POCKETCODER_AUTH_PEPPER: "server-test-pepper",

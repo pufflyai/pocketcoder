@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { commandRef, defineCommand, params, workbenchPages, workbenchResourceKinds } from "@pstdio/sdk/extensions";
+import { commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
 import { machineConnection } from "./machine-connection";
-import { checkMachineConnection, previousMachineSession } from "./machine-session";
+import { checkMachineConnection, machineSessionTarget, previousMachineSession } from "./machine-session";
 import { unavailableMachineMessage } from "./machine-status";
 import { type ControllerMachine, isTerminal, launchInputOf, machinePath, providerParams } from "./machines";
 import { changed } from "./resources";
@@ -104,17 +104,7 @@ export function createMachineCommands(getInstances = instancesFor) {
         }));
       if (connection.kind === "agentapi") await instances.bindSession(session.id, input.instance, machine.id);
       await ctx.storage.set(key, session.id);
-      ctx.navigation.open({
-        kind: "page",
-        page: workbenchPages.session,
-        resource: {
-          type: workbenchResourceKinds.session.id,
-          extensionId: "pstdio",
-          projectId: ctx.projectId,
-          id: session.id,
-          label: session.title,
-        },
-      });
+      ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
       return { machineId: machine.id, sessionId: session.id };
     },
   });

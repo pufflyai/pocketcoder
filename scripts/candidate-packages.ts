@@ -3,7 +3,7 @@ import { basename, join, resolve } from "node:path";
 import { checkPackedPackages, packPackage } from "./check-sdk-package";
 
 const root = resolve(import.meta.dir, "..");
-const packages = ["cli", "sdk", "remote"];
+const packages = ["cli", "sdk"];
 
 async function packCandidates(directory: string, commit: string) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("A full source commit is required");

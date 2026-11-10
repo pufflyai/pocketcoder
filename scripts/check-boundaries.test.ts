@@ -73,8 +73,8 @@ test("rejects published packages that depend on unpublished ones at runtime", ()
   expect(
     publishedDependencyViolations([
       {
-        path: "packages/remote/package.json",
-        name: "@example/remote",
+        path: "packages/app/package.json",
+        name: "@example/app",
         tags: ["type:app"],
         private: false,
         dependencies: ["@example/client", "zod"],
@@ -87,15 +87,15 @@ test("rejects published packages that depend on unpublished ones at runtime", ()
         dependencies: [],
       },
     ]),
-  ).toEqual(["packages/remote/package.json: published package cannot depend on unpublished @example/client"]);
+  ).toEqual(["packages/app/package.json: published package cannot depend on unpublished @example/client"]);
 });
 
 test("allows published packages to depend on published ones and bundled dev dependencies", () => {
   expect(
     publishedDependencyViolations([
       {
-        path: "packages/remote/package.json",
-        name: "@example/remote",
+        path: "packages/app/package.json",
+        name: "@example/app",
         tags: ["type:app"],
         private: false,
         dependencies: ["@example/contracts"],

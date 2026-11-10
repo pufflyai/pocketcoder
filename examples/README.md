@@ -25,10 +25,6 @@ real harnesses.
 - [`harnesses/oss/`](harnesses/oss/) runs the real Codex and OpenCode CLIs
   through AgentAPI. A deterministic local model gateway makes both full-stack
   tests credential-free and verifies incremental response events.
-- [`clients/pi/`](clients/pi/) documents the relay conversation contract for
-  building your own workspace UI. The maintained local Pi client lives in the
-  published package [`@pstdio/pocketcoder-remote`](../packages/remote/); local Pi has
-  no coding tools, and the remote agent owns all workspace operations.
 - [`local/`](local/) materializes a persistent digest-pinned Pi runtime for the
   optional repository `local:up` workflow. Generated templates and secrets live
   under ignored `.pocketcoder/local/`, never in this source directory.
@@ -124,37 +120,6 @@ Run one harness while troubleshooting with `bun run example:e2e:codex` or
 workspace image, stream a deterministic response through PocketCoder, require
 multiple live updates, and verify the final AgentAPI message. CI runs the
 combined matrix.
-
-## Use local Pi as the remote agent UI
-
-Set an OpenAI API key on the host and run:
-
-```sh
-OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:pi:ui
-```
-
-The interactive workflow keeps background server logs out of Pi's terminal.
-Set `POCKETCODER_EXAMPLE_DEBUG=1` to show them while troubleshooting.
-
-The command creates the disposable local PocketCoder stack and workspace,
-starts a short-lived host gateway that adds the OpenAI bearer credential, then
-opens Pi on the host. The initial message asks the remote agent to read the
-test file; you can continue chatting in the same Pi session. Exiting local Pi
-cancels the workspace and removes all temporary resources.
-
-The topology is:
-
-```text
-local Pi TUI
-  → PocketCoder relay
-  → AgentAPI
-  → remote Pi coding agent
-  → host OpenAI gateway
-  → OpenAI Responses API
-```
-
-The OpenAI key never enters the workspace. `OPENAI_MODEL` is required; the
-example never selects a provider model implicitly.
 
 ## Test any running harness
 

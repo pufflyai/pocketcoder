@@ -26,19 +26,19 @@ Keep the owner key and backup outside all workspaces.
 `native.json` records the commit, CLI version, target, byte count, SHA-256 checksum,
 PGlite and PostgreSQL versions, seed and engine checksums, and migration hashes.
 CI checks the executable's reported version and the database format in a real
-backup against that record. The executable size limit is 150 MB, approved for
-the Bun 1.4.4 upgrade. Controller peak memory is limited to 512 MB, and readiness
-must complete within the approved temporary four seconds. Builds include JavaScript bytecode to
-reduce parsing work on the first start.
+backup against that record. It also enforces an executable of at most 90 MB,
+controller peak memory of at most 512 MB, and readiness within four seconds.
+The four-second startup allowance is temporary, approved on 5 November 2026;
+PC-62 tracks the candidate qualification and follow-up.
 
 ## Public packages
 
-The CLI, SDK, and remote packages require Node 22.19.0 or newer. Installed commands
+The CLI and SDK packages require Node 22.19.0 or newer. Installed commands
 run without Bun. The CLI package carries a native executable for each target in
 the table. Its Node launcher selects the current target and forwards arguments
-and stop signals. The SDK and remote extension run on Node.
+and stop signals. The SDK runs on Node.
 
-Download the three tarballs from the same passing run used for the native binary:
+Download the two tarballs from the same passing run used for the native binary:
 
 ```sh
 gh run download "$PC_RUN" --repo pufflyai/pocketcoder \
@@ -56,10 +56,8 @@ fi) || exit 1
 `packages.json` gives each tarball's name, version, bytes and checksum. The versions
 come from that source commit; the artifact channel is `candidate`. No registry
 publication is required. Install the tarballs in a new consumer using your Node
-package manager. Pin all three direct dependencies to their downloaded files.
-Override the SDK dependency with its tarball too, so remote uses the same candidate
-SDK even when that version is not published. For example, with the versions in the
-current source:
+package manager. Pin both direct dependencies to their downloaded files. For
+example, with the versions in the current source:
 
 ```json
 {
@@ -67,10 +65,6 @@ current source:
   "type": "module",
   "dependencies": {
     "@pstdio/pocketcoder-cli": "file:./packages/pstdio-pocketcoder-cli-0.12.0.tgz",
-    "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.8.0.tgz",
-    "@pstdio/pocketcoder-remote": "file:./packages/pstdio-pocketcoder-remote-0.4.1.tgz"
-  },
-  "overrides": {
     "@pstdio/pocketcoder-sdk": "file:./packages/pstdio-pocketcoder-sdk-0.8.0.tgz"
   }
 }
@@ -83,15 +77,9 @@ node node_modules/.bin/pcd --version
 node node_modules/.bin/pcd backup --help
 node --input-type=module -e '
   import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
-  import { createRemoteExtension } from "@pstdio/pocketcoder-remote/extension";
-  console.log(typeof PocketCoderClient, typeof createRemoteExtension());
+  console.log(typeof PocketCoderClient);
 '
 ```
-
-To use the remote launcher, issue a finite machine key for the needed principal,
-then set `POCKETCODER_URL` and `POCKETCODER_KEY` in the operator's terminal. Run
-`node node_modules/.bin/pocketcoder-remote`. Keep that machine key outside
-workspaces. See the [CLI reference](cli.md) for issuing and revoking keys.
 
 The CLI has no install dependencies, so it can also run directly from its tarball:
 
@@ -114,8 +102,7 @@ bun run candidate:packages check /path/to/downloaded-packages "$PC_COMMIT"
 ```
 
 CI runs native startup, owner setup, restart, backup/restore, TypeScript consumers,
-SDK HTTP/WebSocket entry points, CLI commands, and the real Pi launcher on all three
-native runners. It runs the Docker workspace preserve/resume flow on both Linux
+SDK HTTP/WebSocket entry points, and CLI commands on all three native runners. It runs the Docker workspace preserve/resume flow on both Linux
 runners. macOS uses Colima for its empty Docker daemon; Apple Silicon hosted
 runners use cross-architecture QEMU without nested virtualization. Workspace
 round trips can also run on a local macOS host with Docker.

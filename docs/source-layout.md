@@ -12,7 +12,6 @@ and compose the feature modules.
 | server | Feature routes and services in `workspaces/`, `persistence/`, `templates/`, `administration/`, `conversations/`, `attachments/`, and `terminals/`; transport code in `http/`, `relay/`, and `control-channel/` |
 | drivers | `docker/`, `kubernetes/`, `filesystem/`, `secrets/`, and shared `egress/` |
 | supervisor | `bootstrap/`, `agent/`, `proxy/`, `attachments/`, `terminals/`, `checkpoints/`, `warm-pool/`, and `observability/` |
-| remote | `client/`, `session/`, `stream/`, `attachments/`, `history/`, and `ui/` |
 | sdk | `resources/<resource>/` and shared `transport/` |
 | contracts | Domain schemas in named feature directories; shared values in `common/` |
 | runtime-contracts | `stores/`, `drivers/`, and `events/` |
@@ -38,9 +37,7 @@ Keep tests next to that behavior. Move shared code only when several features
 use it; do not create a generic base class to split a long file.
 
 When moving a file, update imports, package exports, subprocess paths, test
-fixtures, build entries, and documentation links. The remote launcher must find
-`src/extension.ts` during development and `dist/extension.js` after packaging.
-The CLI and server builds must still include generated database migrations.
+fixtures, build entries, and documentation links. The CLI and server builds must still include generated database migrations.
 
 Use `bun run check`, `bun run typecheck`, and `bun run test` to validate changes.
 Run `bun run pack:check` when published output changes. The formatter uses 120

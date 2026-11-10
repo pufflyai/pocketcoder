@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { JsonPatch } from "@pstdio/sdk/extensions";
@@ -9,6 +9,7 @@ import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createLabCommands } from "./lab-commands";
 import { createMachineCommands } from "./machine-commands";
+import { createMachineWatch } from "./machine-watch";
 import { createMachineProvider, isTerminal, type Machine, machinePath, machineRef } from "./machines";
 
 const repo = resolve(import.meta.dir, "../../../..");
@@ -30,6 +31,7 @@ test.each([
   "local text sessions work $name when the template has no file capability route",
   async ({ launchInput }) => {
     const root = await mkdtemp(join(tmpdir(), "pocketcoder-local-agent-"));
+    const watchRoot = await mkdtemp(join(tmpdir(), "pocketcoder-watch-proxy-"));
     const image = `pocketcoder-local-agent:test-${randomUUID()}`;
     const instances = createInstances(root);
     const harness = createMachineHarness(() => instances);
@@ -45,6 +47,10 @@ test.each([
     };
     let instanceId: string | undefined;
     let machineId: string | undefined;
+    const watchAbort = new AbortController();
+    let watching: Promise<unknown> | undefined;
+    let proxy: ReturnType<typeof Bun.serve> | undefined;
+    let interrupted = false;
     try {
       await command([
         "bun",
@@ -88,6 +94,38 @@ test.each([
       });
       if (!created.providerRef || created.executionTarget?.kind !== "remote") throw new Error("Missing machine target");
       machineId = machineRef(created.providerRef).machineId;
+      proxy = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const url = new URL(request.url);
+          if (!interrupted && url.pathname.endsWith("/changes")) {
+            interrupted = true;
+            return Response.json(
+              { error: { code: "temporary_failure", message: "Temporary interruption" } },
+              { status: 503 },
+            );
+          }
+          return fetch(new Request(`${instance.url}${url.pathname}${url.search}`, request));
+        },
+      });
+      await mkdir(join(watchRoot, instanceId), { mode: 0o700 });
+      await writeFile(
+        join(watchRoot, instanceId, "instance.json"),
+        JSON.stringify({ ...instance, url: proxy.url.origin }),
+      );
+      await writeFile(join(watchRoot, instanceId, "owner.json"), await readFile(join(root, instanceId, "owner.json")), {
+        mode: 0o600,
+      });
+      watching = Promise.resolve(
+        createMachineWatch(() => createInstances(watchRoot)).run(
+          { ...ctx, signal: watchAbort.signal },
+          { instance: instanceId, machineId },
+        ),
+      ).then(
+        (result) => ({ result }),
+        (error) => ({ error }),
+      );
       expect((await instances.request<{ external_id: string }>(instance.id, machinePath(machineId))).external_id).toBe(
         externalId,
       );
@@ -124,18 +162,24 @@ test.each([
       );
       const commands = createMachineCommands(() => instances);
       await commands.deleteMachine.run(ctx, { instance: instanceId, machineId });
+      expect(await watching).toEqual({ result: { machineId, state: "canceled" } });
+      expect(interrupted).toBe(true);
       expect((await lab.read.run(ctx, {})).machines).toEqual([]);
       const keyPath = join(root, instanceId, "owner.json");
       const owner = await readFile(keyPath, "utf8");
       try {
         await writeFile(keyPath, JSON.stringify({ ...JSON.parse(owner), expiresAt: new Date(0).toISOString() }));
-        const expired = await lab.read.run(ctx, {});
-        expect(expired.instances[0]?.id).toBe(instanceId);
-        expect(expired.error).toContain("key expired");
+        const renewed = await lab.read.run(ctx, {});
+        expect(renewed.instances[0]?.id).toBe(instanceId);
+        expect(renewed.error).toBeUndefined();
       } finally {
         await writeFile(keyPath, owner);
       }
     } finally {
+      watchAbort.abort();
+      if (watching) await watching;
+      proxy?.stop(true);
+      await rm(watchRoot, { recursive: true, force: true });
       await harness.dispose(ctx);
       if (instanceId && machineId) {
         let machine = await instances.request<Machine>(instanceId, `${machinePath(machineId)}/cancel`, {

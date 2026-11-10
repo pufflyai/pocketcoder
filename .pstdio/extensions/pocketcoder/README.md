@@ -28,9 +28,9 @@ Leave the executable field blank to use this project's `out/native/pocketcoder`.
 3. Use **Save template** to add a JSON or YAML manifest to the project catalog. **Launch instance** chooses a catalog template and names the instance. The executable field is optional and uses the local build by default.
 4. Use **Import templates** with an absolute prepared folder path to publish more versions into the selected instance. Published versions are immutable; changed manifests need a new version.
 5. Use the native **Launch machine** toolbar form. It lists templates from the selected instance. Choose AgentAPI or Prompt Studio Cloud relay, then launch. Refresh while the machine starts. New machines do not create Prompt Studio workspace records.
-6. A ready machine's row menu has **Connect to agent** and **Delete machine**. Connect opens or reuses its native session. AgentAPI templates support text; attachments require the existing file-aware request contract. A template without AgentAPI gives a visible setup error.
+6. A ready machine's row menu has **Connect to agent** and **Delete machine**. Connect opens or reuses its native session in the side panel and keeps the Lab visible. AgentAPI templates support text; attachments require the existing file-aware request contract. A template without AgentAPI gives a visible setup error.
 7. **Delete machine** stops execution, waits for a terminal state and removes the row from Lab. The controller retains its audit record. Failed machines remain visible with their error until dismissed.
-8. The instance dropdown and instance table offer **Start / renew key** and **Stop instance**. Stop requires every active machine to end first. A broken saved executable does not prevent browsing other instances; its table row shows the error.
+8. The instance dropdown and instance table offer **Start instance** and **Stop instance**. Stop requires every active machine to end first. Owner keys expire after 24 hours; while the controller runs, the Lab issues a new one when the old one expires. A broken saved executable does not prevent browsing other instances; its table row shows the error.
 
 ### Prompt Studio and Codex template
 
@@ -79,7 +79,7 @@ The generic Create workspace form also exposes the provider. It currently requir
 
 Open a machine's row menu in **Machines**. **Relaunch machine** opens a native form and creates a fresh machine from the same template version. Its files and conversation start empty. **Resume machine** restores the latest ready checkpoint into a new machine, including saved files and conversation. Resume reports when no checkpoint exists or conversation restore is unsupported. Neither action changes the original machine.
 
-Both actions accept a new application task ID, fresh one-time launch input, new application metadata, and the agent connection type. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Relay machines need their own enrollment and connection metadata. After applying the form, close it and connect to the new machine when ready.
+Both actions accept a new application task ID, fresh one-time launch input, new application metadata, and the agent connection type. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Relay machines need their own enrollment and connection metadata. Run the action to queue the new machine. The form closes on success and stays open with an error if the action fails. Connect to the new machine when ready.
 
 The CLI supports the same options: `--external-id`, `--launch-input`, `--metadata`, and `--connection`. Resume also accepts `--template-version` for a compatible version; otherwise the controller selects the checkpoint version or a compatible recovery version.
 

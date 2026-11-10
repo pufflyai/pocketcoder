@@ -8,10 +8,9 @@ import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
 import { bootstrapExampleOwner, issueExampleAccess } from "./administration";
-import { createHarnessWorkspace, type ReadyHarnessWorkspace, runHarnessE2E } from "./contract";
+import { runHarnessE2E } from "./contract";
 import { piStartupCommand, runDoctorCheck } from "./doctor-check";
 import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
-import { serverOutput } from "./process-output";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
@@ -20,12 +19,11 @@ if (!["echo", "pi", "codex", "opencode"].includes(harness)) {
   throw new Error("--harness must be echo, pi, codex, or opencode");
 }
 const ossHarness = harness === "codex" || harness === "opencode";
-const localPiUi = process.argv.includes("--ui");
 const useOpenAI = process.argv.includes("--openai");
 const openAIApiKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL;
-if ((localPiUi || useOpenAI) && harness !== "pi") {
-  throw new Error("--ui and --openai require --harness pi");
+if (useOpenAI && harness !== "pi") {
+  throw new Error("--openai requires --harness pi");
 }
 if (useOpenAI && (process.env.PI_GATEWAY_URL || process.env.PI_GATEWAY_MODEL)) {
   throw new Error("--openai cannot be combined with PI_GATEWAY_URL or PI_GATEWAY_MODEL");
@@ -49,20 +47,10 @@ const runId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 const tempDir = await mkdtemp(resolve(tmpdir(), "pocketcoder-example-"));
 const localImage = `pocketcoder-example-${harness}:${runId}`;
 let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
-let localPiProcess: ReturnType<typeof Bun.spawn> | null = null;
 let modelGateway: ReturnType<typeof Bun.serve> | null = null;
 let usesFakeGateway = false;
-let uiWorkspace: ReadyHarnessWorkspace | null = null;
 
 async function cleanup(): Promise<void> {
-  if (uiWorkspace) {
-    await uiWorkspace.cancel().catch(() => {});
-    uiWorkspace = null;
-  }
-  if (localPiProcess?.exitCode === null) {
-    localPiProcess.kill("SIGTERM");
-    await Promise.race([localPiProcess.exited, Bun.sleep(5000)]).catch(() => {});
-  }
   modelGateway?.stop(true);
   if (serverProcess) {
     serverProcess.kill("SIGTERM");
@@ -171,10 +159,6 @@ try {
 
   const serverPort = freePort();
   const agentPort = freePort();
-  const serverProcessOutput = serverOutput({
-    interactive: localPiUi,
-    debug: process.env.POCKETCODER_EXAMPLE_DEBUG === "1",
-  });
   serverProcess = Bun.spawn(["bun", "packages/server/src/index.ts"], {
     cwd: ROOT,
     env: {
@@ -189,7 +173,8 @@ try {
       POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
       POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
     },
-    ...serverProcessOutput,
+    stdout: "inherit",
+    stderr: "inherit",
   });
   const baseUrl = `http://127.0.0.1:${serverPort}`;
   await waitFor(
@@ -219,74 +204,41 @@ try {
       "Read /workspace/test.txt with the read tool. Reply with exactly the file contents and nothing else.";
   }
   const prompt = process.env.POCKETCODER_EXAMPLE_PROMPT ?? defaultPrompt;
-  if (localPiUi) {
-    uiWorkspace = await createHarnessWorkspace({
-      baseUrl,
-      key,
-      template: "pi-harness",
-      readyTimeoutMs: 300_000,
-    });
-    console.log(
-      `Opening local Pi for workspace ${uiWorkspace.workspaceId}. Exit Pi to cancel and remove the workspace.`,
+  let expectedResponse = OSS_FIXTURE_CONTENT;
+  if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
+  if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
+  if (harness === "pi") {
+    const doctorOutput = await runDoctorCheck({ baseUrl, key, template: `${harness}-harness` }, (args, doctorEnv) =>
+      command(args, { env: doctorEnv, quiet: true }),
     );
-    localPiProcess = Bun.spawn(["bun", resolve(ROOT, "packages/remote/src/bin.ts"), prompt], {
-      cwd: ROOT,
-      env: {
-        ...process.env,
-        OPENAI_API_KEY: undefined,
-        POCKETCODER_URL: baseUrl,
-        POCKETCODER_KEY: key,
-        POCKETCODER_WORKSPACE_ID: uiWorkspace.workspaceId,
-      },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+    console.log(doctorOutput);
+    console.log("PocketCoder doctor passed against Pi through AgentAPI.");
+  }
+  const report = await runHarnessE2E({
+    baseUrl,
+    key,
+    template: `${harness}-harness`,
+    prompt,
+    expectedResponse: process.env.POCKETCODER_EXAMPLE_EXPECT ?? (expectedResponse || undefined),
+    expectedConversation:
+      harness === "echo"
+        ? [
+            { role: "user", content: prompt },
+            { role: "assistant", content: `echo: ${prompt}` },
+          ]
+        : undefined,
+    readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
+    messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
+    expectedLiveUpdates: usesFakeGateway ? 2 : undefined,
+    interruptPrompt: harness === "pi" && usesFakeGateway ? PI_INTERRUPT_PROMPT : undefined,
+  });
+  console.log("PocketCoder local harness E2E passed:");
+  console.log(JSON.stringify(report, null, 2));
+  if (harness === "pi" && usesFakeGateway) {
+    await command(["bun", "test", "examples/harnesses/pi/agentapi-compat.test.ts"], {
+      env: { POCKETCODER_PI_TEST_URL: baseUrl, POCKETCODER_PI_TEST_KEY: key },
     });
-    const exitCode = await localPiProcess.exited;
-    localPiProcess = null;
-    if (exitCode !== 0) throw new Error(`local Pi exited with code ${exitCode}`);
-    const terminalState = await uiWorkspace.cancel();
-    uiWorkspace = null;
-    if (terminalState !== "canceled") {
-      throw new Error(`expected canceled workspace, got ${terminalState}`);
-    }
-  } else {
-    let expectedResponse = OSS_FIXTURE_CONTENT;
-    if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
-    if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
-    if (harness === "pi") {
-      const doctorOutput = await runDoctorCheck({ baseUrl, key, template: `${harness}-harness` }, (args, doctorEnv) =>
-        command(args, { env: doctorEnv, quiet: true }),
-      );
-      console.log(doctorOutput);
-      console.log("PocketCoder doctor passed against Pi through AgentAPI.");
-    }
-    const report = await runHarnessE2E({
-      baseUrl,
-      key,
-      template: `${harness}-harness`,
-      prompt,
-      expectedResponse: process.env.POCKETCODER_EXAMPLE_EXPECT ?? (expectedResponse || undefined),
-      expectedConversation:
-        harness === "echo"
-          ? [
-              { role: "user", content: prompt },
-              { role: "assistant", content: `echo: ${prompt}` },
-            ]
-          : undefined,
-      readyTimeoutMs: harness === "echo" ? 120_000 : 300_000,
-      messageTimeoutMs: harness === "echo" ? 60_000 : 600_000,
-      expectedLiveUpdates: usesFakeGateway ? 2 : undefined,
-      interruptPrompt: harness === "pi" && usesFakeGateway ? PI_INTERRUPT_PROMPT : undefined,
-    });
-    console.log("PocketCoder local harness E2E passed:");
-    console.log(JSON.stringify(report, null, 2));
-    if (harness === "pi" && usesFakeGateway) {
-      await command(["bun", "test", "examples/harnesses/pi/agentapi-compat.test.ts"], {
-        env: { POCKETCODER_PI_TEST_URL: baseUrl, POCKETCODER_PI_TEST_KEY: key },
-      });
-      console.log("Pi repeated-reply regression passed: four stable and durable file replies.");
-    }
+    console.log("Pi repeated-reply regression passed: four stable and durable file replies.");
   }
 } finally {
   await cleanup();

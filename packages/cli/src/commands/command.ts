@@ -4,14 +4,26 @@ import { type Flags, loadProjectEnvironment } from "../command/cli-context";
 type Configure = (command: Argv) => Argv;
 type Run = (flags: Flags) => Promise<void> | void;
 
-export function addAction(parser: Argv, command: string, description: string | false, configure: Configure, run: Run) {
+interface ActionOptions {
+  // Internal child processes inherit an already resolved environment.
+  loadEnvironment?: boolean;
+}
+
+export function addAction(
+  parser: Argv,
+  command: string,
+  description: string | false,
+  configure: Configure,
+  run: Run,
+  options: ActionOptions = {},
+) {
   return parser.command({
     command,
     describe: description,
     builder: configure,
     handler: async (arguments_) => {
       const flags = arguments_ as unknown as Flags;
-      loadProjectEnvironment(flags);
+      if (options.loadEnvironment !== false) loadProjectEnvironment(flags);
       await run(flags);
     },
   });

@@ -504,7 +504,7 @@ route returns `409 attachment.unsupported`.
 The SDK hashes buffered bodies and sends the digest. Stream callers must supply
 `sha256` before body consumption. Upload progress still reports consumed bytes.
 `attachments.upload` now returns an immutable reference with `fileId`, replacing
-the old workload path descriptor. CLI and remote uploads send the same digest.
+the old workload path descriptor. CLI uploads send the same digest.
 
 AgentAPI messages with `attachment_ids` fail closed with
 `409 attachment.unsupported` until a qualified immutable projection and operation
@@ -607,9 +607,9 @@ The `pocketcoder.dev/v1` workload schemas are available from
 `InputObjectReference`, `AcceptedInputManifest`, `ExportObjectReference`,
 `WorkloadExportReference` and `CredentialSlot`.
 
-The Docker path admits finite-process and request-aware service workloads under
-explicit deployment limits. Cloud-interactive publication and credential slots
-remain closed. Offline validate/render commands accept the wider contract. See the
+These are contracts for the later runtime gates, not new HTTP endpoints in G0.
+`POST /v1/templates` and startup import currently reject canonical workloads.
+The offline validate/render commands accept them. See the
 [owner map and complete example](templates.md#canonical-workload-templates).
 
 An execution reference identifies workspace, runtime incarnation, owning process
@@ -734,138 +734,3 @@ look up, cancel and acknowledge requests from different conversations
 concurrently. Size input projection capacity for those concurrent requests: when
 it is full, the request waits and is resent as capacity frees. A wait longer than
 five minutes is reported as unhealthy.
-
-
-## Finite result collection
-
-These routes use the existing workspace owner. Collection and content require
-`outputs:read`; deletion requires `workspaces:purge`.
-
-| Route | Result |
-| --- | --- |
-| `GET /v1/workspaces/{id}/executions/{requestId}/exports` | 202 while pending; 200 with a settled `WorkloadExportReference` |
-| `GET /v1/workspaces/{id}/exports/{objectId}/content` | Retained bytes, independent of running compute; 404 when unavailable |
-| `DELETE /v1/workspaces/{id}/exports/{exportId}` | Deletes retained bytes and releases their storage reservation |
-
-A settled manifest exists even for zero files. Its completeness is `complete`,
-`partial` or `lost`. Errors accompany non-complete results. Workload exit outcome,
-manifest completeness, object availability and staging `cleanupState` are separate
-facts. See [finite exports](finite-exports.md).
-
-## Workspace lifetime extension
-
-`POST /v1/workspaces/{id}/lifetime` requires the existing owner and
-`workspaces:create`. Send `extensionId` (UUID), `expectedRevision` (the current
-`lifetime.revision`), and `deadlineAt` (absolute ISO time). The desired deadline
-must be later than the current deadline and no later than the persisted creation
-ceiling or current key expiry. The transaction must acquire the workspace before
-its current expiry or any teardown claim. It returns a `LifetimeReceipt` with the
-new revision and original ceiling. Identical retries return the original receipt;
-changed input or a stale revision conflicts. Legacy workspaces without a stored
-ceiling cannot extend.
-Restricted-network workspaces cannot extend: their running egress audit token is
-fixed to the original deadline. The API returns `operation.conflict` without
-changing the deadline or revision. Start a fresh workspace for a longer lifetime.
-
-## Durable preview grants
-
-Cloud preview opens take `grantId` alongside the existing `session` options.
-Grant create/lookup/renew/revoke routes require `previews:open` and current
-workspace ownership. See [the grant contract and renewal flow](preview-grants.md).
-
-## Managed integration contract
-
-The logical session, queue and budget APIs have versioned types and
-machine-readable schemas. Only operations marked `x-shipped: true` are registered.
-Their status,
-field mappings and transaction owners are listed in the
-[managed contract index](managed-contracts.md).
-
-## File-aware agent requests
-
-Input-aware service templates can expose an operation named `message` through a
-verified `pocketcoder.execution/v1` adapter. These workspace-scoped routes require
-`services:relay` and current workspace ownership:
-
-| Route | Result |
-| --- | --- |
-| `GET /v1/workspaces/{id}/agent/capabilities` | Whether request submission and immutable attachments are supported |
-| `POST /v1/workspaces/{id}/agent/requests` | Accept or replay a message request; 201 for new intent, 200 for an identical replay |
-| `GET /v1/workspaces/{id}/agent/requests/{requestId}?conversationId={uuid}` | The existing physical execution receipt |
-| `GET /v1/workspaces/{id}/agent/requests?conversationId={uuid}&limit=100&cursor={requestId}` | Accepted requests in order, with a nullable `next_cursor` |
-
-Upload bytes through the existing attachment route first. Submit `requestId`,
-`conversationId`, `content`, and `files` containing the returned immutable input
-references. Persist one UUID per turn and replay the same body after an uncertain
-response. Changed input under that request ID conflicts. The server pins the
-installed workspace incarnation, template and adapter and computes the physical
-fingerprint. Acceptance, scheduling and finalization use the existing execution
-owner. These routes do not create a logical managed session, queue or budget.
-History reads the canonical conversation request rows and survives workspace
-teardown. Page sizes are bounded to 200; cursors must belong to the same
-workspace, principal and conversation. Legacy text-only agent routes still reject
-attachments.
-
-
-## Managed session authority and capacity
-
-See [managed sessions and capacity budgets](managed-runtime.md) for implemented
-profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement and pinned broker renewal. Budgets cover
-physical capacity only; model usage belongs to the model gateway. [Session work](managed-session-work.md) describes
-implemented request acceptance, file readiness, collection, adapter publication,
-cancel and close, history and event replay, and automatic placement and
-replacement.
-
-### Cancel and close receipts
-
-`POST /v1/sessions/{sessionId}/requests/{requestId}/cancel` and
-`POST /v1/sessions/{sessionId}/close` take `{ "cancelId": "<uuid>" }` and need
-`sessions:write`. They return a `CancelReceipt`: `202` while the stop is pending,
-`200` once it completed. Retry with the same `cancelId` after a lost reply; the
-receipt keeps its first `acceptedAt` and `cancelDeadline`. A different `cancelId`
-for the same target returns `409 idempotency.conflict`. Set
-`POCKETCODER_SESSION_STOP_SECONDS`; without it these routes return
-`503 runtime.unavailable`.
-
-A queued request ends `canceled` without reaching the producer. A running
-request stays pending until the producer reports its own terminal state. A
-request that completed first keeps `completed`, and the receipt reports the stop
-as completed. A missed deadline keeps the receipt pending and sets the request's
-`reasonCode` to `cancel_deadline_exceeded`. Closing a session moves it to
-`closed`, rejects new requests with `409 session.closed`, stops only this
-session's work and keeps its history and receipts readable.
-
-### History and events
-
-`GET /v1/sessions/{sessionId}/history?limit=1..200&cursor=...` returns
-`records`, `nextCursor` and `eventCursor`. Records are the canonical conversation
-records. Every page of one snapshot keeps the same `eventCursor`.
-
-`GET /v1/sessions/{sessionId}/events?after=<eventCursor>` is a Server-Sent Events
-stream of durable `RuntimeEvent` observations. Each frame's `id` is its cursor;
-`Last-Event-ID` also works. Delivery is at least once: ignore resource revisions
-you already applied. Disconnecting never affects the session's work.
-
-| Status / code | Meaning | Client action |
-| --- | --- | --- |
-| 400 `events.cursor_invalid` | Cursor belongs to another session or is ahead of it | Use a cursor from this session |
-| 410 `events.cursor_expired` | Events after the cursor were pruned or deleted | Read a new history snapshot, then look up open requests |
-
-`POST /v1/sessions/{sessionId}/resume` records a wish for compute and returns the
-session. It never names a workspace.
-
-### Session previews
-
-`POST /v1/sessions/{sessionId}/previews/{name}` needs `previews:open` and `sessions:read`.
-The body is `{ "session": { "mode": ... }, "grant": { "id", "subject", "accessRevision", "ceilingAt" } }`;
-`grant` is required for cloud view sessions and covers only this preview. The controller
-resolves the session's current compute, creates the [preview grant](preview-grants.md) for
-that exact incarnation and returns `{ url, expires_at, grantId }` with 201. If the session
-has no ready compute it returns `409 workspace.not_ready`. If compute was replaced during
-the open, it revokes the new grant and returns `409 operation.conflict`: retry with a new
-grant id. A grant id is never retargeted to other compute.
-
-The SDK covers every managed route (`client.sessions`, `client.requests`, `client.files`,
-`client.authority`) and `pcd sessions` / `pcd budgets` expose them on the command line.
-See the [reference consumer](../examples/clients/managed-runtime/README.md).

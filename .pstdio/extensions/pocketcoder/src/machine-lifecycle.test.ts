@@ -7,7 +7,7 @@ import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createMachineCommands } from "./machine-commands";
-import { createMachineLifecycle } from "./machine-lifecycle";
+import { createMachineLifecycleActions } from "./machine-lifecycle-actions";
 import { type ControllerMachine, isTerminal, machinePath } from "./machines";
 
 const repo = resolve(import.meta.dir, "../../../..");
@@ -26,7 +26,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
   const root = await mkdtemp(join(tmpdir(), "pocketcoder-lifecycle-"));
   const image = `pocketcoder-lifecycle:test-${randomUUID()}`;
   const instances = createInstances(root);
-  const lifecycle = createMachineLifecycle(() => instances);
+  const actions = createMachineLifecycleActions(() => instances);
   const machines = createMachineCommands(() => instances);
   const harness = createMachineHarness(() => instances);
   const ctx = {
@@ -107,8 +107,9 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     });
     machineIds.push(source.machineId);
     await ready(source.machineId);
-    const input = { instance: instanceId, machineId: source.machineId };
-    await expect(lifecycle.resumeMachine.run(ctx, input)).rejects.toThrow("No ready checkpoint");
+    await expect(actions.resume.run(ctx, { machineId: `${instanceId}:${source.machineId}` })).rejects.toThrow(
+      "No ready checkpoint",
+    );
     expect((await instances.items(instanceId, "/v1/workspaces")).length).toBe(1);
     await turn(source.machineId, "saved conversation");
     await command([
@@ -120,8 +121,8 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
       "await Bun.write('/workspace/saved.txt', 'saved files');",
     ]);
 
-    const relaunched = await lifecycle.relaunchMachine.run(ctx, {
-      ...input,
+    const relaunched = await actions.relaunch.run(ctx, {
+      machineId: `${instanceId}:${source.machineId}`,
       launchInput: JSON.stringify({ bootstrap_code: "relaunch-bootstrap" }),
     });
     machineIds.push(relaunched.machineId);
@@ -160,8 +161,8 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
       preserved = change.workspace;
     }
     expect(preserved.state).toBe("preserved");
-    const resumed = await lifecycle.resumeMachine.run(ctx, {
-      ...input,
+    const resumed = await actions.resume.run(ctx, {
+      machineId: `${instanceId}:${source.machineId}`,
       externalId: "resumed-task",
       launchInput: JSON.stringify({ bootstrap_code: "resume-bootstrap" }),
       metadata: JSON.stringify({ application: "new-task" }),

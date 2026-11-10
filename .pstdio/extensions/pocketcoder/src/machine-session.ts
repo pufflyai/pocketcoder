@@ -1,7 +1,14 @@
-import type { CommandContext } from "@pstdio/sdk/extensions";
+import { type CommandContext, sessionBrowser } from "@pstdio/sdk/extensions";
 import { type instancesFor, PocketCoderHttpError } from "./instances";
 import type { machineConnection } from "./machine-connection";
 import { machinePath } from "./machines";
+
+export const machineSessionTarget = (projectId: string, session: { id: string; title: string }) => ({
+  kind: "panel" as const,
+  panel: sessionBrowser.panels.conversation,
+  open: "pin" as const,
+  resource: { type: "session", extensionId: "pstdio", projectId, id: session.id, label: session.title },
+});
 
 export async function previousMachineSession(ctx: CommandContext, instanceId: string, machineId: string) {
   const candidates = (await ctx.workspaces.list()).filter(
