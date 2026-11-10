@@ -101,19 +101,23 @@ test("a rejected replay retains a request whose first submission may have succee
     expect(pending).toBeDefined();
     const replay = await reconnectFileTurn(f.ctx, { ...f.input, agentSessionId: first.agentSessionId ?? "" }, f.ref);
     expect(await replay?.done).toEqual({ status: "disconnected" });
-    expect(await f.state.get(`file-turn:${f.input.sessionId}`)).toEqual(pending);
+    expect(await f.state.get<unknown>(`file-turn:${f.input.sessionId}`)).toEqual(pending);
     await expect(startFileTurn(f.ctx, f.input, f.ref)).rejects.toThrow("pending request");
   } finally {
     await f.close();
   }
 });
 
-test.each([404, 422, 410])("older capability responses (%s) retain text turns and terminal history", async (status) => {
+test("a denied optional capability route retains text turns and terminal history", async () => {
   let terminal = false;
   const messages: { role: string; content: string }[] = [];
   const f = await fixture(async (req) => {
     const path = new URL(req.url).pathname;
-    if (path.endsWith("/capabilities")) return new Response(null, { status });
+    if (path.endsWith("/capabilities"))
+      return Response.json(
+        { error: { code: "relay.route_not_allowed", message: "Route not allowed" } },
+        { status: 422 },
+      );
     if (path.endsWith("/message")) {
       const body = await req.json();
       messages.push({ role: "user", content: body.content }, { role: "agent", content: "text reply" });

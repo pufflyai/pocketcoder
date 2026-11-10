@@ -1,17 +1,20 @@
 import { defineExtension } from "@pstdio/sdk/extensions";
 import { createMachineHarness } from "./src/agent";
 import { commands } from "./src/commands";
+import { relaunchMachine, resumeMachine } from "./src/machine-lifecycle";
+import { relaunchDialog, resumeDialog } from "./src/machine-lifecycle-ui";
 import { createMachineProvider } from "./src/machines";
-import { instanceKind } from "./src/resources";
-import { templatesView } from "./src/templates-view";
-import { instancePage, instancesPage, instancesView, machinesView, navigation } from "./src/workbench";
+import { instancesView, machinesView, templatesView } from "./src/native-tables";
+import { instanceKind, machineKind } from "./src/resources";
+import { tableCommands } from "./src/table-commands";
+import { instancePage, instancesPage, navigation } from "./src/workbench";
 
 export default defineExtension({
-  commands,
+  commands: [...commands, ...tableCommands, relaunchMachine, resumeMachine, relaunchDialog.open, resumeDialog.open],
   workspaceTypes: [createMachineProvider()],
   harnesses: [createMachineHarness()],
-  resourceKinds: [instanceKind],
-  views: [templatesView, instancesView, machinesView],
-  pages: [instancesPage, instancePage],
+  resourceKinds: [instanceKind, machineKind],
+  views: [instancesView, templatesView, machinesView, relaunchDialog.view, resumeDialog.view],
+  pages: [instancesPage, instancePage, relaunchDialog.page, resumeDialog.page],
   navigationItems: [navigation],
 });

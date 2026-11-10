@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { InstanceHttpError } from "./instance-http";
+import { resolveExecutable } from "./executable";
 import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 
@@ -13,7 +13,19 @@ export interface Instance {
   url: string;
   agentPort: number;
   state: "running" | "stopped";
+  error?: string;
   workloadLimits?: Record<string, number>;
+  removed?: boolean;
+}
+
+export class PocketCoderHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(`PocketCoder HTTP ${status}: ${code}: ${message}`);
+  }
 }
 
 export const instancesFor = (projectId: string) =>
@@ -50,12 +62,23 @@ export function createInstances(root: string) {
   };
   const get = async (id: string) => {
     const instance = await read<Instance>(id, "instance.json");
-    const result = await runCli(instance.binary, directory(id), environment(instance), ["server", "status", "--json"]);
-    instance.state = result.exitCode === 0 ? "running" : "stopped";
+    try {
+      const binary = await resolveExecutable({ binary: instance.binary });
+      const result = await runCli(binary, directory(id), environment(instance), ["server", "status", "--json"]);
+      instance.state = result.exitCode === 0 ? "running" : "stopped";
+    } catch (error) {
+      instance.state = "stopped";
+      instance.error = String(error);
+    }
     return instance;
   };
-  const start = async (id: string) => {
+  const start = async (id: string, binary?: string) => {
+    if (binary) {
+      const saved = await read<Instance>(id, "instance.json");
+      await write(id, "instance.json", { ...saved, binary });
+    }
     const instance = await get(id);
+    if (instance.error) throw new Error(instance.error);
     if (instance.state === "stopped") await cli(instance, ["server", "start"]);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const issued = JSON.parse(
@@ -63,6 +86,7 @@ export function createInstances(root: string) {
     );
     // This owner key stays on the host. Provider refs and workspace files contain only IDs.
     await write(id, "owner.json", { token: issued.token, expiresAt: issued.key.expires_at });
+    if (instance.removed) await write(id, "instance.json", { ...instance, removed: false });
     return get(id);
   };
   const request = async <T>(id: string, path: string, options: RequestInit = {}) => {
@@ -75,10 +99,30 @@ export function createInstances(root: string) {
       headers: { "content-type": "application/json", authorization: `Bearer ${owner.token}`, ...options.headers },
       signal: options.signal ?? AbortSignal.timeout(35_000),
     });
-    if (!response.ok) throw new InstanceHttpError(response.status, await response.text());
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+      throw new PocketCoderHttpError(
+        response.status,
+        body?.error?.code ?? "http_error",
+        body?.error?.message ?? response.statusText,
+      );
+    }
     return response.json() as Promise<T>;
   };
   return {
+    async bindSession(sessionId: string, instanceId: string, machineId: string) {
+      directory(sessionId);
+      directory(instanceId);
+      directory(machineId);
+      await writeFile(join(root, `${sessionId}.json`), JSON.stringify({ instanceId, machineId }), { mode: 0o600 });
+    },
+    async sessionTarget(sessionId: string) {
+      directory(sessionId);
+      return JSON.parse(await readFile(join(root, `${sessionId}.json`), "utf8")) as {
+        instanceId: string;
+        machineId: string;
+      };
+    },
     get,
     start,
     request,
@@ -107,14 +151,36 @@ export function createInstances(root: string) {
     async list() {
       await mkdir(root, { recursive: true, mode: 0o700 });
       const entries = await readdir(root, { withFileTypes: true });
-      return Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => get(entry.name)));
+      const saved = await Promise.all(
+        entries.filter((entry) => entry.isDirectory()).map((entry) => read<Instance>(entry.name, "instance.json")),
+      );
+      return Promise.all(saved.filter((instance) => !instance.removed).map((instance) => get(instance.id)));
     },
-    async launch(input: { name: string; binary: string; templates?: string; manifest?: unknown }) {
+    async remove(id: string) {
+      const instance = await read<Instance>(id, "instance.json");
+      if (await Bun.file(join(directory(id), "state/server.json")).exists()) {
+        const binary = await resolveExecutable({ binary: instance.binary });
+        const result = await runCli(binary, directory(id), environment(instance), ["server", "status", "--json"]);
+        const status = JSON.parse(result.stdout) as { state: string };
+        if (!["not_running", "stale"].includes(status.state))
+          throw new Error("Stop the instance before removing it. Its controller process is still running.");
+      }
+      // Keep the controller database and checkpoints so saved conversations and recovery data survive removal.
+      await write(id, "instance.json", { ...instance, removed: true });
+    },
+    async launch(input: {
+      name: string;
+      binary?: string;
+      projectRoot?: string;
+      templates?: string;
+      manifest?: unknown;
+    }) {
       const manifest = input.manifest as
         | { apiVersion?: string; spec?: { limits?: Record<string, number> } }
         | undefined;
       const workloadLimits =
         manifest?.apiVersion === "pocketcoder.dev/v1" ? validatedWorkloadLimits(manifest.spec?.limits) : undefined;
+      const binary = await resolveExecutable(input);
       const id = randomUUID();
       await mkdir(directory(id), { recursive: true, mode: 0o700 });
       await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
@@ -124,15 +190,15 @@ export function createInstances(root: string) {
       const instance: Instance = {
         id,
         name: input.name,
-        binary: input.binary,
+        binary,
         url: `http://127.0.0.1:${operatorPort}`,
         agentPort,
         state: "stopped",
         ...(workloadLimits ? { workloadLimits } : {}),
       };
       await write(id, "instance.json", instance);
-      const started = await start(id);
       try {
+        const started = await start(id);
         if (input.manifest)
           await request(id, "/v1/templates", {
             method: "POST",

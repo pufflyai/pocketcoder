@@ -1,174 +1,100 @@
 import {
   defineNavigationItem,
   definePage,
-  defineView,
-  viewDataEvents,
+  type PlacementTabPresentation,
   workbenchModes,
-  workbenchResourceKinds,
 } from "@pstdio/sdk/extensions";
-import {
-  connectMachine,
-  deleteMachine,
-  importTemplates,
-  launchMachine,
-  refresh,
-  startInstance,
-  stopInstance,
-} from "./commands";
+import { startInstance, stopInstance } from "./commands";
+import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
+import { labCommands } from "./lab-commands";
+import { instancesPageRef } from "./lab-navigation";
+import { instancesView, machinesView, templatesView } from "./native-tables";
 import { changed, instanceKind } from "./resources";
-import { templatesView } from "./templates-view";
 
-const refreshAction = { id: "refresh", label: "Refresh", icon: "refresh-cw", command: refresh.ref };
-export const instancesView = defineView({
-  id: "instances",
-  title: "Local service connection",
-  icon: "server",
-  body: {
-    kind: "dataTable",
-    refreshEvents: [changed],
-    emptyTitle: "Local service disconnected",
-    emptyDescription: "No local instance is configured. Choose a template above and launch an instance to connect.",
-    toolbarActions: [refreshAction],
-    columns: [
-      { id: "name", label: "Instance" },
-      {
-        id: "connection",
-        label: "Connection",
-        renderer: {
-          type: "categorical-color",
-          categories: [
-            { value: "Connected", color: { light: "#dcfce7", dark: "#14532d" } },
-            { value: "Unreachable", color: { light: "#fee2e2", dark: "#7f1d1d" } },
-            { value: "Key expired", color: { light: "#fef3c7", dark: "#78350f" } },
+const instanceTab = (label: string): PlacementTabPresentation => ({
+  refreshEvents: [changed],
+  async query(ctx, { renderer }) {
+    const instances = await instancesFor(ctx.projectId).list();
+    const current = renderer.resource?.id;
+    return {
+      label,
+      menu: [
+        {
+          id: "instances",
+          label: "PocketCoder instances",
+          rows: instances
+            .filter((instance) => instance.state === "running" || instance.id === current)
+            .sort((a, b) => Number(b.state === "running") - Number(a.state === "running"))
+            .map((instance) => ({
+              id: instance.id,
+              label: instance.state === "running" ? instance.name : `${instance.name} (stopped)`,
+              icon: "server",
+              selected: instance.id === current,
+              action: {
+                kind: "command" as const,
+                target: { command: labCommands["lab.select"].ref, params: { instance: instance.id } },
+              },
+            })),
+        },
+        {
+          id: "manage",
+          rows: [
+            {
+              id: "browse",
+              label: "Manage instances",
+              icon: "server",
+              action: { kind: "page" as const, page: instancesPageRef },
+            },
+            ...(current
+              ? [
+                  {
+                    id: "start",
+                    label: "Start / renew key",
+                    icon: "play",
+                    action: {
+                      kind: "command" as const,
+                      target: { command: startInstance.ref, params: { instanceId: current } },
+                    },
+                  },
+                  {
+                    id: "stop",
+                    label: "Stop instance",
+                    icon: "square",
+                    action: {
+                      kind: "command" as const,
+                      target: { command: stopInstance.ref, params: { instanceId: current } },
+                    },
+                  },
+                  ...(instances.find((instance) => instance.id === current)?.state === "stopped"
+                    ? [
+                        {
+                          id: "remove",
+                          label: "Remove instance",
+                          icon: "trash-2",
+                          action: {
+                            kind: "command" as const,
+                            target: { command: removeInstance.ref, params: { instanceId: current } },
+                          },
+                        },
+                      ]
+                    : []),
+                ]
+              : []),
           ],
         },
-      },
-      { id: "state", label: "State" },
-      { id: "url", label: "Operator API" },
-      { id: "id", label: "Instance ID" },
-    ],
-    rowActions: [
-      { id: "start", label: "Start / renew key", icon: "play", command: startInstance.ref },
-      { id: "stop", label: "Stop instance", icon: "square", command: stopInstance.ref },
-    ],
-    async query(ctx) {
-      const instances = instancesFor(ctx.projectId);
-      return {
-        rows: await Promise.all(
-          (await instances.list()).map(async (instance) => ({
-            id: instance.id,
-            resource: { type: instanceKind.id, id: instance.id, label: instance.name },
-            values: {
-              name: instance.name,
-              state: instance.state,
-              url: instance.url,
-              id: instance.id,
-              connection: await instances.connection(instance.id),
-            },
-          })),
-        ),
-      };
-    },
-    onRowActivate(ctx, { row }) {
-      ctx.navigation.open({ kind: "page", page: instancePage.ref, resource: row.resource });
-    },
+      ],
+    };
   },
 });
-
-export const machinesView = defineView({
-  id: "machines",
-  title: "Agent machines",
-  icon: "bot",
-  body: {
-    kind: "dataTable",
-    refreshEvents: [changed, viewDataEvents.workspacesChanged, viewDataEvents.sessionsChanged],
-    emptyTitle: "Launch an agent machine",
-    emptyDescription:
-      "Import prepared agent templates into this instance, then launch a machine. Connect when it is ready.",
-    toolbarActions: [
-      {
-        id: "launch",
-        label: "Launch machine",
-        icon: "plus",
-        presentation: "primary",
-        command: launchMachine.ref,
-        input: launchMachine.params,
-        submitLabel: "Launch machine",
-      },
-      {
-        id: "import",
-        label: "Import templates",
-        icon: "package",
-        command: importTemplates.ref,
-        input: importTemplates.params,
-        submitLabel: "Import templates",
-      },
-      refreshAction,
-    ],
-    columns: [
-      { id: "name", label: "Machine" },
-      { id: "state", label: "State" },
-      { id: "session", label: "Agent session" },
-      { id: "error", label: "Error" },
-    ],
-    rowActions: [
-      { id: "connect", label: "Connect to agent", icon: "messages-square", command: connectMachine.ref },
-      { id: "delete", label: "Delete machine", icon: "trash-2", destructive: true, command: deleteMachine.ref },
-    ],
-    async query(ctx, { renderer }) {
-      const instanceId = renderer.resource?.id;
-      const workspaces = (await ctx.workspaces.list()).filter(
-        (workspace) =>
-          workspace.provider_id === `${ctx.extensionId}.workspace-type.machine` &&
-          workspace.anchors_json?.some((anchor) => anchor.id === instanceId),
-      );
-      return {
-        rows: await Promise.all(
-          workspaces.map(async (workspace) => {
-            const sessionId = await ctx.storage.get<string>(`machine-session:${workspace.id}`);
-            const session = sessionId ? await ctx.sessions.get(sessionId) : null;
-            return {
-              id: workspace.id,
-              resource: {
-                type: workbenchResourceKinds.workspace.id,
-                extensionId: "pstdio",
-                projectId: ctx.projectId,
-                id: workspace.id,
-                label: workspace.workspace_shorthand,
-              },
-              values: {
-                name: workspace.workspace_shorthand ?? workspace.id,
-                state: workspace.provider_state ?? "provisioning",
-                session: session?.status ?? "Not connected",
-                error: workspace.setup_error ?? "",
-              },
-            };
-          }),
-        ),
-      };
-    },
-  },
-});
-
 export const instancesPage = definePage({
   id: "instances",
   title: "PocketCoder Lab",
   icon: "server",
   path: "pocketcoder",
   mode: workbenchModes.project,
-  main: { kind: "view", presentation: "page", view: templatesView.ref, cardinality: "one" },
-  slots: [
-    {
-      id: "connections",
-      region: "secondary",
-      item: {
-        kind: "view",
-        view: instancesView.ref,
-        presence: "fixed",
-      },
-    },
-  ],
+  main: { kind: "view", presentation: "page", view: instancesView.ref, cardinality: "one" },
+  slots: [],
 });
 export const instancePage = definePage({
   id: "instance",
@@ -178,8 +104,23 @@ export const instancePage = definePage({
   mode: workbenchModes.project,
   parent: instancesPage.ref,
   resource: { kinds: [instanceKind.ref] },
-  main: { kind: "view", presentation: "page", view: machinesView.ref, cardinality: "one" },
-  slots: [],
+  main: { kind: "panels", landing: "machines" },
+  slots: [
+    {
+      id: "templates",
+      region: "main",
+      order: 0,
+      tab: instanceTab("Templates"),
+      item: { kind: "view", view: templatesView.ref, presence: "open" },
+    },
+    {
+      id: "machines",
+      region: "main",
+      order: 1,
+      tab: instanceTab("Machines"),
+      item: { kind: "view", view: machinesView.ref, presence: "open" },
+    },
+  ],
 });
 export const navigation = defineNavigationItem({
   id: "pocketcoder",
@@ -187,5 +128,5 @@ export const navigation = defineNavigationItem({
   icon: "server",
   owner: workbenchModes.project,
   slot: "content",
-  action: { kind: "page", page: instancesPage.ref },
+  action: { kind: "page", page: instancesPage.ref, intent: "restore" },
 });

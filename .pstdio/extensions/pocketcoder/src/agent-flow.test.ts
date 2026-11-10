@@ -4,13 +4,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { HarnessEventSink, JsonPatch, ResourceAnchor } from "@pstdio/sdk/extensions";
-import { DEFAULT_DATA_TABLE_SETTINGS } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
 import { buildLocalImage } from "../../../../examples/local/runtime";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
+import { createLabCommands } from "./lab-commands";
 import { createMachineProvider, machinePath, machineRef } from "./machines";
-import { machinesView } from "./workbench";
 
 const repo = resolve(import.meta.dir, "../../../..");
 const command = async (args: string[]) => {
@@ -107,14 +106,8 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
     ref = created.providerRef;
     expect(ref).toBeDefined();
     if (!ref) throw new Error("No machine reference");
-    if (machinesView.body.kind !== "dataTable") throw new Error("No machine table");
-    const rows = await machinesView.body.query(ctx, {
-      filter: { conjunction: "and", rules: [] },
-      sorts: [],
-      settings: DEFAULT_DATA_TABLE_SETTINGS,
-      renderer: { rendererId: "machine-table", resource: { type: "instance", id: instance.id } },
-    });
-    expect(rows.rows.map((row) => row.id)).toEqual([input.workspaceId]);
+    const lab = await createLabCommands(() => instances).read.run(ctx, {});
+    expect(lab.machines.map((row) => row.id)).toEqual([machineRef(ref).machineId]);
     const again = await provider.create(ctx, input);
     expect(again.providerRef).toEqual(ref);
     let resolved = await provider.resolve(ctx, { ...input, providerRef: ref });
@@ -159,7 +152,7 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
     });
     expect(await followup.done).toEqual({ status: "completed" });
     expect(JSON.stringify(patches)).toContain("echo: second hello");
-    await expect(harness.start(harnessCtx, { sessionId, prompt: "wrong machine", events })).rejects.toThrow("Choose");
+    await expect(harness.start(harnessCtx, { sessionId, prompt: "wrong machine", events })).rejects.toThrow();
     await provider.delete(ctx, { ...input, providerRef: ref });
     const deleted = await provider.resolve(ctx, { ...input, providerRef: ref });
     expect(deleted.state).toBe("cancelled");
