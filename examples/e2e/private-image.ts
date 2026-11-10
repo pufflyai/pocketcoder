@@ -5,10 +5,13 @@ import { join, resolve } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { loadConfig } from "@pstdio/pocketcoder-server/config";
 import { startPocketCoderServer } from "@pstdio/pocketcoder-server/lifecycle";
+import { localInputEnvironment } from "../local/input-environment";
 import { buildLocalImage } from "../local/runtime";
+import { qualifySessionTemplate } from "../local/session-template";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
 import { bestEffort, command, freePort, waitFor } from "./local-process";
+import { expectEcho } from "./session";
 
 const registryImage = "registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373";
 const root = resolve(import.meta.dir, "../..");
@@ -99,11 +102,10 @@ try {
   if (!image) throw new Error("Private image has no pinned registry digest");
   running = await startPocketCoderServer(
     {
-      ...loadConfig({ POCKETCODER_DIR: dataDir }),
+      ...loadConfig({ POCKETCODER_DIR: dataDir, ...localInputEnvironment(directory) }),
       listenHost: "127.0.0.1",
       listenPort: 0,
       agentPort,
-      inputDir: join(directory, "inputs"),
       workspaceServerUrl: `http://host.docker.internal:${agentPort}`,
     },
     { log: (line) => logs.push(line) },
@@ -136,8 +138,8 @@ try {
   await rm(secretFile);
   if (stored.stdout.includes(credential.password)) throw new Error("CLI exposed registry authority");
   const client = new PocketCoderClient({ baseUrl: running.url, apiKey: owner.token });
-  const manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
-  manifest.spec.image = image;
+  let manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
+  manifest = await qualifySessionTemplate(manifest, image);
   manifest.spec.imagePullSecret = "secretRef:private-echo";
   await client.templates.publish(manifest);
   workspace = await createHarnessWorkspace({ baseUrl: running.url, key: owner.token, template: "echo-harness" });
@@ -146,19 +148,7 @@ try {
   if (inspected.stdout.includes(credential.password) || inspected.stdout.includes(dataDir))
     throw new Error("Controller authority reached the workspace");
   const prompt = `private ${suffix}`;
-  const sent = await workspace.request(`/v1/workspaces/${workspace.workspaceId}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({ type: "user", content: prompt }),
-  });
-  if (!sent.ok) throw new Error("Private workspace message failed");
-  await waitFor(
-    async () => {
-      const reply = await workspace?.request(`/v1/workspaces/${workspace.workspaceId}/agent/messages`);
-      return responseText(messageList(await reply?.json()), 0) === `echo: ${prompt}`;
-    },
-    30_000,
-    "private echo reply",
-  );
+  await expectEcho(workspace.request, workspace.workspaceId, prompt);
   const workspaceId = workspace.workspaceId;
   await workspace.cancel();
   workspace = undefined;

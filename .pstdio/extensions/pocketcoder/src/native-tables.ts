@@ -181,7 +181,8 @@ export const machinesView = defineView({
               name: machine.external_id,
               template: `${machine.template.name}@${machine.template.version}`,
               state: machineStateLabel(machine.state),
-              connection: machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "AgentAPI",
+              connection:
+                machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "PocketCoder session",
               error: machine.failure?.log_tail ?? machine.reason_code ?? "",
             },
           })),

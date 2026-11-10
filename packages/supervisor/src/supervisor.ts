@@ -80,7 +80,6 @@ class Supervisor {
       send: this.sendFrame.bind(this),
       quiesce: (operationId, deadlineMs, signal) =>
         quiesceArchive(operationId, deadlineMs, signal, {
-          native: this.exec?.agentapi_native === true,
           hasHook: !!this.exec?.checkpoint_hook,
           prepareHook: () => this.quiesce(operationId, deadlineMs),
           closeSessions: async () => {
@@ -118,8 +117,6 @@ class Supervisor {
       exec: () => this.exec,
       isQuiescing: () => this.quiescing,
       send: this.sendFrame.bind(this),
-      onAgentTurn: () => this.healthMonitor.setAgentState("running"),
-      probeAgent: (exec) => void this.healthMonitor.probeService(exec, "agent", true),
     });
     this.terminals = new TerminalManager(() => this.exec, this.sendFrame.bind(this));
     this.attachments = new AttachmentManager(this.sendFrame.bind(this));
@@ -267,9 +264,6 @@ class Supervisor {
     if (frame.payload.reconnect_credential) {
       this.connection.setReconnectCredential(frame.payload.reconnect_credential);
     }
-    if (this.healthMonitor.state !== "unknown") {
-      this.sendFrame("agent_state", { state: this.healthMonitor.state });
-    }
     if (this.runtimePrepared) this.waiting?.reconnect();
     if (!this.exec) {
       this.exec = frame.payload.exec;
@@ -282,8 +276,6 @@ class Supervisor {
       exec: () => this.exec,
       send: this.sendFrame.bind(this),
       pump: this.logs.pump.bind(this.logs),
-      readAgentApiStatus: this.healthMonitor.readAgentApiStatus.bind(this.healthMonitor),
-      syncAgentApiMessages: this.healthMonitor.syncMessages.bind(this.healthMonitor),
       child: () => this.harness.child,
       childExited: () => this.harness.exitCode !== null,
       closeTerminals: () => this.terminals.closeAll("checkpoint"),
@@ -325,9 +317,6 @@ class Supervisor {
       closeSessions: async () => {
         await this.proxy.closeAll();
         await this.terminals.closeAll("workspace_ended");
-      },
-      syncMessages: async (signal) => {
-        if (exec?.agentapi_native) await this.healthMonitor.syncMessages({ fresh: true, signal });
       },
       signal: this.forwardSignal.bind(this),
       exited: () => this.waiting?.process.exited() ?? this.harness.child?.exited ?? Promise.resolve(0),

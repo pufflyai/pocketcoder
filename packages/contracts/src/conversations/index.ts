@@ -36,3 +36,4 @@ export {
   ConversationRequestIdentitySchema,
   ConversationRequestReceiptSchema,
 } from "./identity";
+export { type ConversationPart, ConversationPartSchema } from "./parts";

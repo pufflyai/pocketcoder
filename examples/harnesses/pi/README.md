@@ -1,104 +1,27 @@
-# Pi through AgentAPI
+# Native Pi sessions
 
-This example exercises PocketCoder's intended coding-agent integration path:
+The image pins Pi to 0.87.1. PocketCoder uses Pi JSON RPC and emits canonical text, tool, error, and file parts. It keeps Pi context in one session file per conversation. No terminal output is parsed.
 
-```text
-local client → PocketCoder → AgentAPI → remote Pi CLI → model gateway
-```
-
-PocketCoder launches AgentAPI and owns its loopback HTTP lifecycle (`GET
-/status`, `GET /messages`, and `POST /message`). The template declares only
-`run-pi`, which configures and starts Pi as the interactive child. There is no
-consumer-owned AgentAPI wrapper or PocketCoder-specific Pi HTTP adapter.
-
-The image pins Pi to `0.83.0` and AgentAPI to `0.12.2`. The Dockerfile verifies
-the pinned AgentAPI source checksum, applies the repeated-reply patch, and builds
-the binary for each supported Linux architecture.
-AgentAPI does not yet include a native Pi terminal profile, so
-`agentapi-compat.ts` displays a `>` immediately above Pi's editor for
-AgentAPI's generic input-readiness detector. It does not implement HTTP routes,
-store messages, or invoke Pi.
-
-The compatibility extension hides Pi's changing footer and adds a unique reply
-label before each turn. AgentAPI's generic screen reader can otherwise mistake
-a repeated answer for old screen text and keep only the footer. Reply labels
-appear in the rendered conversation but stay out of the model's context.
-The deterministic E2E checks four identical file replies in AgentAPI and durable
-history.
-
-The template declares Escape as `agent.interruptKeys`, so
-`POST /v1/workspaces/{id}/agent/interrupt` stops Pi's current turn. `run-pi`
-sets Pi's `doubleEscapeAction` to `none`: a repeated interrupt on an idle Pi
-would otherwise open its `/tree` menu.
-
-The image also stores a test fixture at `/opt/pocketcoder-fixtures/test.txt`.
-The template's `setup` step copies it into the tmpfs-backed
-`/workspace/test.txt` before AgentAPI and Pi start.
-
-## Validate the fixture
+Build the image from the repository root:
 
 ```sh
-cd examples/harnesses/pi
-bun install --frozen-lockfile
-bun run typecheck
-bun test
+docker build -f examples/harnesses/pi/Dockerfile -t pocketcoder-pi:local .
 ```
 
-## Run the full local E2E
+`examples/local/session-template.ts` reads the installed image descriptor and builds a template with the actual runtime and producer digests. The JSON template in `examples/templates/` is illustrative; replace its image and artifact pins before publishing.
 
-No credentials are needed for the deterministic path:
+The model gateway uses a fixed-scope credential slot. The controller mints a separate expiring lease for each workspace. Host provider keys and issuer authority never enter the workspace. The native producer supports request replay, targeted cancellation, and independent conversations.
+
+Run the real Pi CLI against a deterministic local gateway:
 
 ```sh
 bun run example:e2e:pi
 ```
 
-This starts a tiny OpenAI-compatible fake gateway on the host. The gateway
-requests Pi's real `read` tool, Pi reads `/workspace/test.txt`, and the test
-verifies the returned fixture text. AgentAPI still drives Pi through its
-terminal and serves the conversation API. Before that, the run starts a turn
-whose reply never finishes, closes an event stream to show the turn keeps
-running, interrupts it, and checks that Pi accepts the next message.
-
-To test a real OpenAI connection:
+Or keep an OpenAI key on the host and run the same path:
 
 ```sh
-OPENAI_API_KEY=... OPENAI_MODEL=... bun run example:e2e:pi:openai
+OPENAI_MODEL=your-model bun run example:e2e:pi:openai
 ```
 
-This starts a short-lived gateway on the host, keeps `OPENAI_API_KEY` out of
-the workspace, and forwards the remote Pi agent's requests to the OpenAI
-Responses API. `OPENAI_MODEL` is required; `OPENAI_ORGANIZATION` and
-`OPENAI_PROJECT` are forwarded when set.
-
-To test a different OpenAI-compatible gateway, set both variables.
-The gateway must be reachable from a workspace container; local gateways
-normally use `host.docker.internal`, not `127.0.0.1`:
-
-```sh
-PI_GATEWAY_URL=http://host.docker.internal:8080/v1 \
-PI_GATEWAY_MODEL=your-model-id \
-bun examples/e2e/local.ts --harness pi
-```
-
-`PI_GATEWAY_API` selects `openai-completions` (the default) or
-`openai-responses`. `PI_GATEWAY_BEARER` is the workspace-to-gateway
-credential. In a deployment template, set it to a `secretRef:` so PocketCoder
-projects only that key as a read-only file. Never place a provider credential
-in a template or `launch_input`.
-
-[`gateway.Dockerfile`](./gateway.Dockerfile) packages the example OpenAI gateway.
-It enforces one bearer, model, text-only policy, expiry, output cap, and bounded
-request counts and bytes. The [DigitalOcean Pi guide](../../../deploy/digitalocean/PI.md)
-shows how to deploy it for one short-lived workspace session. A shared or paid
-service still needs durable identity, usage, revocation, and budget controls.
-
-## Deploy the template
-
-The shared checked-in
-[`pi-harness` template](../../templates/pi-harness.json) contains a placeholder
-image digest and gateway model. The local runner replaces both in a generated
-template. For a deployed setup, build from the repository root with
-`docker build -f examples/harnesses/pi/Dockerfile -t pocketcoder-pi:dev .`,
-push the image, replace `spec.image` with the registry digest, set the
-gateway/model fields, validate with `pcd templates validate`, and
-mount the resulting template into `POCKETCODER_TEMPLATE_DIR`.
+`session-replies.test.ts` verifies that four identical replies retain distinct canonical message IDs. The image-owned checkpoint hook fences accepted requests before state is captured.

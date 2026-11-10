@@ -38,6 +38,12 @@ export function registerConversationLiveRoutes({
   }
 
   app.get("/v1/workspaces/:id/conversation/live", requireScope("conversations:read"), (c) => stream(c, () => true));
+  // A reconnectable snapshot of open turns. Stored messages remain cursor-paged;
+  // clients merge these by canonical message ID and revision, never by terminal text.
+  app.get("/v1/workspaces/:id/conversation/open", requireScope("conversations:read"), async (c) => {
+    const workspace = await service.getOwned(c.get("principal"), c.req.param("id"));
+    return c.json({ turns: liveTurns.open(workspace.id, c.req.query("conversationId")) });
+  });
   app.get("/v1/workspaces/:id/conversations/:conversation_id/live", requireScope("conversations:read"), (c) =>
     stream(c, (event) => event.conversation_id === c.req.param("conversation_id")),
   );

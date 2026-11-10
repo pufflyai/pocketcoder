@@ -97,6 +97,7 @@ async function handleConversation(deps: WsDeps, frame: Extract<AgentFrame, { typ
         messageId: message.message_id,
         role: message.role,
         content: message.content,
+        ...(message.parts ? { parts: message.parts } : {}),
         occurredAt: new Date(message.occurred_at),
         metadata: message.metadata,
         createdAt: new Date(),
@@ -131,9 +132,6 @@ export async function handleConnectedFrame(
       return;
     case "heartbeat":
       connection.lastHeartbeatAt = new Date();
-      if (frame.payload.agentapi_state === "running") {
-        await deps.store.updateWorkspace(frame.workspace_id, { lastActivityAt: new Date() }, new Date());
-      }
       return;
     case "service_health":
       await handleServiceHealth(deps, frame);

@@ -116,11 +116,6 @@ export type AgentState = (typeof AGENT_STATES)[number];
 
 // `requested` only confirms delivery of interrupt keys. Stable terminal input
 // is a readiness observation; capable producers report a separate turn outcome.
-export const AgentInterruptResponseSchema = z.object({
-  status: z.enum(["requested", "idle"]),
-});
-
-export type AgentInterruptResponse = z.infer<typeof AgentInterruptResponseSchema>;
 
 // REST request/response schemas.
 
@@ -143,16 +138,10 @@ export const TemplateRefSchema = z.object({
   digest: z.string(),
 });
 
-const AgentMetadataSchema = z.object({
-  type: z.string(),
-  model: z.string().min(1).max(255).nullable(),
-});
-
 export const WorkspaceResourceSchema = z.object({
   id: z.uuid(),
   external_id: z.string(),
   template: TemplateRefSchema,
-  agent: AgentMetadataSchema.nullable(),
   state: z.enum(WORKSPACE_STATES),
   reason_code: z.enum(REASON_CODES).nullable(),
   agent_state: z.enum(AGENT_STATES),
@@ -216,7 +205,6 @@ export const TemplateListItemSchema = z.object({
   name: z.string(),
   version: z.string(),
   digest: z.string(),
-  agent: AgentMetadataSchema.nullable(),
   description: z.string().optional(),
   status: z.enum(["active", "available", "retired"]),
 });

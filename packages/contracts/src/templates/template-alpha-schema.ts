@@ -11,13 +11,7 @@ import { isAbsolutePath, SECRET_REFERENCE_PREFIX } from "./template-constants";
 // deployment resources. Callers select a template by name/version; they can
 // never submit an image, command, mount, network, privilege, or provider.
 //
-// The execution surface a template owns:
-//   - `spec.command`  container entrypoint (the pocketcoder-supervisor);
-//   - `spec.setup`    ordered setup commands run before the harness starts;
-//   - `spec.agent`    the preferred coding-agent command PocketCoder wraps in
-//                     its fixed AgentAPI boundary;
-//   - `spec.terminal` optional interactive access to one fixed command;
-//   - `spec.harness` and `spec.services` remain a legacy compatibility profile.
+// Alpha templates run an explicit harness and declared loopback services.
 
 const NAME_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const SEMVER_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
@@ -53,20 +47,6 @@ export const HarnessSchema = z.object({
   command: CommandSchema,
   env: EnvSchema.default({}),
   cwd: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
-});
-
-export const AgentSchema = HarnessSchema.extend({
-  model: z.string().min(1).max(255).optional().describe("Display metadata only; does not configure the agent model."),
-  type: z
-    .string()
-    .regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
-    .default("custom"),
-  transport: z.enum(["pty", "acp"]).default("pty"),
-  termWidth: z.number().int().min(10).max(65_535).optional(),
-  stateFile: z.string().refine(isAbsolutePath, "expected an absolute path").optional(),
-  // Raw terminal input that stops the current turn, such as Escape for Pi.
-  // The template owns it because the key differs per agent.
-  interruptKeys: z.string().min(1).max(16).optional(),
 });
 
 export const TerminalSchema = z.object({
@@ -189,7 +169,6 @@ export const RuntimeTemplatePolicySchema = z.object({
     "/run/pocketcoder/input",
   ]),
   setup: z.array(SetupStepSchema).max(32).default([]),
-  agent: AgentSchema.optional(),
   harness: HarnessSchema.optional(),
   terminal: TerminalSchema.optional(),
   previews: PreviewsSchema.optional(),
@@ -201,12 +180,6 @@ export const RuntimeTemplatePolicySchema = z.object({
   security: SecuritySchema.prefault({}),
   network: NetworkPolicySchema,
   maxLaunchInputBytes: z.number().int().positive().max(1_048_576).default(65_536),
-  compat: z
-    .object({
-      agent: z.string().optional(),
-      agentapi: z.string().optional(),
-    })
-    .default({}),
   persistence: PersistenceSpecSchema.prefault({}),
   source: SourceSpecSchema.nullable().default(null),
   checkpointHook: CheckpointHookSchema.optional(),
@@ -215,73 +188,16 @@ export const RuntimeTemplatePolicySchema = z.object({
 
 export type RuntimeTemplatePolicy = z.infer<typeof RuntimeTemplatePolicySchema>;
 
-const TemplateSpecInputSchema = RuntimeTemplatePolicySchema.superRefine((spec, ctx) => {
-  if (!spec.agent && !spec.harness) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["harness"],
-      message: "either agent or harness is required",
-    });
-  }
-  if (!spec.agent) return;
-  if (spec.agent.transport === "acp") {
-    for (const field of ["termWidth", "stateFile", "interruptKeys"] as const) {
-      if (spec.agent[field] === undefined) continue;
-      ctx.addIssue({
-        code: "custom",
-        path: ["agent", field],
-        message: `${field} is only valid for PTY transport`,
-      });
-    }
-  }
-  for (const field of ["harness", "services", "checkpointHook"] as const) {
-    if (spec[field] === undefined) continue;
-    ctx.addIssue({
-      code: "custom",
-      path: [field],
-      message: `agent cannot be combined with ${field}`,
-    });
-  }
+export const TemplateSpecSchema = RuntimeTemplatePolicySchema.extend({
+  harness: HarnessSchema,
+  services: z.record(z.string().regex(NAME_RE), ServiceSchema).default({}),
 });
-
-type TemplateSpecCommon = Omit<
-  z.infer<typeof TemplateSpecInputSchema>,
-  "agent" | "harness" | "services" | "checkpointHook"
->;
-
-export type Agent = z.infer<typeof AgentSchema>;
+export type TemplateSpec = z.infer<typeof TemplateSpecSchema>;
 export type Harness = z.infer<typeof HarnessSchema>;
 export type Terminal = z.infer<typeof TerminalSchema>;
 export type CheckpointHook = z.infer<typeof CheckpointHookSchema>;
 export type TemplateService = z.infer<typeof ServiceSchema>;
 export type TemplateServiceRoute = z.infer<typeof ServiceRouteSchema>;
-
-export type TemplateSpec =
-  | (TemplateSpecCommon & {
-      agent: Agent;
-      harness?: never;
-      services?: never;
-      checkpointHook?: never;
-    })
-  | (TemplateSpecCommon & {
-      agent?: never;
-      harness: Harness;
-      services: Record<string, TemplateService>;
-      checkpointHook?: CheckpointHook;
-    });
-
-export const TemplateSpecSchema = TemplateSpecInputSchema.transform((spec): TemplateSpec => {
-  if (spec.agent) {
-    const { harness: _harness, services: _services, checkpointHook: _hook, ...native } = spec;
-    return { ...native, agent: spec.agent };
-  }
-  const { agent: _agent, ...legacy } = spec;
-  return {
-    ...legacy,
-    harness: spec.harness as Harness,
-    services: spec.services ?? {},
-  };
-});
 
 export const TemplateManifestBaseSchema = z.object({
   apiVersion: z.literal("pocketcoder.dev/v1alpha1", {

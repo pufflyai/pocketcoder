@@ -74,7 +74,7 @@ principal APIs answer once the process is live, so bootstrap code waits on
 - **Migrations on PostgreSQL** run only through `pcd db migrate`. Controllers
   refuse to start with pending migrations, so startup never changes a shared
   schema.
-- **Unidentified messages** (AgentAPI messages and harness lines without a
+- **Unidentified messages** (plain harness messages without a
   request identity) are single message records in a document of their
   workspace. Converted pre-1.0 messages without identity form legacy records in
   that document, in their original order.
@@ -95,10 +95,7 @@ principal APIs answer once the process is live, so bootstrap code waits on
   describe commits. Template retirement now checks the version first. A narrowing
   or revocation whose transaction fails afterwards is still applied at the next
   start; that errs on the side of less access.
-- **AgentAPI reads.** AgentAPI 0.12 has no incremental message read. The
-  supervisor now reads `/messages` while the agent runs and once after it
-  settles, instead of on every health probe of an idle agent. A truly
-  incremental read waits for the AgentAPI events stream (PC-136).
+- **Native producer observations.** Canonical messages reach live turns and retained records before terminal acknowledgement. Clients consume the same typed parts.
 
 This brings back a PostgreSQL context, migrator and lease from 0.8.1, an upgrade
 step, a conversation document store, and CI for both drivers plus upgrades from

@@ -164,10 +164,10 @@ jobs:
         env:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
         run: bun run example:e2e:managed-upgrade
-      - name: Verify identical replies with the installed AgentAPI
+      - name: Verify structured sessions in the installed image
         env:
-          POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
-        run: bun test deploy/image/agentapi.conformance.test.ts
+          POCKETCODER_SESSION_CONFORMANCE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
+        run: bun test deploy/image/session.conformance.test.ts
   checks:
     name: Qualification result
     if: always()

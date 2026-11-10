@@ -4,10 +4,11 @@ import { connectBrowser } from "./browser-client";
 import { startDisplayDemo } from "./display-runtime";
 import { command, waitFor } from "./local-process";
 import { pauseBrowser } from "./paused-browser";
+import { expectWorkspaceProbe } from "./workspace-probe";
 
 const page = `<!doctype html><style>body{background:#24496a;color:white;font:32px sans-serif}input{position:absolute;left:100px;top:100px;width:400px;height:50px;font:32px sans-serif}button{position:absolute;left:100px;top:200px;font:32px sans-serif}</style><h1>Browser control</h1><input id="text" oninput="fetch('/typed?value='+encodeURIComponent(this.value))"><button onclick="this.textContent='Clicked';fetch('/clicked')">Click me</button>`;
 const detailed = `<html><body style="margin:0"><canvas width="1280" height="800"></canvas><script>const c=document.querySelector('canvas').getContext('2d');const p=c.createImageData(1280,800);let seed=7;for(let i=0;i<p.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0;p.data[i]=seed&255;p.data[i+1]=(seed>>>8)&255;p.data[i+2]=(seed>>>16)&255;p.data[i+3]=255;}c.putImageData(p,0,0);</script></body></html>`;
-const fixture = `await import('/opt/pocketcoder/echo-harness.ts');Bun.serve({hostname:'127.0.0.1',port:3000,fetch(request){const url=new URL(request.url);if(url.pathname==='/typed')Bun.write('/tmp/browser-proof',url.searchParams.get('value')??'');if(url.pathname==='/clicked')Bun.write('/tmp/browser-clicked','yes');return new Response(url.pathname==='/detailed'?${JSON.stringify(detailed)}:${JSON.stringify(page)},{headers:{'content-type':'text/html'}})}});`;
+const fixture = `const{serveControllerProbe}=await import('/opt/pocketcoder/controller-probe.ts');serveControllerProbe();Bun.serve({hostname:'127.0.0.1',port:3000,fetch(request){const url=new URL(request.url);if(url.pathname==='/typed')Bun.write('/tmp/browser-proof',url.searchParams.get('value')??'');if(url.pathname==='/clicked')Bun.write('/tmp/browser-clicked','yes');return new Response(url.pathname==='/detailed'?${JSON.stringify(detailed)}:${JSON.stringify(page)},{headers:{'content-type':'text/html'}})}});`;
 const demo = await startDisplayDemo("browser", (template) => {
   template.spec.harness.command = ["bun", "/opt/pocketcoder/browser-harness.ts", "bun", "-e", fixture];
 });
@@ -141,10 +142,7 @@ try {
   await ended.capture();
   const passive = await demo.open(false);
   paused = await pauseBrowser(demo.baseUrl, passive.url, passive.cookie);
-  await demo.client.agent.sendMessage(demo.workspace.id, { content: "paused-viewer-proof" });
-  const messages = await (await demo.client.raw(`/v1/workspaces/${demo.workspace.id}/agent/messages`)).json();
-  if (!JSON.stringify(messages).includes("paused-viewer-proof"))
-    throw new Error("Paused viewer starved agent traffic.");
+  await expectWorkspaceProbe((path, init) => demo.client.raw(path, init), demo.workspace.id, "paused-viewer-proof");
   if (process.argv.includes("--browser")) {
     ended.socket.close();
     await ended.closed;

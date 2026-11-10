@@ -14,7 +14,6 @@ test("archive capture stops an ordinary real writer without a checkpoint hook", 
   try {
     expect(
       await quiesceArchive(randomUUID(), 1000, new AbortController().signal, {
-        native: false,
         hasHook: false,
         prepareHook: async () => {
           throw new Error("No hook");

@@ -28,13 +28,13 @@ test("uses the fixed template through a controller without Lab, chats and cleans
     const patches: JsonPatch[] = [];
     const events = { push: (patch: JsonPatch) => patches.push(patch), getMessages: () => [] };
     const sessionId = randomUUID();
-    const rejected = await harness.start(harnessCtx, {
+    const large = await harness.start(harnessCtx, {
       workspace,
       sessionId,
       prompt: "x".repeat(100_000),
       events,
     });
-    expect(await rejected.done).toEqual({ status: "failed" });
+    expect(await large.done).toEqual({ status: "completed" });
     const first = await harness.start(harnessCtx, { workspace, sessionId, prompt: "hello from product", events });
     expect(await first.done).toEqual({ status: "completed" });
     expect(JSON.stringify(patches)).toContain("echo: hello from product");
@@ -52,7 +52,7 @@ test("uses the fixed template through a controller without Lab, chats and cleans
     };
     await expect(
       harness.start(harnessCtx, { workspace: labTarget, sessionId, prompt: "wrong provider", events }),
-    ).rejects.toThrow("Workspaces extension");
+    ).rejects.toThrow("PocketCoder workspace");
     settings.templateName = "changed-for-new-workspaces";
     expect((await provider.resolve(ctx, { ...input, providerRef: created.providerRef })).state).toBe("ready");
     await provider.delete(ctx, { ...input, providerRef: created.providerRef });

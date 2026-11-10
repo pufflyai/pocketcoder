@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { preparePersistentPi } from "./persistent-pi";
 
-test("restoring keeps the session path and replaces the gateway credential", async () => {
+test("restoring replaces the gateway credential before native RPC starts", async () => {
   const root = await mkdtemp(join(tmpdir(), "persistent-pi-"));
   try {
     const first = await preparePersistentPi(root, {
@@ -20,8 +20,7 @@ test("restoring keeps the session path and replaces the gateway credential", asy
       bearer: "second-workspace",
     });
     expect(second).toEqual(first);
-    expect(second).toContain("--continue");
-    expect(second).toContain("/state/pi");
+    expect(second).toContain("--offline");
     const config = await Bun.file(join(root, "models.json")).text();
     expect(config).toContain("second-workspace");
     expect(config).not.toContain("first-workspace");

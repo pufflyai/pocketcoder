@@ -122,7 +122,7 @@ test("a real local agent reads exact uploads, survives a lost reply, follows up 
       ...instances,
       async request<T>(id: string, path: string, input?: RequestInit): Promise<T> {
         const response = await instances.request<T>(id, path, input);
-        if (!dropped && input?.method === "POST" && path.endsWith("/agent/requests")) {
+        if (!dropped && input?.method === "POST" && path.endsWith("/requests")) {
           dropped = true;
           throw new Error("Lost submit response");
         }

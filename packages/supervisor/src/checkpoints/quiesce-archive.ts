@@ -5,7 +5,6 @@ export async function quiesceArchive(
   deadlineMs: number,
   signal: AbortSignal,
   callbacks: {
-    native: boolean;
     hasHook: boolean;
     prepareHook(): Promise<boolean>;
     closeSessions(): Promise<void>;
@@ -33,7 +32,7 @@ export async function quiesceArchive(
       throw new Error("Service checkpoint capture requires its image-owned writer hook.");
     await untilAborted(callbacks.closeSessions(), combined);
     combined.throwIfAborted();
-    if (callbacks.native || callbacks.hasHook) {
+    if (callbacks.hasHook) {
       if (!(await untilAborted(callbacks.prepareHook(), combined))) return false;
     } else callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
     if (runtime) {
@@ -48,8 +47,7 @@ export async function quiesceArchive(
       if (code !== 0 && code !== 143) throw new Error("Checkpoint harness shutdown failed.");
     }
     combined.throwIfAborted();
-    if (!callbacks.native && !callbacks.hasHook)
-      callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
+    if (!callbacks.hasHook) callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
     return true;
   } catch (error) {
     callbacks.send("checkpoint_status", {

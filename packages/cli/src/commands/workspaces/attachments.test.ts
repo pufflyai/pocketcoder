@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { handleAttachmentCommand, mediaTypeOf, uploadAttachments } from "./attachments";
-import { attachWorkspace } from "./chat-session";
 
 const dirs: string[] = [];
 
@@ -123,40 +122,5 @@ describe("handleAttachmentCommand", () => {
     expect(queue).toEqual([]);
 
     expect(handleAttachmentCommand("hello agent", queue, print)).toBe(false);
-  });
-});
-
-describe("attachWorkspace with files", () => {
-  test("uploads files first and sends their ids with the message", async () => {
-    const dir = tempDir();
-    process.env.POCKETCODER_STATE_DIR = join(dir, "state");
-    const file = join(dir, "notes.txt");
-    writeFileSync(file, "hello");
-    const bodies: Array<{ path: string; body?: string }> = [];
-    const api = async (path: string, init: RequestInit = {}) => {
-      bodies.push({ path, ...(init.body ? { body: String(init.body) } : {}) });
-      if (path.includes("/attachments/")) return Response.json(descriptorFor(path), { status: 201 });
-      if (path.endsWith("/agent/message")) return Response.json({ ok: true });
-      if (path.includes("/agent/messages")) return Response.json({ messages: [] });
-      return Response.json({ state: "ready", agent_state: "stable" });
-    };
-    const fail = ((message: string) => {
-      throw new Error(message);
-    }) as (message: string) => never;
-
-    await attachWorkspace({ id: "ws-1", message: "read it", file: [file] }, { api, fail });
-
-    const message = bodies.find((request) => request.path.endsWith("/agent/message"));
-    const parsed = JSON.parse(message?.body ?? "{}") as { attachment_ids?: string[] };
-    expect(parsed.attachment_ids).toHaveLength(1);
-  });
-
-  test("refuses --file without --message", async () => {
-    const fail = ((message: string) => {
-      throw new Error(message);
-    }) as (message: string) => never;
-    expect(
-      attachWorkspace({ id: "ws-1", file: ["x.txt"] }, { api: async () => Response.json({}), fail }),
-    ).rejects.toThrow(/--message/);
   });
 });

@@ -15,8 +15,6 @@ export async function relayProxyRequest(
     exec(): ExecSpec | null;
     isQuiescing(): boolean;
     send: SendFrame;
-    onAgentTurn(): void;
-    probeAgent(exec: ExecSpec): void;
     relayStream(request: ProxyRequest, service: TemplateService, route: TemplateServiceRoute): Promise<void>;
   },
 ) {
@@ -38,8 +36,8 @@ export async function relayProxyRequest(
     await callbacks.relayStream(request, service, route);
     return;
   }
-  const beginsAgentTurn = request.service === "agent" && request.method === "POST" && request.path === "/message";
-  if (callbacks.isQuiescing() && beginsAgentTurn) {
+  const beginsOperation = request.method === "POST" && request.path === "/executions/accept";
+  if (callbacks.isQuiescing() && beginsOperation) {
     callbacks.send("proxy_response", {
       request_id: request.request_id,
       status: 409,
@@ -48,7 +46,6 @@ export async function relayProxyRequest(
     });
     return;
   }
-  if (beginsAgentTurn) callbacks.onAgentTurn();
   const url = new URL(request.path, service.baseUrl);
   for (const [key, value] of Object.entries(request.query)) url.searchParams.set(key, value);
   try {
@@ -75,7 +72,6 @@ export async function relayProxyRequest(
         : {},
       ...(body.byteLength > 0 ? { body_b64: body.toString("base64") } : {}),
     });
-    if (beginsAgentTurn && exec) callbacks.probeAgent(exec);
   } catch (error) {
     callbacks.send("proxy_response", {
       request_id: request.request_id,

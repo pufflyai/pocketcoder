@@ -210,19 +210,14 @@ template grants. See [private images](templates.md#private-images).
 ## Templates
 
 ```text
-GET /v1/templates             scope templates:read   → { items: [{name, version, digest, agent, description?, status}] }
+GET /v1/templates             scope templates:read   → { items: [{name, version, digest, description?, status}] }
 GET /v1/templates/{name}      scope templates:read   → { name, versions: [...] }
 GET /v1/warm-pools            scope admin            → { items: [...], metrics: {...} }
 ```
 
 Only templates on the principal's allowlist are visible; others 404.
 
-Each template item includes `agent: { type: string, model: string | null } | null`.
-This also applies to template version details, publish and retire responses.
-The object contains only the declared type and model, without commands or env.
-`model` is the optional display label from `spec.agent.model`, not a claim about
-the model currently running. It is `null` when omitted. Legacy `spec.harness`
-templates return `agent: null`.
+Template metadata identifies its immutable name, version, and digest. The native session producer supplies the conversation content.
 
 ## Workspaces
 
@@ -355,77 +350,15 @@ several conversations per workspace. See
 for records, live tails, retention, deletion, v2 identity receipts, and
 compatibility.
 
+## Structured workspace requests
+
+Use `POST /v1/workspaces/{id}/requests` with `requestId`, `conversationId`, `message`, and `files`. Reuse the exact IDs and body after a lost response. Read or list requests at the same resource. Cancel a request through its execution's targeted cancel endpoint.
+
+Read canonical messages through `/conversations/{conversationId}`. Use `/conversation/open` for snapshots and `/conversations/{conversationId}/live` for live events. Render the returned text, tool, error, and file parts. See [native structured sessions](agent-transport-decision.md).
+
 ## Service relay
 
-```text
-GET/POST    /v1/workspaces/{id}/agent/{status|messages|message|events} scope services:relay
-GET/POST/… /v1/workspaces/{id}/services/{service}/{path}     scope services:relay
-```
-
-Use `/agent/*` for AgentAPI-native workspaces. The generic service URL remains
-as a compatibility alias for existing clients and legacy templates.
-
-The template snapshot owns the allowlist: only declared method+path
-combinations with declared query fields pass; bodies are size-capped both
-ways; each route has a deadline. Requests are forwarded over the workspace's
-outbound WSS connection to the loopback service (e.g. AgentAPI) — there is no
-inbound network path to a workspace and no generic forwarding.
-
-New AgentAPI-native workspace snapshots declare `GET /agent/events` as a
-streamed `text/event-stream` response. SSE bytes remain unchanged through the
-relay. Protocol v5 transports bounded chunks with one outstanding
-acknowledgement; HTTP cancellation, workspace disconnect, deadlines, and the
-declared cumulative byte cap cancel the supervisor's loopback fetch. Existing
-snapshots and protocol v1–v4 supervisors keep the buffered routes, so remote
-clients should treat `relay.route_not_allowed` and
-`relay.streaming_unsupported` as signals to use `/status` and `/messages`.
-
-| Status | Code | Meaning |
-|--------|------|---------|
-| 404 | `workspace.not_found` | Unknown or unauthorized workspace |
-| 409 | `workspace.not_ready` | Lifecycle does not allow relay yet |
-| 409 | `relay.streaming_unsupported` | Declared stream route requires a protocol-v5 supervisor |
-| 410 | `workspace.terminal` | Workspace has ended |
-| 413 | `relay.body_too_large` | Request or response exceeded the template limit |
-| 422 | `relay.route_not_allowed` | Route/method/query not declared |
-| 503 | `workspace.disconnected` | Within reconnect grace, no live supervisor |
-| 504 | `relay.deadline_exceeded` | Loopback service missed the deadline |
-
-Relay activity counts as workspace activity for the idle timeout.
-
-## Interrupt the current turn
-
-```text
-POST /v1/workspaces/{id}/agent/interrupt   scope services:relay   no body
-```
-
-This stops the agent's current turn. The workspace, the agent process and the
-conversation stay. Three actions are separate:
-
-- **Interrupt** stops the current turn. Send a follow-up when the agent is
-  `stable` again.
-- **Disconnect** (closing a request or event stream) only stops watching. The
-  turn keeps running.
-- **Cancel** (`POST /v1/workspaces/{id}/cancel`) ends the whole workspace.
-
-The server reads the agent status first. While a turn runs, it sends the
-template's `agent.interruptKeys` to the agent's terminal through AgentAPI's raw
-message type.
-
-| Status | Body or code | Meaning |
-|--------|--------------|---------|
-| 200 | `{"status":"requested"}` | The keys were sent. This does not prove the turn stopped: wait for `agent_state: "stable"`. |
-| 200 | `{"status":"idle"}` | The agent was already waiting for input. Nothing was sent. |
-| 409 | `agent.interrupt_unsupported` | The template declares no interrupt keys. The workspace keeps running. |
-
-The relay errors above also apply. AgentAPI has no turn ID, so an interrupt that
-races with another client's new turn can stop that turn. A client that waits
-for each interrupt before it sends again is safe. AgentAPI also reports
-`running` until the agent's screen has been still for about 2 s, so repeating
-the request in that window sends the keys again. Wait for
-`agent_state: "stable"` instead of repeating it. Interruption cannot undo file
-edits or tool effects that already happened, and AgentAPI saves the partial
-reply as a normal agent message.
+The generic `/v1/workspaces/{id}/services/{service}/*` relay serves exact template-declared routes. Execution endpoints belong to the durable request owner.
 
 ## Interactive terminal
 
@@ -506,11 +439,7 @@ The SDK hashes buffered bodies and sends the digest. Stream callers must supply
 `attachments.upload` now returns an immutable reference with `fileId`, replacing
 the old workload path descriptor. CLI uploads send the same digest.
 
-AgentAPI messages with `attachment_ids` fail closed with
-`409 attachment.unsupported` until a qualified immutable projection and operation
-owner are installed. Messages without attachment IDs remain byte-identical.
-Docker/Kubernetes projection enforcement belongs to PC-128/PC-130; staged bytes
-alone do not advertise installed immutable-input execution support.
+Send immutable input references with a structured request. The removed terminal message route does not accept attachments.
 
 ## Screenshots
 

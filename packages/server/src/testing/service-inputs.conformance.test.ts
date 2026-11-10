@@ -138,7 +138,10 @@ test.skipIf(!available)(
       expect(runtime.template.format).toBe("pocketcoder.dev/v1");
       expect(runtime.producer.capabilities).toContain("immutable-inputs");
       expect((await serviceStatus(workspaceId)).state).toBe("running");
-      for (const prefix of ["services/agent", "agent"]) {
+      for (const [prefix, status] of [
+        ["services/agent", 422],
+        ["agent", 404],
+      ] as const) {
         const refused = await fetch(
           `http://127.0.0.1:${port}/v1/workspaces/${workspaceId}/${prefix}/executions/accept`,
           {
@@ -147,7 +150,7 @@ test.skipIf(!available)(
             body: "{}",
           },
         );
-        expect(refused.status).toBe(422);
+        expect(refused.status).toBe(status);
       }
       const bytes = "readonly-input";
       const fileId = randomUUID();

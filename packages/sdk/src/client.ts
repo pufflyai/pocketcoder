@@ -1,9 +1,9 @@
 import { AdministrationApi } from "./resources/admin/admin";
-import { AgentApi } from "./resources/agent/agent";
 import { AttachmentsApi } from "./resources/attachments/attachments";
 import { ManagedAuthorityApi } from "./resources/budgets/budgets";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
+import { WorkspaceRequestsApi } from "./resources/conversations/requests";
 import { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 import { DisplaysApi } from "./resources/displays/displays";
 import { KeysApi, RecoveryApi } from "./resources/keys/keys";
@@ -26,8 +26,8 @@ export class PocketCoderClient {
   readonly previews: PreviewsApi;
   readonly displays: DisplaysApi;
   readonly attachments: AttachmentsApi;
-  readonly agent: AgentApi;
   readonly conversations: ConversationsApi;
+  readonly workspaceRequests: WorkspaceRequestsApi;
   readonly checkpoints: CheckpointsApi;
   readonly operations: OperationsApi;
   readonly logs: LogsApi;
@@ -52,8 +52,8 @@ export class PocketCoderClient {
     this.previews = new PreviewsApi(this.transport);
     this.displays = new DisplaysApi(this.transport);
     this.attachments = new AttachmentsApi(this.transport);
-    this.agent = new AgentApi(this.transport, this.workspaces);
     this.conversations = new ConversationsApi(this.transport);
+    this.workspaceRequests = new WorkspaceRequestsApi(this.transport);
     this.checkpoints = new CheckpointsApi(this.transport);
     this.operations = new OperationsApi(this.transport);
     this.logs = new LogsApi(this.transport);

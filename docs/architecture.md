@@ -30,7 +30,7 @@ neither callers nor templates can select them.
 | db | `packages/db` | PGlite store, Drizzle schema, embedded migrations and a kernel folder lock |
 | auth | `packages/auth` | Machine-key digests, registration secrets, event signing |
 | drivers | `packages/drivers` | Docker/Kubernetes runtime drivers, filesystem/PVC checkpoint storage, file/Kubernetes secret resolvers |
-| testkit | `packages/testkit` | Store contracts, fake driver, fake AgentAPI, template fixtures |
+| testkit | `packages/testkit` | Store contracts, fake driver and template fixtures |
 
 ## Waiting runtime and finite process owner
 
@@ -297,7 +297,7 @@ choice and the evidence required before adding another one are recorded in the
 The supervisor opens one outbound WSS connection to `/v1/agent/connect` —
 there is no inbound route into a workspace. First connection: one-time
 registration secret; the ack delivers a reconnect credential (memory-only)
-plus the normalized exec spec (setup, derived AgentAPI harness/service, native
+plus the normalized exec spec (setup, declared services, native
 ownership flag, timeouts). Frames are JSON with
 per-connection monotonic sequence numbers; the newest accepted connection
 (epoch) exclusively speaks for the workspace.
@@ -338,9 +338,7 @@ not. Session metadata is audited, but input and output content are not.
 Workspace protocol v5 adds template-declared streamed HTTP responses. The
 supervisor forwards one response chunk, waits for the matching server
 acknowledgement, and cancels its upstream fetch when the HTTP reader closes, a
-limit or deadline fires, or the workspace connection ends. AgentAPI-native
-snapshots created under v5 declare `GET /events`; older snapshots remain
-buffered.
+limit or deadline fires, or the workspace connection ends. Native session clients use canonical live conversation events and retained history.
 
 Servers accept v1–v13 supervisors, so rollout is server-first — connected v1/v2 supervisors
 keep text-only relay and attachment requests fail with

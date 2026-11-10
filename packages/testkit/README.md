@@ -11,7 +11,6 @@ package keeps those reusable test tools in one place.
 ## What it does
 
 - Provides a fake workspace driver with inspectable runtime state.
-- Starts a local fake AgentAPI service for relay and conversation tests.
 - Provides valid template and snapshot fixtures for common workspace shapes.
 - Registers the shared store contract suite against a supplied store adapter.
 

@@ -1,6 +1,8 @@
+import type { ConversationSummary } from "@pstdio/pocketcoder-sdk";
 import { type CommandContext, sessionBrowser } from "@pstdio/sdk/extensions";
 import { type instancesFor, PocketCoderHttpError } from "./instances";
 import type { machineConnection } from "./machine-connection";
+import type { ControllerMachine } from "./machines";
 import { machinePath } from "./machines";
 
 export const machineSessionTarget = (projectId: string, session: { id: string; title: string }) => ({
@@ -37,11 +39,32 @@ export async function checkMachineConnection(
     return;
   }
   try {
-    await instances.request(instanceId, `${machinePath(machineId)}/agent/status`);
+    const capabilities = await instances.request<{ requests: boolean }>(
+      instanceId,
+      `${machinePath(machineId)}/requests/capabilities`,
+    );
+    if (!capabilities.requests) throw new Error("Choose a native PocketCoder session template.");
   } catch (error) {
     if (!(error instanceof PocketCoderHttpError) || error.code !== "relay.route_not_allowed") throw error;
     throw new Error(
-      "This template has no AgentAPI connection. For Prompt Studio, launch with the relay connection and set its device and workspace IDs in metadata.",
+      "This template has no structured session connection. For Prompt Studio, launch with the relay connection and set its device and workspace IDs in metadata.",
     );
   }
+}
+
+export async function latestMachineConversation(
+  instances: ReturnType<typeof instancesFor>,
+  instanceId: string,
+  machine: ControllerMachine,
+) {
+  const page = await instances.request<{ items: ConversationSummary[] }>(
+    instanceId,
+    `${machinePath(machine.id)}/conversations`,
+  );
+  return (
+    page.items
+      .filter((item) => item.status === "retained" && item.conversation_id)
+      .sort((a, b) => b.last_activity_at.localeCompare(a.last_activity_at))
+      .at(0)?.conversation_id ?? undefined
+  );
 }

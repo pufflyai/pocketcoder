@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { PersistenceMount } from "../persistence/persistence";
 import { isAbsolutePath, SECRET_ENV_PATTERN, SECRET_REFERENCE_PREFIX } from "./template-constants";
-import { agentApiHarness, isAgentApiNative, templateServices } from "./template-runtime";
+import { templateServices } from "./template-runtime";
 import {
   type RuntimeTemplatePolicy,
   secretMountPath,
@@ -12,12 +12,12 @@ import {
 function envSources(spec: TemplateSpec): Array<[Array<string | number>, Record<string, string>]> {
   const sources: Array<[Array<string | number>, Record<string, string>]> = [
     [["spec", "env"], spec.env],
-    [isAgentApiNative(spec) ? ["spec", "agent", "env"] : ["spec", "harness", "env"], agentApiHarness(spec).env],
+    [["spec", "harness", "env"], spec.harness.env],
   ];
   for (const [i, step] of spec.setup.entries()) {
     sources.push([["spec", "setup", i, "env"], step.env]);
   }
-  if (!isAgentApiNative(spec) && spec.checkpointHook) {
+  if (spec.checkpointHook) {
     sources.push([["spec", "checkpointHook", "env"], spec.checkpointHook.env]);
   }
   if (spec.terminal) sources.push([["spec", "terminal", "env"], spec.terminal.env]);
@@ -166,7 +166,7 @@ function pathContains(parent: string, child: string): boolean {
   return child === parent || child.startsWith(`${parent}/`);
 }
 
-type PersistenceTemplatePolicy = Pick<RuntimeTemplatePolicy, "persistence" | "security" | "source" | "agent">;
+type PersistenceTemplatePolicy = Pick<RuntimeTemplatePolicy, "persistence" | "security" | "source">;
 
 export function validateTemplatePersistence(spec: PersistenceTemplatePolicy, ctx: z.RefinementCtx): void {
   const seenNames = new Set<string>();
@@ -175,7 +175,6 @@ export function validateTemplatePersistence(spec: PersistenceTemplatePolicy, ctx
     validatePersistenceMount(spec, mounts, mount, index, seenNames, ctx);
   }
   validateSourceMount(spec, mounts, ctx);
-  validateAgentStateFile(spec, mounts, ctx);
   if (
     spec.persistence.conversationRestore === "supported" &&
     (!spec.persistence.sessionCompatibility || mounts.length < 2)
@@ -186,38 +185,6 @@ export function validateTemplatePersistence(spec: PersistenceTemplatePolicy, ctx
       message: "supported conversation restore requires sessionCompatibility and a separate harness-state mount",
     });
   }
-}
-
-function validateAgentStateFile(
-  spec: PersistenceTemplatePolicy,
-  mounts: PersistenceMount[],
-  ctx: z.RefinementCtx,
-): void {
-  if (!spec.agent) return;
-  const stateFile = spec.agent.stateFile;
-  const normalized = stateFile !== undefined && isNormalizedFilesystemPath(stateFile);
-  if (stateFile !== undefined && !normalized) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["spec", "agent", "stateFile"],
-      message: "stateFile must be a normalized absolute filesystem path",
-    });
-  }
-  if (spec.agent.transport === "acp" && spec.persistence.conversationRestore === "supported") {
-    ctx.addIssue({
-      code: "custom",
-      path: ["spec", "persistence", "conversationRestore"],
-      message: "supported conversation restore requires PTY transport",
-    });
-    return;
-  }
-  if (spec.persistence.conversationRestore !== "supported") return;
-  if (normalized && mounts.some((mount) => stateFile.startsWith(`${mount.target}/`))) return;
-  ctx.addIssue({
-    code: "custom",
-    path: ["spec", "agent", "stateFile"],
-    message: "supported conversation restore requires agent.stateFile below a persistence mount",
-  });
 }
 
 function validatePersistenceMount(

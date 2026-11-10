@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
 import { machineConnection } from "./machine-connection";
-import { checkMachineConnection, machineSessionTarget, previousMachineSession } from "./machine-session";
+import {
+  checkMachineConnection,
+  latestMachineConversation,
+  machineSessionTarget,
+  previousMachineSession,
+} from "./machine-session";
 import { unavailableMachineMessage } from "./machine-status";
 import { type ControllerMachine, isTerminal, launchInputOf, machinePath, providerParams } from "./machines";
 import { changed } from "./resources";
@@ -14,9 +19,9 @@ const machineParams = {
 };
 export const connectionParam = params.select({
   label: "Agent connection",
-  defaultValue: "agentapi",
+  defaultValue: "session",
   options: [
-    { value: "agentapi", label: "AgentAPI" },
+    { value: "session", label: "PocketCoder session" },
     { value: "relay", label: "Prompt Studio Cloud relay" },
   ],
 });
@@ -82,7 +87,7 @@ export function createMachineCommands(getInstances = instancesFor) {
       const connection = machineConnection(machine.metadata);
       const key = `machine-session:${input.instance}:${machine.id}`;
       let sessionId = await ctx.storage.get<string>(key);
-      if (!sessionId && connection.kind === "agentapi")
+      if (!sessionId && connection.kind === "session")
         sessionId = await previousMachineSession(ctx, input.instance, machine.id);
       await checkMachineConnection(ctx, instances, input.instance, machine.id, connection);
       const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
@@ -102,7 +107,13 @@ export function createMachineCommands(getInstances = instancesFor) {
                 },
               }),
         }));
-      if (connection.kind === "agentapi") await instances.bindSession(session.id, input.instance, machine.id);
+      if (connection.kind === "session")
+        await instances.bindSession(
+          session.id,
+          input.instance,
+          machine.id,
+          existing ? undefined : await latestMachineConversation(instances, input.instance, machine),
+        );
       await ctx.storage.set(key, session.id);
       ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
       return { machineId: machine.id, sessionId: session.id };

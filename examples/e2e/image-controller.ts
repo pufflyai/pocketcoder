@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveDockerImage } from "@pstdio/pocketcoder-drivers";
+import { localInputEnvironment } from "../local/input-environment";
 import { command, waitFor } from "./local-process";
 
 // The root controller creates input folders and mount points in the shared host
@@ -45,9 +46,9 @@ export async function startDockerImageController(options: {
   await mkdir(join(options.directory, "inputs"), { recursive: true });
   const environment = {
     POCKETCODER_DIR: dataDir,
+    ...localInputEnvironment(options.directory),
     POCKETCODER_HTTP: "0.0.0.0:8090",
     POCKETCODER_AGENT_HTTP: "0.0.0.0:8091",
-    POCKETCODER_INPUT_DIR: join(options.directory, "inputs"),
     POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${options.agentPort}`,
     POCKETCODER_STORAGE_BACKEND: "disabled",
     POCKETCODER_SECRET_PROVIDER: "disabled",

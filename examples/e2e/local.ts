@@ -2,23 +2,24 @@ import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { OSS_FIXTURE_CONTENT, startFakeOssGateway } from "../harnesses/oss/fake-gateway";
 import { PI_FIXTURE_CONTENT, PI_INTERRUPT_PROMPT, startFakePiGateway } from "../harnesses/pi/fake-gateway";
 import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
+import { localInputEnvironment } from "../local/input-environment";
+import { startLeaseGateway } from "../local/lease-gateway";
 import { LOCAL_PI_PRINCIPAL_SCOPES } from "../local/options";
 import { buildLocalImage } from "../local/runtime";
+import { imageSessionTemplate } from "../local/session-template";
 import { bootstrapExampleOwner, issueExampleAccess } from "./administration";
 import { runHarnessE2E } from "./contract";
-import { piStartupCommand, runDoctorCheck } from "./doctor-check";
+import { runDoctorCheck } from "./doctor-check";
 import { bestEffort, command, flag, freePort, waitFor } from "./local-process";
 
 const ROOT = resolve(import.meta.dir, "../..");
 
 const harness = flag("--harness") ?? "echo";
-if (!["echo", "pi", "codex", "opencode"].includes(harness)) {
-  throw new Error("--harness must be echo, pi, codex, or opencode");
+if (!["echo", "pi"].includes(harness)) {
+  throw new Error("--harness must be echo or pi");
 }
-const ossHarness = harness === "codex" || harness === "opencode";
 const useOpenAI = process.argv.includes("--openai");
 const openAIApiKey = process.env.OPENAI_API_KEY;
 const openAIModel = process.env.OPENAI_MODEL;
@@ -49,8 +50,10 @@ const localImage = `pocketcoder-example-${harness}:${runId}`;
 let serverProcess: ReturnType<typeof Bun.spawn> | null = null;
 let modelGateway: ReturnType<typeof Bun.serve> | null = null;
 let usesFakeGateway = false;
+let leaseGateway: Awaited<ReturnType<typeof startLeaseGateway>> | undefined;
 
 async function cleanup(): Promise<void> {
+  await leaseGateway?.close();
   modelGateway?.stop(true);
   if (serverProcess) {
     serverProcess.kill("SIGTERM");
@@ -84,66 +87,49 @@ try {
     imageTag: localImage,
     context: harness === "echo" ? "deploy/image" : ".",
     ...(harness === "pi" ? { dockerfile: "examples/harnesses/pi/Dockerfile" } : {}),
-    ...(harness === "codex" || harness === "opencode" ? { dockerfile: "examples/harnesses/oss/Dockerfile" } : {}),
     command,
   });
 
-  const templatePath =
-    harness === "echo"
-      ? resolve(ROOT, "examples/harnesses/echo/template.json")
-      : resolve(ROOT, `examples/templates/${harness}-harness.json`);
-  const template = JSON.parse(await readFile(templatePath, "utf8")) as {
-    spec: {
-      image: string;
-      agent?: { command: string[]; model?: string; env?: Record<string, string> };
-      harness?: { env?: Record<string, string> };
-    };
-  };
-  template.spec.image = `${localImage}@${imageId}`;
+  const template = await imageSessionTemplate(`${localImage}@${imageId}`, `${harness}-harness`);
   if (harness === "pi") {
-    // Fresh per run and only honored by the gateway process started below,
-    // which dies with this script — the workspace never holds a credential
-    // that outlives the run (docs/security.md).
-    const gatewayBearer = process.env.PI_GATEWAY_BEARER ?? randomBytes(24).toString("base64url");
-    if (useOpenAI) {
+    const hostBearer = randomBytes(24).toString("base64url");
+    if (useOpenAI)
       modelGateway = startOpenAIGateway({
-        apiKey: openAIApiKey ?? "",
-        clientBearer: gatewayBearer,
+        apiKey: openAIApiKey!,
+        clientBearer: hostBearer,
+        allowedModel: openAIModel,
         organization: process.env.OPENAI_ORGANIZATION,
         project: process.env.OPENAI_PROJECT,
       });
-    } else if (!process.env.PI_GATEWAY_URL) {
-      modelGateway = startFakePiGateway(gatewayBearer);
+    else if (!process.env.PI_GATEWAY_URL) {
+      modelGateway = startFakePiGateway(hostBearer);
       usesFakeGateway = true;
     }
-    if (!template.spec.agent) throw new Error("Pi template must use spec.agent");
-    template.spec.agent.model = process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? (openAIModel ?? "") : "pocketcoder-test");
-    if (usesFakeGateway) {
-      template.spec.agent.command = piStartupCommand(template.spec.agent.command);
-    }
-    template.spec.agent.env = {
-      ...template.spec.agent.env,
-      PI_GATEWAY_URL: process.env.PI_GATEWAY_URL ?? `http://host.docker.internal:${modelGateway?.port ?? 0}/v1`,
-      PI_GATEWAY_MODEL: template.spec.agent.model,
+    leaseGateway = await startLeaseGateway({
+      upstreamUrl: process.env.PI_GATEWAY_URL ?? `http://127.0.0.1:${modelGateway!.port}`,
+      upstreamBearer: process.env.PI_GATEWAY_BEARER ?? hostBearer,
+    });
+    template.spec.security.writableMemoryPaths = ["/tmp", "/workspace", "/home/agent"];
+    template.spec.services.session!.process!.cwd = "/workspace";
+    template.spec.services.session!.process!.env = {
+      HOME: "/home/agent",
+      PI_GATEWAY_URL: `http://host.docker.internal:${leaseGateway.port}/v1`,
+      PI_GATEWAY_MODEL: process.env.PI_GATEWAY_MODEL ?? (useOpenAI ? openAIModel! : "pocketcoder-test"),
       PI_GATEWAY_PROVIDER:
         process.env.PI_GATEWAY_PROVIDER ?? (useOpenAI ? "pocketcoder-openai" : "pocketcoder-gateway"),
       PI_GATEWAY_API: process.env.PI_GATEWAY_API ?? (useOpenAI ? "openai-responses" : "openai-completions"),
-      PI_GATEWAY_BEARER: gatewayBearer,
+      PI_GATEWAY_BEARER_FILE: "credentialSlot:gateway",
+      PI_CODING_AGENT_DIR: "/home/agent/.pi/agent",
+      PI_WORKSPACE_DIR: "/workspace",
     };
-  }
-  if (ossHarness) {
-    // The bearer is scoped to this disposable gateway, which stops before
-    // cleanup removes the workspace.
-    const gatewayBearer = randomBytes(24).toString("base64url");
-    modelGateway = startFakeOssGateway(gatewayBearer);
-    usesFakeGateway = true;
-    if (!template.spec.agent) throw new Error(`${harness} template must use spec.agent`);
-    template.spec.agent.env = {
-      ...template.spec.agent.env,
-      OSS_GATEWAY_URL: `http://host.docker.internal:${modelGateway.port}/v1`,
-      OSS_GATEWAY_MODEL: "pocketcoder-test",
-      OSS_GATEWAY_BEARER: gatewayBearer,
+    template.spec.credentialSlots.gateway = {
+      policyRef: "pi-gateway",
+      policyVersion: "1",
+      binding: "fixed-scope",
+      delivery: "workspace-expiring-file",
+      maxLeaseSeconds: 7200,
     };
+    await writeFile(resolve(tempDir, "issuer-ca.pem"), leaseGateway.ca);
   }
   const templateDir = resolve(tempDir, "templates");
   await mkdir(templateDir, { recursive: true });
@@ -164,13 +150,15 @@ try {
     env: {
       ...process.env,
       ...adminEnv,
+      ...localInputEnvironment(tempDir),
+      POCKETCODER_SECRET_KEY: randomBytes(32).toString("base64url"),
+      POCKETCODER_ISSUER_CA_FILE: leaseGateway ? resolve(tempDir, "issuer-ca.pem") : undefined,
       // Linux containers reach the host through the Docker bridge gateway,
       // so the E2E server must listen beyond the host loopback interface.
       POCKETCODER_HOST: "0.0.0.0",
       POCKETCODER_PORT: String(serverPort),
       POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
       POCKETCODER_TEMPLATE_DIR: templateDir,
-      POCKETCODER_INPUT_DIR: resolve(tempDir, "inputs"),
       POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
     },
     stdout: "inherit",
@@ -190,6 +178,15 @@ try {
     "pocketcoder-server",
   );
 
+  if (leaseGateway) {
+    const response = await fetch(baseUrl + "/v1/secrets/pi-gateway", {
+      method: "PUT",
+      headers: { authorization: `Bearer ${ownerKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ type: "runtime-issuer", value: leaseGateway.config }),
+    });
+    if (!response.ok) throw new Error("Local gateway issuer configuration failed: " + (await response.text()));
+  }
+
   const key = await issueExampleAccess(baseUrl, ownerKey, {
     name: `example-${runId}`,
     scopes: [...LOCAL_PI_PRINCIPAL_SCOPES],
@@ -197,14 +194,14 @@ try {
     expiresAt: keyExpiry,
   });
 
-  let defaultPrompt = `Reply with exactly: ${OSS_FIXTURE_CONTENT}`;
+  let defaultPrompt = "hello from the local E2E";
   if (harness === "echo") defaultPrompt = "hello from the local E2E";
   if (harness === "pi") {
     defaultPrompt =
       "Read /workspace/test.txt with the read tool. Reply with exactly the file contents and nothing else.";
   }
   const prompt = process.env.POCKETCODER_EXAMPLE_PROMPT ?? defaultPrompt;
-  let expectedResponse = OSS_FIXTURE_CONTENT;
+  let expectedResponse = "";
   if (harness === "echo") expectedResponse = "echo: hello from the local E2E";
   if (harness === "pi") expectedResponse = usesFakeGateway ? PI_FIXTURE_CONTENT : "";
   if (harness === "pi") {
@@ -212,7 +209,7 @@ try {
       command(args, { env: doctorEnv, quiet: true }),
     );
     console.log(doctorOutput);
-    console.log("PocketCoder doctor passed against Pi through AgentAPI.");
+    console.log("PocketCoder doctor passed against native Pi.");
   }
   const report = await runHarnessE2E({
     baseUrl,
@@ -235,7 +232,7 @@ try {
   console.log("PocketCoder local harness E2E passed:");
   console.log(JSON.stringify(report, null, 2));
   if (harness === "pi" && usesFakeGateway) {
-    await command(["bun", "test", "examples/harnesses/pi/agentapi-compat.test.ts"], {
+    await command(["bun", "test", "examples/harnesses/pi/session-replies.test.ts"], {
       env: { POCKETCODER_PI_TEST_URL: baseUrl, POCKETCODER_PI_TEST_KEY: key },
     });
     console.log("Pi repeated-reply regression passed: four stable and durable file replies.");

@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { InputObjectReferenceSchema } from "../attachments/input-reference";
 
-export const AgentRequestSchema = z.strictObject({
+export const WorkspaceRequestSchema = z.strictObject({
   requestId: z.uuid(),
   conversationId: z.uuid(),
-  content: z
+  message: z
     .string()
     .min(1)
     .max(256 * 1024),
   files: z.array(InputObjectReferenceSchema).max(1000),
 });
-export type AgentRequest = z.infer<typeof AgentRequestSchema>;
+export type WorkspaceRequest = z.infer<typeof WorkspaceRequestSchema>;

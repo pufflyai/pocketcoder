@@ -4,10 +4,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
+import { qualifySessionTemplate } from "../../../../examples/local/session-template";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createMachineCommands } from "./machine-commands";
 import { createMachineLifecycleActions } from "./machine-lifecycle-actions";
+import { latestMachineConversation } from "./machine-session";
 import { type ControllerMachine, isTerminal, machinePath } from "./machines";
 
 const repo = resolve(import.meta.dir, "../../../..");
@@ -54,7 +56,16 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
   };
   const turn = async (id: string, prompt: string) => {
     const sessionId = randomUUID();
-    await instances.bindSession(sessionId, instanceId, id);
+    await instances.bindSession(
+      sessionId,
+      instanceId,
+      id,
+      await latestMachineConversation(
+        instances,
+        instanceId,
+        await instances.request<ControllerMachine>(instanceId, machinePath(id)),
+      ),
+    );
     const session = await harness.start(ctx, {
       sessionId,
       prompt,
@@ -75,18 +86,8 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     ]);
     await command(["docker", "build", "-t", image, "deploy/image"]);
     const digest = await command(["docker", "image", "inspect", image, "--format", "{{.Id}}"]);
-    const manifest = await Bun.file(join(repo, "examples/templates/persistent-echo.json")).json();
-    manifest.spec.image = `${image}@${digest}`;
-    manifest.spec.harness.command = [
-      "bun",
-      "-e",
-      `
-      const input = JSON.parse(process.env.POCKETCODER_LAUNCH_INPUT);
-      if (!input.bootstrap_code) throw new Error("Fresh bootstrap required");
-      await Bun.write('/tmp/bootstrap-proof', input.bootstrap_code);
-      await import('/opt/pocketcoder/echo-harness.ts');
-    `,
-    ];
+    let manifest = await Bun.file(join(repo, "examples/templates/persistent-echo.json")).json();
+    manifest = await qualifySessionTemplate(manifest, `${image}@${digest}`);
     const instance = await instances.launch({
       name: "lifecycle",
       binary: join(repo, "out/native/pocketcoder"),
@@ -97,7 +98,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
       instance: instanceId,
       template: "persistent-echo@1.0.0",
       externalId: "original-task",
-      connection: "agentapi",
+      connection: "session",
       launchInput: JSON.stringify({ bootstrap_code: "original-bootstrap" }),
       metadata: JSON.stringify({
         application: "old-task",
@@ -129,13 +130,10 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const fresh = await ready(relaunched.machineId);
     expect(fresh.id).not.toBe(source.machineId);
     expect(fresh.external_id).not.toBe("original-task");
-    expect(fresh.metadata).toEqual({ "pstdio.connection": "agentapi" });
+    expect(fresh.metadata).toEqual({ "pstdio.connection": "session" });
     expect(fresh.template.name).toBe("persistent-echo");
     expect(fresh.template.version).toBe("1.0.0");
     expect((await instances.request<ControllerMachine>(instanceId, machinePath(source.machineId))).state).toBe("ready");
-    expect(await command(["docker", "exec", `pocketcoder-ws-${fresh.id}`, "cat", "/tmp/bootstrap-proof"])).toBe(
-      "relaunch-bootstrap",
-    );
     expect(
       await command([
         "docker",
@@ -171,10 +169,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const restored = await ready(resumed.machineId);
     expect(restored.id).not.toBe(source.machineId);
     expect(restored.external_id).toBe("resumed-task");
-    expect(restored.metadata).toEqual({ application: "new-task", "pstdio.connection": "agentapi" });
-    expect(await command(["docker", "exec", `pocketcoder-ws-${restored.id}`, "cat", "/tmp/bootstrap-proof"])).toBe(
-      "resume-bootstrap",
-    );
+    expect(restored.metadata).toEqual({ application: "new-task", "pstdio.connection": "session" });
     expect(await command(["docker", "exec", `pocketcoder-ws-${restored.id}`, "cat", "/workspace/saved.txt"])).toBe(
       "saved files",
     );

@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "local.ts",
+    "local-echo.ts",
+    "private-image.ts",
+    "contract*.ts",
+    "session.ts",
+    "docker-checkpoint*.ts",
+    "managed-upgrade*.ts",
+    "kubernetes-checkpoint.ts",
+    "managed-account-probes.ts",
+    "managed-account-lifecycle.ts",
+    "managed-off-node.ts"
+  ]
+}

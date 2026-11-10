@@ -30,6 +30,7 @@ export interface Machine {
 }
 
 export interface ControllerMachine extends Machine {
+  origin_workspace_id?: string | null;
   external_id: string;
   template: { name: string; version: string; digest: string };
   metadata: Record<string, string>;

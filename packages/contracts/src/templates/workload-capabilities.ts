@@ -109,7 +109,7 @@ export const InstalledWorkloadSchema = z.strictObject({
   adapters: z.record(
     WorkloadNameSchema,
     z.strictObject({
-      kind: z.enum(["process", "service", "pi", "agentapi"]),
+      kind: z.enum(["process", "service", "pi"]),
       digest: WorkloadDigestSchema,
       protocol: z.string().min(1).max(128),
       capabilities: z.array(WorkloadCapabilitySchema),

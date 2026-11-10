@@ -240,7 +240,7 @@ describe("end-to-end workspace lifecycle", () => {
       });
       expect(retainedRes.status).toBe(200);
       const retained = (await retainedRes.json()) as { items: unknown[] };
-      expect(retained.items).toHaveLength(4);
+      expect(retained.items).toHaveLength(2);
 
       // 8. Outbox recorded the full lifecycle.
       const events = await store.claimDueEvents(new Date(), 100);

@@ -8,7 +8,7 @@ from one source commit for Linux amd64 and arm64:
 | Role | Contents | Recipe |
 | --- | --- | --- |
 | `server` | Controller, public `pocketcoder` command, Docker CLI and kubectl | [server.Dockerfile](../deploy/image/server.Dockerfile) |
-| `workspace` | Supervisor, AgentAPI and echo harness | [Dockerfile](../deploy/image/Dockerfile) |
+| `workspace` | Supervisor and native session producers | [Dockerfile](../deploy/image/Dockerfile) |
 | `desktop` | Workspace runtime with an X11 desktop and VNC | [desktop.Dockerfile](../deploy/image/desktop.Dockerfile) |
 | `browser` | Workspace runtime with Chromium | [browser.Dockerfile](../deploy/image/browser.Dockerfile) |
 | `egress` | Restricted-network sidecar proxy | [Egress Dockerfile](../packages/egress/Dockerfile) |
@@ -37,9 +37,7 @@ existing checks with Kubernetes 1.37 nodes do not prove supported kubectl versio
 
 Real coding-agent images extend the workspace base and install only their agent
 CLI and application environment. If they use another base, they must provide
-the supported AgentAPI at `/usr/local/bin/agentapi` and the
-supervisor. Keep everything runnable by the template's non-root uid. Always
-reference images by digest in templates — mutable tags are rejected.
+a measured native session producer and its workload descriptor
 
 Promote a source template after building its workspace image with `pocketcoder
 templates render`. The renderer accepts the immutable image reference and
@@ -670,15 +668,3 @@ for the PVC, network boundary, publisher and cleanup contract. The default
   auto-deleted.
 
 The controller needs namespaced Pod patch permission to retain termination evidence, plus read-only Node identity access. Bind `pocketcoder-node-identity` to the controller ServiceAccount in the deployed namespace. Workspace ServiceAccounts have no API token. Missing evidence keeps cleanup and capacity release pending.
-
-## AgentAPI reply compatibility
-
-The pinned AgentAPI 0.12.2 build includes a small reviewed patch so an identical
-nonempty answer still belongs to a later user turn. The workspace image and
-Pi/OSS example images apply the same patch. Candidate smoke tests exercise two
-identical replies through the installed binary on each architecture. Replace the
-patch when a reviewed upstream release includes the fix.
-
-For capable producers, use explicit v2 facts and terminal outcomes. Quiet terminal
-output cannot prove model completion. Legacy terminal-based agents may still
-need activity heartbeats in their adapter. See [the conversation contract](conversation-identities.md).

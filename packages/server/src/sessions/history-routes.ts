@@ -2,6 +2,7 @@ import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { Store } from "@pstdio/pocketcoder-runtime-core";
 import { streamSSE } from "hono/streaming";
+import type { LiveTurns } from "../conversations/live-turns";
 import { MANAGED_ERROR_RESPONSES } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
 
@@ -10,8 +11,38 @@ const KEEPALIVE_MS = 15_000;
 
 // Events are read from durable observations, so a stream survives controller restarts and a
 // reconnect resumes from its last cursor. A disconnect never touches the session's work.
-export function registerSessionHistoryRoutes(app: OpenAPIHono<AppEnv>, store: Store, options: { pollMs: number }) {
+export function registerSessionHistoryRoutes(
+  app: OpenAPIHono<AppEnv>,
+  store: Store,
+  options: { pollMs: number; liveTurns: LiveTurns },
+) {
   const base = "/v1/sessions/{sessionId}";
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: base + "/conversation/open",
+      tags: ["Managed sessions"],
+      operationId: "getManagedOpenTurns",
+      middleware: [requireScope("sessions:read")] as const,
+      request: { params: z.object({ sessionId: z.uuid() }) },
+      responses: {
+        200: {
+          description: "Canonical turns in progress",
+          content: { "application/json": { schema: managed.managedSchemas.OpenTurns } },
+        },
+        ...MANAGED_ERROR_RESPONSES,
+      },
+    }),
+    async (c) => {
+      const { sessionId } = c.req.valid("param");
+      const binding = await store.managed.sessions.binding(c.get("keyId"), sessionId);
+      return c.json({
+        turns: binding
+          ? options.liveTurns.open(binding.workspaceId).filter((turn) => turn.conversation_id === sessionId)
+          : [],
+      });
+    },
+  );
   app.openapi(
     createRoute({
       method: "get",

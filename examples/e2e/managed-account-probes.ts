@@ -4,6 +4,7 @@ import { messageList, responseText } from "./contract-messages";
 import { fetchForwarded } from "./forwarded-fetch";
 import type { createKubernetesCluster } from "./kubernetes-cluster";
 import { waitFor } from "./local-process";
+import { expectWorkspaceProbe } from "./workspace-probe";
 
 type Owner = { token: string; namespace: string; accountId: string; baseUrl: string };
 export const requestManagedAccount = (owner: Owner, path: string, options: RequestInit = {}) =>
@@ -28,22 +29,7 @@ export async function runManagedEcho(owner: Owner, manifest: unknown) {
     template: "echo-harness",
   });
   const prompt = `managed ${randomUUID()}`;
-  const sent = await requestManagedAccount(owner, `/v1/workspaces/${workspace.workspaceId}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({ type: "user", content: prompt }),
-  });
-  if (!sent.ok) throw new Error("Managed agent message refused");
-  await waitFor(
-    async () =>
-      responseText(
-        messageList(
-          await (await requestManagedAccount(owner, `/v1/workspaces/${workspace.workspaceId}/agent/messages`)).json(),
-        ),
-        0,
-      ) === `echo: ${prompt}`,
-    30_000,
-    "managed echo agent",
-  );
+  await expectWorkspaceProbe((path, init) => requestManagedAccount(owner, path, init), workspace.workspaceId, prompt);
   return workspace;
 }
 export async function assertManagedIsolation(

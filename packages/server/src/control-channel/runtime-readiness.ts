@@ -7,7 +7,7 @@ function requiredServicesHealthy(row: WorkspaceRow, health: Record<string, strin
   const template = row.runtimeRegistration?.template?.manifest;
   const agentServices = new Set(
     Object.values(template?.spec.adapters ?? {})
-      .filter((adapter) => adapter.kind === "pi" || adapter.kind === "agentapi")
+      .filter((adapter) => adapter.kind === "pi")
       .map((adapter) => adapter.service),
   );
   return Object.entries(template?.spec.services ?? snapshotServices(row.templateSnapshot))

@@ -1,13 +1,15 @@
 export type {
   AcceptedInputManifest,
-  AgentInterruptResponse,
   BrowserAction,
   CheckpointResource,
   CheckpointState,
   ConversationMessageIdentity,
   ConversationMessageInput,
+  ConversationPart,
   ConversationRequestIdentity,
+  ConversationSummary,
   CredentialSlot,
+  ExecutionRecord,
   ExportObjectReference,
   InputObjectReference,
   InstalledWorkload,
@@ -45,23 +47,23 @@ export type {
   WorkloadOperation,
   WorkloadTemplate,
   WorkloadTemplateSnapshot,
+  WorkspaceRequest,
   WorkspaceResource,
   WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
-export { managed } from "@pstdio/pocketcoder-contracts";
+export { managed, sessionTemplate } from "@pstdio/pocketcoder-contracts";
 export { PocketCoderClient } from "./client";
 export { AdministrationApi } from "./resources/admin/admin";
-export { AgentApi, type AgentMessageInput } from "./resources/agent/agent";
 export {
   type AttachmentDescriptor,
   AttachmentsApi,
   type AttachmentUploadInput,
-  splitAttachmentManifest,
 } from "./resources/attachments/attachments";
 export { type BudgetScopeGrant, type CredentialBinding, ManagedAuthorityApi } from "./resources/budgets/budgets";
 export { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 export type { ConversationMessage, ConversationPage } from "./resources/conversations/conversations";
 export { ConversationsApi } from "./resources/conversations/conversations";
+export { WorkspaceRequestsApi } from "./resources/conversations/requests";
 export { LogsApi, NetworkEventsApi, OutputsApi } from "./resources/diagnostics/diagnostics";
 export { type KeyListQuery, KeysApi, RecoveryApi } from "./resources/keys/keys";
 export { PrincipalsApi } from "./resources/principals/principals";
@@ -94,7 +96,6 @@ export {
 } from "./resources/workspaces/workspaces";
 export type { CursorListQuery, Page } from "./transport/common";
 export {
-  AgentNotReadyError,
   type ClientErrorCode,
   ConversationGoneError,
   isPocketCoderErrorCode,

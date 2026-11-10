@@ -7,12 +7,15 @@ import {
   HEADER_REGISTRATION,
   HEADER_WORKSPACE,
   PROTOCOL_VERSION,
-  parseTemplateManifest,
+  runtimeTemplateDefinition,
 } from "@pstdio/pocketcoder-contracts";
+import { localInputEnvironment } from "../local/input-environment";
 import { buildLocalImage } from "../local/runtime";
+import { qualifySessionTemplate } from "../local/session-template";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
 import { bestEffort, command, freePort, waitFor } from "./local-process";
+import { expectEcho } from "./session";
 
 const root = resolve(import.meta.dir, "../..");
 const directory = await mkdtemp(join(tmpdir(), "pocketcoder-local-echo-"));
@@ -30,12 +33,11 @@ const controllerEnv = {
   POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
   POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
   POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
-  POCKETCODER_INPUT_DIR: inputs,
   POCKETCODER_SECRET_PROVIDER: "disabled",
   POCKETCODER_STORAGE_BACKEND: "disabled",
   POCKETCODER_WARM_POOLS: "[]",
 };
-let controller: ReturnType<typeof Bun.spawn> | undefined;
+let controller: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
 let controllerOutput: Promise<string[]> | undefined;
 let workspace: ReadyHarnessWorkspace | undefined;
 let capturing = false;
@@ -63,6 +65,7 @@ async function start() {
   controller = Bun.spawn([...cli, "serve", "--dir", dataDir], {
     cwd: root,
     env: { ...process.env, ...controllerEnv },
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -105,9 +108,9 @@ try {
     { quiet: true },
   );
   const image = await buildLocalImage({ root, imageTag, context: "deploy/image", command });
-  const source = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
-  source.spec.image = image.image;
-  const template = parseTemplateManifest(source);
+  let source = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
+  source = await qualifySessionTemplate(source, image.image);
+  const template = runtimeTemplateDefinition(source);
   await mkdir(templateDir);
   await writeFile(join(templateDir, "echo.json"), JSON.stringify(template.manifest));
   await start();
@@ -158,21 +161,7 @@ try {
     throw new Error("Controller data or Docker socket reached workspace");
   console.log(`Workspace ${workspaceId} ready; controller credentials stay outside it.`);
   const prompt = `hello ${randomUUID()}`;
-  const sent = await workspace.request(`/v1/workspaces/${workspaceId}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({ type: "user", content: prompt }),
-  });
-  if (!sent.ok) throw new Error(`Message failed: ${await sent.text()}`);
-  let reply = "";
-  await waitFor(
-    async () => {
-      const response = await workspace?.request(`/v1/workspaces/${workspaceId}/agent/messages`);
-      reply = responseText(messageList(await response?.json()), 0);
-      return reply === `echo: ${prompt}`;
-    },
-    60_000,
-    "echo response",
-  );
+  const reply = await expectEcho(workspace.request, workspaceId, prompt);
   console.log(reply);
   const terminalState = await workspace.cancel();
   workspace = undefined;

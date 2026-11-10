@@ -18,8 +18,7 @@ GET  /v1/workspaces/{id}/outputs        scope outputs:read
 ```
 
 All mutating checkpoint routes require `Idempotency-Key`. Preserve rejects new
-relay work; native workspaces wait for stable AgentAPI, synchronize its final
-messages, and gracefully terminate it. PocketCoder then snapshots
+work; native service workspaces fence their producer through the image-owned checkpoint hook and stop its writers. PocketCoder then snapshots
 only template-declared mounts, verifies the manifest, and makes the source
 terminal `preserved`. Restore never reopens it: a new queued workspace gets
 the exact template snapshot, fresh provider and credentials, lineage fields,

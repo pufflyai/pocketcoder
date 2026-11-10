@@ -111,7 +111,8 @@ export const SUPPORTED_PROTOCOL_VERSIONS = [
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
 
-export const MAX_FRAME_BYTES = 1_048_576;
+// Buffered session observations allow 8 MiB; base64 and the envelope must fit the wire limit.
+export const MAX_FRAME_BYTES = 12 * 1024 * 1024;
 
 // Registration headers on the upgrade request.
 export const HEADER_PROTOCOL = "x-pocketcoder-protocol";
@@ -153,14 +154,12 @@ export const RegisteredPayload = z.object({
     version: z.string(),
     digest: z.string(),
   }),
-  agentapi_version: z.string().optional(),
   services: z.array(z.string()),
   pid: z.number().int().positive(),
 });
 
 export const HeartbeatPayload = z.object({
   child: z.enum(["starting", "setup", "waiting", "running", "exited", "terminating"]),
-  agentapi_state: z.enum(["unknown", "stable", "running"]).optional(),
 });
 
 export const ProcessStatePayload = z.object({

@@ -1,36 +1,10 @@
 # Workspace image for pocketcoder development and doctor probes: the
-# pocketcoder-supervisor, AgentAPI and the echo harness. Templates install
+# pocketcoder-supervisor and native structured session producers. Templates install
 # their own coding-agent CLI.
 #
 # Build from the repository root:
 #   bun build packages/supervisor/src/index.ts --target bun --outdir deploy/image/dist
 #   docker build -t pocketcoder-workspace:dev deploy/image
-
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS agentapi-chat
-# Rebuild the same signed v0.12.2 source: its released binaries contain
-# vulnerable Go and x/text versions. Keep its embedded chat UI.
-ADD --checksum=sha256:ac268b66c61be487bf3a3917a791abd10f3211b8ca8640897b884e2ba836d769 \
-  https://codeload.github.com/coder/agentapi/tar.gz/9ff117e231822f670305254ef24f6389f75953f4 /tmp/agentapi.tar.gz
-WORKDIR /src
-RUN tar -xzf /tmp/agentapi.tar.gz --strip-components=1
-WORKDIR /src/chat
-RUN bun install --frozen-lockfile \
-  && sed -i '/const nextConfig: NextConfig = {/a\  generateBuildId: async () => "9ff117e231822f670305254ef24f6389f75953f4",' next.config.ts \
-  && NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_BASE_PATH=/magic-base-path-placeholder bun --bun run build \
-  && cp -r out/. /src/lib/httpapi/chat/ \
-  && rm -rf node_modules .next out
-
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS agentapi-build
-ARG TARGETARCH
-ENV GOTOOLCHAIN=local
-WORKDIR /src
-COPY --from=agentapi-chat /src/ /src/
-COPY agentapi-identical-replies.patch /tmp/agentapi-identical-replies.patch
-RUN apk add --no-cache patch \
-  && patch -p1 < /tmp/agentapi-identical-replies.patch \
-  && go get golang.org/x/text@v0.41.0 \
-  && go mod verify \
-  && CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -o /agentapi main.go
 
 # Bun embeds TLS and compression. Drop unused system OpenSSL and its zlib
 # dependency rather than carrying their vulnerable code into the runtime.
@@ -53,10 +27,6 @@ ARG TARGETARCH
 LABEL org.opencontainers.image.title="PocketCoder workspace" \
   org.opencontainers.image.source="https://github.com/pufflyai/pocketcoder" \
   io.pstdio.pocketcoder.bun.version="1.4.4" \
-  io.pstdio.pocketcoder.agentapi.version="0.12.2" \
-  io.pstdio.pocketcoder.agentapi.revision="9ff117e231822f670305254ef24f6389f75953f4" \
-  io.pstdio.pocketcoder.agentapi.go.version="1.27.3" \
-  io.pstdio.pocketcoder.agentapi.x-text.version="0.41.0" \
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.glibc.root="/opt/glibc" \
   dev.pstdio.pocketcoder.glibc.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
@@ -79,10 +49,10 @@ RUN case "$TARGETARCH" in \
 
 COPY dist/index.js /opt/pocketcoder/supervisor.js
 COPY echo-harness.ts /opt/pocketcoder/echo-harness.ts
+COPY controller-probe.ts /opt/pocketcoder/controller-probe.ts
 COPY pocketcoder-supervisor /usr/local/bin/pocketcoder-supervisor
-COPY --from=agentapi-build /agentapi /usr/local/bin/agentapi
-RUN chmod 0755 /usr/local/bin/pocketcoder-supervisor /usr/local/bin/agentapi \
-  && agentapi --version
+COPY write-session-image.ts quiesce.ts /opt/pocketcoder/
+RUN chmod 0755 /usr/local/bin/pocketcoder-supervisor && bun /opt/pocketcoder/write-session-image.ts echo
 
 # Non-root by default; templates pin uid/gid 10001 and the driver enforces
 # it. WORKDIR must be accessible to that uid (the oven/bun default of

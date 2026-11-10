@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  agentApiHarness,
-  findRoute,
-  isAgentApiNative,
-  parseTemplateManifest,
-  snapshotOf,
-  templateServices,
-} from "../index";
+import { findRoute, parseTemplateManifest, snapshotOf, templateServices } from "../index";
 
 const DIGEST = "a".repeat(64);
 
@@ -18,7 +11,7 @@ function baseManifest(): Record<string, unknown> {
     spec: {
       version: "1.0.0",
       image: `registry.test/agent@sha256:${DIGEST}`,
-      harness: { command: ["agentapi", "server", "--", "claude"] },
+      harness: { command: ["echo-service", "serve"] },
       resources: { cpu: "2", memory: "2Gi" },
       services: {
         agent: {
@@ -31,20 +24,6 @@ function baseManifest(): Record<string, unknown> {
       },
     },
   };
-}
-
-function nativeManifest(): Record<string, unknown> {
-  const manifest = baseManifest();
-  const spec = manifest.spec as Record<string, unknown>;
-  delete spec.harness;
-  delete spec.services;
-  spec.agent = {
-    type: "codex",
-    command: ["codex", "--full-auto"],
-    cwd: "/workspace",
-    env: { CODEX_HOME: "/state/codex" },
-  };
-  return manifest;
 }
 
 describe("template manifest", () => {
@@ -72,33 +51,6 @@ describe("template manifest", () => {
       (manifest.spec as { env?: Record<string, string> }).env = { [key]: "http://proxy" };
       expect(() => parseTemplateManifest(manifest)).toThrow("reserved by restricted networking");
     }
-  });
-
-  test("derives the fixed AgentAPI boundary from a coding-agent command", () => {
-    const parsed = parseTemplateManifest(nativeManifest());
-    const spec = parsed.manifest.spec;
-    expect(isAgentApiNative(spec)).toBe(true);
-    expect(agentApiHarness(spec)).toEqual({
-      command: ["/usr/local/bin/agentapi", "server", "--type", "codex", "--port", "3284", "--", "codex", "--full-auto"],
-      cwd: "/workspace",
-      env: { CODEX_HOME: "/state/codex" },
-    });
-    expect(Object.keys(templateServices(spec))).toEqual(["agent"]);
-    expect(findRoute(snapshotOf(parsed), "agent", "GET", "/messages")).not.toBeNull();
-    expect(findRoute(snapshotOf(parsed), "agent", "GET", "/events")).not.toBeNull();
-    const legacySnapshot = snapshotOf(parsed);
-    delete legacySnapshot.services;
-    expect(findRoute(legacySnapshot, "agent", "GET", "/events")).toBeNull();
-  });
-
-  test("rejects ambiguous native and legacy ownership", () => {
-    const withHarness = nativeManifest();
-    (withHarness.spec as Record<string, unknown>).harness = { command: ["custom-wrapper"] };
-    expect(() => parseTemplateManifest(withHarness)).toThrow("cannot be combined");
-
-    const withServices = nativeManifest();
-    (withServices.spec as Record<string, unknown>).services = {};
-    expect(() => parseTemplateManifest(withServices)).toThrow("cannot be combined");
   });
 
   test("digest is independent of key order", () => {
@@ -172,8 +124,8 @@ describe("template manifest", () => {
 });
 
 describe("template terminal", () => {
-  test("normalizes an opt-in terminal for native and legacy templates", () => {
-    for (const manifest of [baseManifest(), nativeManifest()]) {
+  test("normalizes an opt-in terminal for explicit harness templates", () => {
+    for (const manifest of [baseManifest()]) {
       (manifest.spec as Record<string, unknown>).terminal = {
         command: ["/bin/bash", "-l"],
         cwd: "/workspace",
@@ -215,7 +167,7 @@ describe("template persistence and routing", () => {
     (m.spec as { setup?: unknown }).setup = [{ name: "install", command: ["bun", "install"], timeoutSeconds: 60 }];
     const snapshot = snapshotOf(parseTemplateManifest(m));
     expect(snapshot.spec.setup[0]?.command).toEqual(["bun", "install"]);
-    expect(agentApiHarness(snapshot.spec).command[0]).toBe("agentapi");
+    expect(snapshot.spec.harness?.command[0]).toBe("echo-service");
     expect(snapshot.spec.setup[0]?.runOn).toEqual(["create"]);
   });
 
@@ -233,13 +185,13 @@ describe("template persistence and routing", () => {
         },
         {
           name: "agent-state",
-          target: "/state/agentapi",
+          target: "/state/session",
           maxBytes: 1024,
           maxFiles: 10,
         },
       ],
       conversationRestore: "supported",
-      sessionCompatibility: "agentapi-0.12",
+      sessionCompatibility: "native-session-v1",
     };
     spec.source = {
       kind: "git",

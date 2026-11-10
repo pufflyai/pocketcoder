@@ -27,7 +27,7 @@ try {
     { quiet: true },
   );
   const key = randomUUID();
-  fixture.proxy.interruptNextUpload(fixture.restart);
+  fixture.proxy.interruptNextUpload(() => fixture.restart());
   const response = await source.request(`/v1/workspaces/${source.workspaceId}/preserve`, {
     method: "POST",
     headers: { "idempotency-key": key },

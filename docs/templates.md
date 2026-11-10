@@ -1,7 +1,7 @@
 # Canonical workload templates
 
 `pocketcoder.dev/v1` defines one workload contract. Operations select pinned
-`process`, `service`, `pi`, or `agentapi` adapters. An arbitrary process needs no
+`process`, `service`, or `pi` adapters. An arbitrary process needs no
 agent wrapper or credentials. Generic HTTP transport can use the `service`
 profile with no operation adapters. That profile promises no request recovery or
 cloud-interactive execution semantics.
@@ -105,17 +105,7 @@ A generic HTTP service can replace the fixture's profile and declarations with:
 }
 ```
 
-Pi and AgentAPI use the same adapter declaration and operation schema. Set `kind`
-to `pi` or `agentapi`, pin its actual implementation digest and protocol, and set
-the template-owned command. A `service` adapter references a declared service
-instead of a command. HTTP or SSE transport alone proves no execution support.
-
-Operation `inputSchema` uses a deliberate JSON Schema subset: scalar `type`
-values (`string`, `number`, `integer`, `boolean`, `null`), arrays with `items`,
-and objects with `properties`, optional `required`, and `additionalProperties:
-false`. Objects and arrays can nest. Required names must be declared and unique.
-Unknown keywords and invalid property definitions fail validation; no adapter
-silently ignores them. The operation's root input is an object.
+Native session producers use a `service` adapter with `pocketcoder.execution/v1`. See [native structured sessions](agent-transport-decision.md) for the image pins and canonical message contract.
 
 ## Admission and bounds
 
@@ -234,117 +224,16 @@ Run the synthetic private-image echo flow with `bun run example:e2e:private-imag
 Run real Kubernetes pulls with `bun run test:kind:registry`; Bun, Docker, kubectl
 and kind v0.33.0 must be installed. The command deletes its disposable cluster.
 
-## Full example
+## Native sessions
 
-```json
-{
-  "apiVersion": "pocketcoder.dev/v1alpha1",
-  "kind": "Template",
-  "metadata": {
-    "name": "claude-code-agent",
-    "description": "Claude Code behind AgentAPI with repository setup"
-  },
-  "spec": {
-    "version": "1.0.0",
-    "image": "registry.example/coding-agent@sha256:…",
-    "command": ["/usr/local/bin/pocketcoder-supervisor", "supervise", "--launch-input", "/run/pocketcoder/input"],
-    "setup": [
-      { "name": "clone-repo", "command": ["/usr/local/bin/clone-repo.sh"], "timeoutSeconds": 300 },
-      { "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"], "timeoutSeconds": 600 }
-    ],
-    "agent": {
-      "type": "claude",
-      "transport": "pty",
-      "termWidth": 120,
-      "command": ["claude", "--dangerously-skip-permissions"],
-      "cwd": "/home/agent/workspace",
-      "env": { "ANTHROPIC_BASE_URL": "http://agentgateway.internal:8080" }
-    },
-    "terminal": {
-      "command": ["/bin/sh"],
-      "cwd": "/home/agent/workspace",
-      "maxSessions": 2,
-      "idleTimeout": "10m"
-    },
-    "env": { "HOME": "/home/agent" },
-    "resources": { "cpu": "2", "memory": "2Gi", "ephemeralStorage": "10Gi" },
-    "timeouts": { "start": "2m", "maxAge": "2h", "idle": "20m", "disconnectGrace": "5m", "terminateGrace": "15s" },
-    "security": {
-      "uid": 10001, "gid": 10001, "readOnlyRoot": true,
-      "writableMemoryPaths": ["/tmp", "/home/agent"]
-    }
-  }
-}
-```
+Use a measured native service image and the `sessionTemplate` helper from the SDK. Supply the image digest, runtime digest, adapter digest, and the exact service command from its image descriptor.
 
-## The execution surface
-
-- **`command`** — the container entrypoint: `pocketcoder-supervisor`
-  (PID 1, or a child of tini if your image sets one). It registers over
-  outbound WSS and receives everything below at registration time, so setup
-  and agent changes need no image rebuild.
-- **`setup`** — ordered commands run once before the harness starts (clone a
-  repo, install dependencies, prime configuration). Each step has a name,
-  timeout, optional env and cwd; output lands in workspace logs; a failing
-  step fails the workspace with reason `setup_failed`/`child_exit_failure`.
-- **`agent`** — the coding-agent command, AgentAPI type, transport, cwd, and
-  environment. `transport` defaults to `"pty"`; `"acp"` adds AgentAPI's
-  `--experimental-acp` adapter for agents whose command speaks ACP. PocketCoder
-  passes optional `termWidth` (10–65535) to AgentAPI only for PTY agents; it is
-  rejected for ACP because ACP does not emulate a terminal. Optional
-  `interruptKeys` (1–16 characters, PTY only) is the raw terminal input that
-  stops the agent's current turn, such as `"\u001b"` (Escape) for Pi. It enables
-  `POST /v1/workspaces/{id}/agent/interrupt` (see [API](api.md)). Declare it
-  only after a real-agent test proves that the key stops a turn and leaves the
-  agent ready for the next message. The image must also make a stray key on an
-  idle agent harmless: the Pi image turns off Pi's double-Escape menu. The
-  derived agent
-  service and its health check use `http://127.0.0.1:3284`, so an explicit
-  `AGENTAPI_ALLOWED_HOSTS` must include `127.0.0.1`. See the
-  [transport decision](agent-transport-decision.md) for the cross-agent
-  compatibility analysis. PocketCoder
-  waits for AgentAPI's fixed status endpoint to answer, synchronizes complete
-  accepted input while running, and terminates it safely for preserve. The last
-  assistant entry is captured after a read under unchanged `stable` health. That health
-  check only proves the endpoint responds. A workspace can be `ready` while the
-  agent is still starting and cannot accept a message yet, so callers wait for
-  an `agent_state` of `stable` before sending. The caller's opaque
-  `launch_input` is delivered to the process in memory as
-  `POCKETCODER_LAUNCH_INPUT`; the server erases its copy once the workspace is
-  ready.
-- **`agent.model`** — optional display label, 1–255 characters. It describes the
-  model for clients; it does not select, configure, or verify the running model.
-  Keep it in sync with the agent command or env when those choose a model.
-  For example, replace both `agent.model` and `agent.env.PI_GATEWAY_MODEL` in
-  the Pi template. Leave it out when the gateway chooses the model. API
-  responses report an omitted model as `null`. `agent.type` is the declared
-  AgentAPI type (for example, `custom` for the Pi template).
-- **legacy `harness` + `services`** — compatibility-only generic process and
-  loopback relay declarations. They remain supported for one migration
-  release and cannot appear beside `agent`. Each declared route may set
-  `responseMode: "stream"` (default `"buffered"`) to relay a long-lived
-  response such as SSE; `maxResponseBytes` then caps the cumulative stream and
-  `deadlineSeconds` bounds its total lifetime. Streamed routes require a
-  protocol-v5 supervisor.
-- **`terminal`** — optional interactive PTY capability for native and legacy
-  templates. `command` is the only command a caller can run; `cwd` and `env`
-  are reviewed template values. `maxSessions` defaults to 2 (range 1–8) and
-  `idleTimeout` defaults to `10m`. Sessions close before checkpoints and do
-  not survive preserve/restore.
-- **`timeouts`** — `start` (registration + first health), `maxAge` (hard
-  lifetime), `idle` (no relay activity and agent not running), `disconnectGrace`
-  (supervisor reconnect window), `terminateGrace` (TERM→KILL).
-- **`resources`** — required CPU and memory sizing, plus optional scratch disk
-  sizing in `ephemeralStorage`. Ephemeral storage is Kubernetes-only in this
-  release. The Docker driver accepts the field but does not enforce it.
-- **`security`** — non-root uid/gid (≥1000), read-only root, memory-backed
-  writable paths, dropped capabilities, no privilege escalation. Values can
-  only be stricter than the defaults, never weaker.
+The service accepts `input.message` and returns canonical message parts. See [native structured sessions](agent-transport-decision.md). Alpha templates remain available for ordinary processes and declared services. They do not wrap agent commands.
 
 ## Restricted outbound networking
 
 Networking is unrestricted when `network` is omitted. A reviewed template can opt the whole
-workspace—including setup, AgentAPI, tools, hooks, and MCP children—into default-deny egress:
+workspace—including setup, producers, tools, hooks, and MCP children—into default-deny egress:
 
 ```json
 {
@@ -375,7 +264,6 @@ HTTPS methods or paths, and it blocks SSH and other non-HTTP protocols.
   query strings, encoded traversal);
 - duplicate routes;
 - terminal cwd traversal, invalid limits, or an empty command;
-- `agent.termWidth` outside 10–65535 or supplied with ACP transport;
 - `agent.interruptKeys` empty, longer than 16 characters, or supplied with ACP
   transport;
 - env values that look like secret literals (names matching
@@ -418,7 +306,7 @@ not restored or silently rebound; stage new workspace-scoped IDs after restore.
     ],
     "conversationRestore": "supported",
     "conversationRetention": "168h",
-    "sessionCompatibility": "agentapi-v1",
+    "sessionCompatibility": "native-session-v1",
     "checkpoint": {
       "onIdle": "preserve",
       "onDeadline": "preserve",
@@ -434,22 +322,13 @@ Setup steps default to `runOn: ["create"]`. Mark validation or repair steps
 with `runOn: ["restore"]` when they are safe against restored content.
 `conversationRestore: supported` requires a separate harness-state mount and
 `sessionCompatibility`; otherwise use the honest `filesystem_only` default.
-Native PTY `agent` templates must also set `agent.stateFile` to a normalized
-file path below a persistence mount. PocketCoder passes it to AgentAPI as
-`--state-file`, which makes AgentAPI load and save its transcript. AgentAPI
-does not support state persistence for ACP, so native ACP templates must use
-`filesystem_only`. The supervisor blocks new messages, waits for AgentAPI to
-become stable, captures the final transcript, and terminates it before
-snapshotting. Legacy templates may still provide `checkpointHook`.
+Native service templates persist the producer journal and agent context beneath declared mounts. Their image-owned checkpoint hook fences accepted work before capture.
 
 `conversationRetention` controls how long a conversation stays readable after
 the last workspace that wrote to it ends (default `168h`). Servers may cap or
 replace it (see [conversation history](conversation-identities.md#durable-conversation-history)).
 It is separate from checkpoint retention because callers may delete
-conversations without deleting a filesystem checkpoint. Native workspaces project complete AgentAPI messages
-into the durable transcript using stable `agentapi:<id>` ids. Legacy harness
-adapters may still write bounded `POCKETCODER_CONVERSATION <json>` lines to
-stdout. Operational log text is never inferred into conversation history.
+conversations without deleting a filesystem checkpoint. Native service observations carry canonical messages and parts. Plain operational logs never become conversation history.
 
 `artifacts` declares private files that the harness writes into a persisted
 mount, such as per-chat diagnostic transcripts. The control plane reads them from
@@ -541,7 +420,6 @@ derives a deterministic version suffix from all deployable content:
 ```sh
 pcd templates render templates/codex.yaml \
   --image "registry.example/codex@sha256:<64-hex-digest>" \
-  --set '/spec/agent/termWidth=120' \
   --out deploy/templates
 ```
 
@@ -551,16 +429,12 @@ JSON without modifying its source.
 
 ## Writing workspace images
 
-An image needs checksum-pinned AgentAPI at `/usr/local/bin/agentapi`, your agent
-CLI, the `pocketcoder-supervisor` binary or bundle, a passwd entry
-for the template uid, and a working directory readable by that uid. See
-[`deploy/image/Dockerfile`](../deploy/image/Dockerfile) for a minimal example
-and the [deployment guide](deployment.md) for building and pinning.
+A native session image needs the supervisor, its producer, and its measured workload descriptor. The bundled image supplies echo. The Pi and Onefin images use Pi JSON RPC. See [native structured sessions](agent-transport-decision.md).
 
 ### Web previews
 
 Declare each webapp port in the immutable template. These ports are separate from
-AgentAPI and other platform services. The app must listen inside the workspace.
+the session producer and other platform services. The app must listen inside the workspace.
 
 ```json
 "previews": {
@@ -570,7 +444,7 @@ AgentAPI and other platform services. The app must listen inside the workspace.
 
 Names start with a lowercase letter and contain at most 20 lowercase letters,
 numbers or hyphens. `display` and `pc-*` names are reserved. Ports must be between
-1024 and 65535; AgentAPI, VNC, display and debugging ports are reserved.
+1024 and 65535; Session, VNC, display and debugging ports are reserved.
 
 A caller with `previews:open` and current ownership can mint a browser URL.
 Each workspace and preview has its own full UUID hostname under `.localhost`.
@@ -606,7 +480,7 @@ Use `examples/templates/desktop.json`. Replace its sample digest with the built
 image digest before importing it. `display: { "mode": "desktop" }` declares the
 fixed VNC endpoint. It cannot be exposed through a preview or forwarding port.
 The harness wrapper starts the desktop before its template-owned agent command.
-For a coding agent, replace the echo command with AgentAPI and the chosen agent.
+For a coding agent, use a native session service template.
 
 Open a trusted viewer with
 `pocketcoder workspaces display --id <workspace> --open`. `display:view` permits

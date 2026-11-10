@@ -10,7 +10,7 @@ const manifest = (previews: unknown) => ({
   spec: {
     version: "1.0.0",
     image: `test@sha256:${"a".repeat(64)}`,
-    agent: { command: ["agent"] },
+    harness: { command: ["echo-service"] },
     resources: { cpu: "1", memory: "128Mi" },
     previews,
   },

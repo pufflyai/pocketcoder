@@ -106,6 +106,7 @@ test("a turn whose write fails for a passing reason stays open and is written la
   let failures = 1;
   const flaky = new LiveTurns({
     isAcceptedTurn: (...args) => f.store.isAcceptedTurn(...args),
+    isCommittedTurn: (...args) => f.store.isCommittedTurn(...args),
     commitConversationTurn: async (turn) => {
       if (failures-- > 0) throw new Error("connection reset");
       return f.store.commitConversationTurn(turn);
@@ -138,4 +139,41 @@ test("an open turn cannot grow past the conversation size limit", async () => {
   await send(randomUUID(), 1, "x".repeat(30 * 1024 * 1024));
   await expect(send(randomUUID(), 1, "y".repeat(30 * 1024 * 1024))).rejects.toThrow("conversation.quota_exceeded");
   expect(live.open(workspace.id)[0]?.messages).toHaveLength(1);
+});
+
+test("a replayed committed turn never reopens the live tail after controller restart", async () => {
+  const { f, live, workspace, request, send } = await setup();
+  const event = randomUUID();
+  await send(event, 1, "retained");
+  await send(randomUUID(), 1, "", { type: "turn_terminal", outcome: "completed" });
+  expect(live.open(workspace.id)).toEqual([]);
+  const restarted = new LiveTurns(f.store);
+  await restarted.receive(workspace.id, {
+    message_id: `m-${event}`,
+    role: "assistant",
+    content: "retained",
+    parts: [{ type: "text", text: "retained" }],
+    occurred_at: new Date().toISOString(),
+    metadata: {},
+    identity: { ...request, event_id: event, message_id: `m-${event}`, sequence: 0, revision: 1 },
+  });
+  expect(restarted.open(workspace.id)).toEqual([]);
+});
+
+test("an open snapshot can select one conversation before copying its messages", async () => {
+  const { f, live, workspace, request, send } = await setup();
+  await send(randomUUID(), 1, "selected");
+  const other = { ...request, conversation_id: randomUUID(), request_id: randomUUID(), turn_id: randomUUID() };
+  await f.store.acceptConversationRequest(workspace.id, other, new Date());
+  await live.receive(workspace.id, {
+    message_id: "other",
+    role: "assistant",
+    content: "unrelated",
+    occurred_at: new Date().toISOString(),
+    metadata: {},
+    identity: { ...other, event_id: randomUUID(), message_id: "other", revision: 1, sequence: 1 },
+  });
+  expect(live.open(workspace.id, request.conversation_id).map((turn) => turn.conversation_id)).toEqual([
+    request.conversation_id,
+  ]);
 });

@@ -99,3 +99,26 @@ test("a message without identity is its own record", () => {
     },
   ]);
 });
+
+test("stored turns preserve the same structured parts that were delivered live", () => {
+  const parts = [
+    {
+      type: "tool" as const,
+      call_id: "call-1",
+      name: "read",
+      status: "completed" as const,
+      input: { path: "notes.txt" },
+      output: "Saved notes",
+    },
+  ];
+  const document = buildRecordDocument({
+    request,
+    status: "completed",
+    reason: null,
+    firstSeq: 1,
+    messages: [{ ...message(1, 0, ""), parts }],
+    startedAt: at,
+    endedAt: at,
+  });
+  expect(document.messages[0]?.parts).toEqual(parts);
+});

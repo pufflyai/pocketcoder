@@ -51,18 +51,6 @@ export class WorkspaceTerminalError extends Error {
   }
 }
 
-export class AgentNotReadyError extends Error {
-  readonly workspaceId: string;
-  readonly agentState: AgentState;
-
-  constructor(workspaceId: string, agentState: AgentState, timeoutMs: number) {
-    super(`agent in workspace ${workspaceId} was still ${agentState} after ${timeoutMs}ms and cannot accept a message`);
-    this.name = "AgentNotReadyError";
-    this.workspaceId = workspaceId;
-    this.agentState = agentState;
-  }
-}
-
 export function isPocketCoderErrorCode(value: unknown): value is ErrorCode {
   return typeof value === "string" && value in ERROR_CODES;
 }

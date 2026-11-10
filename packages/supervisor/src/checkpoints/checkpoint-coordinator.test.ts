@@ -12,8 +12,6 @@ test("checkpoint preparation closes terminals before quiescing the workspace", a
       return true;
     },
     pump: async () => {},
-    readAgentApiStatus: async () => null,
-    syncAgentApiMessages: async () => {},
     child: () => null,
     childExited: () => false,
     closeTerminals: async () => {

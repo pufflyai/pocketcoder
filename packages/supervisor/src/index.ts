@@ -1,4 +1,5 @@
 import { prepareStorage } from "./bootstrap/prepare-storage";
+import { serveSessions } from "./sessions/serve";
 import { supervise } from "./supervisor";
 
 // pocketcoder-supervisor CLI. `supervise` is the PID 1 entrypoint declared by
@@ -13,6 +14,10 @@ function usage(): never {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === "session" && rest[0] === "serve") {
+    serveSessions(rest.slice(1));
+    return;
+  }
   if (command === "service") {
     const [action, name, startId] = rest;
     if (!action || !["start", "stop", "status"].includes(action) || !name || !/^[a-z][a-z0-9-]{0,62}$/.test(name))

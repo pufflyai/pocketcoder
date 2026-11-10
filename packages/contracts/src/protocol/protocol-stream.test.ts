@@ -20,7 +20,7 @@ const envelope = {
 };
 
 describe("streamed relay contracts", () => {
-  test("defaults existing routes to buffered and declares AgentAPI events as streamed", () => {
+  test("defaults routes to buffered and preserves an explicit streamed route", () => {
     expect(ServiceRouteSchema.parse({ method: "GET", path: "/status" }).responseMode).toBe("buffered");
     const native = parseTemplateManifest({
       apiVersion: "pocketcoder.dev/v1alpha1",
@@ -29,7 +29,13 @@ describe("streamed relay contracts", () => {
       spec: {
         version: "1.0.0",
         image: `example.test/native@sha256:${"a".repeat(64)}`,
-        agent: { command: ["pi"], type: "pi" },
+        harness: { command: ["echo-service"] },
+        services: {
+          agent: {
+            baseUrl: "http://127.0.0.1:3284",
+            routes: [{ method: "GET", path: "/events", responseMode: "stream" }],
+          },
+        },
         resources: { cpu: "1", memory: "512Mi" },
       },
     });

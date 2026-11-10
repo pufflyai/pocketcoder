@@ -122,13 +122,21 @@ const resolver = new WorkspaceTurnResolver({
 
 export async function handleTurn(sourceWorkspaceId: string, prompt: string) {
   const { workspace } = await resolver.resolve(sourceWorkspaceId);
-  await client.agent.sendMessage(workspace.id, { content: prompt });
-  return { workspace_id: workspace.id };
+  const conversationId = crypto.randomUUID();
+  let request = await client.workspaceRequests.submit(workspace.id, {
+    requestId: crypto.randomUUID(), conversationId, message: prompt, files: [],
+  });
+  while (!request.finalizedAt) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    request = await client.workspaceRequests.get(workspace.id, request.acceptance.execution.requestId, conversationId);
+  }
+  const history = await client.conversations.read(workspace.id, conversationId);
+  return { workspace_id: workspace.id, conversation_id: conversationId, messages: history.items };
 }
 ```
 
 The key needs `workspaces:read`; a callback that calls `resume()` also needs
-`workspaces:restore`. Prompt relay and attachments need `services:relay` and
+`workspaces:restore`. Native session requests and attachments need `services:relay` and
 `attachments:write` respectively.
 
 The resolver stores no A-to-B mapping. Return the resolved id through your

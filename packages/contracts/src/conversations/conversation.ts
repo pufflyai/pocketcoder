@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CursorPageSchema, CursorQuerySchema } from "../common/pagination";
 import { ConversationMessageIdentitySchema, ConversationProtocolSupportSchema } from "./identity";
+import { ConversationPartSchema } from "./parts";
 
 export const CONVERSATION_ROLES = ["user", "assistant", "system", "tool"] as const;
 export type ConversationRole = (typeof CONVERSATION_ROLES)[number];
@@ -13,6 +14,7 @@ export const ConversationMessageInputSchema = z.object({
   message_id: z.string().min(1).max(256),
   role: z.enum(CONVERSATION_ROLES),
   content: z.string().max(256 * 1024),
+  parts: z.array(ConversationPartSchema).max(256).optional(),
   occurred_at: z.iso.datetime(),
   metadata: ConversationMetadataSchema.default({}),
   identity: ConversationMessageIdentitySchema.nullable().optional(),

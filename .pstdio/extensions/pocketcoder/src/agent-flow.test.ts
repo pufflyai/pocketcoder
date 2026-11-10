@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import type { HarnessEventSink, JsonPatch, ResourceAnchor } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
 import { buildLocalImage } from "../../../../examples/local/runtime";
+import { qualifySessionTemplate } from "../../../../examples/local/session-template";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createLabCommands } from "./lab-commands";
@@ -86,11 +87,12 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
   try {
     const templates = join(root, "templates");
     await mkdir(templates);
-    const template = JSON.parse(await readFile(join(repo, "examples/harnesses/echo/template.json"), "utf8"));
-    template.spec.image = `${imageTag}@${image}`;
+    let template = JSON.parse(await readFile(join(repo, "examples/harnesses/echo/template.json"), "utf8"));
+    template = await qualifySessionTemplate(template, `${imageTag}@${image}`);
     await writeFile(join(templates, "echo.json"), JSON.stringify(template));
     const instance = await instances.launch({
       name: "Agent flow",
+      manifest: template,
       binary: join(repo, "out/native/pocketcoder"),
       templates,
     });
@@ -129,11 +131,9 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
     const workspace = { workspaceId: input.workspaceId, executionTarget: resolved.executionTarget };
     const connection = await harness.start(harnessCtx, { sessionId, workspace, prompt: "", events });
     expect(await connection.done).toEqual({ status: "completed" });
-    const initial = await instances.request<{ messages: unknown[] }>(
-      instance.id,
-      `${machinePath(machineRef(ref).machineId)}/agent/messages`,
-    );
-    expect(initial.messages).toEqual([]);
+    expect(
+      await harness.getMessages(harnessCtx, { workspace, agentSessionId: connection.agentSessionId ?? "" }),
+    ).toEqual([]);
     const session = await harness.resume(harnessCtx, {
       sessionId,
       workspace,
@@ -161,98 +161,6 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
         await harness.getMessages(harnessCtx, { workspace, agentSessionId: session.agentSessionId ?? "" }),
       ),
     ).toContain("echo: second hello");
-    ref = undefined;
-
-    const delayed = structuredClone(template);
-    delayed.metadata.name = "delayed-agent";
-    delayed.spec.harness.command = [
-      "bun",
-      "-e",
-      `
-      let status = "stable";
-      const messages = [];
-      Bun.serve({ hostname: "127.0.0.1", port: 3284, async fetch(request) {
-        const path = new URL(request.url).pathname;
-        if (path === "/status") return Response.json({ status });
-        if (path === "/messages") return Response.json({ messages });
-        if (path === "/message") {
-          const { content } = await request.json();
-          messages.push({ role: "user", content });
-          status = "running";
-          setTimeout(() => { messages.push({ role: "agent", content: "finished: " + content }); status = "stable"; }, 2500);
-          return Response.json({ ok: true });
-        }
-        return new Response("not found", { status: 404 });
-      }});
-    `,
-    ];
-    await writeFile(join(templates, "delayed.json"), JSON.stringify(delayed));
-    await instances.importTemplates(instance.id, templates);
-    const delayedInput = {
-      ...input,
-      workspaceId: randomUUID(),
-      operationId: randomUUID(),
-      params: { instance: instance.id, template: "delayed-agent" },
-    };
-    const delayedMachine = await provider.create(ctx, delayedInput);
-    ref = delayedMachine.providerRef;
-    const delayedTarget = delayedMachine.executionTarget;
-    if (!ref || delayedTarget?.kind !== "remote") throw new Error("No delayed agent target");
-    const delayedWorkspace = { workspaceId: delayedInput.workspaceId, executionTarget: delayedTarget };
-    const delayedSession = await harness.start(harnessCtx, {
-      sessionId,
-      workspace: delayedWorkspace,
-      prompt: "pending turn",
-      events,
-    });
-    const delayedRef = machineRef(ref);
-    let status = "stable";
-    while (status !== "running") {
-      const response = await instances.request<{ status: string }>(
-        instance.id,
-        `${machinePath(delayedRef.machineId)}/agent/status`,
-      );
-      status = response.status;
-      if (status !== "running") await Bun.sleep(50);
-    }
-    await delayedSession.stop();
-    expect(await delayedSession.done).toEqual({ status: "disconnected" });
-    expect((await provider.resolve(ctx, { ...delayedInput, providerRef: ref })).state).toBe("ready");
-    const attached = await harness.reattach(harnessCtx, {
-      sessionId,
-      workspace: delayedWorkspace,
-      agentSessionId: delayedSession.agentSessionId ?? "",
-      events,
-    });
-    expect(await attached.done).toEqual({ status: "completed" });
-    const messages = await instances.request<{ messages: { content: string }[] }>(
-      instance.id,
-      `${machinePath(delayedRef.machineId)}/agent/messages`,
-    );
-    expect(messages.messages.map((message) => message.content)).toEqual(["pending turn", "finished: pending turn"]);
-    const reloadTurn = await harness.resume(harnessCtx, {
-      sessionId,
-      workspace: delayedWorkspace,
-      agentSessionId: delayedSession.agentSessionId ?? "",
-      prompt: "reload turn",
-      events,
-    });
-    while (
-      (await instances.request<{ status: string }>(instance.id, `${machinePath(delayedRef.machineId)}/agent/status`))
-        .status !== "running"
-    )
-      await Bun.sleep(50);
-    await harness.dispose(harnessCtx);
-    expect(await reloadTurn.done).toEqual({ status: "disconnected" });
-    const replacement = createMachineHarness(() => instances);
-    const recovered = await replacement.reattach(harnessCtx, {
-      sessionId,
-      workspace: delayedWorkspace,
-      agentSessionId: reloadTurn.agentSessionId ?? "",
-      events,
-    });
-    expect(await recovered.done).toEqual({ status: "completed" });
-    await provider.delete(ctx, { ...delayedInput, providerRef: ref });
     ref = undefined;
   } finally {
     if (ref)

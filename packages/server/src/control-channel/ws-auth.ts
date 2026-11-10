@@ -1,6 +1,5 @@
 import { verifyOpaque } from "@pstdio/pocketcoder-auth";
 import {
-  agentApiHarness,
   CHECKPOINT_TRANSFER_MIN_PROTOCOL_VERSION,
   type ExecSpec,
   errorEnvelope,
@@ -8,7 +7,6 @@ import {
   HEADER_RECONNECT,
   HEADER_REGISTRATION,
   HEADER_WORKSPACE,
-  isAgentApiNative,
   isTerminal,
   type ProtocolVersion,
   parseDurationMs,
@@ -176,10 +174,9 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
   const sourceRepository =
     sourceSpec && row.sourceDescriptor ? sourceSpec.repositories[row.sourceDescriptor.repository] : undefined;
   const sourceMount = sourceSpec && spec.persistence.mounts.find((mount) => mount.name === sourceSpec.destinationMount);
-  const harness = agentApiHarness(spec);
-  const native = isAgentApiNative(spec);
+  const harness = spec.harness;
+  if (!harness) throw new Error("Template has no supported runtime. Publish a native session template.");
   return {
-    agentapi_native: native,
     setup: spec.setup
       .filter((step) => step.runOn.includes(row.launchMode))
       .map((step) => ({ ...step, env: materializeSecretEnv(step.env) })),
@@ -234,15 +231,14 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
       mounts: spec.persistence.mounts.map(({ name, target }) => ({ name, target })),
       conversation_restore: row.persistenceCapability,
     },
-    checkpoint_hook:
-      !native && spec.checkpointHook
-        ? {
-            command: spec.checkpointHook.command,
-            timeout_seconds: spec.checkpointHook.timeoutSeconds,
-            env: materializeSecretEnv(spec.checkpointHook.env),
-            ...(spec.checkpointHook.cwd ? { cwd: spec.checkpointHook.cwd } : {}),
-          }
-        : null,
+    checkpoint_hook: spec.checkpointHook
+      ? {
+          command: spec.checkpointHook.command,
+          timeout_seconds: spec.checkpointHook.timeoutSeconds,
+          env: materializeSecretEnv(spec.checkpointHook.env),
+          ...(spec.checkpointHook.cwd ? { cwd: spec.checkpointHook.cwd } : {}),
+        }
+      : null,
     outputs: spec.outputs,
   };
 }

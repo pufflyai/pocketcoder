@@ -17,7 +17,7 @@ export async function probeKubernetesImageDisplay(
   template.spec.resources.ephemeralStorage = "128Mi";
   if (mode === "browser") {
     const fixture =
-      "await import('/opt/pocketcoder/echo-harness.ts');Bun.serve({hostname:'127.0.0.1',port:3000,fetch(){return new Response('<h1>Candidate browser on Kubernetes</h1>',{headers:{'content-type':'text/html'}})}})";
+      "const{serveControllerProbe}=await import('/opt/pocketcoder/controller-probe.ts');serveControllerProbe();Bun.serve({hostname:'127.0.0.1',port:3000,fetch(){return new Response('<h1>Candidate browser on Kubernetes</h1>',{headers:{'content-type':'text/html'}})}})";
     template.spec.harness = { command: ["bun", "/opt/pocketcoder/browser-harness.ts", "bun", "-e", fixture], env: {} };
   }
   const client = new PocketCoderClient({ baseUrl, apiKey: key, fetch: fetchForwarded });

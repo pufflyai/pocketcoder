@@ -1,6 +1,7 @@
 import type {
   ConversationMessageIdentity,
   ConversationMessageResource,
+  ConversationPart,
   ConversationRecordDocument,
   ConversationRecordStatus,
   ConversationRequestIdentity,
@@ -26,6 +27,7 @@ export interface ConversationMessageRow {
   messageId: string;
   role: ConversationRole;
   content: string;
+  parts?: ConversationPart[];
   occurredAt: Date;
   metadata: Record<string, string>;
   identity?: ConversationMessageIdentity | null;
@@ -108,6 +110,7 @@ export interface ConversationStore {
   ): Promise<ConversationRequestResult>;
   // Producers may only write turns that a caller's request opened.
   isAcceptedTurn(workspaceId: string, identity: ConversationRequestIdentity): Promise<boolean>;
+  isCommittedTurn(workspaceId: string, identity: ConversationRequestIdentity): Promise<boolean>;
   // Null when a managed request owns its terminal history instead of the controller placeholder.
   commitConversationTurn(
     turn: ConversationTurnCommit,

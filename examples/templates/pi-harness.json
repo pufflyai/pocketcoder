@@ -1,57 +1,166 @@
 {
-  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "apiVersion": "pocketcoder.dev/v1",
   "kind": "Template",
   "metadata": {
     "name": "pi-harness",
-    "description": "Pi CLI integrated through AgentAPI"
+    "description": "Native Pi JSON RPC sessions; materialize the image pins before publishing"
   },
   "spec": {
-    "version": "1.1.0",
-    "image": "example.invalid/pocketcoder-pi@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-    "setup": [
-      {
-        "name": "load-test-workspace",
-        "command": ["cp", "-R", "/opt/pocketcoder-fixtures/.", "/workspace"],
-        "cwd": "/workspace",
-        "timeoutSeconds": 30
-      }
-    ],
-    "agent": {
-      "type": "custom",
-      "model": "replace-with-your-model",
-      "command": ["/usr/local/bin/run-pi"],
-      "interruptKeys": "\u001b",
-      "cwd": "/workspace",
-      "env": {
-        "PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
-        "PI_GATEWAY_MODEL": "replace-with-your-model",
-        "PI_GATEWAY_PROVIDER": "pocketcoder-gateway",
-        "PI_CODING_AGENT_DIR": "/home/agent/.pi/agent",
-        "PI_WORKSPACE_DIR": "/workspace"
+    "version": "1.0.0",
+    "image": "example.invalid/pocketcoder-pi@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "protocol": "pocketcoder.workload/v1"
+    },
+    "profile": "service",
+    "adapters": {
+      "session": {
+        "kind": "service",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "protocol": "pocketcoder.execution/v1",
+        "env": {},
+        "service": "session"
       }
     },
-    "terminal": {
-      "command": ["/bin/sh"],
-      "cwd": "/workspace",
-      "maxSessions": 2,
-      "idleTimeout": "10m"
+    "operations": {
+      "message": {
+        "adapter": "session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel"],
+        "outputRoots": []
+      }
     },
-    "env": {
-      "HOME": "/home/agent"
+    "services": {
+      "session": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "required": true,
+        "healthPath": "/healthz",
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/executions/accept",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/lookup",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/cancel",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/ack",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          }
+        ],
+        "process": {
+          "command": [
+            "/usr/local/bin/bun",
+            "/opt/pocketcoder/supervisor.js",
+            "session",
+            "serve",
+            "pi",
+            "--",
+            "/usr/local/bin/run-pi"
+          ],
+          "env": {
+            "HOME": "/home/agent",
+            "PI_GATEWAY_URL": "http://host.docker.internal:8080/v1",
+            "PI_GATEWAY_MODEL": "replace-with-your-model",
+            "PI_GATEWAY_BEARER_FILE": "credentialSlot:gateway"
+          },
+          "cwd": "/workspace"
+        }
+      }
     },
-    "resources": { "cpu": "2", "memory": "2Gi" },
-    "timeouts": {
-      "start": "5m",
-      "maxAge": "2h",
-      "idle": "20m",
-      "disconnectGrace": "5m",
-      "terminateGrace": "15s"
+    "previews": {},
+    "credentialSlots": {
+      "gateway": {
+        "policyRef": "pi-gateway",
+        "policyVersion": "1",
+        "binding": "fixed-scope",
+        "delivery": "workspace-expiring-file",
+        "maxLeaseSeconds": 7200
+      }
+    },
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "network": {
+      "mode": "unrestricted"
     },
     "security": {
       "uid": 10001,
       "gid": 10001,
       "readOnlyRoot": true,
-      "writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"]
+      "writableMemoryPaths": ["/tmp", "/home/agent", "/workspace"],
+      "dropCapabilities": ["ALL"],
+      "allowPrivilegeEscalation": false,
+      "seccomp": "RuntimeDefault"
+    },
+    "limits": {
+      "deadlineSeconds": 7200,
+      "finalizationSeconds": 30,
+      "inputFileBytes": 16777216,
+      "stagedInputBytes": 67108864,
+      "inputFiles": 100,
+      "inFlightTransfers": 2,
+      "exportBytes": 16777216,
+      "exportFiles": 100,
+      "unreferencedInputRetentionSeconds": 3600,
+      "exportRetentionSeconds": 86400
+    },
+    "lifecycle": {
+      "persistence": {
+        "mounts": [],
+        "conversationRestore": "filesystem_only",
+        "conversationRetention": "168h",
+        "checkpoint": {
+          "onIdle": "destroy",
+          "onDeadline": "destroy",
+          "onCleanExit": "destroy",
+          "onFailure": "destroy",
+          "retention": "168h"
+        }
+      },
+      "timeouts": {
+        "start": "2m",
+        "maxAge": "2h",
+        "idle": "20m",
+        "disconnectGrace": "5m",
+        "terminateGrace": "15s"
+      },
+      "maxLaunchInputBytes": 65536
     }
   }
 }

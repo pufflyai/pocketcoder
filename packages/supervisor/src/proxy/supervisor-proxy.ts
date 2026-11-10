@@ -17,8 +17,6 @@ export class SupervisorProxy {
       exec(): ExecSpec | null;
       isQuiescing(): boolean;
       send(type: AgentFrame["type"], payload: unknown): boolean;
-      onAgentTurn(): void;
-      probeAgent(exec: ExecSpec): void;
     },
   ) {
     this.streams = new ProxyStreamCoordinator(callbacks.send);

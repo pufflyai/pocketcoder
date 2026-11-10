@@ -19,7 +19,7 @@ export function paginationOptions(command: Argv) {
 
 export function attachOptions(command: Argv) {
   return idOption(command)
-    .option("after", { type: "string" })
+    .option("conversation", { type: "string", description: "Canonical conversation ID" })
     .option("message", { type: "string" })
     .option("file", {
       type: "string",

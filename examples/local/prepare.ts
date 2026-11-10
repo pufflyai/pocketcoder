@@ -13,4 +13,3 @@ const prepared = await preparePiRuntime({
 console.log(`prepared ${prepared.templateName}@${prepared.templateVersion} (${prepared.templateDigest})`);
 console.log(`image: ${prepared.image}`);
 console.log(`template: ${prepared.templatePath}`);
-console.log(`secret root: ${prepared.secretRoot}`);

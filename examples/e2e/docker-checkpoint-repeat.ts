@@ -11,6 +11,7 @@ import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { checkpointSourceFixture } from "./checkpoint-source-fixture";
 import { messageList, responseText } from "./contract-messages";
 import { command, waitFor } from "./local-process";
+import { expectEcho } from "./session";
 
 const fixture = await checkpointSourceFixture({ deadlinePolicy: true });
 try {
@@ -85,19 +86,7 @@ try {
     );
     if (read.stdout !== bytes.toString("base64")) throw new Error("Repeated restore changed exact edited bytes");
     const prompt = randomUUID();
-    const sent = await request(`/v1/workspaces/${id}/agent/message`, {
-      method: "POST",
-      body: JSON.stringify({ type: "user", content: prompt }),
-    });
-    if (!sent.ok) throw new Error("Repeated restore harness unavailable");
-    await waitFor(
-      async () => {
-        const page = await (await request(`/v1/workspaces/${id}/agent/messages`)).json();
-        return responseText(messageList(page), 0) === `echo: ${prompt}`;
-      },
-      30_000,
-      "repeated restored harness response",
-    );
+    await expectEcho(request, id, prompt);
   }
   const firstBytes = Buffer.from([0, 1, 2, 255]);
   const editedBytes = Buffer.from(Array.from({ length: 64 }, (_, index) => (index * 17) % 256));

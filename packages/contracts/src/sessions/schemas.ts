@@ -1,6 +1,8 @@
+import { z } from "zod";
 import { BudgetPolicySchema, BudgetPolicyWriteSchema } from "../budgets/policy";
 import { BudgetUsageSchema, CleanupReceiptSchema } from "../budgets/usage";
 import { ErrorEnvelopeSchema } from "../common/errors";
+import { ConversationLiveEventSchema } from "../conversations";
 import { LifetimeExtensionSchema, LifetimeReceiptSchema } from "../workspaces/lifetime";
 import { ServiceReceiptSchema, ServiceStartSchema } from "../workspaces/service-control";
 import { CollectionResultSchema } from "./collection";
@@ -36,6 +38,7 @@ export const managedSchemas = {
   BudgetUsage: BudgetUsageSchema,
   CleanupReceipt: CleanupReceiptSchema,
   HistoryPage: ManagedHistoryPageSchema,
+  OpenTurns: z.object({ turns: z.array(ConversationLiveEventSchema) }),
   ExportPage: ManagedExportPageSchema,
   ServiceStart: ServiceStartSchema,
   ServiceReceipt: ServiceReceiptSchema,

@@ -8,7 +8,6 @@ const recipes = {
   workspace: { context: "deploy/image", dockerfile: "deploy/image/Dockerfile" },
   server: { context: ".", dockerfile: "deploy/image/server.Dockerfile" },
   pi: { context: ".", dockerfile: "examples/harnesses/pi/Dockerfile" },
-  oss: { context: ".", dockerfile: "examples/harnesses/oss/Dockerfile" },
 };
 
 async function fileHash(path: string) {

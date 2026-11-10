@@ -33,6 +33,7 @@ export class WaitingRuntime {
       spec.infrastructure,
       (env) => ({
         ...enforcedEnvironment(exec, env),
+        ...(input.launch_input ? { POCKETCODER_LAUNCH_INPUT: JSON.stringify(input.launch_input) } : {}),
         ...(this.serviceSocket ? { POCKETCODER_SERVICES_SOCKET: this.serviceSocket } : {}),
       }),
       logs,

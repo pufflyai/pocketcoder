@@ -11,7 +11,6 @@ export interface LabTemplate {
   version: string;
   description?: string;
   status: string;
-  agent: { type: string } | null;
 }
 export interface LabSnapshot {
   error?: string;

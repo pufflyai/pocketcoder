@@ -104,3 +104,22 @@ test("an expired owner key renews itself while the controller runs, so the insta
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("reconnecting the same machine retains its conversation seed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-session-seed-"));
+  const instances = createInstances(root);
+  const sessionId = randomUUID(),
+    instanceId = randomUUID(),
+    machineId = randomUUID(),
+    conversationId = randomUUID();
+  try {
+    await instances.bindSession(sessionId, instanceId, machineId, conversationId);
+    await instances.bindSession(sessionId, instanceId, machineId);
+    expect(await instances.sessionTarget(sessionId)).toEqual({ instanceId, machineId, conversationId });
+    const otherMachine = randomUUID();
+    await instances.bindSession(sessionId, instanceId, otherMachine);
+    expect(await instances.sessionTarget(sessionId)).toEqual({ instanceId, machineId: otherMachine });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

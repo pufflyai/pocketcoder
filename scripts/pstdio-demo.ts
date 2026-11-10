@@ -33,13 +33,7 @@ try {
     if (!built.success) throw new Error(`Could not build ${name}`);
   }
   const hash = async (name: string) => `sha256:${sha256Hex(await Bun.file(join(stage, name)).bytes())}`;
-  const capabilities = [
-    "unknown-outcome",
-    "request-lookup",
-    "deduplicated-accept",
-    "targeted-cancel",
-    "explicit-publication",
-  ];
+  const capabilities = ["unknown-outcome", "request-lookup", "deduplicated-accept", "targeted-cancel"];
   const runtime = { digest: await hash("supervisor.js"), protocol: "pocketcoder.workload/v1" };
   const adapter = {
     kind: "service",
@@ -47,7 +41,7 @@ try {
     protocol: "pocketcoder.execution/v1",
     artifact: "/opt/pocketcoder/adapter.js",
     baseUrl: "http://127.0.0.1:3284",
-    healthPath: "/status",
+    healthPath: "/healthz",
     capabilities,
     command: ["bun", "/opt/pocketcoder/adapter.js"],
     environment: [],
@@ -97,8 +91,8 @@ try {
           adapter: "main",
           inputSchema: {
             type: "object",
-            properties: { content: { type: "string" } },
-            required: ["content"],
+            properties: { message: { type: "string" } },
+            required: ["message"],
             additionalProperties: false,
           },
           requiredCapabilities: ["immutable-inputs"],

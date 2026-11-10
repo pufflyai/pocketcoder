@@ -1,19 +1,9 @@
-import {
-  ApiError,
-  type CheckpointManifest,
-  isAgentApiNative,
-  type TemplateSnapshot,
-} from "@pstdio/pocketcoder-contracts";
+import { ApiError, type CheckpointManifest, type TemplateSnapshot } from "@pstdio/pocketcoder-contracts";
 import type { TemplateStore, WorkspaceCheckpointRow } from "@pstdio/pocketcoder-runtime-core";
 
 import { templateSnapshotOf } from "../workspaces/service";
 
 export type UpgradeIncompatibility = "session_format" | "persistence_mounts" | "file_ownership" | "checkpoint_manifest";
-
-// AgentAPI reads its saved session from this path, so moving it loses the conversation.
-function agentStateFile(snapshot: TemplateSnapshot) {
-  return isAgentApiNative(snapshot.spec) ? snapshot.spec.agent.stateFile : undefined;
-}
 
 // A restore copies the saved files unchanged into the target's mounts. The target must
 // read the same session format from the same paths, as the same user, and its limits
@@ -26,11 +16,7 @@ export function upgradeIncompatibility(
 ): UpgradeIncompatibility | null {
   const from = source.spec.persistence;
   const to = target.spec.persistence;
-  if (
-    from.conversationRestore !== to.conversationRestore ||
-    from.sessionCompatibility !== to.sessionCompatibility ||
-    agentStateFile(source) !== agentStateFile(target)
-  )
+  if (from.conversationRestore !== to.conversationRestore || from.sessionCompatibility !== to.sessionCompatibility)
     return "session_format";
   const mountsFit =
     from.mounts.length === to.mounts.length &&

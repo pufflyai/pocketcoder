@@ -15,18 +15,6 @@ export type DoctorRunner = (args: string[], env: Record<string, string>) => Prom
 // bounds each half of the probe rather than the whole run.
 const DEFAULT_TURN_TIMEOUT_SECONDS = 120;
 
-export function piStartupCommand(command: string[]) {
-  // Keep real AgentAPI busy past the first health probe on fast CI hosts.
-  // Pi then starts normally, so readiness still comes from AgentAPI.
-  return [
-    "/bin/sh",
-    "-c",
-    'for attempt in 1 2 3 4 5 6 7 8 9 10; do echo "Starting Pi"; sleep 1; done; exec "$@"',
-    "pi-startup",
-    ...command,
-  ];
-}
-
 export function doctorCommand(template: string, turnTimeoutSeconds: number) {
   return [
     "bun",

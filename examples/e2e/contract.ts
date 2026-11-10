@@ -1,14 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { proveTurnInterrupt } from "./contract-interrupt";
-import {
-  errorBody,
-  messageError,
-  messageId,
-  messageList,
-  observeLiveUpdates,
-  readBody,
-  responseText,
-} from "./contract-messages";
+import { errorBody, observeLiveUpdates, readBody, responseText } from "./contract-messages";
+import { exampleSession } from "./session";
 
 const TERMINAL_STATES = new Set(["succeeded", "failed", "canceled", "expired"]);
 
@@ -218,83 +211,35 @@ export async function runHarnessE2E(config: HarnessE2EConfig, fetchImpl: FetchLi
     );
     const { request, workspaceId, readyInMs } = workspace;
 
-    // A ready workspace can still be inside AgentAPI's startup window, where a
-    // user message is rejected. Wait for the agent to be waiting for input.
-    await waitFor(
-      async () => {
-        const statusResponse = await request(`/v1/workspaces/${workspaceId}/agent/status`);
-        if (!statusResponse.ok) {
-          throw new Error(
-            `status relay failed (${statusResponse.status}): ${errorBody(await readBody(statusResponse))}`,
-          );
-        }
-        const body = (await readBody(statusResponse)) as { status?: unknown };
-        if (body.status !== "running" && body.status !== "stable") {
-          throw new Error(`status relay returned an unknown status: ${JSON.stringify(body.status)}`);
-        }
-        return body.status === "stable" ? body.status : null;
-      },
-      config.readyTimeoutMs ?? 120_000,
-      pollIntervalMs,
-      "the agent to be ready for input",
-    );
-
+    const session = exampleSession(request, workspaceId);
     const interrupted = config.interruptPrompt
-      ? await proveTurnInterrupt(request, workspaceId, config.interruptPrompt, 30_000)
+      ? await proveTurnInterrupt(request, workspaceId, config.interruptPrompt, 30_000, session.conversationId)
       : null;
-
-    const beforeResponse = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
-    const before = beforeResponse.ok ? messageList(await readBody(beforeResponse)) : [];
-    const baselineId = before.reduce<number>((maximum, message) => Math.max(maximum, messageId(message)), -1);
     let liveUpdatesPromise: Promise<string[]> | null = null;
-    let liveUpdatesController: AbortController | null = null;
+    const liveController = new AbortController();
     if (config.expectedLiveUpdates) {
-      liveUpdatesController = new AbortController();
-      const events = await request(`/v1/workspaces/${workspaceId}/agent/events`, {
-        headers: { accept: "text/event-stream" },
-        signal: liveUpdatesController.signal,
+      const events = await request(`/v1/workspaces/${workspaceId}/conversations/${session.conversationId}/live`, {
+        signal: liveController.signal,
       });
-      liveUpdatesPromise = observeLiveUpdates(events, baselineId);
+      liveUpdatesPromise = observeLiveUpdates(events, session.conversationId);
     }
-
     const messageStartedAt = Date.now();
-    const sendResponse = await request(`/v1/workspaces/${workspaceId}/agent/message`, {
-      method: "POST",
-      body: JSON.stringify({ content: config.prompt, type: "user" }),
-    });
-    if (!sendResponse.ok) {
-      throw new Error(`message relay failed (${sendResponse.status}): ${errorBody(await readBody(sendResponse))}`);
-    }
-
-    const observedText = await waitFor(
-      async () => {
-        const response = await request(`/v1/workspaces/${workspaceId}/agent/messages`);
-        if (!response.ok) return null;
-        const messages = messageList(await readBody(response));
-        const harnessError = messages.slice(before.length).map(messageError).find(Boolean);
-        if (harnessError) throw new Error(`harness reported an error: ${harnessError}`);
-        const text = responseText(messages, before.length);
-        if (config.expectedResponse) {
-          return text.includes(config.expectedResponse) ? text : null;
-        }
-        return text || null;
-      },
-      messageTimeoutMs,
-      pollIntervalMs,
-      "harness response",
-    );
+    const current = await session.send(config.prompt);
+    await session.wait(current, messageTimeoutMs);
+    const observed = await session.messages();
+    const observedText = responseText(observed, 0);
+    if (config.expectedResponse && !observedText.includes(config.expectedResponse))
+      throw new Error(`Expected native response ${config.expectedResponse}, received ${observedText}`);
     const responseInMs = Date.now() - messageStartedAt;
     let liveUpdates: number | null = null;
     if (liveUpdatesPromise) {
-      let updates: string[];
       try {
-        updates = await withTimeout(liveUpdatesPromise, messageTimeoutMs, "live AgentAPI updates");
+        const updates = await withTimeout(liveUpdatesPromise, messageTimeoutMs, "live canonical messages");
+        liveUpdates = updates.length;
+        if (liveUpdates < (config.expectedLiveUpdates ?? 0))
+          throw new Error(`Expected ${config.expectedLiveUpdates} live updates, observed ${liveUpdates}`);
       } finally {
-        liveUpdatesController?.abort("turn stable");
-      }
-      liveUpdates = updates.length;
-      if (updates.length < (config.expectedLiveUpdates ?? 0)) {
-        throw new Error(`expected ${config.expectedLiveUpdates} live updates, observed ${updates.length}`);
+        liveController.abort();
       }
     }
 

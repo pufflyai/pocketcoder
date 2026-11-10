@@ -101,37 +101,6 @@ export async function verifyAttachmentFlow(
   expect(retried.status).toBe(200);
   expect(await retried.json()).toEqual(reference);
   expect(await Bun.file(canonical).text()).toBe(payload);
-
-  const attached = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/agent/message`, {
-    method: "POST",
-    headers: authHeaders,
-    body: JSON.stringify({ type: "user", content: "read the attachment", attachment_ids: [attachmentId] }),
-  });
-  expect(attached.status).toBe(409);
-  expect(await attached.json()).toMatchObject({ error: { code: "attachment.unsupported" } });
-  const messages = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/services/agent/messages`, {
-    headers: authHeaders,
-  });
-  expect((await messages.json()) as unknown).toMatchObject({
-    messages: [
-      { role: "user", content: "hello agent" },
-      { role: "agent", content: "echo: hello agent" },
-    ],
-  });
-  const plain = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/agent/message`, {
-    method: "POST",
-    headers: authHeaders,
-    body: JSON.stringify({ type: "user", content: "plain followup" }),
-  });
-  expect(plain.status).toBe(200);
-  await waitFor(
-    async () => {
-      const res = await fetch(`${baseUrl}/v1/workspaces/${workspaceId}/conversation`, { headers: authHeaders });
-      return ((await res.json()) as { items: unknown[] }).items.length === 4;
-    },
-    10_000,
-    "plain followup in durable conversation",
-  );
 }
 
 export async function waitFor<T>(

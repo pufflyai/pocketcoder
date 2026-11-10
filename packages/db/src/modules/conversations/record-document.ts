@@ -56,6 +56,7 @@ export function buildRecordDocument(input: RecordInput): ConversationRecordDocum
       message_id: message.messageId,
       role: message.role,
       content: message.content,
+      ...(message.parts ? { parts: message.parts } : {}),
       occurred_at: message.occurredAt.toISOString(),
       metadata: message.metadata,
       identity: message.identity ?? null,

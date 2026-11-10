@@ -17,8 +17,8 @@ test("a caller submits file references without physical fingerprints and retries
       ...operation,
       inputSchema: {
         type: "object",
-        properties: { content: { type: "string" } },
-        required: ["content"],
+        properties: { message: { type: "string" } },
+        required: ["message"],
         additionalProperties: false,
       },
     };
@@ -42,17 +42,17 @@ test("a caller submits file references without physical fingerprints and retries
       limits: DEFAULT_LIMITS,
       workspaceServerUrl: "http://localhost",
     });
-    const input = { requestId: randomUUID(), conversationId: randomUUID(), content: "Read my file", files: [] };
-    const path = `/v1/workspaces/${f.id}/agent/requests`;
+    const input = { requestId: randomUUID(), conversationId: randomUUID(), message: "Read my file", files: [] };
+    const path = `/v1/workspaces/${f.id}/requests`;
     const submit = (body = input) =>
       app.request(path, authed(key.token, { method: "POST", body: JSON.stringify(body) }));
     const created = await submit();
     expect(created.status).toBe(201);
     let record = ExecutionRecordSchema.parse(await created.json());
-    expect(record.acceptance.input).toEqual({ content: input.content });
+    expect(record.acceptance.input).toEqual({ message: input.message });
     expect(record.acceptance.execution.owner).toBe("conversation-request");
     expect((await submit()).status).toBe(200);
-    expect((await submit({ ...input, content: "Changed input" })).status).toBe(409);
+    expect((await submit({ ...input, message: "Changed input" })).status).toBe(409);
     const read = await app.request(
       `${path}/${input.requestId}?conversationId=${input.conversationId}`,
       authed(key.token),
@@ -67,7 +67,7 @@ test("a caller submits file references without physical fingerprints and retries
     );
     await f.store.executions.finalize(record.acceptance.execution, new Date());
     record = ExecutionRecordSchema.parse(await f.store.executions.get(record.acceptance.execution));
-    const next = { ...input, requestId: randomUUID(), content: "Next turn" };
+    const next = { ...input, requestId: randomUUID(), message: "Next turn" };
     expect((await submit(next)).status).toBe(201);
     const firstPage = await app.request(`${path}?conversationId=${input.conversationId}&limit=1`, authed(key.token));
     expect(await firstPage.json()).toEqual({ items: [record], next_cursor: input.requestId });
@@ -77,7 +77,7 @@ test("a caller submits file references without physical fingerprints and retries
     );
     const page = (await secondPage.json()) as { items: unknown[]; next_cursor: string | null };
     expect(page.items).toHaveLength(1);
-    expect(ExecutionRecordSchema.parse(page.items[0]).acceptance.input).toEqual({ content: "Next turn" });
+    expect(ExecutionRecordSchema.parse(page.items[0]).acceptance.input).toEqual({ message: "Next turn" });
     expect(page.next_cursor).toBeNull();
     const unrelated = await app.request(`${path}?conversationId=${randomUUID()}`, authed(key.token));
     expect(await unrelated.json()).toEqual({ items: [], next_cursor: null });

@@ -5,6 +5,7 @@
     "": {
       "name": "pocketcoder",
       "dependencies": {
+        "@pstdio/pocketcoder-sdk": "link:../../../packages/sdk",
         "@pstdio/sdk": "0.47.0-nightly.20261109030238",
       },
       "devDependencies": {
@@ -15,6 +16,8 @@
   },
   "packages": {
     "@noble/hashes": ["@noble/hashes@2.4.0", "", {}, "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="],
+
+    "@pstdio/pocketcoder-sdk": ["@pstdio/pocketcoder-sdk@link:../../../packages/sdk", {}],
 
     "@pstdio/sdk": ["@pstdio/sdk@0.47.0-nightly.20261109030238", "", { "dependencies": { "@noble/hashes": "^2.4.0", "mustache": "^4.2.0", "yjs": "^13.6.29", "zod": "^4.3.6" }, "peerDependencies": { "@tanstack/react-query": "^5.0.0", "react": "^19.0.0" }, "optionalPeers": ["@tanstack/react-query", "react"] }, "sha512-u0bOXRF3r0ZvNY9TFdL4iZ1JXaPtv+psrJeffQ3X0cg3E6vReTK4uOYCFnP/hmQKxYFAcrIsRL4UQLEIzefVhw=="],
 

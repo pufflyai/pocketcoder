@@ -362,22 +362,7 @@ pcd workspaces logs --id <uuid>          # bounded operational logs
 pcd workspaces terminal --id <uuid>      # only templates that declare a terminal
 ```
 
-A workspace goes `queued → provisioning → connected → ready`. Once `ready`,
-converse interactively through the template's allowlisted AgentAPI relay:
-
-```sh
-pcd workspaces chat --id <uuid>
-```
-
-For direct API integration, the same relay routes are available:
-
-```sh
-curl -s -X POST "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/message" \
-  -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
-  -d '{"content":"fix the failing test","type":"user"}'
-curl -s "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/messages" \
-  -H "Authorization: Bearer $POCKETCODER_KEY"
-```
+A native session workspace goes `queued → provisioning → connected → ready`. Run `pcd workspaces chat --id <uuid>` to converse. Direct clients submit structured requests at `/v1/workspaces/{id}/requests` and read canonical conversation parts. See [native structured sessions](agent-transport-decision.md).
 
 Finish with `pcd workspaces cancel --id <uuid>`; the supervisor
 TERMs the process tree, the container is removed, and the workspace ends in a

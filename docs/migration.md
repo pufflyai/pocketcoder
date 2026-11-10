@@ -131,7 +131,7 @@ The current alpha controller rejects the new format at publication/startup impor
 The canonical schema rejects alpha fields such as `agent`, `harness` and
 `checkpointHook`. Changing only `apiVersion` cannot migrate an alpha manifest.
 Generic commands become process adapters; plain HTTP transport can use a service
-profile without an agent. Pi and AgentAPI are optional adapters in the same schema.
+profile without an agent. Native session producers use the service execution protocol.
 Build-time configuration becomes immutable image/template content. Never convert a
 standing secret into an environment literal; bind a versioned trusted credential
 policy and deliver only workspace-scoped credentials that expire with the runtime.

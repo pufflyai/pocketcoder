@@ -16,7 +16,7 @@ and compose the feature modules.
 | contracts | Domain schemas in named feature directories; shared values in `common/` |
 | runtime-contracts | `stores/`, `drivers/`, and `events/` |
 | cli | `commands/<resource>/`, shared command setup in `command/`, and integration test support in `testing/` |
-| testkit | `stores/`, `drivers/`, `agentapi/`, and `fixtures/` |
+| testkit | `stores/`, `drivers/`, and `fixtures/` |
 | egress | `proxy/`, `firewall/`, and `audit/` |
 
 ## Dependencies

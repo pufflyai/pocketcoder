@@ -7,7 +7,7 @@ helps find defects but does not replace native acceptance.
 | Role | Recipe | Supported work |
 | --- | --- | --- |
 | server | `deploy/image/server.Dockerfile` | Controller, public `pocketcoder` CLI, Docker and Kubernetes drivers |
-| workspace | `deploy/image/Dockerfile` | Supervisor, native AgentAPI, echo harness, checkpoint upload and restore |
+| workspace | `deploy/image/Dockerfile` | Supervisor and native session producers, checkpoint upload and restore |
 | desktop | `deploy/image/desktop.Dockerfile` | Workspace plus authenticated desktop viewer |
 | browser | `deploy/image/browser.Dockerfile` | Workspace plus authenticated browser viewer |
 | egress | `packages/egress/Dockerfile` | Restricted-network proxy for both drivers |
@@ -48,7 +48,7 @@ memory budget. The startup allowance was approved on 5 November 2026 and is
 tracked in PC-62. CI runs `sync` before its timed installation and image smoke steps:
 runner setup leaves over 1 GB of unsaved writes, and flushing them inside the
 first start's file syncs took several seconds. The desktop image must stay below 1.5 GB. The smoke runs real native
-AgentAPI requests through both native and containerized controllers, real
+Native session requests through controllers, real
 filesystem and checkpoint security tests, authenticated desktop and browser
 viewers, and the existing Docker and Kubernetes egress conformance tests.
 The manager provisions two accounts through its HTTP API, claims finite owner
@@ -98,12 +98,7 @@ time. The smoke report records all tested image IDs and archive checksums,
 and hashes each command log. A role is `scanned` after a passing scan and
 `passed` only after all role smoke completes.
 
-Pinned Bun, Go, AgentAPI source, base-image and Kubernetes source references
-are in the recipes. AgentAPI is rebuilt from the signed v0.12.2 source with
-the patched Go and x/text versions, including its embedded chat UI. The workspace,
-Pi and OSS recipes pin x/text v0.41.0 to fix
-[CVE-2026-56851](https://pkg.go.dev/vuln/GO-2026-6629). kubectl is rebuilt from
-the pinned 1.35.9 source with patched Go and x/net.
+Pinned Bun, base-image and Kubernetes source references are in the recipes. Native producer descriptors pin the installed runtime and adapter artifacts. kubectl is rebuilt from its pinned source with the reviewed Go toolchain.
 
 Desktop and browser recipes copy signed Alpine indexes from
 [`deploy/image/apk-indexes`](../deploy/image/apk-indexes/README.md). They check

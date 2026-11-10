@@ -69,7 +69,6 @@ jobs:
       matrix:
         role:
           - pi
-          - oss
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -111,9 +110,6 @@ jobs:
           - name: Pi and doctor
             fixture: pi
             command: bun run example:e2e:pi
-          - name: Codex and OpenCode
-            fixture: oss
-            command: bun run example:e2e:oss
           - name: Private images
             fixture: workspace
             command: bun run example:e2e:private-image

@@ -28,7 +28,7 @@ export function createMachineLifecycle(getInstances = instancesFor) {
       const instances = getInstances(ctx.projectId);
       const source = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
       const metadata = launchInputOf(input.metadata) ?? {};
-      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "agentapi";
+      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "session";
       const machine = await instances.request<ControllerMachine>(input.instance, "/v1/workspaces", {
         method: "POST",
         headers: { "Idempotency-Key": randomUUID() },
@@ -53,7 +53,7 @@ export function createMachineLifecycle(getInstances = instancesFor) {
       const instances = getInstances(ctx.projectId);
       const source = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
       const metadata = launchInputOf(input.metadata) ?? {};
-      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "agentapi";
+      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "session";
       let result: { workspace: ControllerMachine };
       try {
         result = await instances.request(input.instance, `${machinePath(input.machineId)}/resume`, {

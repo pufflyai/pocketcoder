@@ -90,7 +90,7 @@ These checks prove consumer support; they do not prove installed producer emissi
 ## 6. Validate explicit provider facts
 
 ```sh
-bun test packages/supervisor/src/agent/agentapi.test.ts
+bun test packages/supervisor/src/sessions/producer.test.ts
 ```
 
 Expected: supplied final-response and terminal facts and their IDs survive

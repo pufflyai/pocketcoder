@@ -134,17 +134,30 @@ export function createInstances(root: string) {
     return response.json() as Promise<T>;
   };
   return {
-    async bindSession(sessionId: string, instanceId: string, machineId: string) {
+    async bindSession(sessionId: string, instanceId: string, machineId: string, conversationId?: string) {
       directory(sessionId);
       directory(instanceId);
       directory(machineId);
-      await writeFile(join(root, `${sessionId}.json`), JSON.stringify({ instanceId, machineId }), { mode: 0o600 });
+      if (!conversationId) {
+        try {
+          const saved = JSON.parse(await readFile(join(root, `${sessionId}.json`), "utf8"));
+          if (saved.instanceId === instanceId && saved.machineId === machineId) conversationId = saved.conversationId;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+      await writeFile(
+        join(root, `${sessionId}.json`),
+        JSON.stringify({ instanceId, machineId, ...(conversationId ? { conversationId } : {}) }),
+        { mode: 0o600 },
+      );
     },
     async sessionTarget(sessionId: string) {
       directory(sessionId);
       return JSON.parse(await readFile(join(root, `${sessionId}.json`), "utf8")) as {
         instanceId: string;
         machineId: string;
+        conversationId?: string;
       };
     },
     get,

@@ -14,7 +14,7 @@ import { removeAccount } from "./managed-public-views-removal";
 
 // Same page fixture as the browser display demo: typed input proves control reaches the workspace.
 const page = `<!doctype html><style>body{background:#24496a;color:white;font:32px sans-serif}input{position:absolute;left:100px;top:100px;width:400px;height:50px;font:32px sans-serif}</style><h1>Hosted control</h1><input id="text" oninput="fetch('/typed?value='+encodeURIComponent(this.value))">`;
-const fixture = `await import('/opt/pocketcoder/echo-harness.ts');Bun.serve({hostname:'127.0.0.1',port:3000,fetch(request){const url=new URL(request.url);if(url.pathname==='/typed')Bun.write('/tmp/browser-proof',url.searchParams.get('value')??'');return new Response(${JSON.stringify(page)},{headers:{'content-type':'text/html'}})}});`;
+const fixture = `const{serveControllerProbe}=await import('/opt/pocketcoder/controller-probe.ts');serveControllerProbe();Bun.serve({hostname:'127.0.0.1',port:3000,fetch(request){const url=new URL(request.url);if(url.pathname==='/typed')Bun.write('/tmp/browser-proof',url.searchParams.get('value')??'');return new Response(${JSON.stringify(page)},{headers:{'content-type':'text/html'}})}});`;
 
 type Created = {
   account: { id: string; namespace: string; api_origin: string; view_origin: string };

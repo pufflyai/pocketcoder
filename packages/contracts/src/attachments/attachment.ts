@@ -24,56 +24,6 @@ export const AttachmentDescriptorSchema = z.object({
 
 export type AttachmentDescriptor = z.infer<typeof AttachmentDescriptorSchema>;
 
-// The AgentAPI message body with optional attachment references. Unknown
-// fields pass through untouched so the relay stays protocol-neutral.
-export const AgentMessageRequestSchema = z.looseObject({
-  type: z.literal("user"),
-  content: z.string(),
-  attachment_ids: z
-    .array(z.uuid())
-    .min(1)
-    .max(ATTACHMENT_MAX_MESSAGE_IDS)
-    .refine((ids) => new Set(ids).size === ids.length, "attachment_ids must be unique")
-    .optional(),
-});
-
-export type AgentMessageRequest = z.infer<typeof AgentMessageRequestSchema>;
-
-// --- Manifest ---
-
-// The generated block appended to a user message so the agent can discover
-// resolved workspace paths. Built-in transcript renderers strip it again.
-const MANIFEST_OPEN = "<pocketcoder-attachments>";
-const MANIFEST_CLOSE = "</pocketcoder-attachments>";
-
-export function attachmentManifest(descriptors: AttachmentDescriptor[]): string {
-  return `${MANIFEST_OPEN}\n${JSON.stringify(descriptors, null, 2)}\n${MANIFEST_CLOSE}`;
-}
-
-export function splitAttachmentManifest(content: string): {
-  text: string;
-  attachments: AttachmentDescriptor[] | null;
-} {
-  const open = content.lastIndexOf(MANIFEST_OPEN);
-  if (open < 0 || !content.trimEnd().endsWith(MANIFEST_CLOSE)) {
-    return { text: content, attachments: null };
-  }
-  const close = content.lastIndexOf(MANIFEST_CLOSE);
-  const parsed = z
-    .array(AttachmentDescriptorSchema)
-    .safeParse(safeJson(content.slice(open + MANIFEST_OPEN.length, close)));
-  if (!parsed.success) return { text: content, attachments: null };
-  return { text: content.slice(0, open).trimEnd(), attachments: parsed.data };
-}
-
-function safeJson(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
 // --- Protocol v3 frame payloads ---
 
 export const AttachmentStartPayload = z.object({

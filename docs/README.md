@@ -13,7 +13,7 @@ API drives the whole lifecycle.
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [Private source](private-source.md) | Scoped Git setup leases, issuer contract and real provider checks |
 | [Runtime credentials](runtime-credentials.md) | Renewable workspace authority and cleanup on both providers |
-| [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
+| [HTTP API](api.md) | Machine auth, workspace lifecycle, structured sessions, terminals, attachments, signed events |
 | [Checkpoint API](checkpoint-api.md) | Attach, preserve, restore and list the routes that operate on saved state |
 | [Attachments and input storage](input-storage.md) | How uploaded bytes become immutable, bounded workspace input |
 | [Admission feedback](admission.md) | The `reason_code` values a queued workspace reports while limits or policy block it |
@@ -69,7 +69,7 @@ pcd workspaces cancel --id <uuid>
 
 Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
-`pocketcoder-supervisor` (PID 1) → PocketCoder-owned AgentAPI → your template's
+`pocketcoder-supervisor` (PID 1) → a native session producer → your template's
 coding-agent command.
 
 Run `bun run test` for the full suite. It runs the browser, unit, performance,

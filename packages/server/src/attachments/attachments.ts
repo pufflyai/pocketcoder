@@ -1,9 +1,4 @@
-import {
-  AgentMessageRequestSchema,
-  ApiError,
-  AttachmentMediaTypeSchema,
-  isTerminal,
-} from "@pstdio/pocketcoder-contracts";
+import { ApiError, AttachmentMediaTypeSchema, isTerminal } from "@pstdio/pocketcoder-contracts";
 import type { Context } from "hono";
 import type { AppEnv } from "../http/middleware";
 import type { RelayDeps } from "../relay/relay";
@@ -41,26 +36,6 @@ export function attachmentUploadHandler(deps: RelayDeps) {
     const result = await deps.inputs.upload(principal.id, reference, row.deadlineAt, c.req.raw.body, c.req.raw.signal);
     await deps.store.updateWorkspace(id, { lastActivityAt: new Date() }, new Date());
     return c.json(result.reference, result.created ? 201 : 200);
-  };
-}
-
-export function agentMessageBodyTransform(_deps: RelayDeps) {
-  return async (_c: Context<AppEnv>, bodyB64: string | undefined) => {
-    if (!bodyB64) return bodyB64;
-    let json: unknown;
-    try {
-      json = JSON.parse(Buffer.from(bodyB64, "base64").toString("utf8"));
-    } catch {
-      return bodyB64;
-    }
-    if (typeof json !== "object" || json === null || (json as Record<string, unknown>).attachment_ids === undefined)
-      return bodyB64;
-    const parsed = AgentMessageRequestSchema.safeParse(json);
-    if (!parsed.success) throw new ApiError("attachment.invalid", "attachment_ids must be unique UUIDs.");
-    throw new ApiError(
-      "attachment.unsupported",
-      "Attachment dispatch requires a qualified immutable-input projection driver.",
-    );
   };
 }
 

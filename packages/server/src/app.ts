@@ -199,7 +199,9 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const screenshots = composeScreenshots(deps, hub, service);
   const inputs = composeInputs(deps);
   const readiness = deps.readiness;
-  const executionDispatcher = composeExecutionDispatcher(deps, hub, inputs, log);
+  const producerStore = controlStore(store, deps.assertAccountAllowed);
+  const liveTurns = new LiveTurns(producerStore);
+  const executionDispatcher = composeExecutionDispatcher(deps, hub, inputs, log, liveTurns);
   const persistence = new PersistenceService({
     drainExecutions: (id) => executionDispatcher.drain(id),
     purgeInputs: async (id) => {
@@ -253,8 +255,6 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   // Agent supervisor connection; authenticated by registration/reconnect
   // credentials, not machine keys, so it is registered before machineAuth.
   const activity = controlActivity(() => poolHub.fence());
-  const producerStore = controlStore(store, deps.assertAccountAllowed);
-  const liveTurns = new LiveTurns(producerStore);
   const wsDeps = {
     activity,
     executionDispatcher,
@@ -300,7 +300,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
   if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
-  registerManagedSessionRoutes(app, { ...deps, store, executionDispatcher, inputs, previews });
+  registerManagedSessionRoutes(app, { ...deps, store, executionDispatcher, inputs, previews, liveTurns });
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);

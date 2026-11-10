@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { probeImageAgentApi } from "../examples/e2e/image-agentapi";
 import { startDockerImageController } from "../examples/e2e/image-controller";
 import { probeManagerImage } from "../examples/e2e/image-managed-accounts";
+import { probeImageSession } from "../examples/e2e/image-session";
 import { volumeUsageFile } from "../examples/e2e/image-volume-usage";
 import { nativeController } from "../examples/native/controller";
 import { controllerPorts } from "../examples/native/ports";
@@ -38,7 +38,7 @@ export const imageSmokeTests = {
 
 // Host-side flows that drive the exact candidate images.
 export const imageSmokeFlows = {
-  agentapi: ["deploy/image/agentapi.conformance.test.ts"],
+  session: ["deploy/image/session.conformance.test.ts"],
   desktop: ["examples/e2e/desktop.ts"],
   browser: ["examples/e2e/browser.ts"],
   egress: [
@@ -122,8 +122,8 @@ export async function smokeCandidateImages(directory: string, commit: string, ar
     if (code) throw new Error(`Candidate image smoke failed: ${name}; see ${file}`);
   }
   try {
-    await run("agentapi-repeated-replies", [process.execPath, "test", ...imageSmokeFlows.agentapi], {
-      POCKETCODER_AGENTAPI_CONFORMANCE_IMAGE: images.workspace as string,
+    await run("session-repeated-replies", [process.execPath, "test", ...imageSmokeFlows.session], {
+      POCKETCODER_SESSION_CONFORMANCE_IMAGE: images.workspace as string,
     });
     await run("desktop-readiness", await imageTestCommand(fixture, "desktop", images.desktop as string));
     await run("filesystem", await imageTestCommand(fixture, "filesystem", images.server as string));
@@ -158,7 +158,7 @@ export async function smokeCandidateImages(directory: string, commit: string, ar
         ),
       );
       outputs.docker = {
-        ...(await probeImageAgentApi(
+        ...(await probeImageSession(
           docker.baseUrl,
           owner.token,
           `${images.workspace}@${(records.find((r) => r.role === "workspace") as CandidateImageRecord).imageId}`,
@@ -186,7 +186,7 @@ export async function smokeCandidateImages(directory: string, commit: string, ar
           "--json",
         ]),
       );
-      outputs.native = await probeImageAgentApi(
+      outputs.native = await probeImageSession(
         native.baseUrl,
         owner.token,
         `${images.workspace}@${(records.find((r) => r.role === "workspace") as CandidateImageRecord).imageId}`,

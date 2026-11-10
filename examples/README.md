@@ -1,45 +1,42 @@
 # PocketCoder examples
 
-This directory is the integration boundary for exercising PocketCoder with
-real harnesses.
+Native session producers send typed text, tool calls, tool results, errors, and file metadata. The CLI, SDK, and Prompt Studio clients consume canonical conversations. Session clients do not parse terminal output.
 
-## What is here
+- [`harnesses/echo/`](harnesses/echo/) is deterministic and needs no credentials.
+- [`harnesses/pi/`](harnesses/pi/) runs Pi 0.87.1 through JSON RPC.
+- [`harnesses/onefin/`](harnesses/onefin/) redeems a one-time Onefin bootstrap and runs native Pi with the scoped Onefin provider.
+- [`e2e/`](e2e/) exercises requests, live conversation events, retained history, cancellation, checkpoints, and real drivers.
+- [`local/`](local/) builds templates from image-owned artifact descriptors and runs a host model gateway with separate workspace leases.
+- [`templates/`](templates/) contains illustrative manifests. Their image and artifact digests are placeholders. Materialize them from an installed image before publishing.
 
-- [`templates/`](templates/) contains illustrative manifests with placeholder
-  image references, including the shared
-  [`pi-harness`](templates/pi-harness.json) manifest consumed by the Pi E2E
-  runner. They are useful for validation and control-plane demos, but are not
-  production deployment defaults.
-- [`e2e/`](e2e/) contains a reusable harness contract test. It creates a
-  workspace, waits for readiness, sends a message through the allowlisted
-  relay, observes the response, cancels the workspace, and verifies the
-  terminal state.
-- [`harnesses/echo/`](harnesses/echo/) is deterministic and credential-free.
-  It is the default local smoke test.
-- [`e2e/docker-checkpoint.ts`](e2e/docker-checkpoint.ts) preserves an edited Docker
-  workspace and restores exact file bytes into a new workspace before a harness
-  response. See the [checkpoint runbook](../docs/docker-checkpoint-round-trip.md).
-- [`harnesses/pi/`](harnesses/pi/) runs the Pi CLI behind AgentAPI, which owns
-  PocketCoder's three-route conversation contract. It uses the same E2E runner
-  with an OpenAI-compatible model gateway.
-- [`harnesses/oss/`](harnesses/oss/) runs the real Codex and OpenCode CLIs
-  through AgentAPI. A deterministic local model gateway makes both full-stack
-  tests credential-free and verifies incremental response events.
-- [`local/`](local/) materializes a persistent digest-pinned Pi runtime for the
-  optional repository `local:up` workflow. Generated templates and secrets live
-  under ignored `.pocketcoder/local/`, never in this source directory.
+## Disposable local checks
 
-## Persistent local Pi workflow
-
-With a private PGlite data folder and an issued machine key
-already configured:
+From the repository root:
 
 ```sh
-OPENAI_API_KEY=... OPENAI_MODEL=... \
-bun run local:up -- --template pi-harness --openai
+bun run example:e2e:local
+bun run example:e2e:pi
 ```
 
-In another terminal:
+These commands create a controller, a Docker workspace, finite host keys, and an immutable template. They send native requests, read canonical messages, and cancel the workspace. Pi uses a deterministic model gateway and reads `/workspace/test.txt` with its real `read` tool. The Pi check also verifies four identical replies with distinct message IDs.
+
+For a host OpenAI gateway:
+
+```sh
+OPENAI_MODEL=your-model bun run example:e2e:pi:openai
+```
+
+Set `OPENAI_API_KEY` on the host. It never enters the workspace. Each workspace receives an expiring gateway lease through a credential slot. Teardown revokes that lease.
+
+The retired terminal integrations for Codex and OpenCode are removed. A new agent integration must implement the native producer contract or use the Prompt Studio relay connection.
+
+## Persistent local Pi
+
+```sh
+OPENAI_MODEL=your-model bun run local:up -- --template pi-harness --openai
+```
+
+The command builds and publishes a template, runs the host gateway and issuer, and starts a controller. Host keys and controller data live under `~/.local/share/pocketcoder/local-pi`. Generated templates live under `.pocketcoder/local/templates`. Use an operator key from that controller in another terminal:
 
 ```sh
 pcd templates list
@@ -48,97 +45,22 @@ pcd workspaces chat --id <workspace-id>
 pcd workspaces cancel --id <workspace-id>
 ```
 
-`local:up` is repository/deployment convenience. `pcd server start` is
-separate and starts only an already configured PocketCoder server.
+`local:prepare` only builds an image and writes a native template. `local:gateway` runs a standalone gateway and prints the host issuer configuration and CA paths. Configure that issuer in the controller vault as `pi-gateway` before using the prepared template. Provider keys and issuer authorization stay on the host.
 
-The same setup with an independently managed server is:
-
-```sh
-# Build/inspect the image and render .pocketcoder/local/{templates,secrets}.
-OPENAI_MODEL=<model> \
-bun run local:prepare -- --template pi-harness --openai
-
-# Keep this host gateway running in its own terminal.
-OPENAI_API_KEY=<key> OPENAI_MODEL=<model> \
-bun run local:gateway -- --openai
-
-# Start only PocketCoder, using the prepared operator-owned inputs.
-POCKETCODER_TEMPLATE_DIR="$PWD/.pocketcoder/local/templates" \
-POCKETCODER_SECRET_PROVIDER=file \
-POCKETCODER_SECRET_ROOT="$PWD/.pocketcoder/local/secrets" \
-bun run pcd -- server start
-```
-
-After that, the ordinary `pcd templates` and `pcd workspaces` commands above
-are identical to the convenience workflow. `pcd server stop` stops only the
-server; stop the gateway separately with Ctrl-C.
-
-## One-command local E2E
-
-From the repository root:
-
-```sh
-bun run example:e2e:local
-```
-
-The command creates a temporary PGlite data folder, builds a locally
-content-addressed echo workspace image, starts PocketCoder on the host, and
-proves:
-
-```text
-REST create
-  → PGlite queue
-  → Docker driver
-  → workspace container
-  → pocketcoder-supervisor over WSS
-  → echo harness
-  → relayed message
-  → cancellation and container cleanup
-```
-
-Every container, image tag, generated template, key, and database created by the
-command has a unique example prefix and is removed on exit.
-
-The same full path with pinned AgentAPI, the real Pi CLI, and a deterministic
-local model gateway is:
-
-```sh
-bun run example:e2e:pi
-```
-
-That test loads `harnesses/pi/workspace/test.txt` into `/workspace`, asks the
-remote Pi agent to read it with Pi's real `read` tool, and verifies the result.
-
-The OSS harness matrix exercises both native AgentAPI adapters:
-
-```sh
-bun run example:e2e:oss
-```
-
-Run one harness while troubleshooting with `bun run example:e2e:codex` or
-`bun run example:e2e:opencode`. These commands build the real CLIs into the
-workspace image, stream a deterministic response through PocketCoder, require
-multiple live updates, and verify the final AgentAPI message. CI runs the
-combined matrix.
-
-## Test any running harness
-
-When PocketCoder and a template are already deployed:
+## Test a deployed template
 
 ```sh
 POCKETCODER_URL=http://127.0.0.1:8090 \
-POCKETCODER_KEY=pkt_... \
-POCKETCODER_EXAMPLE_TEMPLATE=my-harness \
+POCKETCODER_KEY=<host-operator-key> \
+POCKETCODER_EXAMPLE_TEMPLATE=my-template \
 bun run example:e2e
 ```
 
-Optional variables:
-
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `POCKETCODER_EXAMPLE_PROMPT` | `Reply with: pocketcoder example ok` | Message sent through the relay |
-| `POCKETCODER_EXAMPLE_EXPECT` | none | Substring required in the harness response |
-| `POCKETCODER_EXAMPLE_READY_TIMEOUT_MS` | `120000` | Workspace readiness timeout |
-| `POCKETCODER_EXAMPLE_MESSAGE_TIMEOUT_MS` | `300000` | Harness response timeout |
+| `POCKETCODER_EXAMPLE_PROMPT` | `Reply with: pocketcoder example ok` | Native request message |
+| `POCKETCODER_EXAMPLE_EXPECT` | none | Required response text |
+| `POCKETCODER_EXAMPLE_READY_TIMEOUT_MS` | `120000` | Workspace readiness deadline |
+| `POCKETCODER_EXAMPLE_MESSAGE_TIMEOUT_MS` | `300000` | Request completion deadline |
 
-See each harness directory for its image and template instructions.
+See the [session contract](../docs/agent-transport-decision.md), [image qualification](../docs/candidate-images.md), and [checkpoint runbook](../docs/docker-checkpoint-round-trip.md).

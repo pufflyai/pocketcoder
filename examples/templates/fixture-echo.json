@@ -1,27 +1,144 @@
 {
-  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "apiVersion": "pocketcoder.dev/v1",
   "kind": "Template",
   "metadata": {
     "name": "fixture-echo",
-    "description": "Harmless fixture: fake AgentAPI echo harness for conformance tests"
+    "description": "Native structured sessions; materialize the image pins before publishing"
   },
   "spec": {
     "version": "1.0.0",
-    "image": "example.registry/fixture-echo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "harness": {
-      "command": ["bun", "/opt/fixtures/echo-agentapi.ts"]
+    "image": "example.invalid/pocketcoder-echo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "protocol": "pocketcoder.workload/v1"
     },
-    "resources": { "cpu": "1", "memory": "256Mi" },
-    "timeouts": { "start": "1m", "maxAge": "30m", "idle": "10m" },
-    "services": {
-      "agent": {
-        "baseUrl": "http://127.0.0.1:3284",
-        "routes": [
-          { "method": "GET", "path": "/status" },
-          { "method": "GET", "path": "/messages", "query": ["after"] },
-          { "method": "POST", "path": "/message" }
-        ]
+    "profile": "service",
+    "adapters": {
+      "session": {
+        "kind": "service",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "protocol": "pocketcoder.execution/v1",
+        "env": {},
+        "service": "session"
       }
+    },
+    "operations": {
+      "message": {
+        "adapter": "session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel"],
+        "outputRoots": []
+      }
+    },
+    "services": {
+      "session": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "required": true,
+        "healthPath": "/healthz",
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/executions/accept",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/lookup",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/cancel",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/ack",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          }
+        ],
+        "process": {
+          "command": ["/usr/local/bin/bun", "/opt/pocketcoder/supervisor.js", "session", "serve", "echo"],
+          "env": {}
+        }
+      }
+    },
+    "previews": {},
+    "credentialSlots": {},
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "network": {
+      "mode": "unrestricted"
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp"],
+      "dropCapabilities": ["ALL"],
+      "allowPrivilegeEscalation": false,
+      "seccomp": "RuntimeDefault"
+    },
+    "limits": {
+      "deadlineSeconds": 7200,
+      "finalizationSeconds": 30,
+      "inputFileBytes": 16777216,
+      "stagedInputBytes": 67108864,
+      "inputFiles": 100,
+      "inFlightTransfers": 2,
+      "exportBytes": 16777216,
+      "exportFiles": 100,
+      "unreferencedInputRetentionSeconds": 3600,
+      "exportRetentionSeconds": 86400
+    },
+    "lifecycle": {
+      "persistence": {
+        "mounts": [],
+        "conversationRestore": "filesystem_only",
+        "conversationRetention": "168h",
+        "checkpoint": {
+          "onIdle": "destroy",
+          "onDeadline": "destroy",
+          "onCleanExit": "destroy",
+          "onFailure": "destroy",
+          "retention": "168h"
+        }
+      },
+      "timeouts": {
+        "start": "2m",
+        "maxAge": "2h",
+        "idle": "20m",
+        "disconnectGrace": "5m",
+        "terminateGrace": "15s"
+      },
+      "maxLaunchInputBytes": 65536
     }
   }
 }

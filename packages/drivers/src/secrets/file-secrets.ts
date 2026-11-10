@@ -1,8 +1,6 @@
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
-  agentApiHarness,
-  isAgentApiNative,
   type RuntimeTemplatePolicy,
   SOURCE_CREDENTIAL_MAX_BYTES,
   secretMountPath,
@@ -23,9 +21,9 @@ function collectReferences(spec: RuntimeTemplatePolicy): Set<string> {
     }
   };
   collect(spec.env);
-  if (spec.agent || spec.harness) collect(agentApiHarness(spec).env);
+  if (spec.harness) collect(spec.harness?.env ?? {});
   for (const step of spec.setup) collect(step.env);
-  if (!isAgentApiNative(spec) && spec.checkpointHook) collect(spec.checkpointHook.env);
+  if (spec.checkpointHook) collect(spec.checkpointHook.env);
   return references;
 }
 

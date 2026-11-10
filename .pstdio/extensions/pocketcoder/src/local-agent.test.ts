@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { JsonPatch } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
+import { qualifySessionTemplate } from "../../../../examples/local/session-template";
 import { createMachineHarness } from "./agent";
 import { createInstances } from "./instances";
 import { createLabCommands } from "./lab-commands";
@@ -28,7 +29,7 @@ test.each([
   { name: "without bootstrap input", launchInput: "" },
   { name: "with bootstrap input", launchInput: JSON.stringify({ bootstrap_code: "one-use-fixture" }) },
 ])(
-  "local text sessions work $name when the template has no file capability route",
+  "local text sessions work $name through the native request protocol",
   async ({ launchInput }) => {
     const root = await mkdtemp(join(tmpdir(), "pocketcoder-local-agent-"));
     const watchRoot = await mkdtemp(join(tmpdir(), "pocketcoder-watch-proxy-"));
@@ -63,14 +64,8 @@ test.each([
       ]);
       await command(["docker", "build", "-t", image, "deploy/image"]);
       const digest = await command(["docker", "image", "inspect", image, "--format", "{{.Id}}"]);
-      const manifest = await Bun.file(join(repo, "examples/harnesses/echo/template.json")).json();
-      manifest.spec.image = `${image}@${digest}`;
-      if (launchInput)
-        manifest.spec.harness.command = [
-          "bun",
-          "-e",
-          'if (JSON.parse(process.env.POCKETCODER_LAUNCH_INPUT).bootstrap_code !== "one-use-fixture") throw new Error("Missing bootstrap input"); await import("/opt/pocketcoder/echo-harness.ts");',
-        ];
+      let manifest = await Bun.file(join(repo, "examples/harnesses/echo/template.json")).json();
+      manifest = await qualifySessionTemplate(manifest, `${image}@${digest}`);
       const instance = await instances.launch({
         name: "local",
         binary: join(repo, "out/native/pocketcoder"),

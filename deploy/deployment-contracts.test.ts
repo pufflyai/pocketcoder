@@ -28,13 +28,3 @@ test("configures kubectl with the rotating in-cluster service account token", as
   expect(kubeconfig).toContain("tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token");
   expect(kubeconfig).toContain("certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt");
 });
-
-test("cross-builds patched Pi AgentAPI on the native build platform", async () => {
-  const dockerfile = await readFile(join(import.meta.dir, "../examples/harnesses/pi/Dockerfile"), "utf8");
-
-  expect(dockerfile).toContain("FROM --platform=$BUILDPLATFORM golang:");
-  expect(dockerfile).toContain("ADD --checksum=sha256:");
-  expect(dockerfile).toContain("patch -p1 < /tmp/agentapi-identical-replies.patch");
-  expect(dockerfile).toContain("CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build");
-  expect(dockerfile).not.toContain("await fetch(process.argv[1])");
-});

@@ -5,7 +5,6 @@ import {
 } from "@pstdio/pocketcoder-contracts";
 import type { PocketCoderTransport } from "../../transport/transport";
 
-export { splitAttachmentManifest } from "@pstdio/pocketcoder-contracts";
 export type { AttachmentDescriptor };
 
 type UploadBody = NonNullable<RequestInit["body"]>;
