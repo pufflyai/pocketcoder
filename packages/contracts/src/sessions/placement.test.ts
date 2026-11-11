@@ -21,3 +21,31 @@ test("business credentials require an exclusive physical workspace for each sess
     managedPlacement(principalId, sessionA, { ...shared, revision: shared.revision + 1 }).key,
   );
 });
+
+test("credentialed sessions share a placement only when their one profile opts in", () => {
+  const principalId = randomUUID();
+  const sessionA = randomUUID();
+  const sessionB = randomUUID();
+  const profile = {
+    ...examples.ExecutionProfile,
+    credentialBindingId: randomUUID(),
+    credentialPlacement: "shared" as const,
+  };
+  const a = managedPlacement(principalId, sessionA, profile);
+  expect(a.mode).toBe("shared");
+  expect(a).toEqual(managedPlacement(principalId, sessionB, profile));
+  expect(a.key).not.toBe(managedPlacement(randomUUID(), sessionA, profile).key);
+  expect(a.key).not.toBe(
+    managedPlacement(principalId, sessionA, { ...profile, credentialBindingId: randomUUID() }).key,
+  );
+  expect(a.key).not.toBe(managedPlacement(principalId, sessionA, { ...profile, isolationScopeId: randomUUID() }).key);
+  expect(managedPlacement(principalId, sessionA, { ...profile, credentialPlacement: "exclusive" }).mode).toBe(
+    "exclusive",
+  );
+});
+
+test("only a credentialed profile can choose its credential placement", () => {
+  expect(() =>
+    managedPlacement(randomUUID(), randomUUID(), { ...examples.ExecutionProfile, credentialPlacement: "shared" }),
+  ).toThrow();
+});

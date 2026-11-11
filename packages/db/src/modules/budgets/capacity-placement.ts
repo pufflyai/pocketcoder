@@ -86,7 +86,7 @@ export async function placeManagedCapacity(
       1,
     );
   }
-  if (known && (placement.mode !== "shared" || profile.businessSlots.length)) throw unavailable();
+  if (known && placement.mode !== "shared") throw unavailable();
   const record: ManagedCapacityRecord = known?.record ?? {
     principalId: id.principalId,
     profileId: profile.profile.profileId,

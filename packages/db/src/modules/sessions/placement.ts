@@ -37,14 +37,7 @@ export function placementChecks(context: DatabaseContext) {
       const other = await auth.profile(tx, id.principalId, sibling.session.profileId, sibling.session.profileRevision);
       const a = managed.managedPlacement(id.principalId, id.sessionId, profile.profile);
       const b = managed.managedPlacement(id.principalId, sibling.sessionId, other.profile);
-      if (
-        a.mode !== "shared" ||
-        b.mode !== "shared" ||
-        a.key !== b.key ||
-        profile.businessSlots.length ||
-        other.businessSlots.length
-      )
-        throw unavailable();
+      if (a.mode !== "shared" || b.mode !== "shared" || a.key !== b.key) throw unavailable();
       const installed = producer?.producer;
       if (!installed) throw unavailable();
       if (!PARALLEL_CONVERSATION_CAPABILITIES.every((c) => installed.capabilities.includes(c))) throw unavailable();

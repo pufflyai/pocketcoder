@@ -1,17 +1,24 @@
 import { z } from "zod";
 
-export const ExecutionProfileSchema = z.strictObject({
-  profileId: z.uuid(),
-  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  isolationScopeId: z.uuid(),
-  budgetScopeIds: z
-    .array(z.uuid())
-    .min(1)
-    .max(1000)
-    .refine((items) => new Set(items).size === items.length, "Values must be unique"),
-  templateDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-  credentialBindingId: z.uuid().nullable(),
-});
+export const ExecutionProfileSchema = z
+  .strictObject({
+    profileId: z.uuid(),
+    revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    isolationScopeId: z.uuid(),
+    budgetScopeIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(1000)
+      .refine((items) => new Set(items).size === items.length, "Values must be unique"),
+    templateDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    credentialBindingId: z.uuid().nullable(),
+    // Absent means exclusive, so existing profiles keep their digests and placement keys.
+    credentialPlacement: z.enum(["exclusive", "shared"]).optional(),
+  })
+  .refine((profile) => profile.credentialBindingId !== null || profile.credentialPlacement === undefined, {
+    message: "Only a credentialed profile can choose its credential placement",
+    path: ["credentialPlacement"],
+  });
 export type ExecutionProfile = z.infer<typeof ExecutionProfileSchema>;
 
 export const SessionCreateSchema = z.strictObject({

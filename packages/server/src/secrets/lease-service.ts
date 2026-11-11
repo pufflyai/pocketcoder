@@ -115,6 +115,17 @@ export function createWorkspaceLeaseService({
     });
     return deliver(config, row);
   }
+  async function revokeAll(rows: Awaited<ReturnType<typeof store.listPendingWorkspaceLeases>>) {
+    let failed = false;
+    for (const row of rows) {
+      try {
+        await revoke(row.id);
+      } catch {
+        failed = true;
+      }
+    }
+    if (failed) throw unavailable();
+  }
   return {
     issue,
     issueManaged,
@@ -173,16 +184,12 @@ export function createWorkspaceLeaseService({
     },
     async revokeWorkspace(workspaceId: string) {
       await store.fenceWorkspaceLeases(workspaceId, now());
+      await revokeAll(await store.listPendingWorkspaceLeases(workspaceId));
+    },
+    // Closing one session of shared compute revokes its leases; siblings keep theirs.
+    async revokeSession(workspaceId: string, sessionId: string) {
       const pending = await store.listPendingWorkspaceLeases(workspaceId);
-      let failed = false;
-      for (const row of pending) {
-        try {
-          await revoke(row.id);
-        } catch {
-          failed = true;
-        }
-      }
-      if (failed) throw unavailable();
+      await revokeAll(pending.filter((row) => row.managedAuthority?.sessionId === sessionId));
     },
   };
 }
