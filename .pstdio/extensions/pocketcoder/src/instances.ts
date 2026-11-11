@@ -234,6 +234,19 @@ export function createInstances(root: string) {
         throw error;
       }
     },
+    async publishedTemplates(id: string) {
+      const templates = await this.items<{ name: string; version: string; status: string; description?: string }>(
+        id,
+        "/v1/templates",
+      );
+      return templates.filter((template) => template.status !== "retired");
+    },
+    async retire(id: string, name: string, version: string) {
+      // The controller keeps the snapshot that existing machines of this version use.
+      await request(id, `/v1/templates/${encodeURIComponent(name)}/${encodeURIComponent(version)}`, {
+        method: "DELETE",
+      });
+    },
     async publish(id: string, manifest: unknown) {
       await request(id, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
     },

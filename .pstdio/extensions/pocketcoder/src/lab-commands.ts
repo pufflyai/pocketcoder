@@ -28,7 +28,7 @@ export function createLabCommands(getInstances = instancesFor) {
         try {
           [machines, templates] = await Promise.all([
             controller.items<ControllerMachine>(selected.id, "/v1/workspaces"),
-            controller.items<LabTemplate>(selected.id, "/v1/templates"),
+            controller.publishedTemplates(selected.id),
           ]);
         } catch (reason) {
           error = String(reason);

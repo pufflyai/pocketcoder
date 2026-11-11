@@ -1,14 +1,14 @@
 import { defineView } from "@pstdio/sdk/extensions";
-import { refresh, stopInstance } from "./commands";
-import { launchInstance, startInstance } from "./instance-commands";
+import { refresh } from "./commands";
+import { launchInstance, startInstance, stopInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
-import type { LabTemplate } from "./lab-model";
 import { machineStateLabel } from "./machine-status";
 import { ensureMachineWatch } from "./machine-watch";
 import type { ControllerMachine } from "./machines";
 import { changed, instanceKind, machineKind } from "./resources";
+import { instanceRowId, selectionCommands } from "./selection-commands";
 import {
   connectMachineRow,
   deleteMachineRow,
@@ -48,6 +48,18 @@ export const instancesView = defineView({
       { id: "connection", label: "Connection" },
       { id: "url", label: "Operator API" },
       { id: "error", label: "Error" },
+    ],
+    selectionMode: "multiple",
+    selectionActions: [
+      { id: "start", label: "Start", icon: "play", command: selectionCommands.startSelected.ref },
+      { id: "stop", label: "Stop", icon: "square", command: selectionCommands.stopSelected.ref },
+      {
+        id: "remove",
+        label: "Remove",
+        icon: "trash-2",
+        destructive: true,
+        command: selectionCommands.removeSelected.ref,
+      },
     ],
     rowActions: [
       { id: "open", label: "Browse instance", icon: "server", command: labCommands["lab.select"].ref },
@@ -122,15 +134,43 @@ export const templatesView = defineView({
       { id: "status", label: "Status" },
       { id: "description", label: "Description" },
     ],
+    selectionMode: "multiple",
+    selectionActions: [
+      {
+        id: "remove",
+        label: "Remove",
+        icon: "trash-2",
+        destructive: true,
+        command: selectionCommands.retireSelectedTemplates.ref,
+      },
+    ],
+    rowActions: [
+      {
+        id: "view",
+        label: "View template",
+        icon: "file-json",
+        command: selectionCommands.viewPublishedTemplateRow.ref,
+      },
+      {
+        id: "remove",
+        label: "Remove template",
+        icon: "trash-2",
+        destructive: true,
+        command: selectionCommands.retireTemplateRow.ref,
+      },
+    ],
+    async onRowActivate(ctx, { row }) {
+      await ctx.commands.execute(selectionCommands.viewPublishedTemplateRow.ref, { params: { rowId: row.id } });
+    },
     async query(ctx, { renderer }) {
       const id = renderer.resource?.id;
       if (!id) return { rows: [] };
       const instances = instancesFor(ctx.projectId);
       if ((await instances.get(id)).state !== "running") return { rows: [] };
-      const templates = await instances.items<LabTemplate>(id, "/v1/templates");
+      const templates = await instances.publishedTemplates(id);
       return {
         rows: templates.map((template) => ({
-          id: `${template.name}@${template.version}`,
+          id: instanceRowId(id, `${template.name}@${template.version}`),
           values: {
             name: template.name,
             version: template.version,
@@ -169,6 +209,16 @@ export const machinesView = defineView({
       { id: "state", label: "State" },
       { id: "error", label: "Error" },
     ],
+    selectionMode: "multiple",
+    selectionActions: [
+      {
+        id: "delete",
+        label: "Delete",
+        icon: "trash-2",
+        destructive: true,
+        command: selectionCommands.deleteSelectedMachines.ref,
+      },
+    ],
     rowActions: [
       { id: "connect", label: "Connect to agent", icon: "messages-square", command: connectMachineRow.ref },
       { id: "delete", label: "Delete machine", icon: "trash-2", destructive: true, command: deleteMachineRow.ref },
@@ -189,7 +239,7 @@ export const machinesView = defineView({
         rows: machines
           .filter((machine) => !dismissed.has(machine.id))
           .map((machine) => ({
-            id: machine.id,
+            id: instanceRowId(id, machine.id),
             resource: { type: machineKind.id, id: `${id}:${machine.id}`, label: machine.external_id },
             values: {
               name: machine.external_id,

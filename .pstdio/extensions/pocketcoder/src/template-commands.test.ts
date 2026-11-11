@@ -1,9 +1,15 @@
 import { expect, test } from "bun:test";
 import { createMemoryRepoFiles, createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
-import { listCatalog } from "./template-catalog";
-import { deleteTemplate, saveTemplate } from "./template-commands";
+import { catalogPathFor, listCatalog, templateDocument } from "./template-catalog";
+import { deleteTemplates, saveTemplate } from "./template-commands";
 
-test("templates can be saved, updated and removed without deleting unrelated project files", async () => {
+const manifest = (name: string, version = "1.0.0") => ({
+  apiVersion: "pocketcoder.dev/v1",
+  kind: "Template",
+  metadata: { name },
+  spec: { version },
+});
+const context = () => {
   const files = createMemoryRepoFiles();
   const ctx = makeCommandContext({
     storage: createMemoryStorage(),
@@ -11,21 +17,31 @@ test("templates can be saved, updated and removed without deleting unrelated pro
     projectId: "test",
     overrides: { projectFiles: files },
   });
-  const manifest = {
-    apiVersion: "pocketcoder.dev/v1",
-    kind: "Template",
-    metadata: { name: "example" },
-    spec: { version: "1.0.0" },
-  };
-  const saved = await saveTemplate.run(ctx, { source: JSON.stringify(manifest) });
-  expect((await listCatalog(files))[0]?.template?.name).toBe("example");
+  return { files, ctx };
+};
+
+test("templates can be saved, updated and removed together without deleting unrelated project files", async () => {
+  const { files, ctx } = context();
+  const first = await saveTemplate.run(ctx, { source: JSON.stringify(manifest("example")) });
+  const second = await saveTemplate.run(ctx, { source: JSON.stringify(manifest("other")) });
   await saveTemplate.run(ctx, {
-    source: JSON.stringify({ ...manifest, metadata: { ...manifest.metadata, description: "Updated" } }),
+    source: JSON.stringify({ ...manifest("example"), metadata: { name: "example", description: "Updated" } }),
   });
   expect((await listCatalog(files))[0]?.template?.description).toBe("Updated");
   await files.writeText("unrelated.json", "keep");
-  await expect(deleteTemplate.run(ctx, { rowId: "unrelated.json" })).rejects.toThrow("Choose a listed template");
-  await deleteTemplate.run(ctx, { rowId: saved.path });
+  await expect(deleteTemplates.run(ctx, { rowIds: ["unrelated.json"] })).rejects.toThrow("Choose listed templates");
+  await deleteTemplates.run(ctx, { rowIds: [first.path, second.path] });
   expect(await listCatalog(files)).toEqual([]);
   expect(await files.readText("unrelated.json")).toBe("keep");
+});
+
+test("a template opens as its formatted manifest, found by file or by published name and version", async () => {
+  const { files, ctx } = context();
+  const saved = await saveTemplate.run(ctx, { source: JSON.stringify(manifest("example", "2.0.0")) });
+  expect(await catalogPathFor(files, "example", "2.0.0")).toBe(saved.path);
+  await expect(catalogPathFor(files, "example", "9.9.9")).rejects.toThrow("not in this project's template catalog");
+  const document = await templateDocument(files, saved.path);
+  expect(document.fileName).toBe("example-2.0.0.json");
+  expect(JSON.parse(document.content)).toEqual(manifest("example", "2.0.0"));
+  expect(document.editable).toBe(false);
 });

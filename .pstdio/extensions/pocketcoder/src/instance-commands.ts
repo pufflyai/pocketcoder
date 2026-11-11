@@ -1,6 +1,7 @@
 import { type CommandContext, commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { resolveExecutable } from "./executable";
 import { instancesFor } from "./instances";
+import { isTerminal, type Machine } from "./machines";
 import { changed } from "./resources";
 import { catalogFiles, listCatalog, selectedTemplate } from "./template-catalog";
 
@@ -97,7 +98,29 @@ export function createInstanceCommands(getInstances = instancesFor) {
       return instance;
     },
   });
-  return { catalogChoices, launchInstance, publishTemplate, startInstance };
+  const stopInstance = defineCommand({
+    id: "instances.stop",
+    title: "Stop PocketCoder instance",
+    cli: true,
+    mutating: true,
+    params: { instanceId: params.text({ label: "Instance ID", resolvedFrom: "resource" }) },
+    async run(ctx, input) {
+      const instances = getInstances(ctx.projectId);
+      const instanceId = input.instanceId || (ctx.resource?.type === "instance" ? ctx.resource.id : undefined);
+      if (!instanceId) throw new Error("Choose a PocketCoder instance.");
+      const instance = await instances.get(instanceId);
+      if (instance.state === "running") {
+        const machines = await instances.items<Machine>(instanceId, "/v1/workspaces");
+        if (machines.some((machine) => !isTerminal(machine)))
+          throw new Error("Delete or cancel this instance's active machines before stopping it.");
+        await instances.stop(instanceId);
+      }
+      await ctx.events.emit(changed, {});
+      return { instanceId, state: "stopped" };
+    },
+  });
+  return { catalogChoices, launchInstance, publishTemplate, startInstance, stopInstance };
 }
 
-export const { catalogChoices, launchInstance, publishTemplate, startInstance } = createInstanceCommands();
+export const { catalogChoices, launchInstance, publishTemplate, startInstance, stopInstance } =
+  createInstanceCommands();

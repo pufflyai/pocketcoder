@@ -11,6 +11,7 @@ import { createMachineCommands } from "./machine-commands";
 import { createMachineLifecycleActions } from "./machine-lifecycle-actions";
 import { latestMachineConversation } from "./machine-session";
 import { type ControllerMachine, isTerminal, machinePath } from "./machines";
+import { createSelectionCommands, instanceRowId } from "./selection-commands";
 
 const repo = resolve(import.meta.dir, "../../../..");
 async function command(args: string[]) {
@@ -179,6 +180,13 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     expect((await instances.request<ControllerMachine>(instanceId, machinePath(source.machineId))).state).toBe(
       "preserved",
     );
+
+    // Deleting a table selection ends every selected machine.
+    await createSelectionCommands(() => instances).deleteSelectedMachines.run(ctx, {
+      rowIds: machineIds.map((machineId) => instanceRowId(instanceId, machineId)),
+    });
+    for (const machineId of machineIds)
+      expect(isTerminal(await instances.request<ControllerMachine>(instanceId, machinePath(machineId)))).toBe(true);
   } finally {
     await harness.dispose(ctx);
     if (instanceId) {

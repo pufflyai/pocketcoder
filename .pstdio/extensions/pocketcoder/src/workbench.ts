@@ -4,8 +4,8 @@ import {
   type PlacementTabPresentation,
   workbenchModes,
 } from "@pstdio/sdk/extensions";
-import { stopInstance } from "./commands";
-import { startInstance } from "./instance-commands";
+import { catalogView } from "./catalog-view";
+import { startInstance, stopInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
@@ -88,14 +88,34 @@ const instanceTab = (label: string): PlacementTabPresentation => ({
     };
   },
 });
+const labelTab = (label: string): PlacementTabPresentation => ({
+  async query() {
+    return { label };
+  },
+});
 export const instancesPage = definePage({
   id: "instances",
   title: "PocketCoder Lab",
   icon: "server",
   path: "pocketcoder",
   mode: workbenchModes.project,
-  main: { kind: "view", presentation: "page", view: instancesView.ref, cardinality: "one" },
-  slots: [],
+  main: { kind: "panels", landing: "instances" },
+  slots: [
+    {
+      id: "instances",
+      region: "main",
+      order: 0,
+      tab: labelTab("Instances"),
+      item: { kind: "view", view: instancesView.ref, presence: "open" },
+    },
+    {
+      id: "catalog",
+      region: "main",
+      order: 1,
+      tab: labelTab("Template catalog"),
+      item: { kind: "view", view: catalogView.ref, presence: "open" },
+    },
+  ],
 });
 export const instancePage = definePage({
   id: "instance",
