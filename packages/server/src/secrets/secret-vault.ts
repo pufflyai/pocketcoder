@@ -17,7 +17,8 @@ const resource = ({ name, type, updatedAt, retiredAt }: SecretMetadata) => ({
 });
 
 // A plain HTTP issuer is a cluster-local Service; the controller must opt in to calling one.
-const plainIssuer = (secret: SecretPutRequest) => secret.type !== "registry" && secret.value.url.startsWith("http:");
+const plainIssuer = (secret: SecretPutRequest) =>
+  secret.type !== "registry" && new URL(secret.value.url).protocol === "http:";
 
 export function createSecretVault(
   store: SecretStore,

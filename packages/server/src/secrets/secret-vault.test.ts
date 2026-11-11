@@ -80,6 +80,7 @@ const issuer = (url: string) => ({
 test.each([
   { name: "a public host", url: "http://issuer.example/mint" },
   { name: "a cluster-local host without the controller setting", url: "http://backend.onefin.svc.cluster.local/mint" },
+  { name: "an upper-case scheme without the controller setting", url: "HTTP://backend.onefin.svc.cluster.local/mint" },
 ])("a plain HTTP issuer at $name is refused", async ({ url }) => {
   const f = await fixture();
   await expect(f.vault.put(f.key.id, "issuer", issuer(url))).rejects.toMatchObject({ code: "validation.invalid" });
