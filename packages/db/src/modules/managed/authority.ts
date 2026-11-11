@@ -1,4 +1,4 @@
-import { digestOf, managed, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
+import { digestOf, managed, templateCredentialReferences } from "@pstdio/pocketcoder-contracts";
 import type { ManagedAuthorityStore, ManagedSessionIdentity } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
@@ -59,7 +59,8 @@ export function createManagedAuthority(context: DatabaseContext): ManagedAuthori
         const [template] = await tx.select().from(templates).where(eq(templates.digest, profile.templateDigest));
         if (!template || !actor.target.templateNames.some((name) => name === "*" || name === template.name))
           throw unavailable();
-        const slots = runtimeCredentialReferences(template.spec);
+        // The same references session delivery issues: workload slots, or alpha runtime policy references.
+        const slots = templateCredentialReferences({ spec: template.spec, manifest: template.manifest ?? undefined });
         await credentialSlots(tx, principalId, profile, slots);
         await lock(tx, profile.profileId, 32);
         const [known] = await tx

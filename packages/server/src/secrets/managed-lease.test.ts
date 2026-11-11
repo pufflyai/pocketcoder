@@ -1,79 +1,15 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { insertTestWorkspace } from "@pstdio/pocketcoder-db/testing";
-import { eq } from "drizzle-orm";
 import { leaseServiceFixture } from "./lease-service-fixture";
+import { credentialedProfile } from "./managed-lease-fixture";
 
 test("real issuer leases bind one exclusive session and generation with a finite immutable ceiling", async () => {
   const f = await leaseServiceFixture("memory", undefined, undefined, true);
   try {
-    await f.store.updatePrincipal(f.principal.id, ["admin"], ["*"]);
-    await f.vault.put(f.key.id, "runtime", { ...f.config, type: "runtime-issuer" });
-    const source = parseTemplateManifest({
-      ...f.parsed.manifest,
-      metadata: { name: "managed-lease" },
-      spec: { ...f.parsed.manifest.spec, env: { TOKEN_FILE: "secretRef:runtime" } },
-    });
-    const { row: template } = await f.store.upsertTemplate({
-      name: "managed-lease",
-      version: source.manifest.spec.version,
-      digest: source.digest,
-      description: null,
-      spec: source.manifest.spec,
-    });
-    await f.context.db
-      .update(f.context.tables.workspaces)
-      .set({ templateId: template.id, templateDigest: source.digest, templateSnapshot: snapshotOf(source) })
-      .where(eq(f.context.tables.workspaces.id, f.workspace.id));
-    const config = await f.vault.resolve("runtime", "runtime-issuer");
-    const scopeId = randomUUID(),
-      bindingId = randomUUID(),
-      sessionId = randomUUID(),
-      profileId = randomUUID();
-    const authorityExpiresAt = new Date(Date.now() + 30_000);
-    await f.store.managed.authority.registerScope(f.key.id, scopeId, f.principal.id, true);
-    await f.store.managed.authority.registerCredential(f.key.id, {
-      bindingId,
-      principalId: f.principal.id,
-      secretName: "runtime",
-      secretVersionId: config.id,
-      slots: ["runtime", "extra"],
-      authorityExpiresAt,
-    });
-    const profile = {
-      profileId,
-      revision: 1,
-      isolationScopeId: randomUUID(),
-      budgetScopeIds: [scopeId],
-      templateDigest: source.digest,
-      credentialBindingId: bindingId,
-    };
-    await f.store.managed.authority.provisionProfile(f.key.id, f.principal.id, profile);
-    await f.store.managed.sessions.create(f.key.id, { sessionId, profileId, profileRevision: 1 });
-    const incarnationId = randomUUID();
-    await f.context.db
-      .update(f.context.tables.workspaces)
-      .set({
-        runtimeRegistration: { incarnationId, containerIdentity: incarnationId, profile: "service", producer: null },
-      })
-      .where(eq(f.context.tables.workspaces.id, f.workspace.id));
-    await f.store.managed.budgets.writePolicy(
-      f.key.id,
-      {
-        scopeId,
-        revision: 1,
-        period: "utc_day",
-        limits: {
-          workspaceStarts: 10,
-          maxActiveWorkspaces: 5,
-          maxRunningRequestsPerSession: 1,
-          maxChatProcessesPerWorkspace: 5,
-        },
-      },
-      null,
-    );
-    const identity = { principalId: f.principal.id, sessionId };
+    const { template, config, scopeId, bindingId, profileId, incarnationId, authorityExpiresAt, session } =
+      await credentialedProfile(f);
+    const identity = await session();
     await f.store.managed.sessions.bind(identity, 0, { workspaceId: f.workspace.id, incarnationId, generation: 1 });
     const requestId = randomUUID();
     f.issuer.controls.reply = "lost";
@@ -110,7 +46,10 @@ test("real issuer leases bind one exclusive session and generation with a finite
       const nextSession = index === 0 ? siblingId : randomUUID();
       if (index > 0)
         await f.store.managed.sessions.create(f.key.id, { sessionId: nextSession, profileId, profileRevision: 1 });
-      const nextWorkspace = await insertTestWorkspace({ ...f, parsed: source, template }, randomUUID());
+      const nextWorkspace = await insertTestWorkspace(
+        { ...f, parsed: template.parsed ?? f.parsed, template: template.row },
+        randomUUID(),
+      );
       const placement = {
         principalId: f.principal.id,
         sessionId: nextSession,
@@ -125,7 +64,7 @@ test("real issuer leases bind one exclusive session and generation with a finite
     for (const placement of additional) await f.store.managed.capacity.place(placement);
     expect((await f.store.managed.budgets.usage(f.key.id, scopeId)).activeWorkspaces).toBe(5);
     await expect(f.service.issue(f.workspace.id, "runtime", "runtime-issuer")).rejects.toThrow();
-    const current = await f.store.managed.sessions.get(f.key.id, sessionId);
+    const current = await f.store.managed.sessions.get(f.key.id, identity.sessionId);
     await f.store.managed.sessions.appendObservation(identity, current.revision, "closed", null);
     await expect(f.service.renew(f.workspace.id, renewal.lease.id, randomUUID())).rejects.toThrow();
     f.issuer.controls.reply = "outage";

@@ -4,16 +4,15 @@ import { and, eq, sql } from "drizzle-orm";
 import type { DatabaseContext, QueryContext } from "../../database/context";
 
 // The compute a session owns alone: every workspace the placement owner created for it (found by
-// its metadata, so a close that lands before the placement record still sees it), and the bound
-// workspace of a credentialed session, which never shares. Close must stop all of them.
+// its metadata, so a close that lands before the placement record still sees it) and its bound
+// workspace, unless another session still runs there. Close must stop all of them.
 export async function ownedWorkspaces(
   context: DatabaseContext,
   tx: QueryContext,
   id: ManagedSessionIdentity,
-  session: managed.Session,
   binding: ManagedBinding | null,
 ) {
-  const { workspaces, managedProfiles: profiles } = context.tables;
+  const { workspaces, managedCapacity } = context.tables;
   const placed = await tx
     .select({ id: workspaces.id })
     .from(workspaces)
@@ -24,18 +23,13 @@ export async function ownedWorkspaces(
       ),
     );
   const owned = new Set(placed.map((row) => row.id));
-  if (binding) {
-    const [profile] = await tx
-      .select({ profile: profiles.profile })
-      .from(profiles)
-      .where(
-        and(
-          eq(profiles.profileId, session.profileId),
-          eq(profiles.revision, session.profileRevision),
-          eq(profiles.principalId, id.principalId),
-        ),
-      );
-    if (profile?.profile.credentialBindingId) owned.add(binding.workspaceId);
-  }
-  return [...owned];
+  if (binding) owned.add(binding.workspaceId);
+  const capacity = await tx.select().from(managedCapacity);
+  const shared = (workspaceId: string) =>
+    capacity.some(
+      (row) =>
+        row.workspaceId === workspaceId &&
+        row.record.sessions.some((s) => s.sessionId !== id.sessionId && !s.stoppedAt),
+    );
+  return [...owned].filter((workspaceId) => !shared(workspaceId));
 }

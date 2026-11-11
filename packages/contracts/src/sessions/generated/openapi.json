@@ -3215,6 +3215,10 @@
                 "type": "null"
               }
             ]
+          },
+          "credentialPlacement": {
+            "type": "string",
+            "enum": ["exclusive", "shared"]
           }
         },
         "required": [

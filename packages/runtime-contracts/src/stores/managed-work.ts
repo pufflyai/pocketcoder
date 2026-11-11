@@ -95,6 +95,8 @@ export interface ManagedCapacityRecord {
   admittedAttempt?: number;
 }
 export interface ManagedCapacityStore {
+  // A live workspace a shared session may join, or null when it needs new compute.
+  joinable(identity: ManagedSessionIdentity): Promise<string | null>;
   releaseUnlaunched(workspaceId: string, at: Date): Promise<void>;
   reconcile(at: Date): Promise<void>;
   place(identity: ManagedCapacityIdentity): Promise<void>;

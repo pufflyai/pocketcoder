@@ -67,11 +67,27 @@ close or return to provisioning through a fresh binding. A fenced replacement
 may also move a ready session back to provisioning; a suspended session must
 provision before it can become ready again.
 
-Business credentials require one exclusive workspace per session, even when the
-broker and profile match. Credential-free siblings require the same principal,
-immutable profile, isolation and scopes, plus installed parallel-conversation,
-lookup, deduplicated-accept and targeted-cancel capabilities. There is one trust
-zone inside shared compute. See [security](security.md).
+A session with business credentials gets its own workspace unless its profile
+sets `credentialPlacement: "shared"`. Then sessions of that same profile revision
+share a workspace: same principal, binding, isolation and scopes. Credential-free
+sessions share under the same rule. Every shared workspace also needs installed
+parallel-conversation, lookup, deduplicated-accept and targeted-cancel
+capabilities. The placement owner joins the fullest live workspace with room
+under `maxChatProcessesPerWorkspace`; otherwise it launches a new one within
+budget, or waits. There is one trust zone inside shared compute: siblings can
+read each other's leases. See [security](security.md).
+
+Each bound credentialed session gets its own lease for every template credential
+slot, at `/run/pocketcoder/secrets/leases/sessions/<session>/<slot>`. A Pi turn
+sees only its own session's paths. The session becomes ready once they are
+installed. Closing a session on shared compute revokes only its leases and stops
+only its process; the last session to leave stops the workspace. A session lease
+that expires is removed on its own; the workspace keeps running. Session leases
+need supervisor protocol 15; a managed workspace whose template names credentials
+refuses an older supervisor. A managed workspace receives no workspace-level
+leases, so only session turns can use template credentials, not terminals,
+checkpoint hooks or other services. The existing delivery limits of 64
+credentials and 512 KiB cover all sessions of one workspace together.
 
 Lease requests bind session, profile, physical incarnation, generation, slot and
 broker version. Only slots declared by the pinned template/profile may be used.
@@ -92,8 +108,9 @@ A durable clock floor stops a backward wall-clock move from reopening a past
 period.
 
 Workspace starts and active physical workspaces come from durable managed
-capacity reservations. Compatible shared sessions consume one physical slot and
-separate process slots; credentialed sessions remain exclusive. Launch admission
+capacity reservations. Shared sessions consume one physical slot and
+separate process slots; credentialed sessions are exclusive unless their profile
+opts in to sharing. Launch admission
 reserves start allowance before storage preparation and charges it immediately
 before provider submission. Proved non-submission is audited without a start charge.
 Only generation-bound process-stop or provider-fencing evidence releases capacity.

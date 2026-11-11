@@ -13,10 +13,12 @@ export async function renewCredential(
   const row = await activeConnectionWorkspace(deps, connection);
   if (!row) return;
   const previous = await deps.store.getWorkspaceLease(payload.lease_id);
+  // A session lease renews under its recorded authority; a workspace lease by its template reference.
   if (
     previous?.workspaceId !== row.id ||
     previous.purpose !== "runtime-issuer" ||
-    !runtimeCredentialReferences(row.templateSnapshot.spec).includes(previous.secretName)
+    (!previous.managedAuthority &&
+      !runtimeCredentialReferences(row.templateSnapshot.spec).includes(previous.secretName))
   )
     return;
   try {
@@ -47,4 +49,12 @@ export async function confirmCredential(
   } catch {
     deps.log?.(`workspace ${connection.workspaceId}: prior credential revocation pending`);
   }
+}
+
+export function acknowledgeInstall(
+  connection: LiveConnection,
+  payload: Extract<AgentFrame, { type: "credential_install_ack" }>["payload"],
+) {
+  connection.installedLeases ??= new Set();
+  for (const id of payload.lease_ids) connection.installedLeases.add(id);
 }

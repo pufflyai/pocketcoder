@@ -57,3 +57,40 @@ test("a preexisting lease-directory symlink never receives a credential", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("one session's leases leave with it while its siblings and the workspace keep running", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-session-lease-"));
+  const expired: string[] = [];
+  const sent: { type: string; payload: unknown }[] = [];
+  const manager = new WorkspaceCredentials({
+    send: (message) => sent.push(message) > 0,
+    expired: () => expired.push("workspace"),
+    addSecret() {},
+  });
+  const [closing, expiring, sibling] = [randomUUID(), randomUUID(), randomUUID()];
+  const lease = (session: string, slot: string, expiresIn = 5000) => ({
+    ...credential(join(root, "sessions", session, slot)),
+    session_id: session,
+    expires_at: new Date(Date.now() + expiresIn).toISOString(),
+  });
+  const files = (session: string) => readdir(join(root, "sessions", session));
+  try {
+    const kept = lease(sibling, "runtime");
+    const installed = [lease(closing, "runtime"), lease(expiring, "runtime", 50), lease(expiring, "gateway"), kept];
+    await manager.installSession(installed);
+    expect(sent).toContainEqual({
+      type: "credential_install_ack",
+      payload: { lease_ids: installed.map((value) => value.lease_id) },
+    });
+    await manager.removeSession(closing);
+    expect(await files(closing)).toEqual([]);
+    // The expired slot goes alone; the session's other lease and its siblings stay.
+    for (let i = 0; i < 100 && (await files(expiring)).length > 1; i++) await Bun.sleep(10);
+    expect(await files(expiring)).toEqual(["gateway"]);
+    expect(expired).toEqual([]);
+    expect(await readFile(join(root, "sessions", sibling, "runtime"), "utf8")).toBe(kept.credential);
+  } finally {
+    await manager.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -60,7 +60,8 @@ export async function placeManagedCapacity(
     workspace.principalId !== id.principalId ||
     workspace.templateDigest !== profile.profile.templateDigest ||
     workspace.terminalAt ||
-    workspace.purgeRequestedAt
+    workspace.purgeRequestedAt ||
+    workspace.state === "terminating"
   )
     throw unavailable();
   const rows = await tx.select().from(table);
@@ -86,7 +87,7 @@ export async function placeManagedCapacity(
       1,
     );
   }
-  if (known && (placement.mode !== "shared" || profile.businessSlots.length)) throw unavailable();
+  if (known && placement.mode !== "shared") throw unavailable();
   const record: ManagedCapacityRecord = known?.record ?? {
     principalId: id.principalId,
     profileId: profile.profile.profileId,

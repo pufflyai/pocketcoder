@@ -40,6 +40,11 @@ cannot overlap those roots. Artifacts and their ancestors cannot be symlinks.
 The driver hashes pristine image artifacts and the installed process-root bytes;
 HTTP capability responses never substitute for this evidence.
 
+An image that extends the published `workspace` image writes its descriptor with
+`bun /opt/pocketcoder/write-session-image.ts pi`, after installing its own
+`/usr/local/bin/run-pi`. Add `--env NAME` once per extra environment key its
+agent reads, for example the path of a credential slot's file.
+
 The fixed runtime command is `/usr/local/bin/bun /opt/pocketcoder/supervisor.js
 supervise --launch-input /run/pocketcoder/input`. The service process is image-owned
 infrastructure. A user task starts only through the durable execution API.

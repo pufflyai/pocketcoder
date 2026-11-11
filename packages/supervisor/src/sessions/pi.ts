@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { jsonLines } from "./json-lines";
 import { PiEvents } from "./pi-events";
 import type { SessionRun, SessionRunner } from "./producer";
+import { sessionEnvironment } from "./session-env";
 
 // Pi owns model context in its session file. PocketCoder owns the public messages.
 export function piRunner(command: string[], directory: string): SessionRunner {
@@ -11,7 +12,10 @@ export function piRunner(command: string[], directory: string): SessionRunner {
     run.signal.throwIfAborted();
     const session = join(directory, `${run.identity.conversation_id}.jsonl`);
     const child = Bun.spawn([...command, "--mode", "rpc", "--session", session], {
-      env: { ...process.env, POCKETCODER_CONVERSATION_ID: run.identity.conversation_id },
+      env: {
+        ...sessionEnvironment(process.env, run.identity.conversation_id),
+        POCKETCODER_CONVERSATION_ID: run.identity.conversation_id,
+      },
       stdin: "pipe",
       stdout: "pipe",
       stderr: "inherit",

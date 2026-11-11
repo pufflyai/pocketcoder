@@ -83,6 +83,12 @@ Both actions accept a new application task ID, fresh one-time launch input, new 
 
 The CLI supports the same options: `--external-id`, `--launch-input`, `--metadata`, and `--connection`. Resume also accepts `--template-version` for a compatible version; otherwise the controller selects the checkpoint version or a compatible recovery version.
 
+## Share one machine between managed sessions
+
+Managed sessions let the controller choose the machine. Run **Open managed sessions** (`pst pocketcoder.pocketcoder sessions open --instance <instance-id> --template <name>@<version> --count 2`). The first call for an instance and template provisions a credential-free execution profile with room for five sessions per machine and four managed machines per instance. Each session opens as its own chat. The command waits for the first session's machine before opening the rest, because a session joins a machine only after one of that template has shown it runs conversations side by side.
+
+Open **Machines** to see the sessions share one machine. Closing one session leaves the machine and its other sessions running; the last session to close stops it. Templates that name credentials need a credential binding, which Lab does not provision. Use an instance whose controller includes managed placement; Lab sets the session queue and stop deadlines it needs.
+
 ## Write a template with an agent
 
 Save reviewed `pocketcoder.dev/v1` or legacy `pocketcoder.dev/v1alpha1` Template manifests as `.json`, `.yaml` or `.yml` files under `.pstdio/extension-storage/pocketcoder.pocketcoder/templates`. Subfolders are supported. Use the existing manifest format in `examples/templates` as a reference, then replace example image pins and agent settings with working deployment values. An example manifest is not a ready coding agent.

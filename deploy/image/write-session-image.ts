@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const mode = process.argv[2];
+const [mode, ...options] = process.argv.slice(2);
 if (mode !== "echo" && mode !== "pi" && mode !== "onefin") throw new Error("Choose echo, pi, or onefin");
+// An image that extends this one names the extra environment its agent reads: `--env NAME`.
+const extraEnvironment = options.flatMap((option, index) => (option === "--env" ? [options[index + 1]] : []));
+if (extraEnvironment.some((name) => !name || !/^[A-Z][A-Z0-9_]{0,127}$/.test(name)))
+  throw new Error("--env needs an upper-case environment variable name");
 const runtime = "/opt/pocketcoder/supervisor.js";
 const artifact = mode === "onefin" ? "/opt/pocketcoder/onefin.js" : runtime;
 const command =
@@ -67,6 +71,7 @@ const descriptor = {
         "PI_CODING_AGENT_DIR",
         "HOME",
         "PI_WORKSPACE_DIR",
+        ...extraEnvironment,
       ],
     },
   },

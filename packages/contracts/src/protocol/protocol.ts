@@ -51,7 +51,10 @@ export * from "./protocol-checkpoint";
 export * from "./protocol-credentials";
 
 import {
+  CredentialInstallAckPayload,
   CredentialInstalledPayload,
+  CredentialInstallPayload,
+  CredentialRemovePayload,
   CredentialRenewedPayload,
   CredentialRenewPayload,
   WorkspaceCredentialSchema,
@@ -87,7 +90,8 @@ export {
 // exist only for the template-declared command and use scope-gated v4 frames.
 
 export const LEGACY_PROTOCOL_VERSION = 1;
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
+export const SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION = 15;
 export const EXECUTION_DISPATCH_MIN_PROTOCOL_VERSION = 13;
 export const WAITING_RUNTIME_MIN_PROTOCOL_VERSION = 14;
 export const RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION = 9;
@@ -107,6 +111,7 @@ export const SUPPORTED_PROTOCOL_VERSIONS = [
   11,
   12,
   13,
+  14,
   PROTOCOL_VERSION,
 ] as const;
 export type ProtocolVersion = (typeof SUPPORTED_PROTOCOL_VERSIONS)[number];
@@ -137,6 +142,7 @@ const EnvelopeBase = z.object({
     z.literal(11),
     z.literal(12),
     z.literal(13),
+    z.literal(14),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),
@@ -235,6 +241,7 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_install_ack"), payload: CredentialInstallAckPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
   EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),
@@ -324,6 +331,8 @@ export const ServerFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renewed"), payload: CredentialRenewedPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed_ack"), payload: CredentialInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_install"), payload: CredentialInstallPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_remove"), payload: CredentialRemovePayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete_ack"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered_ack"), payload: RegisteredAckPayload }),
   EnvelopeBase.extend({ type: z.literal("proxy_request"), payload: ProxyRequestPayload }),

@@ -5,6 +5,7 @@ import {
   managed,
   PARALLEL_CONVERSATION_CAPABILITIES,
 } from "@pstdio/pocketcoder-contracts";
+import type { ManagedBinding } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requireProcessCapacity } from "../budgets/process-capacity";
@@ -14,6 +15,24 @@ import { pinExecutionInputs } from "../workspaces/execution-inputs";
 import { operationAdapterCapabilities, validateExecution } from "../workspaces/execution-validation";
 import { pinSessionInputs } from "./request-inputs";
 import { writeManagedRequest } from "./request-writer";
+
+type WorkspaceRow = DatabaseContext["tables"]["workspaces"]["$inferSelect"];
+
+// A credentialed session runs work only while its workspace has confirmed its credentials.
+const dispatchBinding = (
+  session: { binding: ManagedBinding | null; session: { state: string } },
+  profile: { credentialBindingId: string | null },
+) => (profile.credentialBindingId && session.session.state !== "ready" ? null : session.binding);
+
+// The bound incarnation is live and may still accept work.
+const runsBinding = (workspace: WorkspaceRow, incarnationId: string, at: Date) =>
+  workspace.state === "ready" &&
+  !workspace.runtimeRegistration?.endedAt &&
+  !workspace.terminalAt &&
+  !workspace.purgeRequestedAt &&
+  workspace.deadlineAt > at &&
+  workspace.runtimeRegistration?.incarnationId === incarnationId;
+
 import { workAuthority } from "./work-authority";
 
 export async function prepareManagedRequests(context: DatabaseContext, at: Date) {
@@ -47,23 +66,15 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date)
           await expireRequest(context, tx, current, at);
           return;
         }
-        if (!session.binding) return;
-        await requireProcessCapacity(context, tx, id, session.binding);
+        const binding = dispatchBinding(session, profile);
+        if (!binding) return;
+        await requireProcessCapacity(context, tx, id, binding);
         const [workspace] = await tx
           .select()
           .from(context.tables.workspaces)
-          .where(eq(context.tables.workspaces.id, session.binding.workspaceId))
+          .where(eq(context.tables.workspaces.id, binding.workspaceId))
           .for("update");
-        if (
-          !workspace ||
-          workspace.state !== "ready" ||
-          workspace.runtimeRegistration?.endedAt ||
-          workspace.terminalAt ||
-          workspace.purgeRequestedAt ||
-          workspace.deadlineAt <= at ||
-          workspace.runtimeRegistration?.incarnationId !== session.binding.incarnationId
-        )
-          return;
+        if (!workspace?.runtimeRegistration || !runsBinding(workspace, binding.incarnationId, at)) return;
         const operation = workspace.runtimeRegistration.template?.manifest.spec.operations.message;
         const adapter = operation && workspace.runtimeRegistration.template?.manifest.spec.adapters[operation.adapter];
         if (!operation || !adapter)
@@ -71,7 +82,7 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date)
         const sources = await pinSessionInputs(context, tx, id, current.managed.input.attachments, at, true);
         const contents = {
           workspaceId: workspace.id,
-          incarnationId: session.binding.incarnationId,
+          incarnationId: binding.incarnationId,
           objects: sources.map((source) => ({
             ...source,
             storageOwnerId: source.workspaceId,
@@ -81,7 +92,7 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date)
         const core = {
           execution: {
             workspaceId: workspace.id,
-            incarnationId: session.binding.incarnationId,
+            incarnationId: binding.incarnationId,
             owner: "conversation-request" as const,
             requestId: current.identity.turn_id,
           },

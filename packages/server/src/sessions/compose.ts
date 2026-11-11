@@ -9,7 +9,7 @@ import type { WorkspaceService } from "../workspaces/service";
 import { registerSessionHistoryRoutes } from "./history-routes";
 import { registerSessionPreviewRoutes } from "./preview-routes";
 import { registerProfileRoutes } from "./profile-routes";
-import { createSessionRecovery } from "./recovery";
+import { createSessionRecovery, type SessionCredentialOwner } from "./recovery";
 import { registerSessionRoutes } from "./session-routes";
 import { registerSessionStopRoutes } from "./stop-routes";
 import { registerSessionWorkRoutes } from "./work-routes";
@@ -48,9 +48,15 @@ export function registerManagedSessionRoutes(
 }
 
 // Placement uses the ordinary workspace service, so admission, capacity and lifecycle stay with their owners.
-export function composeSessionRecovery(store: Store, service: WorkspaceService, log: (message: string) => void) {
+export function composeSessionRecovery(
+  store: Store,
+  service: WorkspaceService,
+  log: (message: string) => void,
+  credentials?: SessionCredentialOwner,
+) {
   return createSessionRecovery({
     store,
+    ...(credentials ? { credentials } : {}),
     launcher: {
       create: async (principal, body, key) => (await service.create(principal, body, key)).workspace,
       stop: async (principal, id) => {

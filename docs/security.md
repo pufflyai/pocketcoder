@@ -265,8 +265,14 @@ never acquire replacement-workspace access. Grant renewal and passive browser
 traffic do not extend workspace lifetime. A workspace deadline extension cannot
 extend previously minted browser or application credentials.
 
-The managed placement contract requires an exclusive workspace for every session
-with business credentials. Only credential-free compatible sessions may share.
+The managed placement contract gives every session with business credentials its
+own workspace by default. A profile may set `credentialPlacement: "shared"` so
+its sessions share a workspace. Each session still gets its own leases: issued,
+renewed, revoked and expired per session and generation, and pointed only at
+that session's process. That is attribution, not secrecy. Siblings run as one
+uid in one trust zone and can read each other's leases. Opt in only when every
+session of the profile may hold the others' authority; only sessions of the same
+profile revision ever share.
 The binding ID is an opaque broker registration, never the credential. Physical
 credentials must expire with their workspace and be reissued after replacement;
 no long-lived authority may enter templates, request JSON, history or logs.
@@ -276,5 +282,5 @@ no long-lived authority may enter templates, request JSON, history or logs.
 
 See [managed sessions and capacity budgets](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement and pinned broker renewal. Model usage is
+business-credential placement and pinned broker renewal. Model usage is
 not managed by PocketCoder; see [model access](#model-access-is-a-gateway-concern).

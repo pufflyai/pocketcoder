@@ -97,10 +97,12 @@ Profile scopes cannot be omitted or duplicated. The provisioning owner must enfo
 installation scope membership and profile grants; an arbitrary budget scope never
 authorizes sharing. `managedPlacement` describes compatibility from principal and
 the complete immutable profile revision. A credential binding makes placement
-exclusive to the logical session. Credential-free sessions may share only with
-compatible profile/budget/isolation bindings. This pure key is not an allocation
-or authorization API. Credentials stay physically workspace-scoped, expire no
-later than that workspace, and must be reissued after replacement. They never
+exclusive to the logical session unless the profile sets
+`credentialPlacement: "shared"`. Shared and credential-free sessions may share
+only with the same profile revision, so binding, budget and isolation match. This pure key is not an allocation
+or authorization API. Credentials stay physically workspace-scoped, are issued per
+bound session, expire no later than that workspace, and must be reissued after
+replacement. They never
 appear in these resources, templates, history, events or logs.
 
 Capability admission still uses installed producer evidence and `workloadAdmission`.

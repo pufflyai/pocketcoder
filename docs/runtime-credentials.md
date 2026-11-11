@@ -104,6 +104,6 @@ registry, image tag and temporary files.
 
 See [managed sessions and capacity budgets](managed-runtime.md) for implemented
 profile provisioning, logical session create/lookup, scope policy and usage routes,
-exclusive business-credential placement and pinned broker renewal. Model access and
+business-credential placement, per-session leases and pinned broker renewal. Model access and
 model usage limits belong to the deployment's model gateway; see
 [security](security.md#model-access-is-a-gateway-concern).
