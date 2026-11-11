@@ -28,7 +28,8 @@ const ended = (workspace: WorkspaceRow | null) =>
 // again, through the existing dispatcher and its binding-revision checks.
 // Installs a bound session's own leases on its workspace and revokes them when it leaves shared compute.
 export interface SessionCredentialOwner {
-  deliver(identity: ManagedSessionIdentity, workspaceId: string, generation: number): Promise<void>;
+  // True once the session's workspace confirmed every credential it needs.
+  deliver(identity: ManagedSessionIdentity, workspaceId: string, generation: number): Promise<boolean>;
   revoke(workspaceId: string, sessionId: string): Promise<void>;
 }
 
@@ -53,7 +54,8 @@ export function createSessionRecovery(deps: {
     const workspace = await store.getWorkspace(binding.workspaceId);
     if (live(workspace, binding.incarnationId)) {
       // Requests dispatch only once the session is ready, so its credentials are installed first.
-      await deps.credentials?.deliver(candidate.id, binding.workspaceId, binding.generation);
+      if (deps.credentials && !(await deps.credentials.deliver(candidate.id, binding.workspaceId, binding.generation)))
+        return;
       if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
       return;
     }

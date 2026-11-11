@@ -5,7 +5,7 @@ import {
   sessionCredentialPath,
   templateCredentialReferences,
 } from "@pstdio/pocketcoder-contracts";
-import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import type { WorkspaceLeaseRow, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import type { createWorkspaceLeaseService } from "../secrets/lease-service";
 import type { WsDeps } from "./ws-types";
 
@@ -29,11 +29,26 @@ export function credentialDelivery(
 // A managed workspace receives credentials only for its bound sessions, never for the workspace.
 const managedWorkspace = (row: WorkspaceRow) => Boolean(row.metadata?.[managed.MANAGED_SESSION_METADATA]);
 
-// The latest live lease of every bound session and slot, replayed when the workspace (re)registers.
+// The newest lease of every session and slot. A renewal is requested only after its predecessor
+// was delivered, so it is created later; the later deadline settles equal timestamps.
+export function latestSessionLeases<T extends WorkspaceLeaseRow>(leases: T[]) {
+  const latest = new Map<string, T>();
+  const order = (lease: T) => [lease.createdAt.getTime(), lease.requestExpiresAt.getTime()] as const;
+  for (const lease of leases) {
+    const key = `${lease.managedAuthority?.sessionId}:${lease.managedAuthority?.slot}`;
+    const known = latest.get(key);
+    const [created, deadline] = order(lease);
+    if (!known || created > order(known)[0] || (created === order(known)[0] && deadline > order(known)[1]))
+      latest.set(key, lease);
+  }
+  return [...latest.values()];
+}
+
+// Every bound session's newest live lease, replayed when the workspace (re)registers.
 async function sessionCredentialsFor(
   service: ReturnType<typeof createWorkspaceLeaseService>,
   row: WorkspaceRow,
-  leases: Awaited<ReturnType<WsDeps["store"]["listPendingWorkspaceLeases"]>>,
+  leases: WorkspaceLeaseRow[],
 ) {
   const pending = leases.filter(
     (lease) =>
@@ -41,11 +56,9 @@ async function sessionCredentialsFor(
       ["issued", "delivered"].includes(lease.state) &&
       (lease.issuerExpiresAt ?? lease.requestExpiresAt) > new Date(),
   );
-  const latest = new Map(
-    pending.map((lease) => [`${lease.managedAuthority?.sessionId}:${lease.managedAuthority?.slot}`, lease]),
-  );
   const credentials = [];
-  for (const lease of latest.values()) credentials.push(credentialDelivery(await service.replay(row.id, lease.id)));
+  for (const lease of latestSessionLeases(pending))
+    credentials.push(credentialDelivery(await service.replay(row.id, lease.id)));
   return credentials;
 }
 

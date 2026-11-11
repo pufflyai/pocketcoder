@@ -19,6 +19,8 @@ export interface LiveConnection {
   protocolVersion: ProtocolVersion;
   checkpoints: Map<string, PendingCheckpoint>;
   attachments: Map<string, AttachmentChannel>;
+  // Session leases this supervisor confirmed writing; a new connection starts empty.
+  installedLeases?: Set<string>;
 }
 
 export interface PendingRelay {

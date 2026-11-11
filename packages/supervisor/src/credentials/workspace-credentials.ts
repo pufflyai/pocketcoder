@@ -4,9 +4,10 @@ import { basename, dirname } from "node:path";
 import type { AgentFrame, ServerFrame, WorkspaceCredential } from "@pstdio/pocketcoder-contracts";
 import { openLeaseDirectory } from "./lease-directory";
 
-type CredentialMessage =
-  | Pick<Extract<AgentFrame, { type: "credential_renew" }>, "type" | "payload">
-  | Pick<Extract<AgentFrame, { type: "credential_installed" }>, "type" | "payload">;
+type CredentialMessage = Pick<
+  Extract<AgentFrame, { type: "credential_renew" | "credential_installed" | "credential_install_ack" }>,
+  "type" | "payload"
+>;
 type Renewed = Extract<ServerFrame, { type: "credential_renewed" }>["payload"];
 type Confirmation = Extract<AgentFrame, { type: "credential_installed" }>["payload"];
 type Installed = { value: WorkspaceCredential; renewAt: number; requestId: string | null; retryAt: number };
@@ -78,6 +79,12 @@ export class WorkspaceCredentials {
     this.schedule();
   }
 
+  // A session's leases from the controller; the acknowledgement lets it mark the session ready.
+  async installSession(values: WorkspaceCredential[]) {
+    await this.install(values);
+    this.callbacks.send({ type: "credential_install_ack", payload: { lease_ids: values.map((v) => v.lease_id) } });
+  }
+
   removeSession(sessionId: string) {
     return this.serialize(async () => {
       this.drop(sessionId);
@@ -124,9 +131,14 @@ export class WorkspaceCredentials {
     }
   }
 
+  // An expired session lease goes alone; the session's other leases stay and the controller replaces it.
   private dropExpiredSessions(now: number) {
-    for (const { value } of [...this.files.values()])
-      if (value.session_id && Date.parse(value.expires_at) <= now) this.drop(value.session_id);
+    for (const [path, { value }] of [...this.files])
+      if (value.session_id && Date.parse(value.expires_at) <= now) {
+        this.directories.get(dirname(path))?.remove(basename(path));
+        this.files.delete(path);
+        this.confirmations.delete(value.lease_id);
+      }
   }
 
   private serialize(work: () => Promise<void>) {

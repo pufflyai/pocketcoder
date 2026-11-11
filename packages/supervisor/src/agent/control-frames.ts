@@ -28,7 +28,7 @@ export async function handleControlFrame(
       return true;
     case "credential_install":
       await deps.credentials
-        .install(frame.payload.credentials)
+        .installSession(frame.payload.credentials)
         .catch(() => deps.logs.log("Session credentials could not be installed."));
       return true;
     case "credential_remove":

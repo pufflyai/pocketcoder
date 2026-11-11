@@ -1,12 +1,18 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { digestOpaque } from "@pstdio/pocketcoder-auth";
-import { HEADER_PROTOCOL, HEADER_RECONNECT, HEADER_WORKSPACE, managed } from "@pstdio/pocketcoder-contracts";
+import {
+  HEADER_PROTOCOL,
+  HEADER_RECONNECT,
+  HEADER_WORKSPACE,
+  managed,
+  type TemplateSnapshot,
+} from "@pstdio/pocketcoder-contracts";
 import { executionFixture } from "@pstdio/pocketcoder-db/testing";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { createTestServer, SERVER_TEST_PEPPER } from "../testing/test-server.test";
-import { agentConnectValidator } from "./ws-auth";
+import { agentConnectValidator, sessionCredentialsUnsupported } from "./ws-auth";
 
 test("a managed workspace with template credentials refuses a supervisor too old for session leases", async () => {
   const f = await executionFixture();
@@ -38,4 +44,21 @@ test("a managed workspace with template credentials refuses a supervisor too old
   } finally {
     await f.dispose();
   }
+});
+
+const slot = { policyRef: "runtime", policyVersion: "1", binding: "fixed-scope" as const };
+test.each([
+  { name: "runtime policy reference", snapshot: { spec: { env: { TOKEN_FILE: "secretRef:runtime" } } } },
+  {
+    name: "workload credential slot",
+    snapshot: { spec: { env: {} }, manifest: { spec: { credentialSlots: { slot } } } },
+  },
+])("a managed workspace whose template has a $name needs protocol 15", ({ snapshot }) => {
+  const row = {
+    metadata: { [managed.MANAGED_SESSION_METADATA]: randomUUID() },
+    templateSnapshot: snapshot as unknown as TemplateSnapshot,
+  };
+  expect(sessionCredentialsUnsupported(row, 14)).toBe(true);
+  expect(sessionCredentialsUnsupported(row, 15)).toBe(false);
+  expect(sessionCredentialsUnsupported({ ...row, metadata: {} }, 14)).toBe(false);
 });

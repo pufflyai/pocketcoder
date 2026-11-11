@@ -6,7 +6,7 @@ import {
   type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import type { WSContext } from "hono/ws";
-import { confirmCredential, renewCredential } from "./credential-frames";
+import { acknowledgeInstall, confirmCredential, renewCredential } from "./credential-frames";
 import type { LiveConnection } from "./hub";
 import { handleRuntimeFrame } from "./runtime-frames";
 import { maybeMarkReady } from "./runtime-readiness";
@@ -123,6 +123,9 @@ export async function handleConnectedFrame(
       return;
     case "credential_installed":
       await confirmCredential(deps, connection, frame.payload);
+      return;
+    case "credential_install_ack":
+      acknowledgeInstall(connection, frame.payload);
       return;
     case "setup_complete":
       await completeSourceSetup(deps, connection, frame.payload.request_id);

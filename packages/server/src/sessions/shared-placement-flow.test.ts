@@ -24,6 +24,8 @@ async function placementFixture(port: number | undefined) {
   const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
   const stopped: string[] = [];
   const credentials: string[] = [];
+  // Whether the workspace has confirmed the session's credentials, as the credential owner reports it.
+  const installed = { value: true };
   const launcher: PlacementLauncher = {
     async create(_principal, body) {
       const next = await m.launch();
@@ -45,6 +47,7 @@ async function placementFixture(port: number | undefined) {
     credentials: {
       deliver: async (identity) => {
         credentials.push(`deliver:${identity.sessionId}`);
+        return installed.value;
       },
       revoke: async (_workspaceId, sessionId) => {
         credentials.push(`revoke:${sessionId}`);
@@ -63,7 +66,7 @@ async function placementFixture(port: number | undefined) {
   const close = (sessionId: string) =>
     m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId: randomUUID() }, 30000, new Date());
   const state = async (sessionId: string) => (await m.f.store.managed.sessions.get(m.keyId, sessionId)).state;
-  return { m, launched, stopped, credentials, placedSession, ticks, close, state };
+  return { m, launched, stopped, credentials, installed, placedSession, ticks, close, state };
 }
 
 test("a shared session joins compute with room, and closing one session leaves its siblings running", async () => {
@@ -139,5 +142,17 @@ test("a session never joins compute whose producer cannot run conversations side
     await p.ticks(4);
     expect(p.launched).toHaveLength(2);
     expect(await p.state(second)).toBe("ready");
+  });
+});
+
+test("a session becomes ready only once its workspace confirmed its credentials", async () => {
+  await sharedPlacement(async (p) => {
+    p.installed.value = false;
+    const sessionId = await p.placedSession();
+    await p.ticks(4);
+    expect(await p.state(sessionId)).toBe("provisioning");
+    p.installed.value = true;
+    await p.ticks(1);
+    expect(await p.state(sessionId)).toBe("ready");
   });
 });

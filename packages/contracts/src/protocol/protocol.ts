@@ -51,6 +51,7 @@ export * from "./protocol-checkpoint";
 export * from "./protocol-credentials";
 
 import {
+  CredentialInstallAckPayload,
   CredentialInstalledPayload,
   CredentialInstallPayload,
   CredentialRemovePayload,
@@ -240,6 +241,7 @@ export const AgentFrameSchema = z.discriminatedUnion("type", [
   EnvelopeBase.extend({ type: z.literal("preview_socket"), payload: PreviewSocketPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_renew"), payload: CredentialRenewPayload }),
   EnvelopeBase.extend({ type: z.literal("credential_installed"), payload: CredentialInstalledPayload }),
+  EnvelopeBase.extend({ type: z.literal("credential_install_ack"), payload: CredentialInstallAckPayload }),
   EnvelopeBase.extend({ type: z.literal("setup_complete"), payload: z.object({ request_id: z.uuid() }) }),
   EnvelopeBase.extend({ type: z.literal("registered"), payload: RegisteredPayload }),
   EnvelopeBase.extend({ type: z.literal("heartbeat"), payload: HeartbeatPayload }),

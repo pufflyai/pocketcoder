@@ -50,3 +50,11 @@ export async function confirmCredential(
     deps.log?.(`workspace ${connection.workspaceId}: prior credential revocation pending`);
   }
 }
+
+export function acknowledgeInstall(
+  connection: LiveConnection,
+  payload: Extract<AgentFrame, { type: "credential_install_ack" }>["payload"],
+) {
+  connection.installedLeases ??= new Set();
+  for (const id of payload.lease_ids) connection.installedLeases.add(id);
+}
