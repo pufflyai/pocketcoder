@@ -95,11 +95,12 @@ retries never extend the deadline.
 - Close fences new requests, stops this session's queued and running work and
   leaves sibling sessions on shared compute running. The placement owner then
   stops every workspace the session owns alone: compute it placed for this
-  session, including a placement that was not bound yet, and the workspace of a
-  credentialed session. It retries on every tick, also after a controller
-  restart. Close completes when every request is terminal, every owned workspace
-  has ended with its credentials revoked or expired, and, on shared compute, this
-  session's process stop is recorded.
+  session, including a placement that was not bound yet, and its bound
+  workspace, unless another session still runs there. It retries on every tick,
+  also after a controller restart. Close completes when every request is
+  terminal, every owned workspace has ended with its credentials revoked or
+  expired, and, on shared compute, this session's leases are revoked and its
+  process stop is recorded.
 
 ## History and events
 
@@ -121,13 +122,15 @@ until the transcript is deleted.
 A session needs compute when it has queued requests or a resume request. The
 placement owner then:
 
-1. Creates a workspace from the pinned template through the ordinary workspace
-   service, with a deterministic idempotency key and the
-   `pocketcoder.managed-session` metadata. Launch admission waits until the
-   session's capacity is placed.
+1. Joins a live workspace of the same shared placement key that has room for
+   another process, preferring the fullest. Otherwise it creates a workspace
+   from the pinned template through the ordinary workspace service, with a
+   deterministic idempotency key and the `pocketcoder.managed-session`
+   metadata. Launch admission waits until the session's capacity is placed.
 2. Records the workspace as the session's placement intent. A restarted
    controller continues from this record instead of creating another workspace.
-3. Binds the ready workspace as the next generation and marks the session `ready`.
+3. Binds the ready workspace as the next generation, installs the session's own
+   leases when the template declares credentials, and marks the session `ready`.
 
 When a bound runtime ends, the owner stops its workspace, waits until it ended and
 its credentials were revoked, records the process stop and detaches it. The
