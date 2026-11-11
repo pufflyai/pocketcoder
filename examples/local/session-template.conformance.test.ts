@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseWorkloadTemplate } from "@pstdio/pocketcoder-contracts";
-import { nativeController } from "../native/controller";
 import { loadNativeFixture } from "../native/fixture";
 import { nativeTemplate } from "../native/template";
 import { buildLocalImage, runLocalCommand } from "./runtime";
@@ -73,35 +72,23 @@ test("native fixture archives reload canonical templates without changing image 
 });
 
 test("the isolated native controller provides qualified input storage for structured sessions", async () => {
-  const controllerDirectory = join(directory, "controller");
-  const templates = join(controllerDirectory, "templates");
-  await mkdir(templates, { recursive: true });
-  await writeFile(join(templates, "echo.json"), JSON.stringify((await nativeTemplate(image.image)).manifest));
-  const controller = await nativeController(join(root, "out/native/pocketcoder"), controllerDirectory, true);
-  let id: string | undefined;
-  let token: string | undefined;
-  try {
-    await controller.start();
-    const owner = JSON.parse(
-      await controller.run([
-        "superuser",
-        "create",
-        "--automation",
-        "--expires",
-        new Date(Date.now() + 60_000).toISOString(),
-        "--json",
-      ]),
-    );
-    token = owner.token;
-    await controller.run(["templates", "import", templates], token);
-    const workspace = JSON.parse(
-      await controller.run(["workspaces", "create", "--template", "echo-harness", "--wait", "--json"], token),
-    );
-    id = workspace.id;
-    expect(workspace.state).toBe("ready");
-  } finally {
-    if (id) await controller.run(["workspaces", "cancel", "--id", id], token);
-    await controller.stop();
-    if (id) await runLocalCommand(["docker", "rm", "--force", `pocketcoder-ws-${id}`], { quiet: true }).catch(() => {});
-  }
+  const parentArtifact = Buffer.alloc(process.platform === "linux" ? 512_000_000 : 1, 1);
+  // The shell gives the fixture its own Linux RSS history before it starts the measured controller.
+  const checked = await runLocalCommand(
+    [
+      "sh",
+      "-c",
+      '"$@"',
+      "pc-native-session",
+      process.execPath,
+      join(root, "examples/native/session-fixture.ts"),
+      join(root, "out/native/pocketcoder"),
+      image.image,
+    ],
+    { quiet: true },
+  );
+  const result = JSON.parse(checked.stdout);
+  expect(result.state).toBe("ready");
+  expect(result.starts[0].peakMemoryBytes).toBeLessThanOrEqual(512_000_000);
+  expect(parentArtifact[0]).toBe(1);
 }, 30_000);

@@ -10,6 +10,7 @@
         "deploy/image/quiesce.ts",
         "deploy/image/write-session-image.ts",
         "examples/native/artifact-memory-fixture.ts",
+        "examples/native/session-fixture.ts",
         "examples/clients/managed-runtime/run.ts",
         "examples/harnesses/file-agent/adapter.ts",
         "deploy/image/echo-harness.ts",
