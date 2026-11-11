@@ -34,6 +34,8 @@ export interface ServerConfig extends Partial<SessionConfig> {
   journalDir: string | null;
   pepper: string;
   secretKey?: string;
+  // Allows plain HTTP issuers on *.svc.cluster.local hosts (POCKETCODER_CLUSTER_LOCAL_ISSUERS=true).
+  clusterLocalIssuers?: boolean;
   issuerCaFile?: string;
   eventSigningKey: string;
   eventSinkUrl: string | null;
@@ -286,6 +288,14 @@ function deploymentWorkloadLimits(raw?: string) {
   return raw ? WorkloadLimitsSchema.parse(JSON.parse(raw)) : undefined;
 }
 
+// The vault key and which issuers the vault may call.
+function secretSettings(env: Environment) {
+  return {
+    ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),
+    ...(env.POCKETCODER_CLUSTER_LOCAL_ISSUERS === "true" ? { clusterLocalIssuers: true } : {}),
+  };
+}
+
 export function loadConfig(env: Environment = process.env): ServerConfig {
   const pepper = resolvePepper(env);
   const operator = env.POCKETCODER_HTTP
@@ -330,7 +340,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     store: storeConfig(env),
     ...resolveDataFolders(env),
     pepper,
-    ...(env.POCKETCODER_SECRET_KEY ? { secretKey: env.POCKETCODER_SECRET_KEY } : {}),
+    ...secretSettings(env),
     eventSigningKey: env.POCKETCODER_EVENT_SIGNING_KEY ?? pepper,
     eventSinkUrl: httpUrlEnv(env, "POCKETCODER_EVENT_SINK_URL", null),
     egressImage,

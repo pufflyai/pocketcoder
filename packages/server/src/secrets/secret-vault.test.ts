@@ -71,3 +71,25 @@ test("secret administration uses current instance-wide scope instead of template
   await f.store.revokeMachineKey(f.key.id, new Date());
   await expect(f.vault.list(f.key.id)).rejects.toMatchObject({ code: "auth.invalid_key" });
 });
+
+const issuer = (url: string) => ({
+  type: "runtime-issuer" as const,
+  value: { url, authorization: "Bearer cluster-token", policy: {} },
+});
+
+test.each([
+  { name: "a public host", url: "http://issuer.example/mint" },
+  { name: "a cluster-local host without the controller setting", url: "http://backend.onefin.svc.cluster.local/mint" },
+])("a plain HTTP issuer at $name is refused", async ({ url }) => {
+  const f = await fixture();
+  await expect(f.vault.put(f.key.id, "issuer", issuer(url))).rejects.toMatchObject({ code: "validation.invalid" });
+});
+
+test("a cluster-local HTTP issuer is stored and resolved only while the controller allows it", async () => {
+  const f = await fixture();
+  const url = "http://backend.onefin.svc.cluster.local:8000/internal_api/agent_runtime/issuer/";
+  const allowed = createSecretVault(f.store, f.encryptionKey, { clusterLocalIssuers: true });
+  await allowed.put(f.key.id, "issuer", issuer(url));
+  expect((await allowed.resolve("issuer", "runtime-issuer")).value).toMatchObject({ url });
+  await expect(f.vault.resolve("issuer", "runtime-issuer")).rejects.toMatchObject({ code: "secret.unavailable" });
+});

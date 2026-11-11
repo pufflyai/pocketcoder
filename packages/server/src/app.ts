@@ -58,7 +58,7 @@ import { registerRelayRoutes } from "./relay/relay-routes";
 import type { createIssuerClient } from "./secrets/issuer-client";
 import type { createWorkspaceLeaseService } from "./secrets/lease-service";
 import { registerSecretRoutes } from "./secrets/secret-routes";
-import { createSecretVault } from "./secrets/secret-vault";
+import { controllerVault } from "./secrets/secret-vault";
 import { composeSessionRecovery, type ManagedSessionDeps, registerManagedSessionRoutes } from "./sessions/compose";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
 import { terminalCallbacks } from "./terminals/terminal-audit";
@@ -82,6 +82,7 @@ export interface BuildDeps extends ManagedSessionDeps {
   checkpointTransferOptions?: CheckpointTransferOptions;
   pepper: string;
   secretKey?: string;
+  clusterLocalIssuers?: boolean;
   issuerClient?: ReturnType<typeof createIssuerClient>;
   eventSigningKey?: string;
   egressImage?: string | null;
@@ -300,7 +301,8 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   app.use("/v1/*", journalGate(store));
   if (deps.maintenance) app.use("/v1/*", maintenanceGate(deps.maintenance));
 
-  if (deps.secretKey) registerSecretRoutes(app, createSecretVault(store, Buffer.from(deps.secretKey, "base64url")));
+  const vault = controllerVault(store, deps);
+  if (vault) registerSecretRoutes(app, vault);
   registerManagedSessionRoutes(app, { ...deps, store, executionDispatcher, inputs, previews, liveTurns });
   registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
   registerPrincipalRoutes(app, store);

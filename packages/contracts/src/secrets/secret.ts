@@ -6,10 +6,12 @@ export type SecretType = z.infer<typeof SecretTypeSchema>;
 export const SecretNameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/);
 export const SecretParamsSchema = z.object({ name: SecretNameSchema });
 
+// HTTPS anywhere; plain HTTP only for a Kubernetes Service, which the controller must also allow.
 const issuerUrl = z.url().refine((value) => {
   if (!URL.canParse(value)) return false;
   const url = new URL(value);
-  return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+  const clusterLocal = url.protocol === "http:" && url.hostname.endsWith(".svc.cluster.local");
+  return (url.protocol === "https:" || clusterLocal) && !url.username && !url.password && !url.search && !url.hash;
 });
 const IssuerConfigSchema = z.strictObject({
   url: issuerUrl,

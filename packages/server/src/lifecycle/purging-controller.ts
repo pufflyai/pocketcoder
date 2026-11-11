@@ -10,7 +10,7 @@ import type { ServerConfig } from "../config/config";
 import { createMaintenance } from "../maintenance/maintenance";
 import { createPurgeCleanup } from "../maintenance/purge-cleanup";
 import { createRegistryResolver } from "../secrets/registry-resolver";
-import { createSecretVault } from "../secrets/secret-vault";
+import { controllerVault } from "../secrets/secret-vault";
 import type { ServerLog } from "./lifecycle";
 import { configuredIssuer, createWorkspaceDriver, initializePurgingController } from "./lifecycle-resources";
 
@@ -23,13 +23,14 @@ export async function startPurgingController(config: ServerConfig, options: { lo
     if (!read) throw new Error("Private cleanup has no account authority.");
     const maintenance = createMaintenance();
     maintenance.fence();
-    const vault = config.secretKey ? createSecretVault(store, Buffer.from(config.secretKey, "base64url")) : undefined;
+    const vault = controllerVault(store, config);
     const driver = createWorkspaceDriver(config, vault ? createRegistryResolver(vault) : undefined);
     const runtime = buildServer({
       store,
       driver,
       pepper: config.pepper,
       ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+      ...(config.clusterLocalIssuers ? { clusterLocalIssuers: true } : {}),
       issuerClient: configuredIssuer(config),
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
