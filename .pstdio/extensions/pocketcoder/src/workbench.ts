@@ -4,7 +4,8 @@ import {
   type PlacementTabPresentation,
   workbenchModes,
 } from "@pstdio/sdk/extensions";
-import { startInstance, stopInstance } from "./commands";
+import { stopInstance } from "./commands";
+import { startInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";

@@ -1,6 +1,5 @@
 import { type CommandContext, defineCommand, params } from "@pstdio/sdk/extensions";
-import { resolveExecutable } from "./executable";
-import { catalogChoices, launchInstance } from "./instance-commands";
+import { catalogChoices, launchInstance, publishTemplate, startInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
@@ -48,26 +47,6 @@ export const templateChoices = defineCommand({
   },
 });
 
-export const startInstance = defineCommand({
-  id: "instances.start",
-  title: "Start instance",
-  cli: true,
-  mutating: true,
-  params: { instanceId: instanceIdParam },
-  async run(ctx, input) {
-    const instances = instancesFor(ctx.projectId);
-    const id = resourceId(ctx, input.instanceId, "instance");
-    const saved = await instances.get(id);
-    const workspace = await ctx.workspaces.getDefault();
-    const binary = await resolveExecutable({
-      binary: saved.binary,
-      projectRoot: workspace?.rootPath ?? workspace?.root_path ?? undefined,
-    });
-    const instance = await instances.start(id, binary);
-    await ctx.events.emit(changed, {});
-    return instance;
-  },
-});
 export const stopInstance = defineCommand({
   id: "instances.stop",
   title: "Stop PocketCoder instance",
@@ -127,6 +106,7 @@ export const commands = [
   stopInstance,
   removeInstance,
   importTemplates,
+  publishTemplate,
   launchMachine,
   connectMachine,
   deleteMachine,

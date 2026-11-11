@@ -1,25 +1,37 @@
 import { join } from "node:path";
 
-export function validatedWorkloadLimits(value: unknown) {
+const limitKeys = [
+  "stagedInputBytes",
+  "inputFiles",
+  "inputFileBytes",
+  "inFlightTransfers",
+  "finalizationSeconds",
+  "unreferencedInputRetentionSeconds",
+  "deadlineSeconds",
+  "exportBytes",
+  "exportFiles",
+  "exportRetentionSeconds",
+];
+
+function validatedWorkloadLimits(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Template limits are required.");
   const limits = value as Record<string, number>;
-  for (const key of [
-    "stagedInputBytes",
-    "inputFiles",
-    "inputFileBytes",
-    "inFlightTransfers",
-    "finalizationSeconds",
-    "unreferencedInputRetentionSeconds",
-    "deadlineSeconds",
-    "exportBytes",
-    "exportFiles",
-    "exportRetentionSeconds",
-  ]) {
+  for (const key of limitKeys) {
     const limit = limits[key];
     if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit <= 0)
       throw new Error(`Template limits.${key} must be a finite positive integer.`);
   }
   return limits;
+}
+
+// One instance serves every template published to it, so each limit must fit the largest template.
+export function instanceLimits(manifests: unknown[]) {
+  const limits = manifests.flatMap((manifest) => {
+    const current = manifest as { apiVersion?: string; spec?: { limits?: unknown } };
+    return current.apiVersion === "pocketcoder.dev/v1" ? [validatedWorkloadLimits(current.spec?.limits)] : [];
+  });
+  if (limits.length === 0) return undefined;
+  return Object.fromEntries(limitKeys.map((key) => [key, Math.max(...limits.map((limit) => limit[key] as number))]));
 }
 
 export function inputEnvironment(root: string, limits: Record<string, number>) {

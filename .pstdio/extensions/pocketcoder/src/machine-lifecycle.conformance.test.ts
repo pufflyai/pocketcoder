@@ -91,14 +91,13 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const instance = await instances.launch({
       name: "lifecycle",
       binary: join(repo, "out/native/pocketcoder"),
-      manifest,
+      manifests: [manifest],
     });
     instanceId = instance.id;
     const source = await machines.launchMachine.run(ctx, {
       instance: instanceId,
       template: "persistent-echo@1.0.0",
       externalId: "original-task",
-      connection: "session",
       launchInput: JSON.stringify({ bootstrap_code: "original-bootstrap" }),
       metadata: JSON.stringify({
         application: "old-task",
@@ -130,7 +129,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const fresh = await ready(relaunched.machineId);
     expect(fresh.id).not.toBe(source.machineId);
     expect(fresh.external_id).not.toBe("original-task");
-    expect(fresh.metadata).toEqual({ "pstdio.connection": "session" });
+    expect(fresh.metadata).toEqual({});
     expect(fresh.template.name).toBe("persistent-echo");
     expect(fresh.template.version).toBe("1.0.0");
     expect((await instances.request<ControllerMachine>(instanceId, machinePath(source.machineId))).state).toBe("ready");
@@ -169,7 +168,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const restored = await ready(resumed.machineId);
     expect(restored.id).not.toBe(source.machineId);
     expect(restored.external_id).toBe("resumed-task");
-    expect(restored.metadata).toEqual({ application: "new-task", "pstdio.connection": "session" });
+    expect(restored.metadata).toEqual({ application: "new-task" });
     expect(await command(["docker", "exec", `pocketcoder-ws-${restored.id}`, "cat", "/workspace/saved.txt"])).toBe(
       "saved files",
     );

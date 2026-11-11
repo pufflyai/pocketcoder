@@ -26,7 +26,7 @@ test("invalid current template limits fail before creating or starting an instan
         const source = structuredClone(manifest);
         source.spec.limits[key] = value;
         await expect(
-          instances.launch({ name: "invalid", binary: "/missing-binary", manifest: source }),
+          instances.launch({ name: "invalid", binary: "/missing-binary", manifests: [source] }),
         ).rejects.toThrow(`Template limits.${key}`);
         expect(await readdir(root)).toEqual([]);
       }
@@ -56,6 +56,31 @@ test("starts isolated 1.0 instances with private, expiring owner keys and restar
     await instances.start(first.id);
     expect((await instances.get(first.id)).state).toBe("running");
     expect(await instances.request(first.id, "/v1/templates")).toMatchObject({ items: [] });
+  } finally {
+    for (const id of await readdir(root)) await instances.stop(id);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("an instance publishes every chosen template, sized for the largest, and accepts more later", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-many-templates-"));
+  const instances = createInstances(root);
+  const manifest = await Bun.file(
+    resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json"),
+  ).json();
+  const named = (name: string, inputFiles: number) => {
+    const copy = structuredClone(manifest);
+    copy.metadata.name = name;
+    copy.spec.limits.inputFiles = inputFiles;
+    copy.spec.network = { mode: "unrestricted" };
+    return copy;
+  };
+  try {
+    const instance = await instances.launch({ name: "Many", binary, manifests: [named("a", 3), named("b", 7)] });
+    expect(instance.workloadLimits?.inputFiles).toBe(7);
+    await instances.publish(instance.id, named("c", 1));
+    const templates = await instances.items<{ name: string }>(instance.id, "/v1/templates");
+    expect(templates.map((template) => template.name).sort()).toEqual(["a", "b", "c"]);
   } finally {
     for (const id of await readdir(root)) await instances.stop(id);
     await rm(root, { recursive: true, force: true });

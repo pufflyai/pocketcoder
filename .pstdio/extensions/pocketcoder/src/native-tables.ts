@@ -1,6 +1,6 @@
 import { defineView } from "@pstdio/sdk/extensions";
-import { refresh, startInstance, stopInstance } from "./commands";
-import { launchInstance } from "./instance-commands";
+import { refresh, stopInstance } from "./commands";
+import { launchInstance, startInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
@@ -9,7 +9,13 @@ import { machineStateLabel } from "./machine-status";
 import { ensureMachineWatch } from "./machine-watch";
 import type { ControllerMachine } from "./machines";
 import { changed, instanceKind, machineKind } from "./resources";
-import { connectMachineRow, deleteMachineRow, importSelectedTemplates, launchSelectedMachine } from "./table-commands";
+import {
+  connectMachineRow,
+  deleteMachineRow,
+  importSelectedTemplates,
+  launchSelectedMachine,
+  publishSelectedTemplate,
+} from "./table-commands";
 import { saveTemplate } from "./template-commands";
 
 const refreshAction = { id: "refresh", label: "Refresh", icon: "refresh-cw", command: refresh.ref };
@@ -81,8 +87,17 @@ export const templatesView = defineView({
     kind: "dataTable",
     refreshEvents: [changed],
     emptyTitle: "No published templates",
-    emptyDescription: "Start the instance and import a prepared template folder.",
+    emptyDescription: "Start the instance, then add a catalog template.",
     toolbarActions: [
+      {
+        id: "add",
+        label: "Add template",
+        icon: "plus",
+        presentation: "primary",
+        command: publishSelectedTemplate.ref,
+        input: publishSelectedTemplate.params,
+        submitLabel: "Add template",
+      },
       {
         id: "import",
         label: "Import templates",
@@ -152,7 +167,6 @@ export const machinesView = defineView({
       { id: "name", label: "Machine" },
       { id: "template", label: "Template" },
       { id: "state", label: "State" },
-      { id: "connection", label: "Connection" },
       { id: "error", label: "Error" },
     ],
     rowActions: [
@@ -181,8 +195,6 @@ export const machinesView = defineView({
               name: machine.external_id,
               template: `${machine.template.name}@${machine.template.version}`,
               state: machineStateLabel(machine.state),
-              connection:
-                machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "PocketCoder session",
               error: machine.failure?.log_tail ?? machine.reason_code ?? "",
             },
           })),

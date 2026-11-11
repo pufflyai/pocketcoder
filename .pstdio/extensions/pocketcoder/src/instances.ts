@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveExecutable } from "./executable";
-import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
+import { inputEnvironment, instanceLimits } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 import { createOwnerKeys, type OwnerKey } from "./owner-keys";
 
@@ -203,13 +203,9 @@ export function createInstances(root: string) {
       binary?: string;
       projectRoot?: string;
       templates?: string;
-      manifest?: unknown;
+      manifests?: unknown[];
     }) {
-      const manifest = input.manifest as
-        | { apiVersion?: string; spec?: { limits?: Record<string, number> } }
-        | undefined;
-      const workloadLimits =
-        manifest?.apiVersion === "pocketcoder.dev/v1" ? validatedWorkloadLimits(manifest.spec?.limits) : undefined;
+      const workloadLimits = instanceLimits(input.manifests ?? []);
       const binary = await resolveExecutable(input);
       const id = randomUUID();
       await mkdir(directory(id), { recursive: true, mode: 0o700 });
@@ -229,11 +225,7 @@ export function createInstances(root: string) {
       await write(id, "instance.json", instance);
       try {
         const started = await start(id);
-        if (input.manifest)
-          await request(id, "/v1/templates", {
-            method: "POST",
-            body: JSON.stringify({ manifest: input.manifest }),
-          });
+        for (const manifest of input.manifests ?? []) await this.publish(id, manifest);
         if (input.templates) await this.importTemplates(id, input.templates);
         return started;
       } catch (error) {
@@ -241,6 +233,9 @@ export function createInstances(root: string) {
         await rm(directory(id), { recursive: true });
         throw error;
       }
+    },
+    async publish(id: string, manifest: unknown) {
+      await request(id, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
     },
     async importTemplates(id: string, templates: string) {
       const instance = await get(id);

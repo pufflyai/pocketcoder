@@ -1,7 +1,6 @@
 import type { ConversationSummary } from "@pstdio/pocketcoder-sdk";
 import { type CommandContext, sessionBrowser } from "@pstdio/sdk/extensions";
-import { type instancesFor, PocketCoderHttpError } from "./instances";
-import type { machineConnection } from "./machine-connection";
+import type { instancesFor } from "./instances";
 import type { ControllerMachine } from "./machines";
 import { machinePath } from "./machines";
 
@@ -24,32 +23,11 @@ export async function previousMachineSession(ctx: CommandContext, instanceId: st
   }
 }
 
-export async function checkMachineConnection(
-  ctx: CommandContext,
-  instances: ReturnType<typeof instancesFor>,
-  instanceId: string,
-  machineId: string,
-  connection: ReturnType<typeof machineConnection>,
-) {
-  if (connection.kind === "relay") {
-    const device = (await ctx.account.devices()).find((device) => device.id === connection.deviceId);
-    if (!device || device.current) throw new Error("Choose the machine's remote Prompt Studio device, not this host.");
-    if (!device.online)
-      throw new Error("The machine's Prompt Studio device is offline. Start its relay connection and try again.");
-    return;
-  }
-  try {
-    const capabilities = await instances.request<{ requests: boolean }>(
-      instanceId,
-      `${machinePath(machineId)}/requests/capabilities`,
-    );
-    if (!capabilities.requests) throw new Error("Choose a native PocketCoder session template.");
-  } catch (error) {
-    if (!(error instanceof PocketCoderHttpError) || error.code !== "relay.route_not_allowed") throw error;
-    throw new Error(
-      "This template has no structured session connection. For Prompt Studio, launch with the relay connection and set its device and workspace IDs in metadata.",
-    );
-  }
+export async function checkRelayDevice(ctx: CommandContext, deviceId: string) {
+  const device = (await ctx.account.devices()).find((device) => device.id === deviceId);
+  if (!device || device.current) throw new Error("Choose the machine's remote Prompt Studio device, not this host.");
+  if (!device.online)
+    throw new Error("The machine's Prompt Studio device is offline. Start its relay connection and try again.");
 }
 
 export async function latestMachineConversation(

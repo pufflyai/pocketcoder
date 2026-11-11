@@ -3,7 +3,7 @@ import { commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
 import { machineConnection } from "./machine-connection";
 import {
-  checkMachineConnection,
+  checkRelayDevice,
   latestMachineConversation,
   machineSessionTarget,
   previousMachineSession,
@@ -17,14 +17,6 @@ const machineParams = {
   instance: params.text({ label: "Instance ID", required: true }),
   machineId: params.text({ label: "Machine ID", required: true }),
 };
-export const connectionParam = params.select({
-  label: "Agent connection",
-  defaultValue: "session",
-  options: [
-    { value: "session", label: "PocketCoder session" },
-    { value: "relay", label: "Prompt Studio Cloud relay" },
-  ],
-});
 
 export function createMachineCommands(getInstances = instancesFor) {
   const launchMachine = defineCommand({
@@ -48,7 +40,6 @@ export function createMachineCommands(getInstances = instancesFor) {
           params: { instance: params.valueOf("instance") },
         },
       }),
-      connection: connectionParam,
       externalId: providerParams.externalId,
       launchInput: providerParams.launchInput,
       metadata: providerParams.metadata,
@@ -57,7 +48,6 @@ export function createMachineCommands(getInstances = instancesFor) {
       const separator = input.template.lastIndexOf("@");
       if (separator < 1) throw new Error("Choose a versioned agent template.");
       const metadata = launchInputOf(input.metadata) ?? {};
-      if (input.connection) metadata["pstdio.connection"] = input.connection;
       const machine = await getInstances(ctx.projectId).request<ControllerMachine>(input.instance, "/v1/workspaces", {
         method: "POST",
         headers: { "Idempotency-Key": randomUUID() },
@@ -84,12 +74,15 @@ export function createMachineCommands(getInstances = instancesFor) {
       await ctx.events.emit(changed, {});
       const unavailable = unavailableMachineMessage(machine);
       if (unavailable) throw new Error(unavailable);
-      const connection = machineConnection(machine.metadata);
+      const connection = await machineConnection(
+        () => instances.request(input.instance, `${machinePath(machine.id)}/requests/capabilities`),
+        machine.metadata,
+      );
       const key = `machine-session:${input.instance}:${machine.id}`;
       let sessionId = await ctx.storage.get<string>(key);
       if (!sessionId && connection.kind === "session")
         sessionId = await previousMachineSession(ctx, input.instance, machine.id);
-      await checkMachineConnection(ctx, instances, input.instance, machine.id, connection);
+      if (connection.kind === "relay") await checkRelayDevice(ctx, connection.deviceId);
       const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
       const session =
         existing ??
