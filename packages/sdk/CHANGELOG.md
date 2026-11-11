@@ -1,5 +1,27 @@
 # @pstdio/pocketcoder-sdk
 
+## 0.9.0
+
+### Minor Changes
+
+- [#161](https://github.com/pufflyai/pocketcoder/pull/161) [`3939585`](https://github.com/pufflyai/pocketcoder/commit/39395856b26df0eb577eba1d610de01be857b975) Thanks [@au-re](https://github.com/au-re)! - Retain per-turn results and session files, queue logical requests, and enforce managed workspace and process capacity.
+
+- [#162](https://github.com/pufflyai/pocketcoder/pull/162) [`b8e377e`](https://github.com/pufflyai/pocketcoder/commit/b8e377e68d6bdfcf84898371ff33b3049b54e9aa) Thanks [@au-re](https://github.com/au-re)! - Manage sessions, requests, files, history, events, capacity budgets and session previews from the SDK (`client.sessions`, `client.requests`, `client.files`, `client.authority`) and the CLI (`pcd sessions`, `pcd budgets`).
+
+- [#162](https://github.com/pufflyai/pocketcoder/pull/162) [`b8e377e`](https://github.com/pufflyai/pocketcoder/commit/b8e377e68d6bdfcf84898371ff33b3049b54e9aa) Thanks [@au-re](https://github.com/au-re)! - Cancel and close managed sessions, replay their history and events, and replace lost compute automatically.
+
+- [#160](https://github.com/pufflyai/pocketcoder/pull/160) [`7515826`](https://github.com/pufflyai/pocketcoder/commit/751582601404243dc2409dc73d1db453326682da) Thanks [@au-re](https://github.com/au-re)! - Add durable managed sessions, immutable execution authority, conditional budget policies, atomic invocation reservations and trusted usage settlement.
+
+- [#165](https://github.com/pufflyai/pocketcoder/pull/165) [`3f9ad71`](https://github.com/pufflyai/pocketcoder/commit/3f9ad7131bd3df5cdd2bbca1d04337b4e597b138) Thanks [@au-re](https://github.com/au-re)! - Replace AgentAPI with native structured session producers and typed workspace requests, live messages, tools, and retained history.
+
+- [#160](https://github.com/pufflyai/pocketcoder/pull/160) [`7515826`](https://github.com/pufflyai/pocketcoder/commit/751582601404243dc2409dc73d1db453326682da) Thanks [@au-re](https://github.com/au-re)! - Add finite job exports, workspace service lifetime controls, durable preview grants, versioned managed runtime contracts, and file-aware Prompt Studio sessions.
+
+- [#162](https://github.com/pufflyai/pocketcoder/pull/162) [`b8e377e`](https://github.com/pufflyai/pocketcoder/commit/b8e377e68d6bdfcf84898371ff33b3049b54e9aa) Thanks [@au-re](https://github.com/au-re)! - Remove model usage management: execution profiles no longer take `allowedModels`, budget policies only limit physical capacity, and token reservations and settlement are gone. The model gateway (agentgateway in reference deployments) owns model access and spend.
+
+### Patch Changes
+
+- [#160](https://github.com/pufflyai/pocketcoder/pull/160) [`7515826`](https://github.com/pufflyai/pocketcoder/commit/751582601404243dc2409dc73d1db453326682da) Thanks [@au-re](https://github.com/au-re)! - Enforce managed scope policy authority, session transitions, and durable storage cleanup, and align provisioning contracts.
+
 ## 0.8.0
 
 ### Minor Changes
