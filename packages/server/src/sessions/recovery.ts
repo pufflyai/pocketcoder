@@ -1,5 +1,5 @@
 import { ApiError, managed, type WorkspaceCreateRequest } from "@pstdio/pocketcoder-contracts";
-import type { PrincipalRow, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import type { ManagedSessionIdentity, PrincipalRow, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 
 type Candidate = Awaited<ReturnType<Store["managed"]["recovery"]["candidates"]>>[number];
 
@@ -26,9 +26,16 @@ const ended = (workspace: WorkspaceRow | null) =>
 // session row, so a crash between steps resumes from the recorded placement on the next tick.
 // Accepted requests keep their logical identities; only proved never-started work is dispatched
 // again, through the existing dispatcher and its binding-revision checks.
+// Installs a bound session's own leases on its workspace and revokes them when it leaves shared compute.
+export interface SessionCredentialOwner {
+  deliver(identity: ManagedSessionIdentity, workspaceId: string, generation: number): Promise<void>;
+  revoke(workspaceId: string, sessionId: string): Promise<void>;
+}
+
 export function createSessionRecovery(deps: {
   store: Store;
   launcher: PlacementLauncher;
+  credentials?: SessionCredentialOwner;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }) {
@@ -45,6 +52,8 @@ export function createSessionRecovery(deps: {
   async function replace(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
     const workspace = await store.getWorkspace(binding.workspaceId);
     if (live(workspace, binding.incarnationId)) {
+      // Requests dispatch only once the session is ready, so its credentials are installed first.
+      await deps.credentials?.deliver(candidate.id, binding.workspaceId, binding.generation);
       if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
       return;
     }
@@ -92,6 +101,7 @@ export function createSessionRecovery(deps: {
     }
     const binding = candidate.binding;
     if (!binding || candidate.ownedWorkspaceIds.includes(binding.workspaceId) || candidate.openRequests) return;
+    await deps.credentials?.revoke(binding.workspaceId, candidate.id.sessionId);
     const identity = { ...candidate.id, workspaceId: binding.workspaceId, generation: binding.generation };
     await store.managed.capacity.processStopped(identity, binding.incarnationId, now());
   }

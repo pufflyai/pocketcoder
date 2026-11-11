@@ -4,7 +4,7 @@ import type {
   ManagedRecoveryStore,
   ManagedSessionIdentity,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, gt, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, gt, ne, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { sessionWriter } from "./observations";
 import { ownedWorkspaces } from "./session-workspaces";

@@ -4,7 +4,7 @@ import type {
   ManagedSessionIdentity,
   ManagedStopResult,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { pendingWorkspaceLeases } from "../secrets/lease-fence";

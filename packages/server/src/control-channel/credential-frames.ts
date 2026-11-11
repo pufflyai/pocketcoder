@@ -13,10 +13,12 @@ export async function renewCredential(
   const row = await activeConnectionWorkspace(deps, connection);
   if (!row) return;
   const previous = await deps.store.getWorkspaceLease(payload.lease_id);
+  // A session lease renews under its recorded authority; a workspace lease by its template reference.
   if (
     previous?.workspaceId !== row.id ||
     previous.purpose !== "runtime-issuer" ||
-    !runtimeCredentialReferences(row.templateSnapshot.spec).includes(previous.secretName)
+    (!previous.managedAuthority &&
+      !runtimeCredentialReferences(row.templateSnapshot.spec).includes(previous.secretName))
   )
     return;
   try {

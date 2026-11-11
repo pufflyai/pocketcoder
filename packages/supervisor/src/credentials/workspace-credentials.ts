@@ -108,7 +108,7 @@ export class WorkspaceCredentials {
     this.confirmations.clear();
   }
 
-  // Shared compute keeps running when one session ends; only that session's leases go.
+  // Shared compute keeps running when one session ends or its lease expires; only its leases go.
   private drop(sessionId: string) {
     for (const [path, { value }] of this.files) {
       if (value.session_id !== sessionId) continue;
@@ -116,6 +116,11 @@ export class WorkspaceCredentials {
       this.files.delete(path);
       this.confirmations.delete(value.lease_id);
     }
+  }
+
+  private dropExpiredSessions(now: number) {
+    for (const { value } of [...this.files.values()])
+      if (value.session_id && Date.parse(value.expires_at) <= now) this.drop(value.session_id);
   }
 
   private serialize(work: () => Promise<void>) {
@@ -157,13 +162,9 @@ export class WorkspaceCredentials {
       }
       next = Math.min(next, this.setupMemoryExpiry);
     }
-    for (const row of [...this.files.values()]) {
-      if (this.files.get(row.value.path) !== row) continue;
+    this.dropExpiredSessions(now);
+    for (const row of this.files.values()) {
       const expiry = Date.parse(row.value.expires_at);
-      if (expiry <= now && row.value.session_id) {
-        this.drop(row.value.session_id);
-        continue;
-      }
       if (expiry <= now) {
         this.callbacks.expired();
         return;

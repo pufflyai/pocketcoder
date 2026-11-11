@@ -27,6 +27,7 @@ import { type ControlActivity, controlActivity } from "./control-channel/activit
 import { createAgentApp } from "./control-channel/agent-app";
 import { Hub } from "./control-channel/hub";
 import { PoolConnectionHub } from "./control-channel/pool-ws";
+import { sessionCredentials } from "./control-channel/session-credentials";
 import { controlStore } from "./control-channel/store";
 import { registerConversationRoutes } from "./conversations/conversations-routes";
 import { registerExecutionRoutes } from "./conversations/execution-routes";
@@ -331,7 +332,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
 
   registerRelayRoutes(app, { store, hub, service, inputs });
   return {
-    sessionRecovery: composeSessionRecovery(store, service, log),
+    sessionRecovery: composeSessionRecovery(store, service, log, sessionCredentials({ store, hub, workspaceLeases })),
     executionDispatcher,
     liveTurns,
     inputs,
