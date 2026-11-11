@@ -40,7 +40,7 @@ Build and save the local template:
 bun .pstdio/extensions/pocketcoder/src/codex-template/prepare.ts
 ```
 
-Then choose it in **Launch instance** or **Add template** and launch a machine. It has no session adapter, so Lab connects through the **Prompt Studio Cloud relay**. The image pins Prompt Studio and Codex. It runs as UID 10001, with writable container storage for Prompt Studio's installed extensions. Its state is removed with the machine, which expires after one hour. The declared `pstdio` service exposes only a connection status document; it does not expose the unauthenticated dashboard or account credentials.
+Then choose it in **Launch instance** or **Add template** and launch a machine. It has no session adapter, so Lab connects through the **Prompt Studio Cloud relay**. The image pins Prompt Studio and Codex. It runs as UID 10001 with a read-only root, so it can share an instance with native templates. Prompt Studio's state and installed extensions live on a disk-backed `/work` mount. The first start installs those extensions and can take about 95 seconds on macOS. The state is removed with the machine, which expires after one hour. The declared `pstdio` service exposes only a connection status document; it does not expose the unauthenticated dashboard or account credentials.
 
 Cloud relay chat needs a remote device and workspace linked to this project. A safely enrolled machine declares `pstdio.device_id` and `pstdio.workspace_id` in its launch metadata. Connect checks the device is remote and online, then creates the native Codex session on it.
 

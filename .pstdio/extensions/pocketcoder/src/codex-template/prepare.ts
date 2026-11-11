@@ -27,7 +27,10 @@ const manifest = {
     image: `pocketcoder-pstdio-codex:local@${digest}`,
     harness: { command: ["bun", "/opt/pstdio-tools/start.ts"] },
     resources: { cpu: "2", memory: "2Gi" },
-    security: { readOnlyRoot: false },
+    // A read-only root lets this template share an instance with templates that use immutable input storage.
+    // Prompt Studio installs extensions into /work, which is too large for an in-memory folder.
+    security: { readOnlyRoot: true },
+    persistence: { mounts: [{ name: "work", target: "/work", maxBytes: 4 * 1024 ** 3, maxFiles: 500_000 }] },
     services: {
       pstdio: {
         baseUrl: "http://127.0.0.1:19841",
@@ -35,7 +38,8 @@ const manifest = {
         routes: [{ method: "GET", path: "/connection" }],
       },
     },
-    timeouts: { start: "2m", maxAge: "1h", idle: "20m", terminateGrace: "10s" },
+    // The first start installs Prompt Studio's extensions into /work, which takes about 95 s on a macOS bind mount.
+    timeouts: { start: "5m", maxAge: "1h", idle: "20m", terminateGrace: "10s" },
   },
 };
 const path = join(repo, ".pstdio/extension-storage/pocketcoder.pocketcoder/templates/prompt-studio-codex.json");

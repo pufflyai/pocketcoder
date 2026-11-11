@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const repo = resolve(import.meta.dir, "../../../../..");
 
@@ -20,6 +22,9 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
   const base = `pocketcoder-codex-base:test-${id}`;
   const image = `pocketcoder-codex:test-${id}`;
   const container = `pocketcoder-codex-test-${id}`;
+  const work = await mkdtemp(join(tmpdir(), "pocketcoder-codex-work-"));
+  // The template user is UID 10001, like the controller's per-machine work mount.
+  await chmod(work, 0o777);
   try {
     await command([
       "bun",
@@ -44,13 +49,21 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
       "2g",
       "-p",
       "127.0.0.1::19841",
+      // Match how the controller launches this template: read-only root, in-memory /tmp, disk-backed /work.
+      "--read-only",
+      "--cap-drop",
+      "ALL",
+      "--tmpfs",
+      "/tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001,mode=0700",
+      "--mount",
+      `type=bind,src=${work},dst=/work`,
       "--entrypoint",
       "bun",
       image,
       "/opt/pstdio-tools/start.ts",
     ]);
     const address = await command(["docker", "port", container, "19841/tcp"]);
-    const deadline = Date.now() + 60_000;
+    const deadline = Date.now() + 240_000;
     let connection: { state: string; versions: { pstdio: string; codex: string } } | undefined;
     while (Date.now() < deadline) {
       const running = await command(["docker", "inspect", container, "--format", "{{.State.Running}}"]);
@@ -106,5 +119,6 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
   } finally {
     await command(["docker", "rm", "-f", container]).catch(() => undefined);
     await command(["docker", "image", "rm", image, base]).catch(() => undefined);
+    await rm(work, { recursive: true, force: true });
   }
-}, 180_000);
+}, 360_000);
