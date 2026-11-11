@@ -112,13 +112,30 @@ test("a session whose lease requests never completed gets them replayed, not ref
   }
 });
 
-test("a session is refused when its workspace would exceed what one reconnect can replay", async () => {
-  const w = await sharedWorkspace(15, { count: 1, bytes: SESSION_CREDENTIAL_LIMITS.bytes });
-  try {
-    expect(await w.owner.deliver(await w.bound(), w.f.workspace.id, 1)).toBe(false);
-    await expect(w.owner.deliver(await w.bound(), w.f.workspace.id, 1)).rejects.toThrow("unavailable");
-    expect(w.installed()).toHaveLength(1);
-  } finally {
-    await w.f.close();
-  }
-});
+test.each([
+  { name: "too many credentials", limits: { count: 1, bytes: SESSION_CREDENTIAL_LIMITS.bytes }, admitted: 1 },
+  { name: "too many bytes", limits: { count: SESSION_CREDENTIAL_LIMITS.count, bytes: 1 }, admitted: 0 },
+])(
+  "a session whose credentials would exceed one reconnect's replay ($name) is refused and leaves nothing pending",
+  async ({ limits, admitted }) => {
+    const w = await sharedWorkspace(15, limits);
+    try {
+      const sessions = [await w.bound(), await w.bound()];
+      const results = [];
+      for (const identity of sessions)
+        results.push(
+          await w.owner.deliver(identity, w.f.workspace.id, 1).then(
+            () => "sent",
+            () => "refused",
+          ),
+        );
+      expect(results.filter((result) => result === "sent")).toHaveLength(admitted);
+      const pending = await w.f.store.listPendingWorkspaceLeases(w.f.workspace.id);
+      const holders = new Set(pending.map((lease) => lease.managedAuthority?.sessionId));
+      expect(holders.size).toBe(admitted);
+      expect(w.installed()).toHaveLength(admitted);
+    } finally {
+      await w.f.close();
+    }
+  },
+);

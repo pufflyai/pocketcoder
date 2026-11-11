@@ -156,3 +156,17 @@ test("a session becomes ready only once its workspace confirmed its credentials"
     expect(await p.state(sessionId)).toBe("ready");
   });
 });
+
+test("a ready session whose credentials are no longer confirmed goes back to provisioning", async () => {
+  await sharedPlacement(async (p) => {
+    const sessionId = await p.placedSession();
+    await p.ticks(3);
+    expect(await p.state(sessionId)).toBe("ready");
+    p.installed.value = false;
+    await p.ticks(1);
+    expect(await p.state(sessionId)).toBe("provisioning");
+    p.installed.value = true;
+    await p.ticks(1);
+    expect(await p.state(sessionId)).toBe("ready");
+  });
+});

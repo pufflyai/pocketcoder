@@ -48,6 +48,8 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date)
           return;
         }
         if (!session.binding) return;
+        // A credentialed session runs work only while its workspace has confirmed its credentials.
+        if (profile.credentialBindingId && session.session.state !== "ready") return;
         await requireProcessCapacity(context, tx, id, session.binding);
         const [workspace] = await tx
           .select()

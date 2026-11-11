@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { managed, PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { type managed, type PocketCoderClient, PocketCoderError } from "@pstdio/pocketcoder-sdk";
 import {
   defineHarness,
   type HarnessContext,
@@ -10,7 +10,7 @@ import {
 import { createHarnessRuns } from "./harness-runs";
 import { instancesFor } from "./instances";
 import { managedBindings } from "./managed-bindings";
-import { readManagedMessages } from "./managed-sessions";
+import { historyMessages, openMessages, readManagedMessages, renderMessages } from "./managed-sessions";
 
 type Pending = { body: managed.RequestInput; cancelId?: string };
 type Target = { client: PocketCoderClient; instanceId: string; managedSessionId: string };
@@ -35,20 +35,33 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
   function observe(ctx: HarnessContext, input: HarnessStartInput, ref: Target, pending: Pending): HarnessSession {
     const { client, managedSessionId } = ref;
     const agentSessionId = `${ref.instanceId}:${managedSessionId}`;
+    const show = (value: Awaited<ReturnType<typeof renderMessages>>) =>
+      input.events.push({ op: "replace", path: "/messages", value });
     const done = (async () => {
       // Resending the saved body is safe: the controller answers a known request ID with the original.
-      await client.requests.submit(managedSessionId, pending.body, { signal: input.signal });
+      // A refusal means it never accepted this body, so the saved request is dropped, not retried forever.
+      const refused = await client.requests.submit(managedSessionId, pending.body, { signal: input.signal }).then(
+        () => null,
+        (error: unknown) =>
+          error instanceof PocketCoderError && error.status < 500 && error.status !== 429
+            ? error
+            : Promise.reject(error),
+      );
+      if (refused) {
+        await ctx.state.delete(pendingKey(input.sessionId));
+        ctx.logger.warn(`PocketCoder refused the request: ${refused.message}`);
+        return { status: "failed" as const };
+      }
+      // Committed history is read once per turn; only the live turn is polled.
+      const committed = await historyMessages(client, managedSessionId, input.signal);
       while (!input.signal?.aborted) {
         const request = await client.requests.get(managedSessionId, pending.body.requestId, { signal: input.signal });
-        input.events.push({
-          op: "replace",
-          path: "/messages",
-          value: await readManagedMessages(client, managedSessionId, input.signal),
-        });
         if (request.state === "terminal") {
+          show(renderMessages(await historyMessages(client, managedSessionId, input.signal), []));
           await ctx.state.delete(pendingKey(input.sessionId));
           return { status: statusOf(request.outcome) };
         }
+        show(renderMessages(committed, await openMessages(client, managedSessionId, input.signal)));
         await Bun.sleep(250);
       }
       return { status: "disconnected" as const };
@@ -59,9 +72,9 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
     return {
       agentSessionId,
       timeoutStrategy: "provider",
+      // The cancel ID stays in memory: saving it could bring back a request that already finished.
       async stop() {
         pending.cancelId ??= randomUUID();
-        await ctx.state.set(pendingKey(input.sessionId), pending);
         await client.requests.cancel(managedSessionId, pending.body.requestId, { cancelId: pending.cancelId });
       },
       done,

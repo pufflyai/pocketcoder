@@ -62,25 +62,43 @@ export async function labProfile(
   return saved;
 }
 
-// Retained history plus the live turn, so a running answer shows before it is committed.
-export async function readManagedMessages(client: PocketCoderClient, sessionId: string, signal?: AbortSignal) {
-  const messages = new Map<string, ConversationMessageInput>();
+type Message = ConversationMessageInput;
+
+// Every committed message of the session, oldest first.
+export async function historyMessages(client: PocketCoderClient, sessionId: string, signal?: AbortSignal) {
+  const messages: Message[] = [];
   let cursor: string | undefined;
   do {
     const page: managed.HistoryPage = await client.sessions.history(sessionId, { cursor, limit: 200 }, { signal });
-    for (const record of page.records) for (const message of record.messages) messages.set(message.message_id, message);
+    for (const record of page.records) messages.push(...record.messages);
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
-  for (const turn of (await client.sessions.open(sessionId, { signal })).turns)
-    if (turn.type === "turn")
-      for (const message of turn.messages)
-        if (!messages.has(message.message_id)) messages.set(message.message_id, message as ConversationMessageInput);
+  return messages;
+}
+
+// Messages of turns that are still running and not committed yet.
+export async function openMessages(client: PocketCoderClient, sessionId: string, signal?: AbortSignal) {
+  const turns = (await client.sessions.open(sessionId, { signal })).turns;
+  return turns.flatMap((turn) => (turn.type === "turn" ? (turn.messages as Message[]) : []));
+}
+
+export function renderMessages(committed: Message[], live: Message[]) {
+  const messages = new Map(committed.map((message) => [message.message_id, message]));
+  for (const message of live) if (!messages.has(message.message_id)) messages.set(message.message_id, message);
   return sessionMessages(
     [...messages.values()].sort(
       (a, b) =>
         Date.parse(a.occurred_at) - Date.parse(b.occurred_at) ||
         (a.identity?.sequence ?? 0) - (b.identity?.sequence ?? 0),
     ),
+  );
+}
+
+// Retained history plus the live turn, so a running answer shows before it is committed.
+export async function readManagedMessages(client: PocketCoderClient, sessionId: string, signal?: AbortSignal) {
+  return renderMessages(
+    await historyMessages(client, sessionId, signal),
+    await openMessages(client, sessionId, signal),
   );
 }
 
@@ -126,11 +144,18 @@ export const createOpenManagedSessions = (getInstances = instancesFor, getBindin
         await client.sessions.create({ sessionId: managedSessionId, ...profileRef(profile) });
         // Resume asks for compute now, so the placement shows in Machines before the first message.
         await client.sessions.resume(managedSessionId);
-        const session = await ctx.sessions.create({
-          title: `Managed ${name}: ${managedSessionId.slice(0, 8)}`,
-          harness: { harnessId: `${ctx.extensionId}.harness.managed` },
+        // A controller session without a Lab chat would hold a slot nobody can reach, so it is closed.
+        const session = await (async () => {
+          const chat = await ctx.sessions.create({
+            title: `Managed ${name}: ${managedSessionId.slice(0, 8)}`,
+            harness: { harnessId: `${ctx.extensionId}.harness.managed` },
+          });
+          await getBindings(ctx.projectId).bind(chat.id, input.instance, managedSessionId);
+          return chat;
+        })().catch(async (error: unknown) => {
+          await client.sessions.close(managedSessionId, { cancelId: randomUUID() }).catch(() => {});
+          throw error;
         });
-        await getBindings(ctx.projectId).bind(session.id, input.instance, managedSessionId);
         opened.push({ sessionId: session.id, managedSessionId });
         if (index === count - 1) ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
       }
@@ -145,7 +170,11 @@ const profileRef = (profile: Profile) => ({ profileId: profile.profileId, profil
 
 async function ready(client: PocketCoderClient, sessionId: string) {
   const deadline = Date.now() + 180_000;
-  while ((await client.sessions.get(sessionId)).state !== "ready") {
+  while (true) {
+    const session = await client.sessions.get(sessionId);
+    if (session.state === "ready") return;
+    if (session.state === "failed" || session.state === "closed")
+      throw new Error(`The first session is ${session.state}${session.reasonCode ? `: ${session.reasonCode}` : ""}.`);
     if (Date.now() > deadline) throw new Error("The first session's machine did not become ready.");
     await Bun.sleep(1000);
   }

@@ -117,28 +117,25 @@ export class WorkspaceCredentials {
 
   // Shared compute keeps running when one session ends or its lease expires; only its leases go.
   private drop(sessionId: string) {
-    const folders = new Set<string>();
-    for (const [path, { value }] of this.files) {
-      if (value.session_id !== sessionId) continue;
-      folders.add(dirname(path));
-      this.directories.get(dirname(path))?.remove(basename(path));
-      this.files.delete(path);
-      this.confirmations.delete(value.lease_id);
-    }
-    for (const folder of folders) {
-      this.directories.get(folder)?.close();
-      this.directories.delete(folder);
-    }
+    for (const [path, { value }] of [...this.files]) if (value.session_id === sessionId) this.forget(path);
   }
 
   // An expired session lease goes alone; the session's other leases stay and the controller replaces it.
   private dropExpiredSessions(now: number) {
     for (const [path, { value }] of [...this.files])
-      if (value.session_id && Date.parse(value.expires_at) <= now) {
-        this.directories.get(dirname(path))?.remove(basename(path));
-        this.files.delete(path);
-        this.confirmations.delete(value.lease_id);
-      }
+      if (value.session_id && Date.parse(value.expires_at) <= now) this.forget(path);
+  }
+
+  // Removes one lease file, and closes its folder once no lease of that folder is left.
+  private forget(path: string) {
+    const folder = dirname(path);
+    const lease = this.files.get(path)?.value;
+    this.directories.get(folder)?.remove(basename(path));
+    this.files.delete(path);
+    if (lease) this.confirmations.delete(lease.lease_id);
+    if ([...this.files.keys()].some((other) => dirname(other) === folder)) return;
+    this.directories.get(folder)?.close();
+    this.directories.delete(folder);
   }
 
   private serialize(work: () => Promise<void>) {

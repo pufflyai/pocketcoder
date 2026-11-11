@@ -50,12 +50,27 @@ export function createSessionRecovery(deps: {
     return principal;
   }
 
+  async function credentialsInstalled(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
+    if (!deps.credentials) return true;
+    try {
+      return await deps.credentials.deliver(candidate.id, binding.workspaceId, binding.generation);
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      deps.onError?.(error);
+      return false;
+    }
+  }
+
   async function replace(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
     const workspace = await store.getWorkspace(binding.workspaceId);
     if (live(workspace, binding.incarnationId)) {
-      // Requests dispatch only once the session is ready, so its credentials are installed first.
-      if (deps.credentials && !(await deps.credentials.deliver(candidate.id, binding.workspaceId, binding.generation)))
+      // A credentialed session is ready, and its requests dispatch, only while its workspace has
+      // confirmed its credentials; losing them sends it back to provisioning until they return.
+      if (!(await credentialsInstalled(candidate, binding))) {
+        if (candidate.session.state === "ready")
+          await recovery.transition(candidate.id, "provisioning", "credentials_pending");
         return;
+      }
       if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
       return;
     }

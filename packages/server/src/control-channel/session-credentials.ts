@@ -14,6 +14,34 @@ const live = (lease: WorkspaceLeaseRow) => (lease.issuerExpiresAt ?? lease.reque
 // The supervisor's limits for everything a workspace holds; a reconnect replays all sessions at once.
 export const SESSION_CREDENTIAL_LIMITS = { count: 64, bytes: 524_288 };
 
+type Leases = NonNullable<WsDeps["workspaceLeases"]>;
+type Target = { identity: ManagedSessionIdentity; workspaceId: string; generation: number };
+
+// A known request is replayed as itself, so failed mints never pile up against the limit.
+async function credentialsFor(
+  leases: Leases,
+  target: Target,
+  slots: string[],
+  current: (WorkspaceLeaseRow | undefined)[],
+) {
+  const credentials = [];
+  const minted: string[] = [];
+  try {
+    for (const [index, slot] of slots.entries()) {
+      const known = current[index];
+      const issued = known
+        ? await leases.replay(target.workspaceId, known.id)
+        : await leases.issueManaged(target.identity, target.workspaceId, target.generation, slot, randomUUID());
+      if (!known) minted.push(issued.lease.id);
+      credentials.push(credentialDelivery(issued));
+    }
+  } catch {
+    // One session's issuer or store refusal must not stop placement of the others.
+    throw unavailable();
+  }
+  return { credentials, minted };
+}
+
 // Owned by the placement owner: issue a bound session's leases, install them on its workspace and
 // report whether the supervisor confirmed them, and revoke them alone when the session leaves.
 export function sessionCredentials(
@@ -47,27 +75,25 @@ export function sessionCredentials(
       const current = slots.map((slot) => own.find((lease) => lease.managedAuthority?.slot === slot));
       if (current.every((lease) => lease?.state === "delivered" && connection.installedLeases?.has(lease.id)))
         return true;
-      const credentials = [];
-      try {
-        for (const [index, slot] of slots.entries()) {
-          const known = current[index];
-          // A known request is replayed as itself, so failed mints never pile up against the limit.
-          const issued = known
-            ? await leases.replay(workspaceId, known.id)
-            : await leases.issueManaged(identity, workspaceId, generation, slot, randomUUID());
-          credentials.push(credentialDelivery(issued));
-        }
-      } catch {
-        // One session's issuer or store refusal must not stop placement of the others.
-        throw unavailable();
-      }
+      // Everything a reconnect replays must fit, so the count is checked before anything is minted.
       const siblings = latestSessionLeases(
         pending.filter((lease) => lease.managedAuthority && lease.managedAuthority.sessionId !== identity.sessionId),
+      );
+      if (siblings.length + slots.length > limits.count) throw unavailable();
+      const { credentials, minted } = await credentialsFor(
+        leases,
+        { identity, workspaceId, generation },
+        slots,
+        current,
       );
       const bytes =
         siblings.reduce((sum, lease) => sum + (lease.credentialBytes ?? 0), 0) +
         credentials.reduce((sum, value) => sum + Buffer.byteLength(value.credential), 0);
-      if (siblings.length + credentials.length > limits.count || bytes > limits.bytes) throw unavailable();
+      if (bytes > limits.bytes) {
+        // Leases minted for a refused install must not count against the workspace later.
+        for (const id of minted) await leases.revoke(id).catch(() => {});
+        throw unavailable();
+      }
       deps.hub.send(connection, "credential_install", { credentials });
       return false;
     },
