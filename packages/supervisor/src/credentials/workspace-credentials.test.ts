@@ -57,3 +57,32 @@ test("a preexisting lease-directory symlink never receives a credential", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("one session's leases leave with it while its siblings and the workspace keep running", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-session-lease-"));
+  const expired: string[] = [];
+  const manager = new WorkspaceCredentials({
+    send: () => true,
+    expired: () => expired.push("workspace"),
+    addSecret() {},
+  });
+  const [closing, expiring, sibling] = [randomUUID(), randomUUID(), randomUUID()];
+  const lease = (session: string, expiresIn = 5000) => ({
+    ...credential(join(root, "sessions", session, "runtime")),
+    session_id: session,
+    expires_at: new Date(Date.now() + expiresIn).toISOString(),
+  });
+  try {
+    const kept = lease(sibling);
+    await manager.install([lease(closing), lease(expiring, 50), kept]);
+    await manager.removeSession(closing);
+    expect(await readdir(join(root, "sessions", closing))).toEqual([]);
+    for (let i = 0; i < 100 && (await readdir(join(root, "sessions", expiring))).length; i++) await Bun.sleep(10);
+    expect(await readdir(join(root, "sessions", expiring))).toEqual([]);
+    expect(expired).toEqual([]);
+    expect(await readFile(join(root, "sessions", sibling, "runtime"), "utf8")).toBe(kept.credential);
+  } finally {
+    await manager.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+});

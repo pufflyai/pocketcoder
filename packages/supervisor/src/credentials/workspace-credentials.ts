@@ -78,6 +78,13 @@ export class WorkspaceCredentials {
     this.schedule();
   }
 
+  removeSession(sessionId: string) {
+    return this.serialize(async () => {
+      this.drop(sessionId);
+      this.schedule();
+    });
+  }
+
   completeSetup() {
     return this.serialize(async () => {
       this.setupMemoryExpiry = null;
@@ -99,6 +106,16 @@ export class WorkspaceCredentials {
     this.directories.clear();
     this.files.clear();
     this.confirmations.clear();
+  }
+
+  // Shared compute keeps running when one session ends; only that session's leases go.
+  private drop(sessionId: string) {
+    for (const [path, { value }] of this.files) {
+      if (value.session_id !== sessionId) continue;
+      this.directories.get(dirname(path))?.remove(basename(path));
+      this.files.delete(path);
+      this.confirmations.delete(value.lease_id);
+    }
   }
 
   private serialize(work: () => Promise<void>) {
@@ -140,8 +157,13 @@ export class WorkspaceCredentials {
       }
       next = Math.min(next, this.setupMemoryExpiry);
     }
-    for (const row of this.files.values()) {
+    for (const row of [...this.files.values()]) {
+      if (this.files.get(row.value.path) !== row) continue;
       const expiry = Date.parse(row.value.expires_at);
+      if (expiry <= now && row.value.session_id) {
+        this.drop(row.value.session_id);
+        continue;
+      }
       if (expiry <= now) {
         this.callbacks.expired();
         return;

@@ -22,6 +22,11 @@ export function runtimeCredentialPath(reference: string) {
   return secretMountPath(reference).replace("/secrets/", "/secrets/leases/");
 }
 
+// A managed session's own copy of a template credential, beside its siblings' copies.
+export function sessionCredentialPath(sessionId: string, reference: string) {
+  return runtimeCredentialPath(reference).replace("/leases/", `/leases/sessions/${sessionId}/`);
+}
+
 // A workload names its runtime credentials through fixed-scope slots. The slot's policyRef names
 // the controller's issuer secret, so delivery reuses the same per-workspace, expiring leases.
 export function workloadCredentialReferences(manifest: WorkloadTemplate) {
