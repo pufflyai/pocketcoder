@@ -7,7 +7,7 @@ import { credentialedProfile } from "./managed-lease-fixture";
 test("real issuer leases bind one exclusive session and generation with a finite immutable ceiling", async () => {
   const f = await leaseServiceFixture("memory", undefined, undefined, true);
   try {
-    const { source, template, config, scopeId, bindingId, profileId, incarnationId, authorityExpiresAt, session } =
+    const { template, config, scopeId, bindingId, profileId, incarnationId, authorityExpiresAt, session } =
       await credentialedProfile(f);
     const identity = await session();
     await f.store.managed.sessions.bind(identity, 0, { workspaceId: f.workspace.id, incarnationId, generation: 1 });
@@ -46,7 +46,10 @@ test("real issuer leases bind one exclusive session and generation with a finite
       const nextSession = index === 0 ? siblingId : randomUUID();
       if (index > 0)
         await f.store.managed.sessions.create(f.key.id, { sessionId: nextSession, profileId, profileRevision: 1 });
-      const nextWorkspace = await insertTestWorkspace({ ...f, parsed: source, template }, randomUUID());
+      const nextWorkspace = await insertTestWorkspace(
+        { ...f, parsed: template.parsed ?? f.parsed, template: template.row },
+        randomUUID(),
+      );
       const placement = {
         principalId: f.principal.id,
         sessionId: nextSession,

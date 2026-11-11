@@ -49,3 +49,21 @@ test("only sessions of the same opted-in profile join a credentialed workspace",
     await f.close();
   }
 });
+
+test("a session of a workload template receives a lease for its credential slot", async () => {
+  const f = await leaseServiceFixture("memory", undefined, undefined, true);
+  try {
+    const profile = await credentialedProfile(f, { credentialPlacement: "shared", workload: true });
+    const identity = await profile.session();
+    await f.store.managed.sessions.bind(identity, 0, {
+      workspaceId: f.workspace.id,
+      incarnationId: profile.incarnationId,
+      generation: 1,
+    });
+    const issued = await f.service.issueManaged(identity, f.workspace.id, 1, "runtime", randomUUID());
+    expect(issued.lease.managedAuthority).toMatchObject({ sessionId: identity.sessionId, slot: "runtime" });
+    expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(200);
+  } finally {
+    await f.close();
+  }
+});
