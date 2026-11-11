@@ -88,34 +88,24 @@ const instanceTab = (label: string): PlacementTabPresentation => ({
     };
   },
 });
-const labelTab = (label: string): PlacementTabPresentation => ({
-  async query() {
-    return { label };
-  },
-});
 export const instancesPage = definePage({
   id: "instances",
   title: "PocketCoder Lab",
   icon: "server",
   path: "pocketcoder",
   mode: workbenchModes.project,
-  main: { kind: "panels", landing: "instances" },
-  slots: [
-    {
-      id: "instances",
-      region: "main",
-      order: 0,
-      tab: labelTab("Instances"),
-      item: { kind: "view", view: instancesView.ref, presence: "open" },
-    },
-    {
-      id: "catalog",
-      region: "main",
-      order: 1,
-      tab: labelTab("Template catalog"),
-      item: { kind: "view", view: catalogView.ref, presence: "open" },
-    },
-  ],
+  main: { kind: "view", presentation: "page", view: instancesView.ref, cardinality: "one" },
+  slots: [],
+});
+export const catalogPage = definePage({
+  id: "catalog",
+  title: "Template catalog",
+  icon: "package",
+  path: "pocketcoder-templates",
+  mode: workbenchModes.project,
+  parent: instancesPage.ref,
+  main: { kind: "view", presentation: "page", view: catalogView.ref, cardinality: "one" },
+  slots: [],
 });
 export const instancePage = definePage({
   id: "instance",

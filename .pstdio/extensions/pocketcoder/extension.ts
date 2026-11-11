@@ -10,9 +10,9 @@ import { instancesView, machinesView, templatesView } from "./src/native-tables"
 import { instanceKind, machineKind, templateKind } from "./src/resources";
 import { selectionCommands } from "./src/selection-commands";
 import { tableCommands } from "./src/table-commands";
-import { deleteTemplateRow, viewTemplateRow } from "./src/template-commands";
+import { deleteTemplateRow, openCatalog, viewTemplateRow } from "./src/template-commands";
 import { templateFileView, templatePage } from "./src/template-view";
-import { instancePage, instancesPage, navigation } from "./src/workbench";
+import { catalogPage, instancePage, instancesPage, navigation } from "./src/workbench";
 
 export default defineExtension({
   commands: [
@@ -21,6 +21,7 @@ export default defineExtension({
     ...Object.values(selectionCommands),
     deleteTemplateRow,
     viewTemplateRow,
+    openCatalog,
     relaunchMachine,
     resumeMachine,
     ...Object.values(machineLifecycleActions),
@@ -30,6 +31,6 @@ export default defineExtension({
   harnesses: [createMachineHarness()],
   resourceKinds: [instanceKind, machineKind, templateKind],
   views: [instancesView, templatesView, machinesView, catalogView, templateFileView],
-  pages: [instancesPage, instancePage, templatePage],
+  pages: [instancesPage, instancePage, catalogPage, templatePage],
   navigationItems: [navigation],
 });

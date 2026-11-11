@@ -1,5 +1,5 @@
 import { defineCommand, params } from "@pstdio/sdk/extensions";
-import { templateTarget } from "./lab-navigation";
+import { catalogPageRef, templateTarget } from "./lab-navigation";
 import { changed } from "./resources";
 import {
   catalogFiles,
@@ -63,5 +63,14 @@ export const viewTemplateRow = defineCommand({
     await selectedTemplate(catalogFiles(ctx), input.rowId);
     ctx.navigation.open(templateTarget(ctx.projectId, input.rowId));
     return { path: input.rowId };
+  },
+});
+
+export const openCatalog = defineCommand({
+  id: "templates.open-catalog",
+  title: "Open template catalog",
+  async run(ctx) {
+    ctx.navigation.open({ kind: "page", page: catalogPageRef });
+    return {};
   },
 });

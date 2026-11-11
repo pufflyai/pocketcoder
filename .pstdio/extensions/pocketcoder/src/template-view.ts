@@ -1,5 +1,5 @@
 import { definePage, defineView, workbenchModes } from "@pstdio/sdk/extensions";
-import { instancesPageRef } from "./lab-navigation";
+import { catalogPageRef } from "./lab-navigation";
 import { templateKind } from "./resources";
 import { catalogFiles, templateDocument } from "./template-catalog";
 
@@ -23,7 +23,7 @@ export const templatePage = definePage({
   icon: "package",
   path: "pocketcoder-template",
   mode: workbenchModes.project,
-  parent: instancesPageRef,
+  parent: catalogPageRef,
   resource: { kinds: [templateKind.ref] },
   main: { kind: "view", view: templateFileView.ref, cardinality: "one" },
   slots: [],

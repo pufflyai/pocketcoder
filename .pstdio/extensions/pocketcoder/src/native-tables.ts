@@ -16,7 +16,7 @@ import {
   launchSelectedMachine,
   publishSelectedTemplate,
 } from "./table-commands";
-import { saveTemplate } from "./template-commands";
+import { openCatalog, saveTemplate } from "./template-commands";
 
 const refreshAction = { id: "refresh", label: "Refresh", icon: "refresh-cw", command: refresh.ref };
 const launchInstanceAction = {
@@ -39,7 +39,7 @@ export const instancesView = defineView({
     emptyDescription: "Save a template, then launch an instance with the local executable.",
     toolbarActions: [
       launchInstanceAction,
-      { id: "save", label: "Save template", icon: "file-plus", command: saveTemplate.ref, input: saveTemplate.params },
+      { id: "catalog", label: "Template catalog", icon: "package", command: openCatalog.ref },
       refreshAction,
     ],
     columns: [
