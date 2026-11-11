@@ -32,7 +32,20 @@ test("a shared session joins compute with room, and closing one session leaves i
       stopped.push(id);
     },
   };
-  const recovery = createSessionRecovery({ store: m.f.store, launcher });
+  const credentials: string[] = [];
+  const recovery = createSessionRecovery({
+    store: m.f.store,
+    launcher,
+    // Records what the placement owner asks of the credential owner, tested on its own.
+    credentials: {
+      deliver: async (identity) => {
+        credentials.push(`deliver:${identity.sessionId}`);
+      },
+      revoke: async (_workspaceId, sessionId) => {
+        credentials.push(`revoke:${sessionId}`);
+      },
+    },
+  });
   try {
     const first = await placedSession(m);
     await recovery.tick(); // launches and records the first placement
@@ -45,10 +58,13 @@ test("a shared session joins compute with room, and closing one session leaves i
       expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).state).toBe("ready");
     const usage = await m.f.store.managed.budgets.usage(m.keyId, m.scopeId);
     expect(usage.activeWorkspaces).toBe(1);
+    expect(new Set(credentials)).toEqual(new Set([`deliver:${first}`, `deliver:${second}`]));
 
     await m.f.store.managed.sessions.close(m.keyId, first, { cancelId: randomUUID() }, 30000, new Date());
     for (let i = 0; i < 3; i++) await recovery.tick();
     expect(stopped).toEqual([]);
+    expect(credentials).toContain(`revoke:${first}`);
+    expect(credentials).not.toContain(`revoke:${second}`);
     expect((await m.f.store.managed.sessions.get(m.keyId, second)).state).toBe("ready");
     expect(workspaceId).toBeDefined();
   } finally {
