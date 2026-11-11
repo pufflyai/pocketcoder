@@ -104,6 +104,17 @@ export function createSessionRecovery(deps: {
     if (!template) throw new ApiError("template.not_found", "The pinned template is unavailable.");
     if (candidate.session.state === "failed") await recovery.transition(candidate.id, "provisioning", null);
     const generation = candidate.lastGeneration + 1;
+    // Capacity first: a crash before the intent is recorded finds the same held workspace again.
+    const shared = await store.managed.capacity.joinable(candidate.id);
+    if (shared) {
+      await store.managed.capacity.place({ ...candidate.id, workspaceId: shared, generation });
+      await recovery.recordPlacement(candidate.id, {
+        workspaceId: shared,
+        generation,
+        requestedAt: now().toISOString(),
+      });
+      return;
+    }
     // The same key after a crash returns the same workspace instead of launching another.
     const key = `managed-session:${candidate.id.sessionId}:${generation}`;
     const workspace = await launcher.create(

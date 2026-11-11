@@ -87,7 +87,8 @@ test("the independent reference consumer runs turns, reconnects, cancels and clo
       "completed",
       "interrupted",
     ]);
-    expect((await client.authority.usage(scopeId)).activeWorkspaces).toBe(2);
+    // Both sessions share one profile with room for two processes, so they run on one workspace.
+    expect((await client.authority.usage(scopeId)).activeWorkspaces).toBe(1);
     expect((await consumer.close("ada", first.sessionId)).scope).toBe("session");
   } finally {
     for (const workspace of launched) await workspace.dispose();

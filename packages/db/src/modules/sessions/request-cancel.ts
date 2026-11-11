@@ -145,7 +145,7 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
     )
     .limit(1);
   if (open.length) return session.close;
-  const owned = await ownedWorkspaces(context, tx, id, session.session, session.binding);
+  const owned = await ownedWorkspaces(context, tx, id, session.binding);
   for (const workspaceId of owned) {
     const [workspace] = await tx.select().from(tables.workspaces).where(eq(tables.workspaces.id, workspaceId));
     const leases = await tx.select().from(tables.workspaceLeases).where(pendingWorkspaceLeases(tables, workspaceId));
@@ -160,6 +160,11 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
       .where(eq(tables.managedCapacity.workspaceId, shared.workspaceId));
     const participant = capacity?.record.sessions.find((s) => s.sessionId === id.sessionId);
     if (participant && !participant.stoppedAt) return session.close;
+    const leases = await tx
+      .select()
+      .from(tables.workspaceLeases)
+      .where(pendingWorkspaceLeases(tables, shared.workspaceId));
+    if (leases.some((lease) => lease.managedAuthority?.sessionId === id.sessionId)) return session.close;
   }
   const close = { ...session.close, completedAt: at.toISOString() };
   await tx.update(tables.managedSessions).set({ close }).where(writer.where(id));
