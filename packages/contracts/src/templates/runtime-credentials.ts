@@ -2,7 +2,7 @@ import { type RuntimeTemplatePolicy, secretMountPath } from "./template-schema";
 import type { WorkloadTemplate } from "./workload-template";
 
 export function runtimeCredentialReferences(spec: RuntimeTemplatePolicy) {
-  const envs = [spec.env, spec.agent?.env, spec.harness?.env, spec.terminal?.env, spec.checkpointHook?.env];
+  const envs = [spec.env, spec.harness?.env, spec.terminal?.env, spec.checkpointHook?.env];
   return [
     ...new Set(
       envs

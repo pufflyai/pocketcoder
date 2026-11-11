@@ -81,22 +81,5 @@ async function endRequest(
     await settleExecutionFailure(context, tx, record, "runtime_lost", at, true);
     return;
   }
-  const [workspace] = await tx.select().from(context.tables.workspaces).where(eq(context.tables.workspaces.id, id));
-  if (
-    workspace?.runtimeRegistration?.template?.manifest.spec.operations[record.acceptance.operation]?.outputRoots.length
-  ) {
-    await settleExecutionFailure(context, tx, record, "runtime_lost", at, true);
-    return;
-  }
-  if (executionSettled(record)) return;
-  await tx
-    .update(requests)
-    .set({ execution: { ...record, phase: "lost", settledAt: at.toISOString() } })
-    .where(
-      and(
-        eq(requests.principalId, request.principalId),
-        eq(requests.conversationId, request.conversationId),
-        eq(requests.requestId, request.requestId),
-      ),
-    );
+  await settleExecutionFailure(context, tx, record, "runtime_lost", at, true);
 }

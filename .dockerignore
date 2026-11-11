@@ -5,7 +5,11 @@ deploy/image/dist
 O-37
 .git
 .nx
-.pstdio
+.pstdio/*
+!.pstdio/extensions
+.pstdio/extensions/*
+!.pstdio/extensions/pocketcoder
+!.pstdio/extensions/pocketcoder-workspaces
 out
 **/.env
 **/.env.*
@@ -15,3 +19,5 @@ out
 *.log
 pc_data/
 manager_data/
+**/node_modules
+**/dist

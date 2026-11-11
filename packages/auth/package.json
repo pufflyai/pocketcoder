@@ -29,7 +29,7 @@
     ".": "./src/index.ts"
   },
   "engines": {
-    "bun": ">=1.4.4"
+    "bun": ">=1.4.2"
   },
   "scripts": {
     "test": "bun --no-env-file test",

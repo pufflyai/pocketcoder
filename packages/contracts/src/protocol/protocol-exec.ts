@@ -14,7 +14,6 @@ export type RestoreMode = z.infer<typeof RestoreModeSchema>;
 // service allowlist, and timeouts to the supervisor at registration time, so
 // custom setup and custom harnesses require no image rebuild.
 export const ExecSpecSchema = z.object({
-  agentapi_native: z.boolean().default(false),
   setup: z.array(SetupStepSchema),
   harness: HarnessSchema.nullable(),
   workload: WaitingRuntimeSpecSchema.optional(),

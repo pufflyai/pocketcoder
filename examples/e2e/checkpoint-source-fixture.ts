@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { runtimeTemplateDefinition } from "@pstdio/pocketcoder-contracts";
+import { localInputEnvironment } from "../local/input-environment";
 import { buildLocalImage } from "../local/runtime";
+import { qualifySessionTemplate } from "../local/session-template";
 import { createCheckpointInterruptionProxy } from "./checkpoint-interruption-proxy";
 import { createHarnessWorkspace } from "./contract";
 import { bestEffort, command, freePort, waitFor } from "./local-process";
@@ -24,14 +26,21 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
     { quiet: true },
   );
   const image = await buildLocalImage({ root, imageTag, context: "deploy/image", command });
-  const manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
-  manifest.spec.image = image.image;
-  manifest.spec.persistence = { mounts: [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }] };
+  let manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
+  manifest = await qualifySessionTemplate(manifest, image.image);
+  manifest.spec.lifecycle.checkpointHook = {
+    command: ["/usr/local/bin/bun", "/opt/pocketcoder/quiesce.ts"],
+    env: {},
+    timeoutSeconds: 30,
+  };
+  manifest.spec.lifecycle.persistence = {
+    mounts: [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }],
+  };
   if (options.deadlinePolicy) {
-    manifest.spec.persistence.checkpoint = { onDeadline: "preserve" };
-    manifest.spec.timeouts = { ...manifest.spec.timeouts, maxAge: "30s" };
+    manifest.spec.lifecycle.persistence.checkpoint = { onDeadline: "preserve" };
+    manifest.spec.lifecycle.timeouts = { ...manifest.spec.lifecycle.timeouts, maxAge: "30s" };
   }
-  const parsed = parseTemplateManifest(manifest);
+  const parsed = runtimeTemplateDefinition(manifest);
   const templateDir = join(directory, "templates");
   await mkdir(templateDir);
   const templatePath = join(templateDir, "echo.json");
@@ -43,11 +52,11 @@ export async function checkpointSourceFixture(options: { deadlinePolicy?: boolea
       env: {
         ...process.env,
         POCKETCODER_DIR: dataDir,
+        ...localInputEnvironment(directory),
         POCKETCODER_TEMPLATE_DIR: undefined,
         POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
         POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
         POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${proxyPort}`,
-        POCKETCODER_INPUT_DIR: join(directory, "inputs"),
         POCKETCODER_STORAGE_BACKEND: "filesystem",
         POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "live"),
         POCKETCODER_CHECKPOINT_DIR: checkpointDir,

@@ -55,8 +55,38 @@ export function addTerminalCommand(parser: Argv) {
   );
 }
 
+// A rejected WebSocket upgrade only surfaces a generic error, so ask the
+// capability route first and reuse the server's own explanation. A plain GET
+// answers "upgrade required" when the terminal is usable.
+export function terminalPreflightIssue(status: number, body: unknown): string | null {
+  // 426 is the standard answer when the terminal exists and wants an upgrade.
+  if (status === 426 || (status >= 200 && status < 300)) return null;
+  const error =
+    typeof body === "object" && body !== null && "error" in body
+      ? (body as { error?: { code?: unknown; message?: unknown } }).error
+      : undefined;
+  const message = typeof error?.message === "string" ? error.message : null;
+  if (error?.code === "validation.invalid" && message && /upgrade required/i.test(message)) return null;
+  return message ?? `terminal request failed with status ${status}`;
+}
+
+async function preflightTerminal(client: PocketCoderClient, workspaceId: string): Promise<string | null> {
+  try {
+    const response = await client.raw(`/v1/workspaces/${encodeURIComponent(workspaceId)}/terminal`);
+    const body = await response.json().catch(() => null);
+    return terminalPreflightIssue(response.status, body);
+  } catch (error) {
+    return error instanceof Error ? error.message : "terminal connection failed";
+  }
+}
+
 async function attachTerminal(flags: Flags, client: PocketCoderClient): Promise<number> {
   const workspaceId = need(flags, "id");
+  const failure = await preflightTerminal(client, workspaceId);
+  if (failure) {
+    console.error(`pcd: ${failure}`);
+    return 1;
+  }
   const sessionId = typeof flags.session === "string" ? flags.session : undefined;
   const terminal = client.terminals.connect(workspaceId, { sessionId });
   return await bridgeTerminal(terminal);
@@ -142,7 +172,10 @@ async function bridgeTerminal(terminal: TerminalConnection): Promise<number> {
       terminal.close();
     }),
     terminal.onClose(() => finish(1)),
-    terminal.onError(() => finish(1)),
+    terminal.onError(() => {
+      process.stderr.write("Terminal connection failed. Check that the workspace is ready and the session exists.\n");
+      finish(1);
+    }),
   );
 
   return await result;

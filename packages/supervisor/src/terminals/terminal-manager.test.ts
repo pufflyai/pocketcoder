@@ -5,7 +5,6 @@ import { TerminalManager } from "./terminal-manager";
 
 function exec(command: string[]): ExecSpec {
   return {
-    agentapi_native: false,
     setup: [],
     harness: { command: ["/bin/true"], env: {} },
     env: {},

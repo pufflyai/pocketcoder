@@ -72,10 +72,6 @@ export function controlPlaneClient() {
   return new PocketCoderClient({ baseUrl: url, apiKey });
 }
 
-export async function api(path: string, init: RequestInit = {}) {
-  return await controlPlaneClient().raw(path, init);
-}
-
 // Folder backups, off-node backups and folder recovery copy the embedded data folder.
 export function requireEmbeddedStore(command: string) {
   if (storeKind(process.env) === "postgres")

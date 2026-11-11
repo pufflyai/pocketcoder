@@ -7,17 +7,13 @@ API drives the whole lifecycle.
 
 | Guide | What it covers |
 |-------|----------------|
-| [Contributor guidance](../AGENTS.md) | Engineering, tests, Git, planning and documentation rules |
 | [Continuous integration](ci.md) | Fast PR checks, full merge qualification, caches, branch rules, and timing |
 | [Getting started](getting-started.md) | Run the server, create a principal and key, launch your first workspace |
 | [CLI reference](cli.md) | Every `pcd` command with examples |
 | [Templates](templates.md) | The template contract: images, setup commands, native coding agents, terminals, egress, security |
 | [Private source](private-source.md) | Scoped Git setup leases, issuer contract and real provider checks |
 | [Runtime credentials](runtime-credentials.md) | Renewable workspace authority and cleanup on both providers |
-| [Managed contracts](managed-contracts.md) | Versioned logical session and budget designs, shipped physical APIs, and ownership |
-| [Finite exports](finite-exports.md) | Automatic collection, retained bytes, cleanup, and expiry |
-| [Preview grants](preview-grants.md) | Durable browser authority, renewal, revocation, and stream bounds |
-| [HTTP API](api.md) | Machine auth, workspace lifecycle, the AgentAPI relay, terminals, attachments, signed events |
+| [HTTP API](api.md) | Machine auth, workspace lifecycle, structured sessions, terminals, attachments, signed events |
 | [Checkpoint API](checkpoint-api.md) | Attach, preserve, restore and list the routes that operate on saved state |
 | [Attachments and input storage](input-storage.md) | How uploaded bytes become immutable, bounded workspace input |
 | [Admission feedback](admission.md) | The `reason_code` values a queued workspace reports while limits or policy block it |
@@ -38,17 +34,14 @@ API drives the whole lifecycle.
 | [Security model](security.md) | Trust zones, credential lifetime rules, what the deployment's model gateway must enforce |
 | [Durable conversation validation](durable-conversation-validation.md) | Automated and manual checks for history, retention, deletion, and resume behavior |
 | [Docker checkpoint round trip](docker-checkpoint-round-trip.md) | Local CLI/API archive transfer, verified restore, readiness and cleanup checks |
-| [Pi client runbook](pi-client-runbook.md) | Local Pi as the terminal for a remote workspace, with reconnect and interrupt |
-| [Pi bridge demo](pi-bridge-demo.md) | The dated PC-114 demo result, candidate pins and hashes |
 | [Migration guide](migration.md) | Frozen legacy rename map, in-place upgrade from 0.8.x on PostgreSQL |
 | [Release checklist](release.md) | Shipped migrations stay unchanged; every release upgrades the previous one in place |
-| [Agent examples](../examples/README.md) | Full-stack harness E2E and local Pi as the UI for a remote AgentAPI session |
+| [Agent examples](../examples/README.md) | Full-stack harness E2E |
 
-Two clients sit on top of the same machine API:
+One client package sits on top of the machine API:
 
 | Package | What it is |
 |---------|------------|
-| [`@pstdio/pocketcoder-remote`](../packages/remote/README.md) | Local Pi terminal client, plus a typed embedded adapter for user-turn workspace resume |
 | [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) | Node ESM client with a reusable resolver for stateless user turns after workspace preservation |
 
 ## The short version
@@ -76,15 +69,11 @@ pcd workspaces cancel --id <uuid>
 
 Every workspace follows one execution path: server → durable queue → driver
 (Docker locally, Kubernetes Jobs in-cluster) → one isolated runtime →
-`pocketcoder-supervisor` (PID 1). Agent templates run through PocketCoder-owned
-AgentAPI. Canonical finite operations start explicitly through the durable
-execution API. See [templates](templates.md) for the qualified provider paths.
+`pocketcoder-supervisor` (PID 1) → a native session producer → your template's
+coding-agent command.
 
 Run `bun run test` for the full suite. It runs the browser, unit, performance,
 integration, deployment, example, and policy checks in that order. The warm-pool
 benchmark measures 40 real admissions, includes first-use costs, and keeps the
 80% p95 target. Running it alongside builds or other tests adds CPU scheduling
 delays to the measured database work.
-
-- [Managed sessions and capacity budgets](managed-runtime.md): provision authority,
-  retain logical identity and limit physical capacity per scope.

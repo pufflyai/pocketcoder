@@ -1,315 +1,169 @@
+import { basename } from "node:path";
 import { createInterface } from "node:readline";
 import {
-  type ApiRequest,
-  type CliFail,
-  readWorkspaceAgentState,
-  type WorkspaceChatDeps,
-  waitForAgentInput,
-} from "./agent-readiness";
-import { fileFlags, handleAttachmentCommand, uploadAttachments } from "./attachments";
-import {
-  advanceCursor,
-  type ChatCursor,
-  chatCursor,
-  type MessageBaseline,
-  messageBaseline,
-  messageCursor,
-  messagesAfter,
-  setCursor,
-} from "./chat-cursor";
+  type ConversationMessageInput,
+  type InputObjectReference,
+  type PocketCoderClient,
+  PocketCoderError,
+} from "@pstdio/pocketcoder-sdk";
+import { z } from "zod";
+import { fileFlags, handleAttachmentCommand, mediaTypeOf } from "./attachments";
+import { chatState } from "./chat-state";
 
+export type ApiRequest = (path: string, init?: RequestInit) => Promise<Response>;
 export type ChatFlags = Record<string, unknown>;
-export type { ApiRequest, WorkspaceChatDeps };
-
-// Used where no per-command timeout flag applies, such as a one-shot attach.
-const DEFAULT_READINESS = { timeoutSeconds: 120, pollIntervalMs: 500 };
-
-function need(flags: ChatFlags, key: string, fail: CliFail): string {
-  const value = flags[key];
-  if (typeof value !== "string" || value === "") fail(`missing required flag --${key}`);
-  return value;
+export interface WorkspaceChatDeps {
+  client: PocketCoderClient;
+  fail(message: string): never;
 }
 
-function integerFlag(
-  flags: ChatFlags,
-  name: string,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-  fail: CliFail,
-): number {
-  const raw = flags[name];
-  const value = raw === undefined ? fallback : Number(raw);
-  if (!Number.isInteger(value) || value < minimum || value > maximum) {
-    fail(`--${name} must be an integer from ${minimum} to ${maximum}`);
-  }
-  return value;
-}
-
-async function assertWorkspaceAttachable(id: string, { api, fail }: WorkspaceChatDeps): Promise<void> {
-  const response = await api(`/v1/workspaces/${id}`);
-  const workspace = (await response.json()) as {
-    state?: string;
-    persistence?: { latest_checkpoint_id?: string | null };
-  };
-  if (!response.ok) fail(`workspace lookup failed (${response.status})`);
-  if (workspace.state === "ready") return;
-  const restore = workspace.persistence?.latest_checkpoint_id
-    ? ` Restore with: pcd workspaces restore --checkpoint ${workspace.persistence.latest_checkpoint_id} --external-id <new-id>`
-    : "";
-  fail(`workspace is ${workspace.state ?? "unavailable"}; it is not live.${restore}`);
-}
-
-async function sendWorkspaceMessage(
-  id: string,
-  message: unknown,
-  deps: WorkspaceChatDeps,
-  attachmentIds: string[] = [],
-  readiness: { timeoutSeconds: number; pollIntervalMs: number } = DEFAULT_READINESS,
-): Promise<void> {
-  if (typeof message !== "string") return;
-  const { api, fail } = deps;
-  await waitForAgentInput(id, readiness, deps);
-  const response = await api(`/v1/workspaces/${id}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({
-      content: message,
-      type: "user",
-      ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
-    }),
-  });
-  if (!response.ok) fail(`message failed (${response.status}): ${await response.text()}`);
-}
-
-export async function attachWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): Promise<void> {
-  const id = need(flags, "id", deps.fail);
-  const files = fileFlags(flags.file);
-  if (files.length > 0 && typeof flags.message !== "string") {
-    deps.fail("--file requires --message so the attachments arrive with a turn");
-  }
-  await assertWorkspaceAttachable(id, deps);
-  let attachmentIds: string[] = [];
-  if (files.length > 0) {
-    try {
-      attachmentIds = await uploadAttachments(deps.api, id, files, (line) => console.error(line));
-    } catch (error) {
-      deps.fail(error instanceof Error ? error.message : String(error));
-    }
-  }
-  await sendWorkspaceMessage(id, flags.message, deps, attachmentIds);
-  const cursor = chatCursor(id, flags);
-  const after = cursor.value;
-  const response = await deps.api(`/v1/workspaces/${id}/agent/messages?after=${encodeURIComponent(after)}`);
-  const body = (await response.json()) as { messages?: unknown[] };
-  if (!response.ok) deps.fail(`message polling failed (${response.status})`);
-  const messages = body.messages ?? [];
-  if (flags.json) console.log(JSON.stringify(messages, null, 2));
-  else {
-    for (const message of messages) console.log(JSON.stringify(message));
-    if (messages.length === 0) console.log("(no new messages)");
-  }
-  setCursor(id, cursor, messageCursor(messages, after));
-}
-
-function chatText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => chatText(item))
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (typeof value !== "object" || value === null) return "";
-  const record = value as Record<string, unknown>;
-  for (const key of ["text", "content", "message", "delta"]) {
-    const text = chatText(record[key]);
-    if (text) return text;
-  }
-  return "";
-}
-
-function isAgentMessage(value: unknown): boolean {
-  if (typeof value !== "object" || value === null) return false;
-  const message = value as Record<string, unknown>;
-  return [message.role, message.type, message.sender].some((kind) => kind === "assistant" || kind === "agent");
-}
-
-function printChatMessage(message: unknown, json: boolean): void {
+export function printMessage(message: ConversationMessageInput, json: boolean) {
   if (json) {
     console.log(JSON.stringify(message));
     return;
   }
-  const text = chatText(message);
-  console.log(`agent> ${text || JSON.stringify(message)}`);
-}
-
-async function readChatMessages(id: string, deps: WorkspaceChatDeps): Promise<unknown[]> {
-  const response = await deps.api(`/v1/workspaces/${id}/agent/messages`);
-  const body = (await response.json()) as { messages?: unknown[] };
-  if (!response.ok) {
-    deps.fail(`message polling failed (${response.status}): ${JSON.stringify(body)}`);
-  }
-  return body.messages ?? [];
-}
-
-async function pollTurnResponse(
-  id: string,
-  baseline: MessageBaseline,
-  cursor: ChatCursor,
-  options: {
-    json: boolean;
-    pollIntervalMs: number;
-    timeoutSeconds: number;
-    interrupted: () => boolean;
-  },
-  deps: WorkspaceChatDeps,
-): Promise<void> {
-  const deadline = Date.now() + options.timeoutSeconds * 1000;
-  while (!options.interrupted()) {
-    const [status, messages] = await Promise.all([readWorkspaceAgentState(id, deps), readChatMessages(id, deps)]);
-    const replies = messagesAfter(messages, baseline).filter(isAgentMessage);
-    advanceCursor(id, cursor, messages);
-    const reply = replies.at(-1);
-    if (status === "stable" && reply && chatText(reply).trim()) {
-      printChatMessage(reply, options.json);
-      return;
-    }
-    if (Date.now() >= deadline) {
-      deps.fail(`agent did not respond within ${options.timeoutSeconds} seconds`);
-    }
-    await Bun.sleep(options.pollIntervalMs);
+  for (const part of message.parts ?? [{ type: "text", text: message.content }]) {
+    if (part.type === "text") console.log(`${message.role}> ${part.text}`);
+    if (part.type === "tool")
+      console.log(`${part.name} (${part.status}) ${part.output_text ?? JSON.stringify(part.output ?? part.input)}`);
+    if (part.type === "error") console.error(`${part.code}: ${part.message}`);
+    if (part.type === "file") console.log(`file> ${part.name} (${part.size_bytes} bytes)`);
   }
 }
 
-async function followChatMessages(
-  id: string,
-  cursor: ChatCursor,
-  options: {
-    json: boolean;
-    pollIntervalMs: number;
-    interrupted: () => boolean;
-  },
-  deps: WorkspaceChatDeps,
-): Promise<void> {
-  let baseline: MessageBaseline = {
-    maxId: Number(cursor.value) || 0,
-    length: 0,
-  };
-  while (!options.interrupted()) {
-    const messages = await readChatMessages(id, deps);
-    for (const message of messagesAfter(messages, baseline)) {
-      if (isAgentMessage(message)) printChatMessage(message, options.json);
-    }
-    baseline = messageBaseline(messages);
-    advanceCursor(id, cursor, messages);
-    await Bun.sleep(options.pollIntervalMs);
-  }
+async function messages(client: PocketCoderClient, id: string, conversationId: string) {
+  const open = await client.conversations.open(id);
+  const current = new Map<string, ConversationMessageInput>();
+  for (const turn of open.turns)
+    if (turn.type === "turn" && turn.conversation_id === conversationId)
+      for (const message of turn.messages) current.set(message.message_id, message);
+  let cursor: string | undefined;
+  do {
+    const page = await client.conversations.read(id, conversationId, { cursor, limit: 200 }).catch((error) => {
+      if (error instanceof PocketCoderError && error.code === "conversation.not_found")
+        return { items: [], nextCursor: null };
+      throw error;
+    });
+    for (const message of page.items) current.set(message.message_id, message);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return [...current.values()]
+    .filter((message) => message.identity?.fact?.type !== "turn_terminal")
+    .sort(
+      (a, b) =>
+        Date.parse(a.occurred_at) - Date.parse(b.occurred_at) ||
+        (a.identity?.sequence ?? 0) - (b.identity?.sequence ?? 0),
+    );
 }
 
-async function cancelWorkspace(id: string, api: ApiRequest): Promise<void> {
-  await api(`/v1/workspaces/${id}/cancel`, { method: "POST" }).catch(() => {});
+export async function attachWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps) {
+  return chatWorkspace({ ...flags, attach: true }, deps);
 }
 
-export async function chatWorkspace(flags: ChatFlags, deps: WorkspaceChatDeps): Promise<void> {
-  const id = need(flags, "id", deps.fail);
-  await assertWorkspaceAttachable(id, deps);
-  const pollIntervalMs = integerFlag(flags, "poll-interval-ms", 500, 100, 10_000, deps.fail);
-  const responseTimeoutSeconds = integerFlag(flags, "response-timeout-seconds", 600, 1, 3600, deps.fail);
-  const cursor = chatCursor(id, flags);
-  let interrupted = false;
-  const interrupt = () => {
-    interrupted = true;
-  };
+export async function chatWorkspace(flags: ChatFlags, { client, fail }: WorkspaceChatDeps) {
+  const { id, state, save, poll, timeout } = chatOptions(flags, fail);
+  const abort = new AbortController();
+  const interrupt = () => abort.abort();
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
-  let readline: ReturnType<typeof createInterface> | null = null;
-  const attachmentQueue: string[] = [];
-  const sendTurn = async (message: string) => {
-    if (!message.trim()) return;
-    let attachmentIds: string[] = [];
-    if (attachmentQueue.length > 0) {
-      try {
-        attachmentIds = await uploadAttachments(deps.api, id, attachmentQueue, (line) => console.error(line));
-        attachmentQueue.length = 0;
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : String(error));
-        console.error("message not sent; the attachment queue is unchanged");
-        return;
-      }
+  const queue = fileFlags(flags.file);
+  if (queue.length && (typeof flags.message !== "string" || !flags.message.trim())) fail("--file requires --message");
+  const printed = new Map<string, number>();
+  const show = async () => {
+    for (const message of await messages(client, id, state.conversationId)) {
+      const revision = message.identity?.revision ?? 1;
+      if ((printed.get(message.message_id) ?? 0) >= revision) continue;
+      printMessage(message, flags.json === true);
+      printed.set(message.message_id, revision);
     }
-    const before = await readChatMessages(id, deps);
-    const baseline = messageBaseline(before);
-    advanceCursor(id, cursor, before);
-    await sendWorkspaceMessage(id, message, deps, attachmentIds, {
-      timeoutSeconds: responseTimeoutSeconds,
-      pollIntervalMs,
-    });
-    await pollTurnResponse(
-      id,
-      baseline,
-      cursor,
-      {
-        json: flags.json === true,
-        pollIntervalMs,
-        timeoutSeconds: responseTimeoutSeconds,
-        interrupted: () => interrupted,
-      },
-      deps,
-    );
   };
-
-  try {
-    if (typeof flags.message === "string") {
-      await sendTurn(flags.message);
-      if (flags.follow === true && !interrupted) {
-        await followChatMessages(
-          id,
-          cursor,
-          {
-            json: flags.json === true,
-            pollIntervalMs,
-            interrupted: () => interrupted,
-          },
-          deps,
+  const send = async (message: string) => {
+    if (!state.pending) {
+      const files: InputObjectReference[] = [];
+      for (const path of queue) {
+        const file = Bun.file(path);
+        files.push(
+          await client.attachments.upload(id, {
+            name: basename(path),
+            mediaType: mediaTypeOf(path),
+            body: file,
+            sizeBytes: file.size,
+            signal: abort.signal,
+          }),
         );
       }
-      return;
+      queue.length = 0;
+      state.pending = { requestId: crypto.randomUUID(), conversationId: state.conversationId, message, files };
+      save();
     }
-
-    readline = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: process.stdin.isTTY,
-    });
-    readline.on("SIGINT", () => {
-      interrupted = true;
-      readline?.close();
-    });
-    if (process.stdin.isTTY) process.stdout.write("pocketcoder> ");
-    for await (const line of readline) {
-      if (interrupted) break;
-      if (!handleAttachmentCommand(line, attachmentQueue, (out) => console.log(out))) {
-        await sendTurn(line);
+    // Save the exact request before dispatch so reconnect cannot create a second turn.
+    const input = state.pending;
+    await client.workspaceRequests.submit(id, input, { signal: abort.signal });
+    const deadline = Date.now() + timeout;
+    while (!abort.signal.aborted) {
+      const receipt = await client.workspaceRequests.get(id, input.requestId, state.conversationId, {
+        signal: abort.signal,
+      });
+      await show();
+      if (receipt.finalizedAt) {
+        delete state.pending;
+        save();
+        return;
       }
-      if (process.stdin.isTTY && !interrupted) process.stdout.write("pocketcoder> ");
+      if (Date.now() >= deadline) fail("Request is still running. Reconnect with the same workspace and conversation.");
+      await Bun.sleep(poll);
     }
-    if (flags.follow === true && !interrupted) {
-      await followChatMessages(
-        id,
-        cursor,
-        {
-          json: flags.json === true,
-          pollIntervalMs,
-          interrupted: () => interrupted,
-        },
-        deps,
-      );
+  };
+  try {
+    const recovering = state.pending?.message;
+    if (state.pending) await send(state.pending.message);
+    if (typeof flags.message === "string" && flags.message !== recovering) await send(flags.message);
+    else if (typeof flags.message === "string") return;
+    else if (flags.attach === true) await show();
+    else {
+      await interactive(queue, abort.signal, send, interrupt);
+    }
+    while (flags.follow === true && !abort.signal.aborted) {
+      await show();
+      await Bun.sleep(poll);
     }
   } finally {
-    readline?.close();
     process.off("SIGINT", interrupt);
     process.off("SIGTERM", interrupt);
-    if (flags["cancel-on-exit"] === true) await cancelWorkspace(id, deps.api);
-    if (interrupted) process.exitCode = 130;
+    if (flags["cancel-on-exit"] === true) await client.workspaces.cancel(id);
+    if (abort.signal.aborted) process.exitCode = 130;
+  }
+}
+
+function chatOptions(flags: ChatFlags, fail: WorkspaceChatDeps["fail"]) {
+  const id = z.uuid().parse(flags.id);
+  const conversation = typeof flags.conversation === "string" ? z.uuid().parse(flags.conversation) : undefined;
+  const { state, save } = chatState(id, conversation);
+  const poll = Number(flags["poll-interval-ms"] ?? 500);
+  const timeout = Number(flags["response-timeout-seconds"] ?? 600) * 1000;
+  if (!Number.isInteger(poll) || poll < 100 || poll > 10_000) fail("--poll-interval-ms must be from 100 to 10000");
+  if (!Number.isFinite(timeout) || timeout < 1000 || timeout > 3_600_000)
+    fail("--response-timeout-seconds must be from 1 to 3600");
+
+  return { id, conversation, state, save, poll, timeout };
+}
+async function interactive(
+  queue: string[],
+  signal: AbortSignal,
+  send: (message: string) => Promise<void>,
+  interrupt: () => void,
+) {
+  const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY });
+  const close = () => readline.close();
+  signal.addEventListener("abort", close, { once: true });
+  readline.on("SIGINT", interrupt);
+  try {
+    for await (const line of readline) {
+      if (signal.aborted) break;
+      if (!handleAttachmentCommand(line, queue, console.log) && line.trim()) await send(line);
+    }
+  } finally {
+    signal.removeEventListener("abort", close);
+    readline.close();
   }
 }

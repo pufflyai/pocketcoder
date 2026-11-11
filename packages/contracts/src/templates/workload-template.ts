@@ -8,6 +8,7 @@ import {
   CheckpointHookSchema,
   HarnessSchema,
   ResourcesSchema,
+  RuntimeTemplatePolicySchema,
   SecuritySchema,
   ServiceSchema,
   TimeoutsSchema,
@@ -25,7 +26,7 @@ import { WorkloadInputSchema } from "./workload-input-schema";
 import { validateWorkloadTemplate } from "./workload-validation";
 
 export const WorkloadAdapterSchema = z.strictObject({
-  kind: z.enum(["process", "service", "pi", "agentapi"]),
+  kind: z.enum(["process", "service", "pi"]),
   digest: WorkloadDigestSchema,
   protocol: z.string().min(1).max(128),
   command: HarnessSchema.shape.command.optional(),
@@ -49,6 +50,7 @@ export const WorkloadTemplateBaseSchema = z.strictObject({
   spec: z.strictObject({
     version: z.string().regex(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/),
     image: WorkloadImageSchema,
+    imagePullSecret: RuntimeTemplatePolicySchema.shape.imagePullSecret,
     runtime: WorkloadRuntimePinSchema,
     profile: WorkloadProfileSchema,
     adapters: z.record(WorkloadNameSchema, WorkloadAdapterSchema),

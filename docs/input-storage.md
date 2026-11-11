@@ -66,7 +66,7 @@ The provider-neutral projection reference contains workspace/file/version IDs an
 the frozen manifest. It contains no host or PVC path. A trusted driver can read
 verified canonical bytes to rebuild a lost projection. Docker uses the optional
 daemon-host projection below. Kubernetes uses a shared claim; see
-[Kubernetes shared storage](kubernetes-shared-storage.md). Legacy AgentAPI attachment
+[Kubernetes shared storage](kubernetes-shared-storage.md). Legacy terminal attachment
 messages fail with `attachment.unsupported` until a qualified projection and
 operation owner are installed. Text-only messages keep working.
 

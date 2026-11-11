@@ -9,8 +9,7 @@ env:
   NX_DAEMON: "false"
 jobs:
   integration:
-    # Keep real browser startup independent of ubuntu-latest OS migrations.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -18,14 +17,14 @@ jobs:
           cache: integration
       - run: docker pull postgres:16-alpine
       - name: Prepare the execution producer fixture
-        run: docker pull oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
+        run: docker pull oven/bun@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
       - name: Prepare real Chromium
         run: timeout 30s /opt/google/chrome/chrome --headless --no-first-run --disable-background-networking --dump-dom about:blank > /dev/null
       - env:
           POCKETCODER_CHROMIUM_BINARY: /opt/google/chrome/chrome
         run: bun --no-env-file scripts/ci/run.ts integration
   contracts:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -35,7 +34,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends xvfb x11-utils
-      - name: Prepare and verify Helm
+      - name: Prepare and verify Helm before chart tests
         run: |
           timeout 30s cat "$(command -v helm)" > /dev/null
           timeout 30s helm version --short
@@ -74,7 +73,6 @@ jobs:
       matrix:
         role:
           - pi
-          - oss
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -116,12 +114,6 @@ jobs:
           - name: Pi and doctor
             fixture: pi
             command: bun run example:e2e:pi
-          - name: Pi resume
-            fixture: pi
-            command: bun run example:pi:resume:check
-          - name: Codex and OpenCode
-            fixture: oss
-            command: bun run example:e2e:oss
           - name: Private images
             fixture: workspace
             command: bun run example:e2e:private-image
@@ -213,16 +205,12 @@ jobs:
         run: bun run example:e2e:kubernetes-helm
 
   extensions:
-    needs: service-fixtures
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           cache: extensions
-      - uses: ./.github/actions/load-fixtures
-        with:
-          fixture: workspace
       - run: bun --no-env-file scripts/ci/run.ts extensions
   checks:
     name: Full qualification
@@ -249,7 +237,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version-file: package.json
+          bun-version: 1.4.2
       - env:
+          CI_REQUIRED: '["integration","extensions","kubernetes-shared-storage","kubernetes-service-inputs","contracts","performance","service-fixtures","harness-fixtures","packages","platform","installation","services","monitoring","images","harnesses"]'
           CI_RESULTS: ${{ toJSON(needs) }}
-        run: bun --no-env-file scripts/ci/gate.ts --all
+        run: bun --no-env-file scripts/ci/gate.ts

@@ -4,8 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const docker = Bun.which("docker");
-const available =
+const providerImage = "oven/bun:1.4.2";
+const dockerReady =
   docker !== null && Bun.spawnSync([docker, "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+// The fixture image is an external dependency. Pull it once, and skip rather
+// than fail when the registry or the local image store cannot provide it.
+const imageReady =
+  dockerReady &&
+  (Bun.spawnSync([docker as string, "image", "inspect", providerImage], { stdout: "ignore", stderr: "ignore" })
+    .exitCode === 0 ||
+    Bun.spawnSync([docker as string, "pull", providerImage], { stdout: "ignore", stderr: "ignore" }).exitCode === 0);
 
 async function waitFor(path: string) {
   const deadline = Date.now() + 10_000;
@@ -17,7 +25,7 @@ async function waitFor(path: string) {
 }
 
 for (const mode of ["fresh", "existing"] as const)
-  test.skipIf(!available)(
+  test.skipIf(!imageReady)(
     `${mode} startup keeps real provider discovery and unknown-provider reconciliation before readiness`,
     async () => {
       if (!docker) throw new Error("Docker is required.");
@@ -39,7 +47,7 @@ for (const mode of ["fresh", "existing"] as const)
             `pocketcoder.workspace=${workspaceId}`,
             "--label",
             "pocketcoder.template-digest=sha256:owned-fixture",
-            "oven/bun:1.4.4",
+            providerImage,
             "bun",
             "--version",
           ],

@@ -212,6 +212,7 @@ export class DatabaseStore implements Store {
     this.acceptConversationRequest = conversations.acceptConversationRequest;
     this.listConversationExecutions = conversations.listConversationExecutions;
     this.isAcceptedTurn = conversations.isAcceptedTurn;
+    this.isCommittedTurn = conversations.isCommittedTurn;
     this.commitConversationTurn = conversations.commitConversationTurn;
     this.appendWorkspaceMessage = conversations.appendWorkspaceMessage;
     this.readWorkspaceConversation = conversations.readWorkspaceConversation;
@@ -331,6 +332,7 @@ export class DatabaseStore implements Store {
   readonly acceptConversationRequest: Store["acceptConversationRequest"];
   readonly listConversationExecutions: Store["listConversationExecutions"];
   readonly isAcceptedTurn: Store["isAcceptedTurn"];
+  readonly isCommittedTurn: Store["isCommittedTurn"];
   readonly commitConversationTurn: Store["commitConversationTurn"];
   readonly appendWorkspaceMessage: Store["appendWorkspaceMessage"];
   readonly readWorkspaceConversation: Store["readWorkspaceConversation"];

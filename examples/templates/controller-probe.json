@@ -1,0 +1,20 @@
+{
+  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "kind": "Template",
+  "metadata": { "name": "echo-harness", "description": "Generic HTTP probe for controller infrastructure tests" },
+  "spec": {
+    "version": "1.0.0",
+    "image": "example.invalid/workspace@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "harness": { "command": ["bun", "/opt/pocketcoder/controller-probe.ts"] },
+    "services": {
+      "probe": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "healthPath": "/healthz",
+        "routes": [{ "method": "GET", "path": "/healthz" }, { "method": "POST", "path": "/probe" }]
+      }
+    },
+    "resources": { "cpu": "1", "memory": "256Mi" },
+    "security": { "writableMemoryPaths": ["/tmp"] },
+    "timeouts": { "start": "2m", "maxAge": "15m", "idle": "5m", "disconnectGrace": "30s", "terminateGrace": "5s" }
+  }
+}

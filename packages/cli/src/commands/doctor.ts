@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Argv } from "yargs";
-import { api, controlPlaneClient, type Flags, fail, need } from "../command/cli-context";
+import { controlPlaneClient, type Flags, fail, need } from "../command/cli-context";
 import { addAction } from "./command";
 
 export function addDoctorCommand(parser: Argv) {
@@ -36,10 +36,8 @@ async function runDoctor(flags: Flags) {
   try {
     console.log(`doctor: workspace ${workspace.id} queued; waiting for ready`);
     await waitUntilReady(workspace.id);
-    console.log("doctor: workspace ready; probing agent status through the relay");
+    console.log("doctor: workspace ready; probing a structured session");
     const timeoutSeconds = turnTimeout(flags);
-    await verifyStatus(workspace.id);
-    await waitForInput(workspace.id, timeoutSeconds);
     await runTurn(workspace.id, timeoutSeconds);
     console.log("doctor: correlated agent response received");
   } catch (error) {
@@ -79,67 +77,34 @@ async function waitUntilReady(workspaceId: string) {
   throw new Error("workspace did not become ready within 5 minutes");
 }
 
-async function waitForInput(workspaceId: string, timeoutSeconds: number) {
-  // A ready workspace can still be inside AgentAPI's startup quiet period. The
-  // SDK long-polls workspace changes, so this does not busy-poll the relay.
-  console.log("doctor: waiting for the agent to be ready for input");
-  await controlPlaneClient().workspaces.waitForAgentInput(workspaceId, timeoutSeconds * 1000);
-}
-
-async function verifyStatus(workspaceId: string) {
-  const response = await api(`/v1/workspaces/${workspaceId}/agent/status`);
-  const text = await response.text();
-  console.log(`doctor: relay status ${response.status}: ${text}`);
-  if (!response.ok) throw new Error(`agent status probe failed (${response.status})`);
-  let body: { status?: unknown };
-  try {
-    body = JSON.parse(text) as { status?: unknown };
-  } catch {
-    throw new Error("agent status probe returned invalid JSON");
-  }
-  if (body.status !== "running" && body.status !== "stable") {
-    throw new Error(`agent status probe returned unknown status: ${JSON.stringify(body.status)}`);
-  }
-}
-
 async function runTurn(workspaceId: string, timeoutSeconds: number) {
+  const client = controlPlaneClient();
   const nonce = `pocketcoder-doctor-${randomUUID()}`;
-  console.log("doctor: sending a correlated request/response probe");
-  const response = await api(`/v1/workspaces/${workspaceId}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({
-      type: "user",
-      content: `Reply with exactly this diagnostic token: ${nonce}`,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`agent message probe failed (${response.status}): ${await response.text()}`);
-  }
-
+  const request = {
+    requestId: randomUUID(),
+    conversationId: randomUUID(),
+    message: `Reply with exactly this diagnostic token: ${nonce}`,
+    files: [],
+  };
+  await client.workspaceRequests.submit(workspaceId, request);
   const deadline = Date.now() + timeoutSeconds * 1000;
-  let after = "0";
   while (Date.now() < deadline) {
-    const messagesResponse = await api(
-      `/v1/workspaces/${workspaceId}/agent/messages?after=${encodeURIComponent(after)}`,
-    );
-    if (!messagesResponse.ok) {
-      throw new Error(`agent messages probe failed (${messagesResponse.status}): ${await messagesResponse.text()}`);
-    }
-    const body = (await messagesResponse.json()) as { messages?: Array<Record<string, unknown>> };
-    const messages = body.messages ?? [];
-    if (messages.some((message) => containsNonce(message, nonce))) return;
-    const last = messages.at(-1);
-    if (last && (typeof last.id === "string" || typeof last.id === "number")) {
-      after = String(last.id);
+    const receipt = await client.workspaceRequests.get(workspaceId, request.requestId, request.conversationId);
+    if (receipt.finalizedAt) {
+      const history = await client.conversations.read(workspaceId, request.conversationId);
+      if (
+        history.items.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.parts?.some((part) => part.type === "text" && part.text.includes(nonce)),
+        )
+      )
+        return;
+      throw new Error("Session finished without the diagnostic token.");
     }
     await Bun.sleep(500);
   }
-  throw new Error(`agent did not return the correlated diagnostic token within ${timeoutSeconds} seconds`);
-}
-
-function containsNonce(message: Record<string, unknown>, nonce: string) {
-  const role = String(message.role ?? message.type ?? "").toLowerCase();
-  return !["user", "human"].includes(role) && JSON.stringify(message).includes(nonce);
+  throw new Error(`Session did not finish within ${timeoutSeconds} seconds`);
 }
 
 async function printFailureTail(workspaceId: string) {

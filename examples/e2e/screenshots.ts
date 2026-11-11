@@ -16,7 +16,7 @@ for (const mode of ["desktop", "browser"] as const) {
           "/opt/pocketcoder/browser-harness.ts",
           "bun",
           "-e",
-          "await import('/opt/pocketcoder/echo-harness.ts');Bun.serve({hostname:'127.0.0.1',port:3000,fetch:()=>new Response('<style>body{background:#24496a;color:white;font:32px sans-serif}</style><h1>Private browser screenshot</h1>',{headers:{'content-type':'text/html'}})})",
+          "const{serveControllerProbe}=await import('/opt/pocketcoder/controller-probe.ts');serveControllerProbe();Bun.serve({hostname:'127.0.0.1',port:3000,fetch:()=>new Response('<style>body{background:#24496a;color:white;font:32px sans-serif}</style><h1>Private browser screenshot</h1>',{headers:{'content-type':'text/html'}})})",
         ];
     },
     {

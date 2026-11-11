@@ -1,61 +1,16 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { parseTemplateManifest, snapshotOf } from "@pstdio/pocketcoder-contracts";
 import { DatabaseStore } from "@pstdio/pocketcoder-db";
-import type { WorkspaceLaunch, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { DEFAULT_LIMITS, Scheduler } from "@pstdio/pocketcoder-runtime-core";
 import { KubernetesDriver } from "./kubernetes";
 import { resourceName } from "./kubernetes-command";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { applyRegistrySecret } from "./kubernetes-registry";
-import {
-  REGISTRY_TERM,
-  registryFixture,
-  registryShutdownLogs,
-  registryWorkspaceCommand,
-  run,
-  waitFor,
-} from "./kubernetes-registry-fixture";
+import { REGISTRY_TERM, registryFixture, registryShutdownLogs, run, waitFor } from "./kubernetes-registry-fixture";
+import { registryLaunch as launch } from "./kubernetes-registry-launch.test";
 import { KubernetesSecretResolver } from "./kubernetes-secrets";
 import { LAUNCH_PHASE } from "./kubernetes-uncommitted";
-
-function launch(image: string): WorkspaceLaunch {
-  const snapshot = snapshotOf(
-    parseTemplateManifest({
-      apiVersion: "pocketcoder.dev/v1alpha1",
-      kind: "Template",
-      metadata: { name: "private-kind" },
-      spec: {
-        version: "1.0.0",
-        image,
-        imagePullSecret: "secretRef:pull-image",
-        command: registryWorkspaceCommand,
-        agent: { command: ["true"] },
-        resources: { cpu: "1", memory: "128Mi" },
-      },
-    }),
-  );
-  const id = randomUUID();
-  return {
-    workspace: {
-      id,
-      templateDigest: snapshot.digest,
-      templateSnapshot: snapshot,
-      deadlineAt: new Date(Date.now() + 60000),
-    } as WorkspaceRow,
-    input: {
-      workspace_id: id,
-      server_url: "http://localhost:8091",
-      registration_secret: "one-use",
-      template_name: snapshot.name,
-      template_version: snapshot.version,
-      template_digest: snapshot.digest,
-      launch_mode: "create",
-    },
-    mounts: [],
-    secrets: [],
-  };
-}
 
 test("live kubelet rejects wrong registry authority, pulls privately and removes controller Secrets", async () => {
   const f = await registryFixture();

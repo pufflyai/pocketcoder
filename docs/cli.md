@@ -187,8 +187,7 @@ identity. Override values must be JSON, including the quotes around strings:
 ```sh
 pcd templates render templates/codex.yaml \
   --image "registry.example/codex@sha256:<64-hex-digest>" \
-  --set '/spec/agent/termWidth=120' \
-  --set '/spec/agent/env={"MODEL":"gpt-5"}' \
+  --set '/spec/harness/env={"MODEL":"gpt-5"}' \
   --out deploy/templates
 ```
 
@@ -248,7 +247,7 @@ pcd workspaces outputs --id <uuid>
   (requires the `attachments:write` scope and `--message`) and sends their
   IDs with the turn; the agent receives the files' workspace paths. A failed
   upload aborts before any message is sent.
-- `chat` uses the same allowlisted AgentAPI message routes for repeated turns.
+- `chat` uses the structured workspace request and conversation APIs for repeated turns.
   Ctrl-C/EOF detaches without canceling unless `--cancel-on-exit` is supplied.
 - Inside `chat`, `/attach <path>` queues a local file, `/attachments` lists
   the queue, and `/detach <index|all>` removes entries. Queued files upload

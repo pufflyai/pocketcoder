@@ -1,4 +1,4 @@
-import { isAgentApiNative, isTerminal, parseDurationMs } from "@pstdio/pocketcoder-contracts";
+import { isTerminal, parseDurationMs } from "@pstdio/pocketcoder-contracts";
 import type {
   StorageRef,
   WorkspaceCheckpointRow,
@@ -114,11 +114,11 @@ export class PersistencePreserveRunner {
   }
   async stopForSnapshot(workspace: WorkspaceRow, operationId: string): Promise<boolean> {
     const spec = workspace.templateSnapshot.spec;
-    const native = isAgentApiNative(spec);
-    const hook = native ? undefined : spec.checkpointHook;
-    const deadlineMs = native ? parseDurationMs(spec.timeouts.terminateGrace) : (hook?.timeoutSeconds ?? 0) * 1000;
-    const quiesced =
-      native || hook ? await this.context.deps.hub.prepareCheckpoint(workspace.id, operationId, deadlineMs) : false;
+    const hook = spec.checkpointHook;
+    const deadlineMs = (hook?.timeoutSeconds ?? 0) * 1000;
+    const quiesced = hook
+      ? await this.context.deps.hub.prepareCheckpoint(workspace.id, operationId, deadlineMs)
+      : false;
     if (!workspace.providerRef) return quiesced;
     await stopWorkspaceProvider(
       this.context.deps.store,

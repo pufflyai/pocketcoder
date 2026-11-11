@@ -79,23 +79,7 @@ describe("service relay", () => {
     expect(await res.json()).toEqual({ status: "stable" });
   });
 
-  test("offers a direct AgentAPI alias without exposing the service abstraction", async () => {
-    const server = await createTestServer(await createStore());
-    const id = await readyWorkspace(server);
-    const { sent } = fakeAgent(server, id, (frame) => {
-      respondJson(server, id, frame, { status: "stable" });
-    });
-    const res = await server.app.request(`/v1/workspaces/${id}/agent/status`, authed(server.token));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "stable" });
-    expect(sent.map((value) => JSON.parse(value) as { payload: { service: string; path: string } })).toContainEqual(
-      expect.objectContaining({
-        payload: expect.objectContaining({ service: "agent", path: "/status" }),
-      }),
-    );
-  });
-
-  test("streams a declared AgentAPI event response before upstream EOF", async () => {
+  test("streams a declared service event response before upstream EOF", async () => {
     const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     let requestId = "";
@@ -111,7 +95,7 @@ describe("service relay", () => {
       });
     });
     const response = await server.app.request(
-      `/v1/workspaces/${id}/agent/events`,
+      `/v1/workspaces/${id}/services/agent/events`,
       authed(server.token, { headers: { accept: "text/event-stream" } }),
     );
     expect(response.status).toBe(200);
@@ -139,7 +123,7 @@ describe("service relay", () => {
     const server = await createTestServer(await createStore());
     const id = await readyWorkspace(server);
     fakeAgent(server, id, () => {}, 4);
-    const response = await server.app.request(`/v1/workspaces/${id}/agent/events`, authed(server.token));
+    const response = await server.app.request(`/v1/workspaces/${id}/services/agent/events`, authed(server.token));
     expect(response.status).toBe(409);
     expect(((await response.json()) as { error: { code: string } }).error.code).toBe("relay.streaming_unsupported");
   });

@@ -12,8 +12,7 @@ function manifest() {
     spec: {
       version: "1.2.3",
       image: PLACEHOLDER,
-      agent: {
-        type: "codex",
+      harness: {
         command: ["codex"],
         env: { MODEL: "default", FEATURE: "off" },
       },
@@ -40,16 +39,16 @@ describe("template rendering", () => {
     const changed = renderTemplateManifest(manifest(), {
       image: IMAGE,
       set: [
-        '/spec/agent/env={"MODEL":"gpt-5","FEATURE":"on"}',
-        '/spec/agent/command=["codex","exec"]',
+        '/spec/harness/env={"MODEL":"gpt-5","FEATURE":"on"}',
+        '/spec/harness/command=["codex","exec"]',
         "/spec/security/readOnlyRoot=false",
         "/spec/source=null",
         "/spec/maxLaunchInputBytes=1024",
       ],
     });
 
-    expect(changed.manifest.spec.agent?.env).toMatchObject({ MODEL: "gpt-5", FEATURE: "on" });
-    expect(changed.manifest.spec.agent?.command).toEqual(["codex", "exec"]);
+    expect(changed.manifest.spec.harness?.env).toMatchObject({ MODEL: "gpt-5", FEATURE: "on" });
+    expect(changed.manifest.spec.harness?.command).toEqual(["codex", "exec"]);
     expect(changed.manifest.spec.security.readOnlyRoot).toBe(false);
     expect(changed.manifest.spec.source).toBeNull();
     expect(changed.manifest.spec.maxLaunchInputBytes).toBe(1024);
@@ -58,7 +57,7 @@ describe("template rendering", () => {
 
   test("rejects placeholders, bad pointers, untyped values, and invalid final manifests", () => {
     expect(() => renderTemplateManifest(manifest())).toThrow("--image is required");
-    expect(() => renderTemplateManifest(manifest(), { image: "registry.test/agent:latest" })).toThrow();
+    expect(() => renderTemplateManifest(manifest(), { image: "registry.test/harness:latest" })).toThrow();
     expect(() => renderTemplateManifest(manifest(), { image: IMAGE, set: ["/spec/missing=true"] })).toThrow(
       "does not exist",
     );

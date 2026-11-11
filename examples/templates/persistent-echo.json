@@ -1,69 +1,164 @@
 {
-  "apiVersion": "pocketcoder.dev/v1alpha1",
+  "apiVersion": "pocketcoder.dev/v1",
   "kind": "Template",
   "metadata": {
     "name": "persistent-echo",
-    "description": "Persistence conformance probe with durable worktree and conversation state"
+    "description": "Native structured sessions; materialize the image pins before publishing"
   },
   "spec": {
     "version": "1.0.0",
-    "image": "example.registry/pocketcoder-workspace@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "harness": {
-      "command": ["bun", "/opt/pocketcoder/echo-harness.ts"],
-      "cwd": "/workspace",
-      "env": {
-        "POCKETCODER_ECHO_STATE": "/state/messages.json"
+    "image": "example.invalid/pocketcoder-echo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "protocol": "pocketcoder.workload/v1"
+    },
+    "profile": "service",
+    "adapters": {
+      "session": {
+        "kind": "service",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "protocol": "pocketcoder.execution/v1",
+        "env": {},
+        "service": "session"
       }
     },
-    "resources": { "cpu": "1", "memory": "256Mi" },
-    "timeouts": {
-      "start": "1m",
-      "maxAge": "30m",
-      "idle": "10m",
-      "disconnectGrace": "5m",
-      "terminateGrace": "10s"
+    "operations": {
+      "message": {
+        "adapter": "session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel"],
+        "outputRoots": []
+      }
     },
     "services": {
-      "agent": {
+      "session": {
         "baseUrl": "http://127.0.0.1:3284",
+        "required": true,
+        "healthPath": "/healthz",
         "routes": [
-          { "method": "GET", "path": "/status" },
-          { "method": "GET", "path": "/messages", "query": ["after"] },
-          { "method": "POST", "path": "/message" }
-        ]
+          {
+            "method": "POST",
+            "path": "/executions/accept",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/lookup",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/cancel",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/ack",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          }
+        ],
+        "process": {
+          "command": ["/usr/local/bin/bun", "/opt/pocketcoder/supervisor.js", "session", "serve", "echo"],
+          "env": {
+            "POCKETCODER_SESSION_DIRECTORY": "/state/pocketcoder-sessions"
+          }
+        }
       }
+    },
+    "previews": {},
+    "credentialSlots": {},
+    "resources": {
+      "cpu": "1",
+      "memory": "1Gi"
+    },
+    "network": {
+      "mode": "unrestricted"
     },
     "security": {
-      "writableMemoryPaths": ["/tmp"]
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp"],
+      "dropCapabilities": ["ALL"],
+      "allowPrivilegeEscalation": false,
+      "seccomp": "RuntimeDefault"
     },
-    "persistence": {
-      "mounts": [
-        {
-          "name": "worktree",
-          "target": "/workspace",
-          "maxBytes": 1073741824,
-          "maxFiles": 100000
-        },
-        {
-          "name": "conversation",
-          "target": "/state",
-          "maxBytes": 104857600,
-          "maxFiles": 10000
+    "limits": {
+      "deadlineSeconds": 7200,
+      "finalizationSeconds": 30,
+      "inputFileBytes": 16777216,
+      "stagedInputBytes": 67108864,
+      "inputFiles": 100,
+      "inFlightTransfers": 2,
+      "exportBytes": 16777216,
+      "exportFiles": 100,
+      "unreferencedInputRetentionSeconds": 3600,
+      "exportRetentionSeconds": 86400
+    },
+    "lifecycle": {
+      "persistence": {
+        "mounts": [
+          {
+            "name": "worktree",
+            "target": "/workspace",
+            "maxBytes": 1073741824,
+            "maxFiles": 100000
+          },
+          {
+            "name": "conversation",
+            "target": "/state",
+            "maxBytes": 104857600,
+            "maxFiles": 10000
+          }
+        ],
+        "conversationRestore": "supported",
+        "sessionCompatibility": "persistent-echo/v1",
+        "checkpoint": {
+          "onIdle": "preserve",
+          "onDeadline": "preserve",
+          "onCleanExit": "preserve",
+          "onFailure": "retain-for-recovery",
+          "retention": "168h"
         }
-      ],
-      "conversationRestore": "supported",
-      "sessionCompatibility": "persistent-echo/v1",
-      "checkpoint": {
-        "onIdle": "preserve",
-        "onDeadline": "preserve",
-        "onCleanExit": "preserve",
-        "onFailure": "retain-for-recovery",
-        "retention": "168h"
+      },
+      "timeouts": {
+        "start": "2m",
+        "maxAge": "2h",
+        "idle": "20m",
+        "disconnectGrace": "5m",
+        "terminateGrace": "15s"
+      },
+      "maxLaunchInputBytes": 65536,
+      "checkpointHook": {
+        "command": ["/usr/local/bin/bun", "/opt/pocketcoder/quiesce.ts"],
+        "env": {},
+        "timeoutSeconds": 30
       }
-    },
-    "checkpointHook": {
-      "command": ["/bin/sync"],
-      "timeoutSeconds": 10
     }
   }
 }

@@ -10,7 +10,7 @@ const ingressEntry = z.string().refine((value) => {
   // IPv6 zone identifiers are host-local and cannot describe a trusted range.
   if (address.includes("%")) return false;
   const family = isIP(address);
-  if (!family || rest.length || address.includes("%")) return false;
+  if (!family || rest.length) return false;
   if (prefix !== undefined && !(/^[1-9][0-9]{0,2}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128)))
     return false;
   // Build the entry now: an address the list cannot hold must fail here, not at controller start.

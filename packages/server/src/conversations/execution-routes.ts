@@ -13,7 +13,7 @@ import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 import type { WorkspaceService } from "../workspaces/service";
 
-import { registerAgentRequests } from "./agent-requests";
+import { registerWorkspaceRequests } from "./agent-requests";
 import { registerExecutionRuntimeRoute } from "./execution-runtime-route";
 
 export function registerExecutionRoutes(deps: {
@@ -30,7 +30,7 @@ export function registerExecutionRoutes(deps: {
   app.openAPIRegistry.register("ExecutionJson", json);
   app.openAPIRegistry.register("WorkloadInputProperty", property);
   registerExecutionRuntimeRoute(app, service);
-  registerAgentRequests(app, store, service);
+  registerWorkspaceRequests(app, store, service);
   const response = {
     description: "Durable execution intent and observed dispatch state",
     content: { "application/json": { schema: ExecutionRecordSchema } },

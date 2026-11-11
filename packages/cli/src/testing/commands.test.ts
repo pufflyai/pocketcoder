@@ -114,7 +114,7 @@ describe("pcd commands", () => {
       spec: {
         version: "1.0.0",
         image: `registry.test/agent@sha256:${"0".repeat(64)}`,
-        agent: { type: "codex", command: ["codex"], env: { MODEL: "default" } },
+        harness: { command: ["echo"], env: { MODEL: "default" } },
         resources: { cpu: "1", memory: "1Gi" },
       },
     };
@@ -129,9 +129,8 @@ metadata:
 spec:
   version: 1.0.0
   image: ${input.spec.image}
-  agent:
-    type: codex
-    command: [codex]
+  harness:
+    command: [echo]
     env:
       MODEL: default
   resources:
@@ -152,7 +151,7 @@ spec:
           "--image",
           image,
           "--set",
-          '/spec/agent/env/MODEL="gpt-5"',
+          '/spec/harness/env/MODEL="gpt-5"',
           "--out",
           out,
         ]);

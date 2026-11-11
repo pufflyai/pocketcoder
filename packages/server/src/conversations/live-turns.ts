@@ -33,7 +33,7 @@ export class LiveTurns {
   private readonly listeners = new Map<string, Set<Listener>>();
   private readonly queue = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly store: Pick<Store, "isAcceptedTurn" | "commitConversationTurn">) {}
+  constructor(private readonly store: Pick<Store, "isAcceptedTurn" | "isCommittedTurn" | "commitConversationTurn">) {}
 
   // Frames of one turn are applied in arrival order, even while an earlier one awaits the store.
   receive(workspaceId: string, message: IdentifiedMessage) {
@@ -52,8 +52,13 @@ export class LiveTurns {
     return new Set([...this.turns.values()].map((turn) => turn.workspaceId));
   }
 
-  open(workspaceId: string) {
-    return [...this.turns.values()].filter((turn) => turn.workspaceId === workspaceId).map(snapshot);
+  open(workspaceId: string, conversationId?: string) {
+    return [...this.turns.values()]
+      .filter(
+        (turn) =>
+          turn.workspaceId === workspaceId && (!conversationId || turn.request.conversation_id === conversationId),
+      )
+      .map(snapshot);
   }
 
   subscribe(workspaceId: string, listener: Listener) {
@@ -79,6 +84,7 @@ export class LiveTurns {
       const request = ConversationRequestIdentitySchema.parse(message.identity);
       if (!(await this.store.isAcceptedTurn(workspaceId, request)))
         throw new Error("conversation.request_not_accepted");
+      if (await this.store.isCommittedTurn(workspaceId, request)) return;
       turn = { workspaceId, request, startedAt: new Date(message.occurred_at), events: new Map(), bytes: 0 };
       this.turns.set(key, turn);
     }
@@ -110,6 +116,7 @@ export class LiveTurns {
           messageId: message.message_id,
           role: message.role,
           content: message.content,
+          ...(message.parts ? { parts: message.parts } : {}),
           occurredAt: new Date(message.occurred_at),
           metadata: message.metadata,
           identity: message.identity,
@@ -156,10 +163,11 @@ function snapshot(turn: OpenTurn): Extract<ConversationLiveEvent, { type: "turn"
     type: "turn",
     conversation_id: turn.request.conversation_id,
     turn_id: turn.request.turn_id,
-    messages: ordered(turn).map(({ message_id, role, content, occurred_at, metadata, identity }) => ({
+    messages: ordered(turn).map(({ message_id, role, content, parts, occurred_at, metadata, identity }) => ({
       message_id,
       role,
       content,
+      ...(parts ? { parts } : {}),
       occurred_at,
       metadata,
       identity,

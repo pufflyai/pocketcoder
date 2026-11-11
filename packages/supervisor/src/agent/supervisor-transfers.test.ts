@@ -10,7 +10,6 @@ import { SupervisorTransfers } from "./supervisor-transfers";
 
 function execFor(mounts: RestoreTransferSpec["mounts"]): ExecSpec {
   return {
-    agentapi_native: false,
     setup: [],
     harness: { command: ["true"], env: {} },
     env: {},

@@ -125,7 +125,7 @@ export function createConversationRetention(
           and(
             isNotNull(requests.workspaceId),
             isNull(requests.managed),
-            sql`coalesce(${requests.execution}->>'phase', '') <> 'accepted'`,
+            isNull(requests.execution),
             sql`NOT EXISTS (SELECT 1 FROM ${conversations} c JOIN ${records} r ON r.conversation_ref = c.id
               WHERE c.principal_id = ${requests.principalId} AND c.conversation_id = ${requests.conversationId}
               AND r.record_key = ${requests.identity}->>'turn_id')`,

@@ -31,7 +31,6 @@ if (target === "unit" || target === "typecheck") {
   await command(args);
   if (target === "typecheck") {
     for (const path of [
-      "examples/resume/tsconfig.json",
       "examples/native/tsconfig.json",
       "examples/e2e/tsconfig.shared.json",
       "scripts/tsconfig.images.json",

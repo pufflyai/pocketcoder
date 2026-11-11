@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { localInputEnvironment } from "../local/input-environment";
 import { controllerPorts } from "./ports";
 
 async function startupOutput(stream: ReadableStream<Uint8Array>, started: number) {
@@ -41,7 +42,7 @@ export async function nativeController(binary: string, directory: string, persis
     POCKETCODER_HTTP: `127.0.0.1:${port}`,
     POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
     POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
-    POCKETCODER_INPUT_DIR: join(directory, "inputs"),
+    ...localInputEnvironment(directory),
     ...(persistence
       ? {
           POCKETCODER_STORAGE_BACKEND: "filesystem",

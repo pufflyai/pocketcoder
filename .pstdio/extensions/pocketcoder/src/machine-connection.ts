@@ -1,6 +1,6 @@
 export function machineConnection(metadata: Record<string, string>) {
-  const kind = metadata["pstdio.connection"] ?? "agentapi";
-  if (kind === "agentapi") return { kind: "agentapi" as const };
+  const kind = metadata["pstdio.connection"] ?? "session";
+  if (kind === "session") return { kind: "session" as const };
   if (kind !== "relay") throw new Error(`Unknown agent connection: ${kind}.`);
   const deviceId = metadata["pstdio.device_id"];
   const workspaceId = metadata["pstdio.workspace_id"];

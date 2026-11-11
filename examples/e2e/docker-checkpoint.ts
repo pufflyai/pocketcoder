@@ -5,16 +5,19 @@ import { join, resolve } from "node:path";
 import {
   OperationResourceSchema,
   PreserveResponseSchema,
-  parseTemplateManifest,
   RestoreResponseSchema,
+  runtimeTemplateDefinition,
   WorkspaceResourceSchema,
 } from "@pstdio/pocketcoder-contracts";
+import { localInputEnvironment } from "../local/input-environment";
 import { buildLocalImage } from "../local/runtime";
+import { qualifySessionTemplate } from "../local/session-template";
 import { assertRejectedCheckpoint, cancelRecoverableSource } from "./checkpoint-rejection";
 import { assertCheckpointSettlement } from "./checkpoint-settlement";
 import { createHarnessWorkspace, type ReadyHarnessWorkspace } from "./contract";
 import { messageList, responseText } from "./contract-messages";
 import { bestEffort, command, freePort, waitFor } from "./local-process";
+import { expectEcho } from "./session";
 
 const root = resolve(import.meta.dir, "../..");
 const directory = await realpath(await mkdtemp(join(tmpdir(), "pocketcoder-checkpoint-")));
@@ -44,22 +47,17 @@ try {
     { quiet: true },
   );
   const image = await buildLocalImage({ root, imageTag, context: "deploy/image", command });
-  const manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
-  manifest.spec.image = image.image;
-  manifest.spec.persistence = { mounts: [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }] };
-  manifest.spec.setup = [
-    {
-      name: "verify-restored-tree",
-      runOn: ["restore"],
-      timeoutSeconds: 5,
-      command: [
-        "bun",
-        "-e",
-        `for (const [path, bytes] of Object.entries(${JSON.stringify(tree)})) if (Buffer.from(await Bun.file('/work/' + path).arrayBuffer()).toString('base64') !== bytes) throw new Error('Restore setup ran before exact tree publication');`,
-      ],
-    },
-  ];
-  const template = parseTemplateManifest(manifest);
+  let manifest = JSON.parse(await readFile(join(root, "examples/harnesses/echo/template.json"), "utf8"));
+  manifest = await qualifySessionTemplate(manifest, image.image);
+  manifest.spec.lifecycle.checkpointHook = {
+    command: ["/usr/local/bin/bun", "/opt/pocketcoder/quiesce.ts"],
+    env: {},
+    timeoutSeconds: 30,
+  };
+  manifest.spec.lifecycle.persistence = {
+    mounts: [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }],
+  };
+  const template = runtimeTemplateDefinition(manifest);
   await mkdir(templateDir);
   await writeFile(join(templateDir, "echo.json"), JSON.stringify(template.manifest));
   const processHandle = Bun.spawn([...cli, "serve", "--dir", dataDir], {
@@ -67,11 +65,11 @@ try {
     env: {
       ...process.env,
       POCKETCODER_DIR: dataDir,
+      ...localInputEnvironment(directory),
       POCKETCODER_TEMPLATE_DIR: undefined,
       POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
       POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
       POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${agentPort}`,
-      POCKETCODER_INPUT_DIR: join(directory, "inputs"),
       POCKETCODER_STORAGE_BACKEND: "filesystem",
       POCKETCODER_WORKSPACE_DATA_DIR: join(directory, "live"),
       POCKETCODER_CHECKPOINT_DIR: join(directory, "checkpoints"),
@@ -224,19 +222,7 @@ try {
   )
     throw new Error("Restored directory tree differs");
   const prompt = `restored ${randomUUID()}`;
-  const sent = await source.request(`/v1/workspaces/${destinationId}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({ type: "user", content: prompt }),
-  });
-  if (!sent.ok) throw new Error(`Harness message refused: ${await sent.text()}`);
-  await waitFor(
-    async () => {
-      const response = await source?.request(`/v1/workspaces/${destinationId}/agent/messages`);
-      return responseText(messageList(await response?.json()), 0) === `echo: ${prompt}`;
-    },
-    30_000,
-    "restored harness response",
-  );
+  await expectEcho(source.request, destinationId, prompt);
   rejectedSource = await createHarnessWorkspace({ baseUrl, key: owner.token, template: "echo-harness" });
   const rejectedCapture = await assertRejectedCheckpoint(rejectedSource);
   await cancelRecoverableSource(rejectedSource);

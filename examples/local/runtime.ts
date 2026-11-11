@@ -1,9 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { canonicalJson, parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { digestOf, parseWorkloadTemplate } from "@pstdio/pocketcoder-contracts";
 import { readCiImage } from "./ci-images";
-
+import { imageSessionTemplate } from "./session-template";
 export interface LocalCommandResult {
   stdout: string;
   stderr: string;
@@ -18,24 +17,12 @@ export interface PreparePiRuntimeOptions {
   root?: string;
   sourceTemplate?: string;
   outputDir?: string;
-  secretRoot?: string;
   imageTag?: string;
   gatewayUrl: string;
   gatewayModel: string;
   gatewayProvider?: string;
   gatewayApi?: "openai-completions" | "openai-responses";
   command?: LocalCommandRunner;
-}
-
-export interface PreparedPiRuntime {
-  templatePath: string;
-  templateName: string;
-  templateVersion: string;
-  templateDigest: string;
-  image: string;
-  secretRoot: string;
-  bearerPath: string;
-  bearer: string;
 }
 
 export interface BuildLocalImageOptions {
@@ -94,80 +81,47 @@ export async function buildLocalImage(options: BuildLocalImageOptions): Promise<
   return { imageId, image: `${options.imageTag}@${imageId}` };
 }
 
-async function rotateBearer(path: string): Promise<string> {
-  // A bearer that survives re-prepare would be a standing credential
-  // (docs/security.md); mint a fresh one every prepare and let workspaces
-  // from earlier runs lose gateway access.
-  const bearer = randomBytes(32).toString("base64url");
-  await mkdir(resolve(path, ".."), { recursive: true, mode: 0o700 });
-  // The containing secret root is 0700 on the host. The bind-mounted file is
-  // read-only but world-readable inside the isolated workspace so its
-  // non-root runtime uid can consume it.
-  await rm(path, { force: true });
-  await writeFile(path, `${bearer}\n`, { mode: 0o444 });
-  await chmod(path, 0o444);
-  return bearer;
-}
-
-async function writeAtomic(path: string, content: string): Promise<void> {
-  await mkdir(resolve(path, ".."), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, content);
-  await rename(temporary, path);
-}
-
-export async function preparePiRuntime(options: PreparePiRuntimeOptions): Promise<PreparedPiRuntime> {
+export async function preparePiRuntime(options: PreparePiRuntimeOptions) {
   const root = resolve(options.root ?? resolve(import.meta.dir, "../.."));
-  const sourceTemplate = resolve(options.sourceTemplate ?? resolve(root, "examples/templates/pi-harness.json"));
-  const outputDir = resolve(options.outputDir ?? resolve(root, ".pocketcoder/local/templates"));
-  const secretRoot = resolve(options.secretRoot ?? resolve(root, ".pocketcoder/local/secrets"));
-  const imageTag = options.imageTag ?? "pocketcoder-pi:local";
   const command = options.command ?? runLocalCommand;
-
-  const builtImage = await buildLocalImage({
+  const image = await buildLocalImage({
     root,
-    imageTag,
+    imageTag: options.imageTag ?? "pocketcoder-pi:local",
     context: ".",
     dockerfile: "examples/harnesses/pi/Dockerfile",
     command,
   });
-
-  const source = JSON.parse(await readFile(sourceTemplate, "utf8")) as {
-    metadata: { name: string };
-    spec: {
-      version: string;
-      image: string;
-      agent: { model?: string; env?: Record<string, string> };
-    };
+  const template = await imageSessionTemplate(image.image, "pi-harness", "2.0.0", command);
+  template.spec.security.writableMemoryPaths = ["/tmp", "/home/agent", "/workspace"];
+  template.spec.credentialSlots.gateway = {
+    policyRef: "pi-gateway",
+    policyVersion: "1",
+    binding: "fixed-scope",
+    delivery: "workspace-expiring-file",
+    maxLeaseSeconds: 7200,
   };
-  const sourceVersion = source.spec.version;
-  source.spec.image = builtImage.image;
-  source.spec.agent.model = options.gatewayModel;
-  source.spec.agent.env = {
-    ...source.spec.agent.env,
+  template.spec.services.session!.process!.env = {
+    HOME: "/home/agent",
     PI_GATEWAY_URL: options.gatewayUrl,
     PI_GATEWAY_MODEL: options.gatewayModel,
-    PI_GATEWAY_PROVIDER: options.gatewayProvider ?? "pocketcoder-openai",
-    PI_GATEWAY_API: options.gatewayApi ?? "openai-responses",
-    PI_GATEWAY_BEARER: "secretRef:pi-gateway/bearer",
+    PI_GATEWAY_PROVIDER: options.gatewayProvider ?? "pocketcoder-gateway",
+    PI_GATEWAY_API: options.gatewayApi ?? "openai-completions",
+    PI_GATEWAY_BEARER_FILE: "credentialSlot:gateway",
+    PI_CODING_AGENT_DIR: "/home/agent/.pi/agent",
+    PI_WORKSPACE_DIR: "/workspace",
   };
-  const materializationDigest = createHash("sha256").update(canonicalJson(source)).digest("hex");
-  source.spec.version = `${sourceVersion}-local.${materializationDigest.slice(0, 12)}`;
-  const parsed = parseTemplateManifest(source);
-
-  const bearerPath = resolve(secretRoot, "pi-gateway/bearer");
-  const bearer = await rotateBearer(bearerPath);
+  template.spec.services.session!.process!.cwd = "/workspace";
+  template.spec.version = `2.0.0-local.${digestOf(template).slice(7, 19)}`;
+  const parsed = parseWorkloadTemplate(template);
+  const outputDir = resolve(options.outputDir ?? resolve(root, ".pocketcoder/local/templates"));
+  await mkdir(outputDir, { recursive: true });
   const templatePath = resolve(outputDir, "pi-harness.json");
-  await writeAtomic(templatePath, `${JSON.stringify(parsed.manifest, null, 2)}\n`);
-
+  await writeFile(templatePath, JSON.stringify(parsed.manifest, null, 2) + "\n");
   return {
     templatePath,
-    templateName: parsed.manifest.metadata.name,
-    templateVersion: parsed.manifest.spec.version,
+    templateName: template.metadata.name,
+    templateVersion: template.spec.version,
     templateDigest: parsed.digest,
-    image: parsed.manifest.spec.image,
-    secretRoot,
-    bearerPath,
-    bearer,
+    image: image.image,
   };
 }

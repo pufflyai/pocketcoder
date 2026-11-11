@@ -1,113 +1,52 @@
-# Agent transport decision
+# Native structured sessions
 
-- **Status:** Accepted
-- **Date:** 2026-08-10
-- **Scope:** Pi, OpenCode, Codex, Claude, AgentAPI, and ACP integration
+Accepted on 2026-11-10. This replaces the terminal bridge.
 
-## Decision
+PocketCoder owns the public session format. Producers send structured messages. Clients render them. A client never repairs terminal output or extracts records from text.
 
-PocketCoder keeps the template-owned `agent.transport` values `pty` and
-`acp`. It does not add a Pi-specific JSONL/RPC transport or any server-side
-branch on `agent.type`.
+## Producer contract
 
-AgentAPI remains the fixed HTTP boundary exposed through PocketCoder. A
-template chooses the coding-agent command, transport, environment, model
-configuration, and any agent-specific files baked into or mounted by its
-image. PocketCoder supplies lifecycle, isolation, relay, and durable transcript
-storage; it does not generate agent configuration such as `models.json`.
+The bundled echo and Pi producers implement `pocketcoder.execution/v1`. A service exposes the template-declared `accept`, `lookup`, `cancel`, and `ack` endpoints under `/executions/`.
 
-ACP is preferred when the selected agent has a maintained ACP implementation
-and passes PocketCoder's conformance requirements. PTY remains the supported
-fallback. AgentAPI's experimental ACP adapter is useful, but its current HTTP
-projection and state behavior are not yet a complete durable structured
-transport for PocketCoder.
+Both workspace requests and managed requests send `input.message`. The controller supplies the accepted conversation identity and immutable input directory. Files in that directory use file IDs as their names. The original filenames are metadata.
 
-## Why no new transport
+Observations carry canonical messages with stable message IDs, event IDs, sequence numbers, and revisions. Message parts describe:
 
-Each examined integration can deliver text, stream progress, report tools,
-and be cancelled. Adding another wire protocol would therefore not solve the
-hard problem. The missing common contract is durable identity and replay:
-PocketCoder must be able to reconnect after a process or workspace restart,
-identify every completed message and tool result exactly once, and rebuild the
-same transcript without parsing a terminal UI.
+- Text, including markdown and Unicode.
+- Tool calls, with call ID, name, status, input, and output.
+- Errors, with a code and readable message.
+- Files, with their IDs and metadata.
 
-Pi's JSONL RPC is capable, but it is agent-specific. It informs the
-requirements below rather than becoming a PocketCoder protocol. ACP is the
-best shared direction, but ACP v1 message chunks do not carry a standard
-stable message ID. AgentAPI's ACP mode also documents that ACP state
-persistence is unsupported. Adopting either as a new durable transport today
-would require PocketCoder-owned correlation and persistence semantics—the
-very custom adapter surface this decision avoids.
+The controller ingests these messages before recording a terminal execution observation or acknowledging the producer. A completed record therefore retains the same parts that clients saw live.
 
-## Capability comparison
+A final response is an explicit producer fact. Earlier narration is not promoted to a final response when a turn only used tools or failed.
 
-This comparison uses the versions pinned in the repository where available:
-Pi `0.83.0`, OpenCode `1.0.98`, Codex CLI `0.134.0`, and AgentAPI `0.12.2`.
-Claude is evaluated against the current official Agent SDK documentation.
-“Partial” means the capability exists but its adapter-specific behavior or
-durability still needs conformance proof.
+## Replay and cancellation
 
-| Capability | Pi JSONL RPC | OpenCode ACP | Codex app-server | Claude Agent SDK |
-|---|---|---|---|---|
-| Complete messages | Supported | Supported | Supported | Supported |
-| Streaming text and tool progress | Supported | Supported | Supported | Supported |
-| Tool calls and results | Supported | Supported | Supported | Supported |
-| Images or richer input | Images | Partial: ACP supports rich content; adapter must be tested | Partial: image and image-URL input; generic file semantics differ | Images |
-| Cancellation and process exit | `abort` plus host exit | ACP cancel plus host exit | Turn interrupt plus host exit | Interrupt/abort plus host exit |
-| Session restore or resume | Session files, switch, fork, clone | Partial: negotiate and test ACP session capabilities | Thread resume and fork | Session resume and fork |
-| Stable message identity for replay | Partial: durable entry IDs, but live general events lack message IDs | Gap: ACP v1 chunks have no standard message ID | Stable thread, turn, and item IDs | Stable message and session IDs |
-| Structured errors and stop reasons | Supported | Partial: JSON-RPC/ACP plus adapter mapping | Typed errors and retry state | Typed result/error subtypes and stop reasons |
-| Maintained integration owner | Pi package owner | OpenCode's official ACP server | Official, experimental Codex app-server | Official Anthropic SDK |
+The native producer keeps atomic request snapshots. Lookup and a repeated accept return the same IDs and revisions. An accepted request is never executed again after a producer restart. An unfinished request from a dead producer ends as lost.
 
-Codex evidence comes from `codex app-server --help` and JSON schemas generated
-by `codex app-server generate-json-schema --experimental` from the pinned
-binary. Those schemas include thread resume/fork, turn interrupt, item IDs,
-message deltas, image inputs, and typed error notifications.
+Cancellation names one execution and its fingerprint. Canceling before accept creates a durable tombstone, so a late accept cannot start the work. The producer stops the operation and its tool process group before acknowledging cancellation.
 
-## Turn interruption through AgentAPI
+The native producer bounds tool payloads and total observation size. A limit failure produces a valid failed record. It does not leave a malformed journal that cannot be replayed.
 
-The agents can cancel a turn, but AgentAPI `0.12.2` exposes only part of that:
+## Client contract
 
-- **PTY:** `POST /message` with `type: "raw"` writes keystrokes to the agent's
-  terminal. PocketCoder's interrupt action sends the template's
-  `agent.interruptKeys` this way while the agent is running. Pi `0.83.0` binds
-  Escape to its interrupt action; the Pi Docker E2E proves that the turn stops
-  and the next message works.
-- **ACP:** AgentAPI sends no ACP `session/cancel`. A raw message becomes a new
-  prompt, so ACP templates cannot declare interrupt keys and report
-  `agent.interrupt_unsupported`. Supporting them needs an upstream AgentAPI
-  change.
+The SDK exposes `workspaceRequests.submit/get/list/cancel` and `conversations.read/open/live`. Managed clients use `requests` and `sessions.history/open/events`.
 
-AgentAPI has no turn ID, so PocketCoder checks the status just before it sends
-the keys. This keeps the fixed boundary and adds no transport or stored state.
+`open` returns snapshots of turns in progress. These snapshots live in controller memory. Retained history and managed lifecycle events provide durable replay. After reconnect, clients reload retained history and the current open turn, then reconcile by message ID and revision.
 
-## Requirements before reconsidering
+The CLI, PocketCoder Lab, and the Workspaces extension consume these contracts. Their message views map canonical parts to their UI types. They do not interpret text as an event protocol.
 
-A proposal for another transport must provide all of the following:
+## Pi and Onefin
 
-1. A transport-neutral durable model for stable message IDs, complete replay,
-   tool calls/results, text/images/resources, turn state, stop reasons, and
-   typed errors.
-2. Conformance results for the repository's supported Pi, OpenCode, Codex, and
-   Claude integrations, using maintained adapters and pinned versions.
-3. An automated reconnect test that resumes after both agent-process restart
-   and workspace restore without lost, duplicated, or reordered messages.
-4. A named upstream owner and explicit version/upgrade policy for every
-   adapter on which the transport relies.
-5. No new long-lived credential visible to the workspace. Gateway credentials
-   must remain workspace-scoped and expire with the workspace.
+Pi uses its native JSON RPC protocol. The adapter consumes text deltas, tool events, message stop reasons, and `agent_settled`. It waits for retries to finish before reporting an outcome. See the [pinned Pi RPC reference](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/docs/rpc.md).
 
-Until these conditions are met, adding a third transport would increase the
-maintenance and security surface without giving PocketCoder a reliable common
-conversation contract.
+The Onefin example redeems one-use launch input, refreshes the workspace-scoped credential through a private Unix socket, and runs the same native Pi producer. Model authority stays on the host. See [security](security.md).
 
-## Primary references
+## Images and templates
 
-- [Agent Client Protocol TypeScript SDK: client-side connection](https://agentclientprotocol.github.io/typescript-sdk/classes/ClientSideConnection.html)
-- [ACP message-ID proposal and current limitation](https://agentclientprotocol.com/rfds/message-id)
-- [OpenCode ACP server](https://dev.opencode.ai/docs/acp/)
-- [AgentAPI repository and protocol boundary](https://github.com/coder/agentapi/tree/v0.12.2)
-- [Claude Agent SDK sessions](https://code.claude.com/docs/en/agent-sdk/sessions)
-- [Claude Agent SDK streaming output](https://code.claude.com/docs/en/agent-sdk/streaming-output)
-- [Claude Agent SDK streaming input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)
-- Pinned Pi RPC reference: `examples/harnesses/pi/node_modules/@earendil-works/pi-coding-agent/docs/rpc.md`
+Native services use `pocketcoder.dev/v1` templates. The image supplies `/opt/pocketcoder/workload.json`, with measured runtime and adapter artifacts, commands, and capabilities. Templates pin those digests. The driver checks the installed bytes and storage boundary before readiness.
+
+Persist the directory named by `POCKETCODER_SESSION_DIRECTORY` when a template supports conversation restore. Its image-owned checkpoint hook fences the producer before capture.
+
+The removed `spec.agent` format and terminal message routes are unsupported. Publish a native service template and use canonical conversation data. Other agent integrations can implement the same producer contract or use the Prompt Studio relay connection.

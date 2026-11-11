@@ -1,36 +1,29 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { startOpenAIGateway } from "../harnesses/pi/openai-gateway";
-import { requireOpenAIKey, resolveLocalPiOptions } from "./options";
+import { resolveLocalPiOptions } from "./options";
+import { startLocalPiGateway } from "./start-gateway";
 
-const options = resolveLocalPiOptions();
-const apiKey = requireOpenAIKey(options.useOpenAI);
-const bearerPath = resolve(options.root, ".pocketcoder/local/secrets/pi-gateway/bearer");
-let clientBearer: string;
-try {
-  clientBearer = (await readFile(bearerPath, "utf8")).trim();
-} catch {
-  throw new Error(`local runtime is not prepared; missing ${bearerPath}`);
-}
-if (!clientBearer) throw new Error(`local gateway bearer is empty: ${bearerPath}`);
-
-const gateway = startOpenAIGateway({
-  apiKey,
-  clientBearer,
-  organization: process.env.OPENAI_ORGANIZATION,
-  project: process.env.OPENAI_PROJECT,
-  port: options.gatewayPort,
-});
-console.log(`OpenAI gateway listening on http://127.0.0.1:${gateway.port}`);
-
-await new Promise<void>((resolveShutdown) => {
+const gateway = await startLocalPiGateway(resolveLocalPiOptions());
+const directory = resolve(homedir(), ".local/share/pocketcoder/local-pi");
+await mkdir(directory, { recursive: true, mode: 0o700 });
+const configPath = resolve(directory, "issuer.json");
+const caPath = resolve(directory, "issuer-ca.pem");
+await writeFile(configPath, JSON.stringify({ type: "runtime-issuer", value: gateway.config }), { mode: 0o600 });
+await writeFile(caPath, gateway.ca, { mode: 0o600 });
+console.log(`Workspace gateway listening on ${gateway.url}`);
+console.log(`Host issuer configuration: ${configPath}`);
+console.log(`Controller issuer CA: ${caPath}`);
+await new Promise<void>((done, reject) => {
   let stopping = false;
-  const shutdown = () => {
+  const stop = () => {
     if (stopping) return;
     stopping = true;
-    gateway.stop(true);
-    resolveShutdown();
+    gateway
+      .close()
+      .then(() => rm(configPath, { force: true }))
+      .then(done, reject);
   };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
 });

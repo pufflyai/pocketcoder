@@ -31,6 +31,7 @@ export const managedRoutes = [
   route("post", `${requests}/{requestId}/cancel`, "CancelReceipt", "CancelCommand", true),
   route("post", `${sessions}/close`, "CancelReceipt", "CancelCommand", true),
   route("get", `${sessions}/events`, "RuntimeEvent", undefined, true),
+  route("get", `${sessions}/conversation/open`, "OpenTurns", undefined, true),
   route("get", `${sessions}/history`, "HistoryPage", undefined, true),
   route("post", `${sessions}/inputs`, "InputObject", "InputUpload", true),
   route("put", `${sessions}/inputs/{inputId}/content`, "InputObject", "bytes", true),

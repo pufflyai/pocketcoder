@@ -5,8 +5,8 @@ import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
 import type { LabTemplate } from "./lab-model";
-import { relaunchDialog, resumeDialog } from "./machine-lifecycle-ui";
 import { machineStateLabel } from "./machine-status";
+import { ensureMachineWatch } from "./machine-watch";
 import type { ControllerMachine } from "./machines";
 import { changed, instanceKind, machineKind } from "./resources";
 import { connectMachineRow, deleteMachineRow, importSelectedTemplates, launchSelectedMachine } from "./table-commands";
@@ -45,7 +45,7 @@ export const instancesView = defineView({
     ],
     rowActions: [
       { id: "open", label: "Browse instance", icon: "server", command: labCommands["lab.select"].ref },
-      { id: "start", label: "Start / renew key", icon: "play", command: startInstance.ref },
+      { id: "start", label: "Start instance", icon: "play", command: startInstance.ref },
       { id: "stop", label: "Stop instance", icon: "square", command: stopInstance.ref },
       { id: "remove", label: "Remove instance", icon: "trash-2", destructive: true, command: removeInstance.ref },
     ],
@@ -133,7 +133,7 @@ export const machinesView = defineView({
   icon: "bot",
   body: {
     kind: "dataTable",
-    refreshEvents: [changed],
+    refreshEvents: [changed, "pocketcoder.pocketcoder.event.automation-run-changed"],
     emptyTitle: "No machines on this instance",
     emptyDescription: "Launch a machine from a published template, then connect when it is ready.",
     toolbarActions: [
@@ -157,8 +157,6 @@ export const machinesView = defineView({
     ],
     rowActions: [
       { id: "connect", label: "Connect to agent", icon: "messages-square", command: connectMachineRow.ref },
-      { id: "relaunch", label: "Relaunch machine", icon: "rotate-cw", command: relaunchDialog.open.ref },
-      { id: "resume", label: "Resume machine", icon: "play", command: resumeDialog.open.ref },
       { id: "delete", label: "Delete machine", icon: "trash-2", destructive: true, command: deleteMachineRow.ref },
     ],
     async query(ctx, { renderer }) {
@@ -168,6 +166,11 @@ export const machinesView = defineView({
       if ((await instances.get(id)).state !== "running") return { rows: [] };
       const dismissed = new Set((await ctx.storage.get<string[]>(`dismissed-machines:${id}`)) ?? []);
       const machines = await instances.items<ControllerMachine>(id, "/v1/workspaces");
+      const watches = await Promise.allSettled(
+        machines.filter((machine) => !dismissed.has(machine.id)).map((machine) => ensureMachineWatch(ctx, id, machine)),
+      );
+      for (const watch of watches)
+        if (watch.status === "rejected") ctx.logger.warn(`Machine state watch failed: ${String(watch.reason)}`);
       return {
         rows: machines
           .filter((machine) => !dismissed.has(machine.id))
@@ -178,7 +181,8 @@ export const machinesView = defineView({
               name: machine.external_id,
               template: `${machine.template.name}@${machine.template.version}`,
               state: machineStateLabel(machine.state),
-              connection: machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "AgentAPI",
+              connection:
+                machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "PocketCoder session",
               error: machine.failure?.log_tail ?? machine.reason_code ?? "",
             },
           })),

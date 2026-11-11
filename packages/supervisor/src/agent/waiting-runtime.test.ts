@@ -18,6 +18,7 @@ async function fixture(
   code: number,
   operation = "run",
   configure?: (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => void,
+  launchInput?: Record<string, unknown>,
 ) {
   const workspaceId = randomUUID();
   const source = await Bun.file(resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json")).json();
@@ -33,6 +34,7 @@ async function fixture(
       server_url: "http://127.0.0.1",
       registration_secret: "single-use-fixture",
       template_digest: `sha256:${"a".repeat(64)}`,
+      launch_input: launchInput,
     }),
     exec,
     (type, payload) => {
@@ -97,26 +99,35 @@ test.each([false, true])("declared websites survive operation completion or targ
   const probe = Bun.serve({ port: 0, fetch: () => new Response() });
   const port = probe.port;
   probe.stop(true);
-  const f = await fixture(0, "run", (source) => {
-    const adapter = source.spec.adapters.main;
-    if (cancel && adapter) adapter.command = [process.execPath, "-e", "setInterval(()=>{},1000)"];
-    source.spec.services.web = {
-      ...ServiceSchema.parse({
-        baseUrl: `http://127.0.0.1:${port}`,
-        healthPath: "/",
-        routes: [{ method: "GET", path: "/" }],
-        required: false,
-      }),
-      autostart: true,
-      process: {
-        command: [process.execPath, "-e", `Bun.serve({port:${port},fetch:()=>new Response('alive')});`],
-        env: {},
-      },
-    };
-  });
+  const f = await fixture(
+    0,
+    "run",
+    (source) => {
+      const adapter = source.spec.adapters.main;
+      if (cancel && adapter) adapter.command = [process.execPath, "-e", "setInterval(()=>{},1000)"];
+      source.spec.services.web = {
+        ...ServiceSchema.parse({
+          baseUrl: `http://127.0.0.1:${port}`,
+          healthPath: "/",
+          routes: [{ method: "GET", path: "/" }],
+          required: false,
+        }),
+        autostart: true,
+        process: {
+          command: [
+            process.execPath,
+            "-e",
+            `Bun.serve({port:${port},fetch:()=>new Response(process.env.POCKETCODER_LAUNCH_INPUT??'missing')});`,
+          ],
+          env: {},
+        },
+      };
+    },
+    { code: "workspace-scoped" },
+  );
   const live = () =>
     fetch(`http://127.0.0.1:${port}`).then(
-      async (r) => (await r.text()) === "alive",
+      async (r) => (await r.text()) === JSON.stringify({ code: "workspace-scoped" }),
       () => false,
     );
   try {

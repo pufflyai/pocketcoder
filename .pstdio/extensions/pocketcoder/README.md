@@ -27,10 +27,10 @@ Leave the executable field blank to use this project's `out/native/pocketcoder`.
 2. Each instance has native **Templates** and **Machines** page tabs with native data tables. They read the controller directly, including machines launched through other clients. The selection is saved for this project.
 3. Use **Save template** to add a JSON or YAML manifest to the project catalog. **Launch instance** chooses a catalog template and names the instance. The executable field is optional and uses the local build by default.
 4. Use **Import templates** with an absolute prepared folder path to publish more versions into the selected instance. Published versions are immutable; changed manifests need a new version.
-5. Use the native **Launch machine** toolbar form. It lists templates from the selected instance. Choose AgentAPI or Prompt Studio Cloud relay, then launch. Refresh while the machine starts. New machines do not create Prompt Studio workspace records.
-6. A ready machine's row menu has **Connect to agent** and **Delete machine**. Connect opens or reuses its native session. AgentAPI templates support text; attachments require the existing file-aware request contract. A template without AgentAPI gives a visible setup error.
+Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
+Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
 7. **Delete machine** stops execution, waits for a terminal state and removes the row from Lab. The controller retains its audit record. Failed machines remain visible with their error until dismissed.
-8. The instance dropdown and instance table offer **Start / renew key** and **Stop instance**. Stop requires every active machine to end first. A broken saved executable does not prevent browsing other instances; its table row shows the error.
+8. The instance dropdown and instance table offer **Start instance** and **Stop instance**. Stop requires every active machine to end first. Owner keys expire after 24 hours; while the controller runs, the Lab issues a new one when the old one expires. A broken saved executable does not prevent browsing other instances; its table row shows the error.
 
 ### Prompt Studio and Codex template
 
@@ -44,14 +44,14 @@ Then choose it in **Launch instance** and launch a machine with the **Prompt Stu
 
 Cloud relay chat needs a remote device and workspace linked to this project. A safely enrolled machine can declare `pstdio.connection=relay`, `pstdio.device_id` and `pstdio.workspace_id` in its launch metadata. Connect checks the device is remote and online, then creates the native Codex session on it.
 
-**Current blocker:** Prompt Studio's Cloud device login has no expiry and grants account-wide project access. This template therefore starts without an account login. Do not copy host login files or provider API keys into it. Real Cloud relay chat needs expiring enrollment scoped to the machine and project first. Missing enrollment produces a visible error instead of starting an AgentAPI session.
+Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
 
 The template keeps Prompt Studio in the foreground and publishes its private runtime descriptor so local setup commands attach to that server. The connection status becomes available only after project setup completes. Codex starts on demand when a session uses it; the status document reports its installed version.
 
 Run the adjacent Docker regression to build the exact image, check readiness, initialize the real Codex app server without a model call, and verify shutdown:
 
 ```sh
-bun --no-env-file test ./.pstdio/extensions/pocketcoder/src/codex-template/startup.test.ts
+bun --no-env-file test ./.pstdio/extensions/pocketcoder/src/codex-template/startup.conformance.test.ts
 ```
 
 This check proves local startup. A live Cloud relay session still requires safe guest enrollment from Prompt Studio; machine command tokens do not enroll Cloud devices.
@@ -79,7 +79,7 @@ The generic Create workspace form also exposes the provider. It currently requir
 
 Open a machine's row menu in **Machines**. **Relaunch machine** opens a native form and creates a fresh machine from the same template version. Its files and conversation start empty. **Resume machine** restores the latest ready checkpoint into a new machine, including saved files and conversation. Resume reports when no checkpoint exists or conversation restore is unsupported. Neither action changes the original machine.
 
-Both actions accept a new application task ID, fresh one-time launch input, new application metadata, and the agent connection type. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Relay machines need their own enrollment and connection metadata. After applying the form, close it and connect to the new machine when ready.
+Both actions accept a new application task ID, fresh one-time launch input, new application metadata, and the agent connection type. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Relay machines need their own enrollment and connection metadata. Run the action to queue the new machine. The form closes on success and stays open with an error if the action fails. Connect to the new machine when ready.
 
 The CLI supports the same options: `--external-id`, `--launch-input`, `--metadata`, and `--connection`. Resume also accepts `--template-version` for a compatible version; otherwise the controller selects the checkpoint version or a compatible recovery version.
 

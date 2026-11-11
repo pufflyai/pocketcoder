@@ -21,6 +21,7 @@ import type { InputStorage } from "../attachments/input-storage";
 import { prepareExecutionInputs } from "../control-channel/execution-inputs";
 import type { Hub } from "../control-channel/hub";
 import { finalizeServiceExecution } from "./execution-finalization";
+import type { LiveTurns } from "./live-turns";
 
 function refusalMessage(status: number, body: string | undefined) {
   const text = Buffer.from(body ?? "", "base64")
@@ -30,11 +31,11 @@ function refusalMessage(status: number, body: string | undefined) {
   return text || `Producer refused the execution with HTTP ${status}.`;
 }
 
-// Capable service adapters use fixed, template-declared endpoints. Plain AgentAPI
-// interruption remains workspace-scoped and is never used for operation cancellation.
+// Service adapters use fixed, template-declared endpoints and targeted cancellation.
 export function conversationTransport(deps: {
   store: Store;
   hub: Hub;
+  liveTurns: LiveTurns;
   inputs?: InputStorage;
   driver: Pick<WorkspaceDriver, "publishInputs" | "releaseInputProjection">;
   readCapacity?: ReadStorageCapacity;
@@ -87,6 +88,23 @@ export function conversationTransport(deps: {
     if (fact.phase === "absent") return "absent" as const;
     if (fact.fingerprint !== record.acceptance.fingerprint)
       throw new ApiError("operation.conflict", "Producer fingerprint conflict.");
+    // Finish the canonical record before terminal execution observation can commit
+    // request history or acknowledge the producer. Lookup replays the same revisions.
+    for (const message of fact.messages ?? []) {
+      const identity = message.identity;
+      const request = record.conversationIdentity;
+      if (
+        !identity ||
+        !request ||
+        identity.conversation_id !== request.conversation_id ||
+        identity.turn_id !== request.turn_id ||
+        identity.request_id !== request.request_id ||
+        identity.request_fingerprint !== request.request_fingerprint ||
+        identity.authority !== request.authority
+      )
+        throw new ApiError("operation.conflict", "Producer message does not belong to this execution.");
+      await deps.liveTurns.receive(workspace.id, { ...message, identity });
+    }
     if (fact.publication) {
       const publications = fact.publication.objects.map((object) => {
         const bytes = Buffer.from(object.contentBase64, "base64");

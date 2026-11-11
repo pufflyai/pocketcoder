@@ -11,6 +11,7 @@ describe("pcd server lifecycle", () => {
     const env = {
       POCKETCODER_HOST: "127.0.0.1",
       POCKETCODER_PORT: String(port),
+      POCKETCODER_AGENT_HTTP: `127.0.0.1:${freePort()}`,
       POCKETCODER_STATE_DIR: directory,
       POCKETCODER_DIR: join(directory, "data"),
       POCKETCODER_AUTH_PEPPER: "server-test-pepper",
@@ -186,81 +187,6 @@ describe("pcd workspace workflows", () => {
       expect(result.output).toContain("docker image is unavailable");
     } finally {
       await server.stop(true);
-    }
-  });
-
-  test("sends a chat turn and prints the correlated agent response", async () => {
-    const directory = mkdtempSync(join(tmpdir(), "pocketcoder-cli-chat-"));
-    let prompt = "";
-    let status = "stable";
-    let statusReads = 0;
-    const messages = [
-      { id: 0, role: "agent", content: "startup" },
-      { id: 1, role: "user", content: "old prompt" },
-      { id: 2, role: "agent", content: "old reply" },
-    ];
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      async fetch(request) {
-        const url = new URL(request.url);
-        const route = `${request.method} ${url.pathname}`;
-        if (route === "GET /v1/workspaces/workspace-chat") {
-          statusReads += 1;
-          if (status === "running" && statusReads > 2) {
-            messages.push({ id: 4, role: "agent", content: `reply: ${prompt}` });
-            status = "stable";
-          }
-          return Response.json({
-            id: "workspace-chat",
-            state: "ready",
-            agent_state: status,
-          });
-        }
-        if (route === "POST /v1/workspaces/workspace-chat/agent/message") {
-          const body = (await request.json()) as { content: string };
-          prompt = body.content;
-          status = "running";
-          messages.push({ id: 3, role: "user", content: prompt });
-          return Response.json({ ok: true });
-        }
-        if (route === "GET /v1/workspaces/workspace-chat/agent/messages") {
-          return Response.json({ messages });
-        }
-        return new Response("not found", { status: 404 });
-      },
-    });
-    try {
-      const result = await runCli(
-        [
-          "workspaces",
-          "chat",
-          "--id",
-          "workspace-chat",
-          "--message",
-          "hello",
-          "--json",
-          "--poll-interval-ms",
-          "100",
-          "--response-timeout-seconds",
-          "2",
-        ],
-        {
-          env: {
-            POCKETCODER_URL: server.url.origin,
-            POCKETCODER_KEY: "chat-key",
-            POCKETCODER_STATE_DIR: directory,
-          },
-        },
-      );
-      expect(result.exitCode).toBe(0);
-      expect(result.output).toContain('"role":"agent"');
-      expect(result.output).toContain("reply: hello");
-      expect(result.output).not.toContain("startup");
-      expect(result.output).not.toContain("old reply");
-    } finally {
-      await server.stop(true);
-      rmSync(directory, { recursive: true, force: true });
     }
   });
 });

@@ -1,6 +1,4 @@
 export {
-  type AgentMessageRequest,
-  AgentMessageRequestSchema,
   ATTACHMENT_CHUNK_BYTES,
   ATTACHMENT_FAILURE_CODES,
   ATTACHMENT_MAX_FILE_BYTES,
@@ -22,8 +20,6 @@ export {
   AttachmentResultPayload,
   type AttachmentStart,
   AttachmentStartPayload,
-  attachmentManifest,
-  splitAttachmentManifest,
 } from "./attachments/attachment";
 export * from "./attachments/input-reference";
 export * from "./auth/keys";
@@ -243,6 +239,7 @@ export * from "./secrets/secret";
 export * as managed from "./sessions";
 export * from "./templates/finite-outputs";
 export * from "./templates/runtime-credentials";
+export { sessionTemplate } from "./templates/session-template";
 export * from "./templates/template";
 export { TemplatePublishRequestSchema, TemplateVersionParamsSchema } from "./templates/template-api";
 export {
@@ -299,8 +296,6 @@ export {
   type AdmissionDecision,
   type AdmissionReason,
   AGENT_STATES,
-  type AgentInterruptResponse,
-  AgentInterruptResponseSchema,
   type AgentState,
   canTransition,
   isTerminal,

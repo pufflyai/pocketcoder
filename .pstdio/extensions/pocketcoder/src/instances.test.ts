@@ -77,3 +77,49 @@ test("starting with a missing executable keeps the saved one", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("an expired owner key renews itself while the controller runs, so the instance can still be managed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-expired-key-"));
+  const instances = createInstances(root);
+  try {
+    const instance = await instances.launch({ name: "Expired key", binary });
+    const ownerPath = join(root, instance.id, "owner.json");
+    const issued = JSON.parse(await readFile(ownerPath, "utf8"));
+    await writeFile(ownerPath, JSON.stringify({ ...issued, expiresAt: new Date(Date.now() - 1_000).toISOString() }));
+
+    // The table, stop and remove paths all go through these calls at once.
+    const [workspaces] = await Promise.all([
+      instances.items(instance.id, "/v1/workspaces"),
+      instances.request(instance.id, "/v1/templates"),
+      instances.connection(instance.id),
+    ]);
+    expect(workspaces).toEqual([]);
+    expect(await instances.connection(instance.id)).toBe("Connected");
+    const renewed = JSON.parse(await readFile(ownerPath, "utf8"));
+    expect(renewed.token).not.toBe(issued.token);
+    expect(Date.parse(renewed.expiresAt)).toBeGreaterThan(Date.now());
+    expect((await stat(ownerPath)).mode & 0o777).toBe(0o600);
+  } finally {
+    for (const id of await readdir(root)) await instances.stop(id);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("reconnecting the same machine retains its conversation seed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-session-seed-"));
+  const instances = createInstances(root);
+  const sessionId = randomUUID(),
+    instanceId = randomUUID(),
+    machineId = randomUUID(),
+    conversationId = randomUUID();
+  try {
+    await instances.bindSession(sessionId, instanceId, machineId, conversationId);
+    await instances.bindSession(sessionId, instanceId, machineId);
+    expect(await instances.sessionTarget(sessionId)).toEqual({ instanceId, machineId, conversationId });
+    const otherMachine = randomUUID();
+    await instances.bindSession(sessionId, instanceId, otherMachine);
+    expect(await instances.sessionTarget(sessionId)).toEqual({ instanceId, machineId: otherMachine });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -1,5 +1,5 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import { AgentRequestSchema, ApiError, digestOf, ExecutionRecordSchema } from "@pstdio/pocketcoder-contracts";
+import { ApiError, digestOf, ExecutionRecordSchema, WorkspaceRequestSchema } from "@pstdio/pocketcoder-contracts";
 import type { Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
@@ -22,13 +22,13 @@ function registration(workspace: WorkspaceRow) {
   return { runtime, producer, adapter, template: runtime.template };
 }
 
-export function registerAgentRequests(app: OpenAPIHono<AppEnv>, store: Store, service: WorkspaceService) {
+export function registerWorkspaceRequests(app: OpenAPIHono<AppEnv>, store: Store, service: WorkspaceService) {
   app.openapi(
     createRoute({
       method: "get",
-      path: "/v1/workspaces/{id}/agent/requests",
+      path: "/v1/workspaces/{id}/requests",
       tags: ["Agent"],
-      operationId: "listAgentRequests",
+      operationId: "listWorkspaceRequests",
       middleware: [requireScope("services:relay")] as const,
       request: {
         params: z.object({ id: z.uuid() }),
@@ -60,7 +60,7 @@ export function registerAgentRequests(app: OpenAPIHono<AppEnv>, store: Store, se
       return c.json({ items: page.items, next_cursor: page.nextCursor }, 200);
     },
   );
-  app.get("/v1/workspaces/:id/agent/capabilities", requireScope("services:relay"), async (c) => {
+  app.get("/v1/workspaces/:id/requests/capabilities", requireScope("services:relay"), async (c) => {
     const row = await service.getOwned(c.get("principal"), c.req.param("id"));
     try {
       const { producer } = registration(row);
@@ -80,13 +80,13 @@ export function registerAgentRequests(app: OpenAPIHono<AppEnv>, store: Store, se
   app.openapi(
     createRoute({
       method: "post",
-      path: "/v1/workspaces/{id}/agent/requests",
+      path: "/v1/workspaces/{id}/requests",
       tags: ["Agent"],
-      operationId: "submitAgentRequest",
+      operationId: "submitWorkspaceRequest",
       middleware: [requireScope("services:relay")] as const,
       request: {
         params: z.object({ id: z.uuid() }),
-        body: { required: true, content: { "application/json": { schema: AgentRequestSchema } } },
+        body: { required: true, content: { "application/json": { schema: WorkspaceRequestSchema } } },
       },
       responses: {
         ...responses,
@@ -110,7 +110,7 @@ export function registerAgentRequests(app: OpenAPIHono<AppEnv>, store: Store, se
         templateDigest: template.digest,
         adapterDigest: adapter.digest,
         operation: "message",
-        input: { content: input.content },
+        input: { message: input.message },
         inputs: { ...objects, digest: digestOf(objects) },
         bindingSetDigest: digestOf([]),
       };
@@ -129,9 +129,9 @@ export function registerAgentRequests(app: OpenAPIHono<AppEnv>, store: Store, se
   app.openapi(
     createRoute({
       method: "get",
-      path: "/v1/workspaces/{id}/agent/requests/{requestId}",
+      path: "/v1/workspaces/{id}/requests/{requestId}",
       tags: ["Agent"],
-      operationId: "readAgentRequest",
+      operationId: "readWorkspaceRequest",
       middleware: [requireScope("services:relay")] as const,
       request: {
         params: z.object({ id: z.uuid(), requestId: z.uuid() }),

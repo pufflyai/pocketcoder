@@ -139,9 +139,6 @@ export function relayHandler(
   options?: {
     service?: string;
     pathPrefix?: (workspaceId: string) => string;
-    // Rewrites the base64 request body after route gates and the size cap
-    // (used by the attachment-aware AgentAPI message aliases).
-    transformBodyB64?: (c: Context<AppEnv>, bodyB64: string | undefined) => Promise<string | undefined>;
   },
 ) {
   return async (c: Context<AppEnv>): Promise<Response> => {
@@ -165,8 +162,7 @@ export function relayHandler(
       throw new ApiError("relay.route_not_allowed", `${method} ${path} is not declared by this template.`);
     }
     const query = allowedQuery(c.req.url, match.route.query);
-    let bodyB64 = await requestBody(c, method, match.route.maxRequestBytes);
-    if (options?.transformBodyB64) bodyB64 = await options.transformBodyB64(c, bodyB64);
+    const bodyB64 = await requestBody(c, method, match.route.maxRequestBytes);
     if ((await deps.store.getWorkspace(id))?.purgeRequestedAt)
       throw new ApiError("operation.conflict", "Workspace content is being purged.");
 

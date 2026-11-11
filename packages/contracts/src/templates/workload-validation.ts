@@ -60,7 +60,7 @@ function validateAdapters(spec: Spec, issue: Issue) {
       if (!adapter.service || !Object.hasOwn(spec.services, adapter.service) || adapter.command)
         issue(path, "service adapters require a declared service and no process command");
     } else if (!adapter.command || adapter.service) {
-      issue(path, "process, Pi and AgentAPI adapters require a command and no service reference");
+      issue(path, "process and Pi adapters require a command and no service reference");
     }
   }
 }

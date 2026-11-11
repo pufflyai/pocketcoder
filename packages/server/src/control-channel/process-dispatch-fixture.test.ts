@@ -41,9 +41,16 @@ export async function processDispatchFixture(
   root = f.directory ?? "";
   const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));
   const hub = shared?.hub ?? new Hub();
+  const liveTurns = new LiveTurns(f.store);
   const transport = executionTransport(
     processTransport({ store: f.store, hub, driver: {} }),
-    conversationTransport({ store: f.store, hub, driver: {}, readCapacity: options.readCapacity }),
+    conversationTransport({
+      store: f.store,
+      hub,
+      driver: {},
+      liveTurns,
+      readCapacity: options.readCapacity,
+    }),
   );
   let dispatchFailed = false;
   // Each failed dispatch attempt; readiness (dispatchFailed) only reflects controller-wide trouble.
@@ -127,7 +134,7 @@ export async function processDispatchFixture(
             await handleConnectedFrame(
               {
                 store: f.store,
-                liveTurns: new LiveTurns(f.store),
+                liveTurns,
                 hub,
                 executionDispatcher: dispatcher,
                 scheduler,
@@ -179,6 +186,7 @@ export async function processDispatchFixture(
   return {
     ...f,
     hub,
+    liveTurns,
     dispatcher,
     get dispatchErrors() {
       return dispatchErrors;

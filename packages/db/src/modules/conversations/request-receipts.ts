@@ -97,7 +97,8 @@ export function createConversationRequests(context: DatabaseContext) {
             eq(requests.requestId, parsed.request_id),
           ),
         );
-      return Boolean(accepted && canonicalJson(accepted.identity) === canonicalJson(parsed));
+      const owner = accepted?.execution?.acceptance.execution.workspaceId ?? accepted?.workspaceId;
+      return Boolean(owner === workspaceId && accepted && canonicalJson(accepted.identity) === canonicalJson(parsed));
     },
   };
 }

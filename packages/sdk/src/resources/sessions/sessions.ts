@@ -1,4 +1,9 @@
-import { managed, PreviewOpenResponseSchema, type ViewSessionOptions } from "@pstdio/pocketcoder-contracts";
+import {
+  ConversationLiveEventSchema,
+  managed,
+  PreviewOpenResponseSchema,
+  type ViewSessionOptions,
+} from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 import { queryString } from "../../transport/common";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
@@ -79,6 +84,15 @@ export class SessionsApi {
 
   events(sessionId: string, options: SessionEventOptions = {}) {
     return sessionEvents(this.transport, sessionId, options);
+  }
+
+  // Open turns are snapshots; use history and its durable cursor for committed replay.
+  open(sessionId: string, options: RequestOptions = {}) {
+    return this.transport.request(
+      `${sessionPath(sessionId)}/conversation/open`,
+      z.object({ turns: z.array(ConversationLiveEventSchema) }),
+      options,
+    );
   }
 
   // Opens a preview of the session's current compute. A 409 operation.conflict means compute was

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { resolveExecutable } from "./executable";
 import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
+import { createOwnerKeys, type OwnerKey } from "./owner-keys";
 
 export interface Instance {
   id: string;
@@ -92,6 +93,14 @@ export function createInstances(root: string) {
       return (error as NodeJS.ErrnoException).code !== "ESRCH";
     }
   };
+  const ownerKeys = createOwnerKeys({
+    read: (id) => read<OwnerKey>(id, "owner.json"),
+    // This owner key stays on the host. Provider refs and workspace files contain only IDs.
+    write: (id, key) => write(id, "owner.json", key),
+    create: async (instance, expiresAt) =>
+      JSON.parse(await cli(instance, ["superuser", "create", "--automation", "--expires", expiresAt, "--json"])),
+    get,
+  });
   const start = async (id: string, binary?: string) => {
     if (binary) {
       // Check the new path before saving it, so a bad path cannot break an instance that worked before.
@@ -102,23 +111,16 @@ export function createInstances(root: string) {
     const instance = await get(id);
     if (instance.error) throw new Error(instance.error);
     if (instance.state === "stopped") await cli(instance, ["server", "start"]);
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    const issued = JSON.parse(
-      await cli(instance, ["superuser", "create", "--automation", "--expires", expiresAt, "--json"]),
-    );
-    // This owner key stays on the host. Provider refs and workspace files contain only IDs.
-    await write(id, "owner.json", { token: issued.token, expiresAt: issued.key.expires_at });
+    await ownerKeys.issue(instance);
     if (instance.removed) await write(id, "instance.json", { ...instance, removed: false });
     return get(id);
   };
   const request = async <T>(id: string, path: string, options: RequestInit = {}) => {
     const instance = await read<Instance>(id, "instance.json");
-    const owner = await read<{ token: string; expiresAt: string }>(id, "owner.json");
-    if (Date.parse(owner.expiresAt) <= Date.now())
-      throw new Error("Instance key expired. Start the instance to renew it.");
+    const token = await ownerKeys.token(id);
     const response = await fetch(`${instance.url}${path}`, {
       ...options,
-      headers: { "content-type": "application/json", authorization: `Bearer ${owner.token}`, ...options.headers },
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...options.headers },
       signal: options.signal ?? AbortSignal.timeout(35_000),
     });
     if (!response.ok) {
@@ -132,17 +134,30 @@ export function createInstances(root: string) {
     return response.json() as Promise<T>;
   };
   return {
-    async bindSession(sessionId: string, instanceId: string, machineId: string) {
+    async bindSession(sessionId: string, instanceId: string, machineId: string, conversationId?: string) {
       directory(sessionId);
       directory(instanceId);
       directory(machineId);
-      await writeFile(join(root, `${sessionId}.json`), JSON.stringify({ instanceId, machineId }), { mode: 0o600 });
+      if (!conversationId) {
+        try {
+          const saved = JSON.parse(await readFile(join(root, `${sessionId}.json`), "utf8"));
+          if (saved.instanceId === instanceId && saved.machineId === machineId) conversationId = saved.conversationId;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+      }
+      await writeFile(
+        join(root, `${sessionId}.json`),
+        JSON.stringify({ instanceId, machineId, ...(conversationId ? { conversationId } : {}) }),
+        { mode: 0o600 },
+      );
     },
     async sessionTarget(sessionId: string) {
       directory(sessionId);
       return JSON.parse(await readFile(join(root, `${sessionId}.json`), "utf8")) as {
         instanceId: string;
         machineId: string;
+        conversationId?: string;
       };
     },
     get,
@@ -150,8 +165,6 @@ export function createInstances(root: string) {
     request,
     async connection(id: string) {
       try {
-        const owner = await read<{ token: string; expiresAt: string }>(id, "owner.json");
-        if (Date.parse(owner.expiresAt) <= Date.now()) return "Key expired";
         await request(id, "/v1/templates?limit=1", { signal: AbortSignal.timeout(2_000) });
         return "Connected";
       } catch {

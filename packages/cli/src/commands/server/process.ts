@@ -4,6 +4,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, r
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { listenerOrigin, loadConfig, type ServerConfig } from "@pstdio/pocketcoder-server/config";
+import { runPocketCoderServerUntilSignal } from "@pstdio/pocketcoder-server/lifecycle";
 
 interface ServerState {
   version: 1;
@@ -164,8 +165,6 @@ function timeoutSeconds(value: number | undefined, fallback: number): number {
 
 export async function startManagedServer(options: ServerProcessOptions): Promise<void> {
   if (options.foreground) {
-    // API commands register server commands too, but do not need the controller runtime.
-    const { runPocketCoderServerUntilSignal } = await import("@pstdio/pocketcoder-server/lifecycle");
     await runPocketCoderServerUntilSignal(loadConfig());
     return;
   }
@@ -221,13 +220,17 @@ export async function startManagedServer(options: ServerProcessOptions): Promise
 }
 
 export async function runManagedServer(instanceToken: string): Promise<void> {
-  const { runPocketCoderServerUntilSignal } = await import("@pstdio/pocketcoder-server/lifecycle");
   await runPocketCoderServerUntilSignal(loadConfig(), { instanceId: instanceToken });
 }
 
 export async function printManagedServerStatus(json: boolean): Promise<void> {
   const state = readState();
-  if (!state) throw new Error("server is not running (no managed server state)");
+  if (!state) {
+    if (json) console.log(JSON.stringify({ state: "not_running" }, null, 2));
+    else console.log("not_running (no managed server state)");
+    process.exitCode = 1;
+    return;
+  }
   const identityMatches = processIdentityMatches(state);
   const healthy = identityMatches && (await healthIdentity(state.url)) === state.instanceToken;
   const stoppedState = identityMatches ? "unhealthy" : "stale";
@@ -243,12 +246,16 @@ export async function printManagedServerStatus(json: boolean): Promise<void> {
   else {
     console.log(`${result.state}\tpid=${result.pid}\turl=${result.url}\tstarted=${result.started_at}`);
   }
-  if (!healthy) throw new Error(`managed server state is ${result.state}`);
+  if (!healthy) process.exitCode = 1;
 }
 
 export async function stopManagedServer(options: ServerProcessOptions): Promise<void> {
   const state = readState();
-  if (!state) throw new Error("server is not running (no managed server state)");
+  if (!state) {
+    console.log("server is not running (no managed server state)");
+    process.exitCode = 1;
+    return;
+  }
   if (!processExists(state.pid)) {
     removeState();
     console.log(`removed stale server state for pid ${state.pid}`);

@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 interface CliResult {
   exitCode: number;
@@ -12,21 +14,6 @@ interface RunCliOptions {
   input?: string;
 }
 
-const pocketcoderEnvironment = [
-  "POCKETCODER_AUTH_PEPPER",
-  "POCKETCODER_DATABASE_URL",
-  "POCKETCODER_DATABASE_SCHEMA",
-  "POCKETCODER_JOURNAL_DIR",
-  "POCKETCODER_STORE",
-  "POCKETCODER_DIR",
-  "POCKETCODER_HOST",
-  "POCKETCODER_KEY",
-  "POCKETCODER_PORT",
-  "POCKETCODER_STATE_DIR",
-  "POCKETCODER_TEMPLATE_DIR",
-  "POCKETCODER_URL",
-];
-
 export function freePort(): number {
   const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
   const port = Number(probe.port);
@@ -34,18 +21,36 @@ export function freePort(): number {
   return port;
 }
 
+// A developer's project `.env` must not leak into CLI tests. An explicit empty
+// file stops discovery unless the test controls the environment itself.
+const emptyEnvironmentFile = join(mkdtempSync(join(tmpdir(), "pcd-cli-env-")), "empty.env");
+writeFileSync(emptyEnvironmentFile, "");
+
+function controlsEnvironment(args: readonly string[]): boolean {
+  return args.some(
+    (arg) =>
+      arg === "--workdir" || arg.startsWith("--workdir=") || arg === "--env-file" || arg.startsWith("--env-file="),
+  );
+}
+
 export async function runCli(args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> {
   const env: Record<string, string | undefined> = { ...Bun.env, NO_COLOR: "1" };
   delete env.FORCE_COLOR;
-  for (const key of pocketcoderEnvironment) delete env[key];
+  for (const key of Object.keys(env)) if (key.startsWith("POCKETCODER_")) delete env[key];
   Object.assign(env, options.env);
-  const child = Bun.spawn([process.execPath, "--no-env-file", resolve(import.meta.dir, "../index.ts"), ...args], {
-    cwd: options.cwd ?? resolve(import.meta.dir, "../.."),
-    env,
-    ...(options.keepStdinOpen || options.input !== undefined ? { stdin: "pipe" as const } : {}),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  // A caller-supplied cwd controls discovery already, and may hold its own `.env`.
+  const isolateEnvironment = options.cwd === undefined && !controlsEnvironment(args);
+  const envFileArgs = isolateEnvironment ? ["--env-file", emptyEnvironmentFile] : [];
+  const child = Bun.spawn(
+    [process.execPath, "--no-env-file", resolve(import.meta.dir, "../index.ts"), ...envFileArgs, ...args],
+    {
+      cwd: options.cwd ?? resolve(import.meta.dir, "../.."),
+      env,
+      ...(options.keepStdinOpen || options.input !== undefined ? { stdin: "pipe" as const } : {}),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   if (options.input !== undefined && child.stdin) {
     child.stdin.write(options.input);
     child.stdin.end();

@@ -34,19 +34,7 @@ export async function preparePersistentPi(agentDir: string, gateway: ResumeGatew
       },
     }),
   );
-  return [
-    "--provider",
-    "resume-gateway",
-    "--model",
-    gateway.model,
-    "--session-dir",
-    "/state/pi",
-    "--continue",
-    "--extension",
-    "/opt/pi/agentapi-compat.ts",
-    "--approve",
-    "--offline",
-  ];
+  return ["--provider", "resume-gateway", "--model", gateway.model, "--approve", "--offline"];
 }
 
 if (import.meta.main) {
@@ -55,7 +43,7 @@ if (import.meta.main) {
   };
   const agentDir = "/home/agent/.pi/agent";
   const args = await preparePersistentPi(agentDir, input.gateway);
-  const child = Bun.spawn(["/opt/pi/node_modules/.bin/pi", ...args], {
+  const child = Bun.spawn(["/opt/pi/node_modules/.bin/pi", ...args, ...process.argv.slice(2)], {
     env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, POCKETCODER_LAUNCH_INPUT: undefined },
     stdin: "inherit",
     stdout: "inherit",

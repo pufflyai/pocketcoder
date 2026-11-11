@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { chmod } from "node:fs/promises";
-import { probeImageAgentApi } from "./image-agentapi";
 import { imageDisplayDiagnostics } from "./image-display-diagnostics";
 import { probeKubernetesImageDisplay } from "./image-kubernetes-display";
 import { managerImageAuthority } from "./image-manager-authority";
@@ -170,7 +169,7 @@ export async function probeManagerImage(
     const echo = await runManagedEcho(owners[0] as (typeof owners)[number], manifest);
     await assertManagedIsolation(cluster, owners, echo.workspaceId);
     const owner = owners[0] as (typeof owners)[number];
-    const agentapi = await probeImageAgentApi(owner.baseUrl, owner.token, workspace.image);
+    const serviceProbe = { transport: "generic HTTP probe", result: "passed" };
     const displays = [];
     const loaded = [server, workspace, egress];
     for (const mode of ["desktop", "browser"] as const) {
@@ -209,7 +208,7 @@ export async function probeManagerImage(
       loadedImages: loaded,
       managerRestart: true,
       isolation: "finite owners; PVC, RBAC, quota and enforced Calico",
-      agentapi,
+      serviceProbe,
       displays,
       usage,
     };

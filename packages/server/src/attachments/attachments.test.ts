@@ -50,32 +50,3 @@ test("HTTP enforces scope, descriptor and configured file bound", async () => {
   ).toBe(400);
   expect(agent.frames).toEqual([]);
 });
-
-test("text-only relay stays unchanged and attachment dispatch fails closed until driver projection", async () => {
-  const server = await createTestServer(await createStore());
-  const id = await readyWorkspace(server);
-  const agent = fakeAgent(server, id);
-  for (const alias of ["agent", "services/agent"]) {
-    const response = await server.app.request(
-      `/v1/workspaces/${id}/${alias}/message`,
-      authed(server.token, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "user", content: "x", attachment_ids: [randomUUID()] }),
-      }),
-    );
-    expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ error: { code: "attachment.unsupported" } });
-  }
-  expect(agent.proxied).toEqual([]);
-  const plain = await server.app.request(
-    `/v1/workspaces/${id}/agent/message`,
-    authed(server.token, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "user", content: "plain" }),
-    }),
-  );
-  expect(plain.status).toBe(200);
-  expect(agent.proxied[0]?.body).toEqual({ type: "user", content: "plain" });
-});

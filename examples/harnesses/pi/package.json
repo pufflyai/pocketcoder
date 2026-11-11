@@ -1,5 +1,5 @@
 {
-  "name": "@pstdio/pocketcoder-example-pi-agentapi",
+  "name": "@pstdio/pocketcoder-example-pi-native",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.83.0"
+    "@earendil-works/pi-coding-agent": "0.87.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

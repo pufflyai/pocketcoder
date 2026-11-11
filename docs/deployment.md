@@ -1,82 +1,5 @@
 # Deployment
 
-## Managed session capacity
-
-Set explicit session queue and immutable storage bounds as described in
-[session work](managed-session-work.md). A trusted placement intent pins the
-principal, profile revision, isolation key, complete budget scope set and session
-generation before managed compute is admitted.
-
-All required scope policies must allow the start and active physical slot.
-Compatible credential-free sessions can share one physical workspace while each
-holds its own process slot. Credentialed sessions each need a physical slot.
-Capacity denial defers admission without spending a provider failure retry.
-Managed intents use cold admission; the warm path does not claim managed support.
-
-Committed launch attempts are charged once across retries. Proved non-submission
-does not consume start allowance. Cleanup keeps its reservation during uncertain
-provider deletion and rejects stale generations. Queued cancellation and expiry
-release never-launched holds, including after a controller restart.
-
-Request completion alone does not prove a retained session process exited.
-Trusted process-stop evidence releases that process slot; provider fencing releases
-the physical slot and its processes.
-The placement owner creates, binds and replaces session compute; see
-[placement and replacement](managed-session-work.md#placement-and-replacement).
-
-| Variable | Purpose |
-| --- | --- |
-| `POCKETCODER_SESSION_QUEUE` | Per-session queue `count` and `bytes` |
-| `POCKETCODER_SESSION_STOP_SECONDS` | How long cancel and close may stay pending |
-| `POCKETCODER_SESSION_EVENT_RETENTION` | Recent events kept per session for replay |
-
-None of them has a default.
-
-### Managed Pi conformance on Docker
-
-`packages/server/src/testing/managed-pi.conformance.test.ts` and
-`managed-pi-capacity.conformance.test.ts` run the whole managed chain on real
-Docker:
-
-- a controller with the Docker driver and restricted egress;
-- a real HTTPS runtime issuer that delivers the Pi template's `model-gateway`
-  credential slot;
-- the Pi starter image built from `examples/harnesses/pi/starter`;
-- the independent reference consumer.
-
-A deterministic model gateway fixture stands in for agentgateway. It accepts only
-bearers the issuer minted for a live workspace.
-
-```sh
-docker pull --platform linux/amd64 ghcr.io/pufflyai/pocketcoder/egress@sha256:d94d1336f9aad317adc06f2cdb24082915efc1f654ead5e1baced06e72c39b29
-POCKETCODER_MANAGED_PI_CONFORMANCE=1 bun --no-env-file test \
-  packages/server/src/testing/managed-pi.conformance.test.ts \
-  packages/server/src/testing/managed-pi-capacity.conformance.test.ts
-```
-
-The suites cover:
-
-- files and explicit publication;
-- zero-file collection;
-- events and history;
-- a scoped cancel while a sibling session runs;
-- close;
-- capacity usage;
-- a controller restart while Pi keeps running;
-- replacement of removed compute without resending started work;
-- model egress from inside the workspace: only the gateway route works.
-
-The capacity suite runs 1, 5 and 20 sessions. Each run has its own scope, and
-that scope's `maxActiveWorkspaces` equals the run size.
-
-Measured on Docker 29.9.2 with 4 CPUs and 16 GiB, Pi 0.83.0, source `0f5aa77`:
-
-| Sessions | Completed | Wall time | Peak workspaces | Peak CPU | Peak memory | Cleanup |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 1 | 16 s | 1 | 2% | 102 MiB | 3 s |
-| 5 | 5 | 29 s | 5 | 58% | 232 MiB | 4 s |
-| 20 | 20 | 86 s | 20 | 165% | 1875 MiB | 4 s |
-
 ## Container images
 
 The [candidate image workflow](../.github/workflows/images.yml) builds six roles
@@ -85,7 +8,7 @@ from one source commit for Linux amd64 and arm64:
 | Role | Contents | Recipe |
 | --- | --- | --- |
 | `server` | Controller, public `pocketcoder` command, Docker CLI and kubectl | [server.Dockerfile](../deploy/image/server.Dockerfile) |
-| `workspace` | Supervisor, AgentAPI and echo harness | [Dockerfile](../deploy/image/Dockerfile) |
+| `workspace` | Supervisor and native session producers | [Dockerfile](../deploy/image/Dockerfile) |
 | `desktop` | Workspace runtime with an X11 desktop and VNC | [desktop.Dockerfile](../deploy/image/desktop.Dockerfile) |
 | `browser` | Workspace runtime with Chromium | [browser.Dockerfile](../deploy/image/browser.Dockerfile) |
 | `egress` | Restricted-network sidecar proxy | [Egress Dockerfile](../packages/egress/Dockerfile) |
@@ -114,9 +37,7 @@ existing checks with Kubernetes 1.37 nodes do not prove supported kubectl versio
 
 Real coding-agent images extend the workspace base and install only their agent
 CLI and application environment. If they use another base, they must provide
-the supported AgentAPI at `/usr/local/bin/agentapi` and the
-supervisor. Keep everything runnable by the template's non-root uid. Always
-reference images by digest in templates — mutable tags are rejected.
+a measured native session producer and its workload descriptor
 
 Promote a source template after building its workspace image with `pocketcoder
 templates render`. The renderer accepts the immutable image reference and
@@ -747,15 +668,3 @@ for the PVC, network boundary, publisher and cleanup contract. The default
   auto-deleted.
 
 The controller needs namespaced Pod patch permission to retain termination evidence, plus read-only Node identity access. Bind `pocketcoder-node-identity` to the controller ServiceAccount in the deployed namespace. Workspace ServiceAccounts have no API token. Missing evidence keeps cleanup and capacity release pending.
-
-## AgentAPI reply compatibility
-
-The pinned AgentAPI 0.12.2 build includes a small reviewed patch so an identical
-nonempty answer still belongs to a later user turn. The workspace image and
-Pi/OSS example images apply the same patch. Candidate smoke tests exercise two
-identical replies through the installed binary on each architecture. Replace the
-patch when a reviewed upstream release includes the fix.
-
-For capable producers, use explicit v2 facts and terminal outcomes. Quiet terminal
-output cannot prove model completion. Legacy terminal-based agents may still
-need activity heartbeats in their adapter. See [the conversation contract](conversation-identities.md).

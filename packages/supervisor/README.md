@@ -14,7 +14,7 @@ agent harnesses the same setup, health, relay, and shutdown behavior.
   over one outbound WebSocket connection.
 - Runs setup, waits for explicit workload start or launches an alpha harness,
   and monitors declared services.
-- Relays logs, AgentAPI traffic, attachments, terminals, and proxy streams.
+- Relays logs, native session observations, attachments, terminals, and proxy streams.
 - Quiesces the workspace for checkpoints and shuts child processes down in a
   controlled order.
 

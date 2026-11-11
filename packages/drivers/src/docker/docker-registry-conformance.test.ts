@@ -77,7 +77,7 @@ test("private registry pull uses controller credentials without exposing them to
         image,
         imagePullSecret: "secretRef:pull-image",
         command: ["sh", "-c", "sleep 60"],
-        agent: { command: ["true"] },
+        harness: { command: ["true"] },
         resources: { cpu: "1", memory: "128Mi" },
       },
     }),

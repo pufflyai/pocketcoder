@@ -13,14 +13,11 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
 } from "../protocol/protocol";
 import {
-  AgentMessageRequestSchema,
   ATTACHMENT_CHUNK_BYTES,
   ATTACHMENT_MAX_FILE_BYTES,
   ATTACHMENT_MAX_MESSAGE_BYTES,
   ATTACHMENT_MAX_MESSAGE_IDS,
   AttachmentDescriptorSchema,
-  attachmentManifest,
-  splitAttachmentManifest,
 } from "./attachment";
 
 function descriptor(overrides: Record<string, unknown> = {}) {
@@ -63,62 +60,6 @@ describe("attachment descriptor", () => {
     ]) {
       expect(AttachmentDescriptorSchema.safeParse(bad).success).toBe(false);
     }
-  });
-});
-
-describe("agent message request", () => {
-  test("accepts a user message with unique attachment ids and keeps unknown fields", () => {
-    const parsed = AgentMessageRequestSchema.safeParse({
-      type: "user",
-      content: "Summarize this.",
-      attachment_ids: [randomUUID()],
-      extra: "passthrough",
-    });
-    expect(parsed.success).toBe(true);
-    expect((parsed.data as Record<string, unknown>).extra).toBe("passthrough");
-  });
-
-  test("rejects duplicates, empties, and oversized id lists", () => {
-    const id = randomUUID();
-    expect(
-      AgentMessageRequestSchema.safeParse({
-        type: "user",
-        content: "x",
-        attachment_ids: [id, id],
-      }).success,
-    ).toBe(false);
-    expect(AgentMessageRequestSchema.safeParse({ type: "user", content: "x", attachment_ids: [] }).success).toBe(false);
-    expect(
-      AgentMessageRequestSchema.safeParse({
-        type: "user",
-        content: "x",
-        attachment_ids: Array.from({ length: ATTACHMENT_MAX_MESSAGE_IDS + 1 }, () => randomUUID()),
-      }).success,
-    ).toBe(false);
-  });
-});
-
-describe("attachment manifest", () => {
-  test("round-trips descriptors through message content", () => {
-    const first = AttachmentDescriptorSchema.parse(descriptor());
-    const second = AttachmentDescriptorSchema.parse(descriptor({ name: "data.csv" }));
-    const content = `Summarize this.\n\n${attachmentManifest([first, second])}`;
-    const split = splitAttachmentManifest(content);
-    expect(split.text).toBe("Summarize this.");
-    expect(split.attachments).toEqual([first, second]);
-  });
-
-  test("leaves plain content untouched", () => {
-    const split = splitAttachmentManifest("no attachments here");
-    expect(split.text).toBe("no attachments here");
-    expect(split.attachments).toBeNull();
-  });
-
-  test("treats malformed manifests as plain text", () => {
-    const content = "hi\n\n<pocketcoder-attachments>\nnot json\n</pocketcoder-attachments>";
-    const split = splitAttachmentManifest(content);
-    expect(split.text).toBe(content);
-    expect(split.attachments).toBeNull();
   });
 });
 

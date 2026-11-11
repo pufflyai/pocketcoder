@@ -114,14 +114,6 @@ bun run pcd -- workspaces terminal --id "$workspace_id"
 Type `exit` or press Ctrl-D to close the remote shell. The workspace keeps
 running until it is canceled or reaches its timeout.
 
-To use the local Pi interface while the coding agent and tools stay in the
-workspace:
-
-```bash
-POCKETCODER_WORKSPACE_ID="$workspace_id" \
-bunx @pstdio/pocketcoder-remote
-```
-
 You can also send a turn through the direct workspace chat:
 
 ```bash

@@ -55,20 +55,7 @@ existing JSON identity envelope, with the same request binding and replay scope.
 
 The provider SSE event is `conversation_message`, with a canonical message as
 its data. Provider history may contain the same canonical records; supervisor
-checkpoint synchronization preserves them. Legacy AgentAPI records remain valid.
-
-`RemoteAgentClient` is exported from `@pstdio/pocketcoder-remote/extension`.
-`sendTurn(prompt, identity, { signal, attachmentIds, onEvent })`
-is the explicit adapter path. Use it only with a verified v2 producer and a
-previously accepted request context. It forwards that context, filters unrelated
-requests, emits each event revision once, and waits for `turn_terminal`. Its
-result contains `identity`, `outcome`, nullable `finalResponse`, and `toolOnly`.
-A stream reconnect retains the last final response and replay filter. A stable
-status or an old assistant message cannot complete this path. Cancellation and
-transport failure remain errors; observed facts have already reached `onEvent`.
-
-`send` remains the legacy adapter path for producers lacking explicit facts.
-Consumer tests alone do not allow callers to enable the capable path in a release.
+checkpoint synchronization preserves them. Retained records remain readable.
 
 ## Capability and existing history
 
@@ -84,7 +71,7 @@ message envelope. Older binaries must not consume v2 identified history until
 upgraded; rolling back a producer to legacy emission does not rewrite saved IDs.
 
 See [durable conversation validation](durable-conversation-validation.md) for
-public contract, adapter, API, and SDK checks. Installed producer validation is a
+public contract, API, and SDK checks. Installed producer validation is a
 separate release responsibility.
 
 ## Durable conversation history
@@ -142,34 +129,7 @@ they were launched with. A server can cap it with
 history until a caller deletes it). A new turn makes an expired-pending
 conversation active again.
 
-AgentAPI-native workspaces capture accepted user input and earlier completed
-`/messages` entries while the agent is running. The final assistant entry stays
-pending until a read starts and finishes under the same stable health revision.
-The numeric AgentAPI id becomes `agentapi:<id>`, and AgentAPI's
-`agent` role becomes `assistant`; replay is idempotent. Legacy harness adapters
-may still write one canonical line per complete message:
-
-```text
-POCKETCODER_CONVERSATION {"message_id":"provider-7","role":"assistant","content":"Done","occurred_at":"2026-08-03T08:00:00.000Z","metadata":{"provider":"agentapi"}}
-```
-
-Before cooperative Stop or shutdown, the supervisor waits for an older history
-read and starts a fresh one before forwarding TERM. This shares the existing
-termination grace period. A failed read is reported and physical termination
-continues; a slow read cannot extend the deadline. KILL bypasses this final read.
-Frames remain ordered on the control channel; a disconnected channel or forced
-kill cannot guarantee delivery of the latest input.
-The server saves transcript frames already received even if provider cleanup
-finishes before queued writes. Deleted or purged history stays deleted.
-Stop responses and terminal state do not acknowledge queued transcript writes;
-an immediate history read can lag.
-Checkpoint preparation also starts a fresh stable read within its deadline.
-
-The supervisor validates and forwards the event over its ordered protocol;
-replaying a message id is idempotent. Adapters must redact secrets and
-provider-private tool/attachment data before emission. Expired transcripts
-return `410 conversation.expired`; explicitly deleted transcripts return
-`410 conversation.deleted` and cannot be appended again.
+Native service observations carry canonical message revisions. The controller commits them before terminal acknowledgement. Clients read retained records and open-turn snapshots. See [native structured sessions](agent-transport-decision.md).
 
 ## Execution acceptance and dispatch
 
@@ -213,10 +173,13 @@ per conversation within the workspace, so another conversation's request does
 not wait, and an unknown or lost operation keeps only its own conversation
 closed. A conversation resumed into another workspace starts with an open
 barrier there. Each conversation's cancellation and acknowledgment get their
-own relay budget. Legacy `/agent/interrupt` remains a workspace-scoped operator
-action; it is never used to cancel an identified execution.
+own relay budget. Cancellation names one accepted execution.
 
 Input pins release when an undispatched request is canceled or when execution
 finalization follows terminal acknowledgment. Unknown or lost work keeps its pins
 until workspace purge verifies provider termination. Failed termination and a
 controller restart before pin release leave purge retryable.
+
+Native tool parts include `output` for the complete structured result and `output_text` for its plain text preview. PocketCoder produces both. Clients display the preview directly without reading provider-specific result fields.
+
+Native turns are bounded to 4 MiB including their final record. Open snapshots accept `conversationId` to select one conversation. Clients with a response-size limit read stored history one message per page; the Workspaces connection stays below Prompt Studio's 5 MiB response limit.

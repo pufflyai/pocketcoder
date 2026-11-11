@@ -3,6 +3,7 @@ import type { ExecutionDispatcher, ManagedQueueLimits, Store } from "@pstdio/poc
 import type { InputStorage, InputStorageOptions } from "../attachments/input-storage";
 import { registerBudgetPolicyRoutes } from "../budgets/policy-routes";
 import { registerBudgetUsageRoutes } from "../budgets/usage-routes";
+import type { LiveTurns } from "../conversations/live-turns";
 import type { AppEnv } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
 import { registerSessionHistoryRoutes } from "./history-routes";
@@ -24,6 +25,7 @@ export function registerManagedSessionRoutes(
   app: OpenAPIHono<AppEnv>,
   deps: ManagedSessionDeps & {
     store: Store;
+    liveTurns: LiveTurns;
     executionDispatcher: ExecutionDispatcher;
     inputs?: InputStorage;
     inputStorageOptions?: InputStorageOptions;
@@ -38,7 +40,7 @@ export function registerManagedSessionRoutes(
     queue: deps.sessionQueueLimits,
   });
   registerSessionStopRoutes(app, { store, executionDispatcher, stopSeconds: deps.sessionStopSeconds });
-  registerSessionHistoryRoutes(app, store, { pollMs: deps.sessionEventPollMs ?? 250 });
+  registerSessionHistoryRoutes(app, store, { pollMs: deps.sessionEventPollMs ?? 250, liveTurns: deps.liveTurns });
   registerProfileRoutes(app, store);
   registerBudgetPolicyRoutes(app, store);
   registerBudgetUsageRoutes(app, store);

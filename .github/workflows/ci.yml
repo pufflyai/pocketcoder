@@ -130,6 +130,10 @@ jobs:
       - name: Prepare object storage before startup failure checks
         if: contains(fromJSON(needs.plan.outputs.projects), '@pstdio/pocketcoder-server')
         run: docker pull "$PC93_S3_IMAGE"
+      - name: Build the controller used by extension tests
+        if: contains(fromJSON(needs.plan.outputs.projects), 'pocketcoder') ||
+          contains(fromJSON(needs.plan.outputs.projects), 'pocketcoder-workspaces')
+        run: bun run build:native
       - name: Run affected unit and route tests
         env:
           CI_PROJECTS: ${{ needs.plan.outputs.projects }}

@@ -82,7 +82,7 @@ bootstrap Secret is mounted in a workspace.
 
 Each account has a private 10 GiB controller PVC, namespace quota, controller and
 workspace service accounts, and default-deny policies. Cold and warm workspaces
-can reach their own AgentAPI, DNS and public HTTPS. They cannot reach operator
+can reach their own native session service, DNS and public HTTPS. They cannot reach operator
 APIs or another account. Controller RBAC cannot read another account's Secrets or
 launch jobs there. Workspaces receive no Kubernetes token or controller volume.
 

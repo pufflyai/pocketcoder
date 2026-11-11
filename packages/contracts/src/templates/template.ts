@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { canonicalJson, digestOf } from "../common/canonical";
 import { parseDurationMs } from "../common/duration";
-import { legacyTemplateServices, templateServices } from "./template-runtime";
+import { templateServices } from "./template-runtime";
 import {
   type RuntimeTemplatePolicy,
   ServiceSchema,
@@ -15,14 +15,8 @@ import {
 import { validateTemplateSpec } from "./template-validation";
 import { runtimeTemplateDefinition } from "./workload-policy";
 
+export { templateServices } from "./template-runtime";
 export {
-  agentApiHarness,
-  isAgentApiNative,
-  templateServices,
-} from "./template-runtime";
-export {
-  type Agent,
-  AgentSchema,
   type CheckpointHook,
   CheckpointHookSchema,
   DurationSchema,
@@ -111,7 +105,7 @@ export function snapshotOf(parsed: ParsedTemplate): TemplateSnapshot {
 }
 
 export function snapshotServices(snapshot: TemplateSnapshot): Record<string, TemplateService> {
-  return snapshot.services ?? legacyTemplateServices(snapshot.spec);
+  return snapshot.services ?? templateServices(snapshot.spec);
 }
 
 export function timeoutMs(snapshot: TemplateSnapshot, key: keyof z.infer<typeof TimeoutsSchema>) {

@@ -3,6 +3,7 @@ on:
   workflow_call: null
 permissions: {}
 env:
+  BUN_VERSION: 1.4.2
   CANDIDATE_COMMIT: ${{ github.sha }}
 jobs:
   install:
@@ -28,7 +29,7 @@ jobs:
           ref: ${{ env.CANDIDATE_COMMIT }}
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version-file: package.json
+          bun-version: ${{ env.BUN_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
@@ -116,7 +117,7 @@ jobs:
         with:
           name: pocketcoder-packages-${{ env.CANDIDATE_COMMIT }}
           path: ${{ runner.temp }}/packages
-      - name: Install downloaded CLI, SDK and remote packages in a clean consumer
+      - name: Install downloaded CLI and SDK packages in a clean consumer
         run: >
           bun run candidate:packages check "$RUNNER_TEMP/packages" "$CANDIDATE_COMMIT" >
           "$RUNNER_TEMP/validation/packages.log"

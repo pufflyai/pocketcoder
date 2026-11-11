@@ -95,4 +95,12 @@ export class ConversationsApi {
     const response = await this.transport.stream(path, options.signal);
     if (response.body) yield* liveEvents(response.body);
   }
+
+  async open(id: string, options: RequestOptions & { conversationId?: string } = {}) {
+    return this.transport.request(
+      `${workspacePath(id)}/conversation/open${options.conversationId ? `?${queryString({ conversationId: options.conversationId })}` : ""}`,
+      z.object({ turns: z.array(ConversationLiveEventSchema) }),
+      options,
+    );
+  }
 }

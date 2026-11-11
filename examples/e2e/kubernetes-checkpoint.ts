@@ -12,6 +12,7 @@ import { startKubernetesController } from "./kubernetes-controller";
 import { assertQuotaDeniedCancellation } from "./kubernetes-empty-job";
 import { assertRestoreRetry, assertRuntimeClassEnforced, cancelOnUnavailableNode } from "./kubernetes-provider-probes";
 import { waitFor } from "./local-process";
+import { expectWorkspaceProbe } from "./workspace-probe";
 
 const cluster = await createKubernetesCluster();
 let controller: Awaited<ReturnType<typeof startKubernetesController>> | undefined;
@@ -173,20 +174,7 @@ try {
   );
   if (JSON.stringify(actual) !== JSON.stringify(tree)) throw new Error("Cross-node restore changed file bytes");
   const prompt = `restored ${randomUUID()}`;
-  const sent = await api.request(`/v1/workspaces/${restored.workspace.id}/agent/message`, {
-    method: "POST",
-    body: JSON.stringify({ type: "user", content: prompt }),
-  });
-  if (!sent.ok) throw new Error(`Agent message failed: ${await sent.text()}`);
-  await waitFor(
-    async () =>
-      responseText(
-        messageList(await (await api.request(`/v1/workspaces/${restored.workspace.id}/agent/messages`)).json()),
-        0,
-      ) === `echo: ${prompt}`,
-    30_000,
-    "restored echo agent",
-  );
+  await expectWorkspaceProbe(api.request, restored.workspace.id, prompt);
   await cancelOnUnavailableNode(cluster, api, restored.workspace.id);
   await assertRestoreRetry(cluster, api, preserved.checkpoint.id);
   await assertRuntimeClassEnforced(cluster, api);

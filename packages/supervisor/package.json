@@ -10,7 +10,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/supervisor.ts"
+    ".": "./src/supervisor.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir ./dist --target bun",

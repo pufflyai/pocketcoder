@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
+import { parseWorkloadTemplate } from "@pstdio/pocketcoder-contracts";
+import { qualifySessionTemplate } from "../local/session-template";
 
 export async function nativeTemplate(image: string) {
-  const manifest = JSON.parse(await readFile(resolve(import.meta.dir, "../harnesses/echo/template.json"), "utf8"));
-  manifest.spec.image = image;
-  manifest.spec.persistence = { mounts: [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }] };
-  return parseTemplateManifest(manifest);
+  const source = parseWorkloadTemplate(
+    JSON.parse(await readFile(resolve(import.meta.dir, "../harnesses/echo/template.json"), "utf8")),
+  ).manifest;
+  source.spec.lifecycle!.persistence.mounts = [{ name: "work", target: "/work", maxBytes: 1024 * 1024, maxFiles: 100 }];
+  return parseWorkloadTemplate(await qualifySessionTemplate(source, image));
 }
 
 if (import.meta.main) {

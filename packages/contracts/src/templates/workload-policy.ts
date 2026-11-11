@@ -23,6 +23,7 @@ export function workloadLifecycle(manifest: WorkloadTemplate) {
     ],
     version: spec.version,
     image: spec.image,
+    imagePullSecret: spec.imagePullSecret,
     resources: spec.resources,
     security: {
       ...spec.security,

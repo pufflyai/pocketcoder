@@ -20,6 +20,11 @@ export class SupervisorLogs {
   async pump(stream: ReadableStream<Uint8Array> | null, name: "stdout" | "stderr") {
     if (!stream) return;
     await pumpLineFramedText(stream, (text) => {
+      // Canonical parts must match the durable producer journal byte for byte.
+      if (name === "stdout" && isConversationControlLine(text)) {
+        this.captureOutputs(text);
+        return;
+      }
       const redacted = this.redact(text);
       if (name === "stdout") this.captureOutputs(redacted);
       if (name === "stdout" && isConversationControlLine(redacted)) return;

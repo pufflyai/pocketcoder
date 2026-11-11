@@ -10,7 +10,7 @@ test("downloaded packages reject a different commit and changed tarballs", async
   const commit = "a".repeat(40);
   try {
     const packages = [];
-    for (const suffix of ["cli", "sdk", "remote"]) {
+    for (const suffix of ["cli", "sdk"]) {
       const file = `${suffix}.tgz`;
       const source = join(directory, suffix);
       await Bun.write(
@@ -29,7 +29,7 @@ test("downloaded packages reject a different commit and changed tarballs", async
       });
     }
     await Bun.write(join(directory, "packages.json"), JSON.stringify({ commit, channel: "candidate", packages }));
-    expect(Object.keys((await verifyCandidatePackages(directory, commit)).tarballs)).toHaveLength(3);
+    expect(Object.keys((await verifyCandidatePackages(directory, commit)).tarballs)).toHaveLength(2);
     await expect(verifyCandidatePackages(directory, "b".repeat(40))).rejects.toThrow("commit");
     await Bun.write(
       join(directory, "packages.json"),

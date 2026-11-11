@@ -21,39 +21,11 @@ started](docs/getting-started.md), then the [CLI reference](docs/cli.md),
 [Node SDK](packages/sdk/README.md), [templates](docs/templates.md), [HTTP API](docs/api.md),
 [deployment](docs/deployment.md), and [architecture](docs/architecture.md).
 
-For development, read the [contributor guidance](AGENTS.md) and [CI guide](docs/ci.md).
+## Structured sessions
 
-## AgentAPI-native workspaces
+PocketCoder owns requests, session messages, replay, cancellation, and retained history. Native producers send typed text, tool calls, tool results, errors, and file metadata. The CLI, SDK, and Prompt Studio clients consume the same data.
 
-Templates declare the coding agent; PocketCoder owns AgentAPI startup,
-readiness, relay routes, durable transcript capture, and checkpoint shutdown:
-
-```jsonc
-// examples/templates/claude-code-agent.json (excerpt)
-"spec": {
-  "image": "example.registry/coding-agent@sha256:…",   // digest-pinned
-  "setup": [                                            // custom setup commands,
-    { "name": "clone-workspace-repo", "command": ["/usr/local/bin/clone-repo.sh"] },
-    { "name": "install-deps", "command": ["bun", "install", "--frozen-lockfile"] }
-  ],
-  "agent": {                                            // coding agent only
-    "type": "claude",
-    "command": ["claude", "--dangerously-skip-permissions"],
-    "cwd": "/home/agent/workspace"
-  },
-  "terminal": {                                         // optional, fixed command only
-    "command": ["/bin/sh"],
-    "cwd": "/home/agent/workspace"
-  }
-}
-```
-
-`setup` steps run sequentially before PocketCoder launches its pinned
-`/usr/local/bin/agentapi` around `agent.command`. The fixed, bounded
-conversation API is `/v1/workspaces/{id}/agent/{status|messages|message}`, plus
-a streamed `events` route on snapshots created under workspace protocol v5.
-Legacy `harness` and `services` templates remain readable for one migration
-release, but cannot be mixed with `agent`.
+Echo is credential-free. Pi and Onefin use Pi's JSON RPC protocol. Templates pin the installed image, runtime, and producer artifacts. See [the session transport](docs/agent-transport-decision.md).
 
 ## Quick start (development)
 
@@ -109,7 +81,7 @@ bun run local:up -- --template pi-harness --openai
 
 To manage the server independently, run `local:prepare`, keep
 `local:gateway` in a separate terminal, configure
-`POCKETCODER_TEMPLATE_DIR`/`POCKETCODER_SECRET_ROOT`, and use `pcd server
+the native template directory and its host issuer configuration, and use `pcd server
 start|status|stop`; see the [getting-started guide](docs/getting-started.md).
 
 Then add the backend key to `.env` in the repository root:
@@ -122,19 +94,19 @@ POCKETCODER_KEY=pkt_…
 The CLI discovers this file automatically:
 
 ```sh
-bun run pcd -- workspaces create --template claude-code-agent --wait
+bun run pcd -- workspaces create --template pi-harness --wait
 bun run pcd -- workspaces list --active
 bun run pcd -- workspaces logs --id $WS
 bun run pcd -- workspaces chat --id $WS
 bun run pcd -- workspaces terminal --id $WS
 bun run pcd -- workspaces preserve --id $WS
 
-# Converse through the relay once the workspace is ready:
-curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/agent/message" \
+# Send a structured request once the workspace is ready. Reuse both IDs on retry.
+curl -s -X POST "$POCKETCODER_URL/v1/workspaces/$WS/requests" \
   -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
-  -d '{"content":"fix the failing test"}'
+  -d '{"requestId":"<request-uuid>","conversationId":"<conversation-uuid>","message":"fix the failing test","files":[]}'
 
-# Durable history remains available after the relay closes:
+# Durable history remains available after the workspace stops:
 curl -s "$POCKETCODER_URL/v1/workspaces/$WS/conversation?limit=100" \
   -H "Authorization: Bearer $POCKETCODER_KEY"
 ```
@@ -163,11 +135,7 @@ bun run local:prepare -- --template pi-harness --openai  # build/materialize onl
 bun run local:gateway -- --openai  # host gateway only
 bun run local:up -- --template pi-harness --openai  # persistent local Pi deployment convenience
 bun run example:e2e:local  # disposable full-stack E2E with the echo harness
-bun run example:e2e:pi     # remote Pi reads a workspace fixture through AgentAPI
-bun run example:e2e:codex  # real Codex CLI through AgentAPI and the live relay
-bun run example:e2e:opencode # real OpenCode ACP harness through AgentAPI
-bun run example:e2e:oss    # combined Codex and OpenCode full-stack matrix
-bun run example:pi:ui      # local Pi TUI connected to that remote agent (uses OpenAI)
+bun run example:e2e:pi     # native Pi reads a workspace fixture
 ```
 
 Bun installs and links workspace dependencies and runs each package's scripts.
@@ -181,20 +149,18 @@ regression. That Linux-only regression is skipped on Darwin. Docker suites
 require a running daemon, and
 `POCKETCODER_KUBERNETES_CONFORMANCE=1` runs the real-cluster driver probe.
 
-Harness and client integrations live under [`examples/`](examples/). The
-deterministic Pi E2E runs the remote Pi CLI through AgentAPI and proves a real
-workspace file read. The interactive variant runs Pi on the host as the UI,
-while the coding agent and tools remain inside the workspace. Consumer
-applications remain separate projects and integrate through the machine API.
+Harness integrations live under [`examples/`](examples/). The
+deterministic Pi E2E runs the remote Pi CLI through native JSON RPC and proves a real
+workspace file read. Consumer applications remain separate projects and
+integrate through the machine API.
 
 ## Releasing packages
 
-Three npm packages are public:
+Two npm packages are public:
 
 | Package | What it is |
 |---------|------------|
 | `@pstdio/pocketcoder-cli` | the `pcd` operator and diagnostics CLI |
-| `@pstdio/pocketcoder-remote` | Pi-based terminal UI for workspaces |
 | `@pstdio/pocketcoder-sdk` | Node ESM and TypeScript client for the control plane |
 
 Every other workspace remains private, is linked by Bun with `workspace:*`, and
@@ -203,10 +169,6 @@ packages bundle the private packages they use at build time, so they do not
 declare a private workspace dependency at runtime — `bun run check` fails if
 one ever does. The server, agent, and egress proxy are distributed as container
 images.
-
-`packages/remote` ships two bundles: the launcher and the extension entry that
-Pi loads with jiti at runtime. Only `@earendil-works/*` stays external, because
-the extension shares those modules with the Pi process hosting it.
 
 `packages/sdk` ships Node ESM and bundled TypeScript declarations. Its only
 runtime dependency is `zod`; private workspace packages are bundled. The

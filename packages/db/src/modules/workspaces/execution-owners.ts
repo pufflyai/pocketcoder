@@ -2,6 +2,7 @@ import { canonicalJson, type ExecutionRecord, type WorkloadExecutionReference } 
 import type { WorkspaceRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq, or, sql } from "drizzle-orm";
 import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
+import { commitExecutionHistory } from "../conversations/execution-history";
 import { sessionWriter } from "../sessions/observations";
 import { syncManagedExecution } from "../sessions/request-writer";
 
@@ -82,5 +83,6 @@ export async function writeExecution(context: DatabaseContext, tx: Transaction, 
         ),
       );
     await syncManagedExecution(context, tx, row, record);
+    await commitExecutionHistory(context, tx, row, record);
   }
 }

@@ -3,7 +3,7 @@
 Status: Accepted for PC-117.
 
 An assistant can emit answer text before interruption, or finish a turn that only
-used tools. AgentAPI stable status and the last assistant message cannot distinguish
+used tools. An idle status and the last assistant message cannot distinguish
 these outcomes. A provider may also replay older records on reconnect.
 
 Capable producers supply explicit facts inside the durable v2 message identity.

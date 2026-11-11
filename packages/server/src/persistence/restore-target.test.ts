@@ -40,13 +40,6 @@ describe("upgradeIncompatibility", () => {
     expect(upgradeIncompatibility(source, next, null)).toBe("session_format");
   });
 
-  test("rejects a moved agent state file", () => {
-    const next = target((spec) => {
-      Object.assign(spec, { agent: { stateFile: "/workspace/.agent/state.json" } });
-    });
-    expect(upgradeIncompatibility(source, next, null)).toBe("session_format");
-  });
-
   test("rejects added or renamed mounts", () => {
     const added = target((spec) => {
       spec.persistence.mounts.push({ name: "extra", target: "/extra", maxBytes: 1, maxFiles: 1 });

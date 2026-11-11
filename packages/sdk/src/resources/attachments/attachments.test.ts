@@ -17,8 +17,6 @@ function descriptor(id: string, name = "report.pdf") {
   };
 }
 
-// `agent.sendMessage` waits for the agent to be ready for input, so every
-// fixture that sends a message must answer the workspace read behind that wait.
 function readyWorkspace() {
   return {
     id: WORKSPACE,
@@ -168,56 +166,6 @@ describe("attachments.upload", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(PocketCoderError);
       expect((error as PocketCoderError).code).toBe("attachment.conflict");
-    }
-  });
-});
-
-describe("agent.sendMessage", () => {
-  test("POSTs the user message with attachment ids", async () => {
-    const requests: Request[] = [];
-    const client = fixtureClient(() => Response.json({ ok: true }), requests);
-    const ids = [randomUUID(), randomUUID()];
-    await client.agent.sendMessage(WORKSPACE, { content: "Summarize.", attachmentIds: ids });
-
-    const request = requests[0] as Request;
-    expect(request.method).toBe("POST");
-    expect(new URL(request.url).pathname).toBe(`/v1/workspaces/${WORKSPACE}/agent/message`);
-    expect(await request.json()).toEqual({
-      type: "user",
-      content: "Summarize.",
-      attachment_ids: ids,
-    });
-  });
-
-  test("omits attachment_ids for plain text turns", async () => {
-    const requests: Request[] = [];
-    const client = fixtureClient(() => Response.json({ ok: true }), requests);
-    await client.agent.sendMessage(WORKSPACE, { content: "plain" });
-    expect(await (requests[0] as Request).json()).toEqual({ type: "user", content: "plain" });
-  });
-
-  test("throws the stable envelope error on rejection", async () => {
-    const client = fixtureClient(() =>
-      Response.json(
-        {
-          error: {
-            code: "attachment.not_found",
-            message: "Unknown attachment.",
-            request_id: "req-2",
-          },
-        },
-        { status: 404 },
-      ),
-    );
-    try {
-      await client.agent.sendMessage(WORKSPACE, {
-        content: "x",
-        attachmentIds: [randomUUID()],
-      });
-      throw new Error("expected message to fail");
-    } catch (error) {
-      expect(error).toBeInstanceOf(PocketCoderError);
-      expect((error as PocketCoderError).code).toBe("attachment.not_found");
     }
   });
 });

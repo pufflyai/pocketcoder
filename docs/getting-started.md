@@ -206,19 +206,20 @@ minutes. `recovery complete` reports how many it found.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.4.4, the version pinned in `package.json`.
+- [Bun](https://bun.sh) 1.4.2, the version pinned in `package.json`. Newer
+  versions can compile a native executable above the 90 MB budget that the
+  native examples check.
 - Docker (to actually run workspaces; the API works without it)
 
 ```sh
 git clone <repo> && cd pocketcoder
 bun install
-bun --no-env-file run test  # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
+bun run test      # database suites use memory and disk PGlite; Docker/cluster suites need those runtimes
 ```
 
-`bun --no-env-file run test` disables automatic `.env` loading before the
-outer process starts the checked-in scripts. Use `bun --no-env-file test <path>`
-for a targeted test. Explicitly exported environment variables still reach tests; clear operator settings such
-as `POCKETCODER_DATABASE_URL` before running them.
+`bun test` loads the project `.env`. Run the suite before adding server settings,
+or keep `POCKETCODER_DATABASE_URL` out of `.env` during the run: a PostgreSQL
+`.env` also requires `POCKETCODER_JOURNAL_DIR` and the tests fail without it.
 
 ## 1. Run the server
 
@@ -318,61 +319,6 @@ rerun. `local:gateway` reads only the generated workspace-to-gateway bearer;
 the OpenAI key remains in that host process. You can inspect or stop the server
 independently with `pcd server status` and `pcd server stop`.
 
-### Test automatic resume in an isolated terminal
-
-PocketCoder provides filesystem storage, checkpoints, and restore. The local
-resume example enables these features and supplies the terminal's resume callback:
-
-```sh
-# Set OPENAI_API_KEY and OPENAI_MODEL in .env, or export them in your shell.
-bun run example:pi:resume
-```
-
-Docker must be running. The command builds the Pi image and remote client, then
-starts an isolated PGlite database, API, model gateways, and temporary storage.
-It does not use your existing PocketCoder server, machine key, or database.
-Startup prints each build and setup stage. Ctrl+C stops waiting while the server
-continues starting. Run the same command again to wait for that server. Each
-session directory allows one server, so retrying cannot replace your session.
-
-Ask Pi to write a value to `/workspace/resume-test.txt`. Type `/quit` and wait
-for `Session saved`. Run the same command again. The earlier conversation appears
-when Pi opens. Ask it to read the file and recall your earlier message. Its first
-new message restores the saved workspace and Pi session with fresh credentials.
-
-The isolated server keeps running in the background after Pi exits. Its connection
-file is under `.pocketcoder/resume-session`, readable only by your host user. Run
-the command from the same directory to reconnect. Pi's local `/resume` picker is
-not used here; PocketCoder stores the conversation and checkpoint on the server.
-You can also wait 60 seconds or type `/preserve` to test automatic resume without
-closing the terminal.
-
-The host gateway holds the provider key. Each workspace gets a separate bearer
-that the gateway rejects as soon as that execution stops. This test session lasts
-two hours from its first launch, including time spent disconnected. At that point
-it removes the test database and checkpoints. The host operator key has five more
-minutes for cleanup. This example survives closing Pi; it does not survive a host
-reboot or a Docker reset.
-
-```sh
-# Reconnect after /quit.
-bun run example:pi:resume
-
-# Delete the isolated session, database, and checkpoints when finished.
-bun run example:pi:resume -- --stop
-
-# Choose the idle interval when starting a new session.
-bun run example:pi:resume -- --idle-seconds 120
-
-# Run real Pi and AgentAPI with a deterministic model, without a provider key.
-# Checks idle resume, /quit, a second launcher, history, files, and model context.
-bun run example:pi:resume:check
-```
-
-The build and server log is `.pocketcoder/resume-session/daemon.log`. Use
-`--state-dir <directory>` for a separate isolated session, and pass that same
-directory when reconnecting or stopping it.
-
 ## 2. Create a principal and machine key
 
 The isolated examples above bootstrap their own bounded owner credentials. For
@@ -416,22 +362,7 @@ pcd workspaces logs --id <uuid>          # bounded operational logs
 pcd workspaces terminal --id <uuid>      # only templates that declare a terminal
 ```
 
-A workspace goes `queued → provisioning → connected → ready`. Once `ready`,
-converse interactively through the template's allowlisted AgentAPI relay:
-
-```sh
-pcd workspaces chat --id <uuid>
-```
-
-For direct API integration, the same relay routes are available:
-
-```sh
-curl -s -X POST "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/message" \
-  -H "Authorization: Bearer $POCKETCODER_KEY" -H "content-type: application/json" \
-  -d '{"content":"fix the failing test","type":"user"}'
-curl -s "$POCKETCODER_URL/v1/workspaces/<uuid>/agent/messages" \
-  -H "Authorization: Bearer $POCKETCODER_KEY"
-```
+A native session workspace goes `queued → provisioning → connected → ready`. Run `pcd workspaces chat --id <uuid>` to converse. Direct clients submit structured requests at `/v1/workspaces/{id}/requests` and read canonical conversation parts. See [native structured sessions](agent-transport-decision.md).
 
 Finish with `pcd workspaces cancel --id <uuid>`; the supervisor
 TERMs the process tree, the container is removed, and the workspace ends in a
@@ -471,9 +402,4 @@ running setup. A status-only `cat` harness cannot make doctor pass.
 - Write your own environment: [Templates](templates.md)
 - Wire up your backend, including a stateless turn after preservation:
   [`@pstdio/pocketcoder-sdk`](../packages/sdk/README.md) or the [HTTP API](api.md)
-- Use PocketCoder as your whole agent runtime with managed sessions: the
-  [reference consumer](../examples/clients/managed-runtime/README.md) and
-  `pcd sessions` / `pcd budgets`
-- Use a local coding-agent UI against a workspace:
-  [`@pstdio/pocketcoder-remote`](../packages/remote/README.md)
 - Run it for real: [Deployment](deployment.md)

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ExecutionRecord, InputObjectReference, WorkspaceRequest } from "@pstdio/pocketcoder-sdk";
 import type {
   HarnessAttachment,
   HarnessContext,
@@ -8,19 +9,21 @@ import type {
   SessionMessage,
 } from "@pstdio/sdk/extensions";
 import { type createInstances, PocketCoderHttpError } from "./instances";
+import { readSessionMessages } from "./session-messages";
 
 type Instances = ReturnType<typeof createInstances>;
-type Target = { instanceId: string; machineId: string; sessionId: string; instances: Instances };
-type InputReference = { fileId: string; name: string } & Record<string, unknown>;
-type Receipt = {
-  acceptance: { execution: { requestId: string }; input: { content: string }; inputs: { objects: InputReference[] } };
-  phase: string;
-  finalizedAt: string | null;
-  outcome: unknown;
+type Target = {
+  instanceId: string;
+  machineId: string;
+  sessionId: string;
+  instances: Instances;
+  conversationId?: string;
 };
-type Request = { requestId: string; conversationId: string; content: string; files: InputReference[] };
-type Pending = { target: string; request: Request };
-const path = (ref: Target) => `/v1/workspaces/${ref.machineId}/agent/requests`;
+type InputReference = InputObjectReference;
+type Receipt = ExecutionRecord;
+type Request = WorkspaceRequest;
+type Pending = { target: string; request: Request; cancelId?: string };
+const path = (ref: Target) => `/v1/workspaces/${ref.machineId}/requests`;
 const key = (sessionId: string) => `file-turn:${sessionId}`;
 type FilePresentation = Pick<HarnessAttachment, "fileId" | "fileName" | "mimeType" | "sizeBytes" | "url">;
 
@@ -28,7 +31,7 @@ export async function supportsFileTurns(ref: Target, signal?: AbortSignal) {
   try {
     return await ref.instances.request<{ requests: boolean; attachments: boolean }>(
       ref.instanceId,
-      `/v1/workspaces/${ref.machineId}/agent/capabilities`,
+      `/v1/workspaces/${ref.machineId}/requests/capabilities`,
       { signal },
     );
   } catch (error) {
@@ -82,62 +85,19 @@ async function read(ref: Target, request: Pick<Request, "requestId" | "conversat
   );
 }
 
-export async function fileTurnMessages(ctx: HarnessContext, ref: Target, sessionId: string, signal?: AbortSignal) {
-  const receipts: Receipt[] = [];
-  let cursor: string | null = null;
-  do {
-    const query = new URLSearchParams({ conversationId: sessionId, limit: "100" });
-    if (cursor) query.set("cursor", cursor);
-    const page = await ref.instances.request<{ items: Receipt[]; next_cursor: string | null }>(
-      ref.instanceId,
-      `${path(ref)}?${query}`,
-      { signal },
-    );
-    receipts.push(...page.items);
-    cursor = page.next_cursor;
-  } while (cursor);
-  const messages: SessionMessage[] = [];
-  for (const receipt of receipts) {
-    const requestId = receipt.acceptance.execution.requestId;
-    const names = receipt.acceptance.inputs.objects.map((file) => file.name);
-    messages.push({
-      id: `pocketcoder:${requestId}:user`,
-      role: "user",
-      index: messages.length,
-      parts: [
-        {
-          type: "text",
-          text: receipt.acceptance.input.content + (names.length ? `\n\nFiles: ${names.join(", ")}` : ""),
-        },
-      ],
-    });
-    for (const object of receipt.acceptance.inputs.objects) {
-      const file = await ctx.state.get<FilePresentation>(`file-presentation:${sessionId}:${object.fileId}`);
-      if (file)
-        messages[messages.length - 1]?.parts.push({
-          type: "file",
-          fileId: file.fileId,
-          filename: file.fileName,
-          mediaType: file.mimeType ?? "application/octet-stream",
-          size: file.sizeBytes,
-          url: file.url,
-        });
-    }
-    if (receipt.phase === "terminal") {
-      const outcome = receipt.outcome;
-      const content =
-        outcome && typeof outcome === "object" && "content" in outcome && typeof outcome.content === "string"
-          ? outcome.content
-          : JSON.stringify(outcome);
-      messages.push({
-        id: `pocketcoder:${requestId}:assistant`,
-        role: "assistant",
-        index: messages.length,
-        parts: [{ type: "text", text: content }],
-      });
-    }
-  }
-  return messages;
+export async function fileTurnMessages(
+  ctx: HarnessContext,
+  ref: Target,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionMessage[]> {
+  if (!sessionId) return [];
+  return readSessionMessages(
+    <T>(path: string) => ref.instances.request<T>(ref.instanceId, path, { signal }),
+    ref.machineId,
+    sessionId,
+    async (id) => (await ctx.state.get<FilePresentation>(`file-presentation:${sessionId}:${id}`))?.url,
+  );
 }
 
 export async function startFileTurn(
@@ -149,16 +109,20 @@ export async function startFileTurn(
     throw new Error("Reconnect to the pending request before sending another message.");
   const conversationKey = `file-conversation:${input.sessionId}`;
   let conversationId = await ctx.state.get<string>(conversationKey);
-  if (input.agentSessionId?.startsWith(`${ref.sessionId}:`))
-    conversationId = input.agentSessionId.slice(ref.sessionId.length + 1);
-  conversationId ??= randomUUID();
+  conversationId = input.agentSessionId?.split(":")[2] ?? conversationId ?? ref.conversationId ?? randomUUID();
   await ctx.state.set(conversationKey, conversationId);
-  if (!input.prompt.trim() && !input.attachments?.length)
+  if (!input.prompt.trim() && !input.attachments?.length) {
+    input.events.push({
+      op: "replace",
+      path: "/messages",
+      value: await fileTurnMessages(ctx, ref, conversationId, input.signal),
+    });
     return {
       agentSessionId: `${ref.sessionId}:${conversationId}`,
       done: Promise.resolve({ status: "completed" }),
       stop() {},
     };
+  }
   const files = await upload(ref, input);
   for (const { fileId, fileName, mimeType, sizeBytes, url } of input.attachments ?? [])
     await ctx.state.set(`file-presentation:${conversationId}:${fileId}`, {
@@ -171,7 +135,7 @@ export async function startFileTurn(
   const request: Request = {
     requestId: randomUUID(),
     conversationId,
-    content: input.prompt || "Read the attached files.",
+    message: input.prompt || "Read the attached files.",
     files,
   };
   await ctx.state.set(key(input.sessionId), { target: ref.sessionId, request });
@@ -181,7 +145,28 @@ export async function startFileTurn(
 export async function reconnectFileTurn(ctx: HarnessContext, input: HarnessReattachInput, ref: Target) {
   const pending = await ctx.state.get<Pending>(key(input.sessionId));
   if (!pending) return null;
-  if (pending.target !== ref.sessionId) throw new Error("The pending request belongs to another workspace.");
+  if (pending.target !== ref.sessionId) {
+    const [instanceId, machineId] = pending.target.split(":");
+    if (!instanceId || !machineId) throw new Error("Invalid saved machine target.");
+    const receipt = await read(
+      { ...ref, instanceId, machineId, sessionId: pending.target },
+      pending.request,
+      input.signal,
+    );
+    if (!receipt.finalizedAt) throw new Error("The previous machine request has not finished finalization.");
+    input.events.push({
+      op: "replace",
+      path: "/messages",
+      value: await fileTurnMessages(ctx, ref, pending.request.conversationId, input.signal),
+    });
+    await ctx.state.set(`file-conversation:${input.sessionId}`, pending.request.conversationId);
+    await ctx.state.delete(key(input.sessionId));
+    return {
+      agentSessionId: `${ref.sessionId}:${pending.request.conversationId}`,
+      done: Promise.resolve(completedStatus(receipt)),
+      stop() {},
+    };
+  }
   return observeFileTurn(ctx, input, ref, pending, false);
 }
 
@@ -221,9 +206,9 @@ async function observeFileTurn(
       });
       if (receipt.finalizedAt) {
         await ctx.state.delete(key(input.sessionId));
-        return { status: receipt.phase === "terminal" ? ("completed" as const) : ("failed" as const) };
+        return completedStatus(receipt);
       }
-      if (["unknown", "lost", "canceled"].includes(receipt.phase)) return { status: "failed" as const };
+      if (["unknown", "lost"].includes(receipt.phase)) return { status: "disconnected" as const };
       await Bun.sleep(250);
     }
     return { status: "disconnected" as const };
@@ -234,7 +219,61 @@ async function observeFileTurn(
   return {
     agentSessionId: `${ref.sessionId}:${pending.request.conversationId}`,
     timeoutStrategy: "provider",
-    stop: () => controller.abort(),
+    async stop() {
+      const receipt = await ref.instances.request<Receipt>(ref.instanceId, path(ref), {
+        method: "POST",
+        body: JSON.stringify(pending.request),
+      });
+      if (receipt.finalizedAt) return;
+      pending.cancelId ??= randomUUID();
+      await ctx.state.set(key(input.sessionId), pending);
+      const execution = receipt.acceptance.execution;
+      await ref.instances.request(
+        ref.instanceId,
+        `/v1/workspaces/${ref.machineId}/executions/${execution.requestId}/cancel`,
+        { method: "POST", body: JSON.stringify({ execution, cancelId: pending.cancelId, scope: "operation" }) },
+      );
+    },
     done,
   };
+}
+
+export async function resumeFileTurn(
+  ctx: HarnessContext,
+  input: HarnessStartInput & { agentSessionId: string },
+  ref: Target,
+): Promise<HarnessSession> {
+  const pending = await ctx.state.get<Pending>(key(input.sessionId));
+  if (!pending) return startFileTurn(ctx, input, ref);
+  let current = await reconnectFileTurn(ctx, input, ref);
+  if (!current) throw new Error("Pending request disappeared");
+  if (!input.prompt.trim() || input.prompt === pending.request.message) return current;
+  const recovered = current;
+  let stopped = false;
+  return {
+    ...recovered,
+    async stop() {
+      stopped = true;
+      await current!.stop();
+    },
+    done: (async () => {
+      const result = await recovered.done;
+      if (stopped || result.status === "disconnected") return result;
+      current = await startFileTurn(ctx, input, ref);
+      if (stopped) await current.stop();
+      return current.done;
+    })(),
+  };
+}
+
+function completedStatus(receipt: Receipt) {
+  if (receipt.phase === "canceled") return { status: "cancelled" as const };
+  if (
+    receipt.outcome &&
+    typeof receipt.outcome === "object" &&
+    "status" in receipt.outcome &&
+    receipt.outcome.status === "completed"
+  )
+    return { status: "completed" as const };
+  return { status: "failed" as const };
 }

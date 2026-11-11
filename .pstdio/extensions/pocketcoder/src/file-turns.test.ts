@@ -5,12 +5,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessContext, HarnessEventSink } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
-import { createMachineHarness } from "./agent";
-import { reconnectFileTurn, startFileTurn, supportsFileTurns } from "./file-turns";
+import { reconnectFileTurn, resumeFileTurn, startFileTurn, supportsFileTurns } from "./file-turns";
 import { createInstances } from "./instances";
 
 async function fixture(handle: (request: Request) => Response | Promise<Response>) {
-  const server = Bun.serve({ port: 0, fetch: handle });
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path.includes("/conversation/open")) return Response.json({ turns: [] });
+      if (path.includes("/conversations/")) return Response.json({ items: [], next_cursor: null });
+      return handle(request);
+    },
+  });
   const root = await mkdtemp(join(tmpdir(), "pc-file-turn-"));
   const instanceId = randomUUID(),
     machineId = randomUUID(),
@@ -56,7 +63,7 @@ async function fixture(handle: (request: Request) => Response | Promise<Response
 
 test.each([400, 413, 422])("a definitive initial POST rejection (%s) releases the pending turn", async (status) => {
   let rejected = true;
-  let request: { requestId: string; content: string };
+  let request: { requestId: string; message: string };
   const f = await fixture(async (req) => {
     if (req.method === "POST") {
       if (rejected) return Response.json({ error: "invalid input" }, { status });
@@ -66,12 +73,12 @@ test.each([400, 413, 422])("a definitive initial POST rejection (%s) releases th
     const receipt = {
       acceptance: {
         execution: { requestId: request.requestId },
-        input: { content: request.content },
+        input: { message: request.message },
         inputs: { objects: [] },
       },
       phase: "terminal",
       finalizedAt: new Date().toISOString(),
-      outcome: { content: "reply" },
+      outcome: { status: "completed", finalResponse: "reply" },
     };
     return Response.json(
       new URL(req.url).searchParams.has("limit") ? { items: [receipt], next_cursor: null } : receipt,
@@ -108,63 +115,116 @@ test("a rejected replay retains a request whose first submission may have succee
   }
 });
 
-test("a denied optional capability route retains text turns and terminal history", async () => {
-  let terminal = false;
-  const messages: { role: string; content: string }[] = [];
-  const f = await fixture(async (req) => {
-    const path = new URL(req.url).pathname;
-    if (path.endsWith("/capabilities"))
-      return Response.json(
-        { error: { code: "relay.route_not_allowed", message: "Route not allowed" } },
-        { status: 422 },
-      );
-    if (path.endsWith("/message")) {
-      const body = await req.json();
-      messages.push({ role: "user", content: body.content }, { role: "agent", content: "text reply" });
-      return Response.json({});
-    }
-    if (path.endsWith("/messages")) return Response.json({ messages });
-    if (path.endsWith("/status")) return Response.json({ status: "stable" });
-    if (path.endsWith("/conversation"))
-      return Response.json({
-        items: [
-          {
-            message_id: "retained",
-            role: "assistant",
-            content: "retained reply",
-            occurred_at: new Date().toISOString(),
-          },
-        ],
-        next_cursor: null,
-      });
-    return Response.json({ state: terminal ? "canceled" : "ready", agent_state: "stable" });
-  });
+test("capability detection preserves authorization failures", async () => {
+  const f = await fixture(() => new Response(null, { status: 403 }));
   try {
-    expect(await supportsFileTurns(f.ref)).toEqual({ requests: false, attachments: false });
-    const harness = createMachineHarness(() => f.ref.instances);
-    const workspace = {
-      workspaceId: randomUUID(),
-      executionTarget: {
-        kind: "remote" as const,
-        providerId: "pocketcoder.pocketcoder.workspace-type.machine",
-        providerRef: { version: 1 as const, data: { instanceId: f.ref.instanceId, machineId: f.ref.machineId } },
-      },
-    };
-    const session = await harness.start(f.ctx, { ...f.input, workspace });
-    expect(await session.done).toEqual({ status: "completed" });
-    terminal = true;
-    expect(
-      JSON.stringify(await harness.getMessages(f.ctx, { workspace, agentSessionId: session.agentSessionId ?? "" })),
-    ).toContain("retained reply");
+    await expect(supportsFileTurns(f.ref)).rejects.toThrow("403");
   } finally {
     await f.close();
   }
 });
 
-test("capability detection preserves authorization failures", async () => {
-  const f = await fixture(() => new Response(null, { status: 403 }));
+test("cancellation waits for canonical finalization before releasing the pending turn", async () => {
+  let ready = false;
+  let reads = 0;
+  const f = await fixture((req) => {
+    if (req.method === "POST") return Response.json({});
+    reads++;
+    return Response.json({
+      phase: "canceled",
+      finalizedAt: ready ? new Date().toISOString() : null,
+      outcome: { status: "canceled" },
+    });
+  });
   try {
-    await expect(supportsFileTurns(f.ref)).rejects.toThrow("403");
+    const session = await startFileTurn(f.ctx, f.input, f.ref);
+    while (reads < 2) await Bun.sleep(10);
+    expect(await f.state.get(`file-turn:${f.input.sessionId}`)).toBeDefined();
+    ready = true;
+    expect(await session.done).toEqual({ status: "cancelled" });
+    expect(await f.state.get(`file-turn:${f.input.sessionId}`)).toBeUndefined();
+  } finally {
+    await f.close();
+  }
+});
+
+test("Stop while recovering a pending request does not launch its queued follow-up", async () => {
+  let request: { requestId: string; message: string };
+  let canceled = false;
+  let finalized = false;
+  let reads = 0;
+  const prompts: string[] = [];
+  const f = await fixture(async (req) => {
+    const path = new URL(req.url).pathname;
+    if (path.endsWith("/cancel")) {
+      canceled = true;
+      return Response.json({});
+    }
+    if (req.method === "POST") {
+      request = await req.json();
+      prompts.push(request.message);
+      return Response.json(receipt());
+    }
+    reads++;
+    return Response.json(receipt());
+  });
+  function receipt() {
+    return {
+      acceptance: {
+        execution: {
+          workspaceId: f.ref.machineId,
+          incarnationId: "test",
+          owner: "conversation-request",
+          requestId: request.requestId,
+        },
+      },
+      phase: canceled ? "canceled" : "running",
+      outcome: { status: canceled ? "canceled" : "completed" },
+      finalizedAt: finalized ? new Date().toISOString() : null,
+    };
+  }
+  const disconnect = new AbortController();
+  try {
+    const first = await startFileTurn(f.ctx, { ...f.input, signal: disconnect.signal }, f.ref);
+    while (!reads) await Bun.sleep(10);
+    disconnect.abort();
+    expect(await first.done).toEqual({ status: "disconnected" });
+    const resumed = await resumeFileTurn(
+      f.ctx,
+      { ...f.input, agentSessionId: first.agentSessionId ?? "", prompt: "queued follow-up" },
+      f.ref,
+    );
+    await resumed.stop();
+    finalized = true;
+    expect(await resumed.done).toEqual({ status: "cancelled" });
+    expect(new Set(prompts)).toEqual(new Set(["hello"]));
+  } finally {
+    await f.close();
+  }
+});
+
+test("reattaching after a restored machine keeps the old terminal request and its conversation", async () => {
+  const f = await fixture((req) => {
+    if (req.method === "POST") throw new Error("A fenced request must not be submitted to the restored machine");
+    return Response.json({ phase: "lost", finalizedAt: new Date().toISOString(), outcome: { status: "lost" } });
+  });
+  try {
+    const conversationId = randomUUID();
+    await f.state.set(`file-turn:${f.input.sessionId}`, {
+      target: f.ref.sessionId,
+      request: { requestId: randomUUID(), conversationId, message: "accepted before restore", files: [] },
+    });
+    const machineId = randomUUID();
+    const ref = { ...f.ref, machineId, sessionId: `${f.ref.instanceId}:${machineId}` };
+    const session = await reconnectFileTurn(
+      f.ctx,
+      { ...f.input, agentSessionId: `${f.ref.sessionId}:${conversationId}` },
+      ref,
+    );
+    expect(await session?.done).toEqual({ status: "failed" });
+    expect(session?.agentSessionId).toBe(`${ref.sessionId}:${conversationId}`);
+    expect(await f.state.get(`file-turn:${f.input.sessionId}`)).toBeUndefined();
+    expect(await f.state.get(`file-conversation:${f.input.sessionId}`)).toBe(conversationId);
   } finally {
     await f.close();
   }

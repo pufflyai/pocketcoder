@@ -5,13 +5,16 @@ import { connectionParam } from "./machine-commands";
 import { type ControllerMachine, launchInputOf, machinePath, providerParams } from "./machines";
 import { changed } from "./resources";
 
-const lifecycleParams = {
-  instance: params.text({ label: "Instance ID", required: true }),
-  machineId: params.text({ label: "Source machine ID", required: true }),
+export const lifecycleInputParams = {
   externalId: providerParams.externalId,
   launchInput: providerParams.launchInput,
   metadata: providerParams.metadata,
   connection: params.select({ label: connectionParam.label, options: connectionParam.options }),
+};
+const lifecycleParams = {
+  instance: params.text({ label: "Instance ID", required: true }),
+  machineId: params.text({ label: "Source machine ID", required: true }),
+  ...lifecycleInputParams,
 };
 
 export function createMachineLifecycle(getInstances = instancesFor) {
@@ -25,7 +28,7 @@ export function createMachineLifecycle(getInstances = instancesFor) {
       const instances = getInstances(ctx.projectId);
       const source = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
       const metadata = launchInputOf(input.metadata) ?? {};
-      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "agentapi";
+      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "session";
       const machine = await instances.request<ControllerMachine>(input.instance, "/v1/workspaces", {
         method: "POST",
         headers: { "Idempotency-Key": randomUUID() },
@@ -50,7 +53,7 @@ export function createMachineLifecycle(getInstances = instancesFor) {
       const instances = getInstances(ctx.projectId);
       const source = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
       const metadata = launchInputOf(input.metadata) ?? {};
-      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "agentapi";
+      metadata["pstdio.connection"] = input.connection ?? source.metadata["pstdio.connection"] ?? "session";
       let result: { workspace: ControllerMachine };
       try {
         result = await instances.request(input.instance, `${machinePath(input.machineId)}/resume`, {

@@ -15,6 +15,7 @@ export class PocketCoderRequestError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(`PocketCoder HTTP ${status}: ${message}`);
   }
@@ -22,8 +23,8 @@ export class PocketCoderRequestError extends Error {
 export async function request<T>(ctx: ConnectionContext, input: Parameters<ExtensionConnectionsApi["request"]>[1]) {
   const response = await ctx.connections.request<T>(connection.id, input);
   if (response.status < 200 || response.status >= 300) {
-    const error = response.body as { error?: { message?: string } } | null;
-    throw new PocketCoderRequestError(response.status, error?.error?.message ?? "Request failed.");
+    const error = response.body as { error?: { message?: string; code?: string } } | null;
+    throw new PocketCoderRequestError(response.status, error?.error?.message ?? "Request failed.", error?.error?.code);
   }
   return response.body;
 }

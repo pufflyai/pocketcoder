@@ -52,8 +52,8 @@ test("generic service transport needs no agent or execution adapter", () => {
   expect(parsed.manifest.spec.services.api?.process?.command).toEqual(["bun", "serve.ts"]);
 });
 
-test("optional AgentAPI and service adapters compose with the same operation schema", () => {
-  for (const kind of ["agentapi", "service"] as const) {
+test("native service adapters compose with the same operation schema", () => {
+  for (const kind of ["service"] as const) {
     const fixture = workloadFixture("cloud-interactive");
     const adapter: Record<string, unknown> = fixture.spec.adapters.main;
     adapter.kind = kind;

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ExtensionConnectionsApi } from "@pstdio/sdk/extensions";
 import { createMemoryStorage, makeCommandContext } from "@pstdio/sdk/testing";
+import { localInputEnvironment } from "../../../../examples/local/input-environment";
 import { buildLocalImage } from "../../../../examples/local/runtime";
+import { qualifySessionTemplate } from "../../../../examples/local/session-template";
 
 const repo = resolve(import.meta.dir, "../../../..");
 async function run(args: string[], cwd = repo, env: Record<string, string | undefined> = process.env) {
@@ -25,7 +27,7 @@ function freePort() {
   return port;
 }
 
-export async function startController() {
+export async function startController(options: { holdFirstSubmission?: Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), "pc-workspaces-"));
   const imageTag = `pocketcoder-workspaces:test-${randomUUID()}`;
   const operatorPort = freePort();
@@ -38,6 +40,7 @@ export async function startController() {
     DOCKER_CONTEXT: process.env.DOCKER_CONTEXT,
     DOCKER_CONFIG: process.env.DOCKER_CONFIG,
     POCKETCODER_DIR: join(root, "data"),
+    ...localInputEnvironment(root),
     POCKETCODER_STATE_DIR: join(root, "state"),
     POCKETCODER_HTTP: `127.0.0.1:${operatorPort}`,
     POCKETCODER_AGENT_HTTP: `0.0.0.0:${agentPort}`,
@@ -68,6 +71,7 @@ export async function startController() {
         "--json",
       ),
     );
+    let held = false;
     const requests: { method: string; path: string; body: unknown; key?: string }[] = [];
     const request: ExtensionConnectionsApi["request"] = async <T>(
       _id: string,
@@ -85,14 +89,19 @@ export async function startController() {
         body: input.body === undefined ? undefined : JSON.stringify(input.body),
         signal: input.signal,
       });
+      if (!held && input.method === "POST" && input.path.endsWith("/requests") && options.holdFirstSubmission) {
+        held = true;
+        await options.holdFirstSubmission;
+        input.signal?.throwIfAborted();
+      }
       return {
         status: response.status,
         headers: Object.fromEntries(response.headers),
         body: (await response.json()) as T,
       };
     };
-    const template = JSON.parse(await readFile(join(repo, "examples/harnesses/echo/template.json"), "utf8"));
-    template.spec.image = `${imageTag}@${digest}`;
+    let template = JSON.parse(await readFile(join(repo, "examples/harnesses/echo/template.json"), "utf8"));
+    template = await qualifySessionTemplate(template, `${imageTag}@${digest}`);
     const published = await request("pocketcoder", {
       method: "POST",
       path: "/v1/templates",
@@ -112,7 +121,18 @@ export async function startController() {
         logger: { warn() {}, info() {}, error() {} },
       },
     });
-    return { ctx, harnessCtx: { ...ctx, state }, settings, template, requests, request, stop };
+    return {
+      ctx,
+      harnessCtx: { ...ctx, state },
+      settings,
+      template,
+      requests,
+      request,
+      stop,
+      get submissionHeld() {
+        return held;
+      },
+    };
   } catch (error) {
     await stop().catch(() => {});
     throw error;

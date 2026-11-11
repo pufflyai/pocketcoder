@@ -18,7 +18,7 @@ test("the release gate rejects CRITICAL findings and missing scan results", () =
   expect(() =>
     assertImageScan({
       SchemaVersion: 2,
-      Results: [{ Target: "agentapi", Vulnerabilities: [{ VulnerabilityID: "critical", Severity: "CRITICAL" }] }],
+      Results: [{ Target: "session", Vulnerabilities: [{ VulnerabilityID: "critical", Severity: "CRITICAL" }] }],
     }),
   ).toThrow("critical");
   expect(() => assertImageScan({ SchemaVersion: 2 })).toThrow("results");

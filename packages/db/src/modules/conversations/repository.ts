@@ -20,6 +20,23 @@ export function createConversations(context: DatabaseContext) {
     acceptConversationRequest: requestReceipts.acceptConversationRequest,
     isAcceptedTurn: (workspaceId: string, identity: ConversationRequestIdentity) =>
       requestReceipts.isAccepted(workspaceId, identity),
+    async isCommittedTurn(workspaceId: string, identity: ConversationRequestIdentity) {
+      const records = context.tables.conversationRecords;
+      const [record] = await db
+        .select({ id: records.id })
+        .from(records)
+        .innerJoin(conversations, eq(records.conversationRef, conversations.id))
+        .innerJoin(context.tables.workspaces, eq(context.tables.workspaces.principalId, conversations.principalId))
+        .where(
+          and(
+            eq(context.tables.workspaces.id, workspaceId),
+            eq(records.recordKey, identity.turn_id),
+            eq(conversations.conversationId, identity.conversation_id),
+          ),
+        )
+        .limit(1);
+      return Boolean(record);
+    },
     ...documents,
     ...createConversationReads(context),
     ...createConversationRetention(context, documents.commitConversationTurn),

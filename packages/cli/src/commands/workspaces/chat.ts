@@ -1,5 +1,5 @@
 import type { Argv } from "yargs";
-import { api, fail } from "../../command/cli-context";
+import { controlPlaneClient, fail } from "../../command/cli-context";
 import { addAction } from "../command";
 import { chatWorkspace } from "./chat-session";
 import { attachOptions } from "./options";
@@ -8,7 +8,7 @@ export function addChatCommand(parser: Argv) {
   return addAction(
     parser,
     "chat",
-    "Hold an interactive AgentAPI conversation",
+    "Hold an interactive structured session conversation",
     (command) =>
       attachOptions(command)
         .option("follow", {
@@ -29,6 +29,6 @@ export function addChatCommand(parser: Argv) {
           type: "boolean",
           description: "Cancel the workspace when chat exits",
         }),
-    async (flags) => chatWorkspace(flags, { api, fail }),
+    async (flags) => chatWorkspace(flags, { client: controlPlaneClient(), fail }),
   );
 }

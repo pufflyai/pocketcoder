@@ -10,8 +10,6 @@ export async function prepareCheckpoint(
     exec(): ExecSpec | null;
     send: SendFrame;
     pump(stream: ReadableStream<Uint8Array>, name: "stdout" | "stderr"): Promise<void>;
-    readAgentApiStatus(timeoutMs: number): Promise<"running" | "stable" | null>;
-    syncAgentApiMessages(options: { fresh: boolean; signal: AbortSignal }): Promise<void>;
     child(): { kill(signal: "SIGTERM" | "SIGKILL"): void; exited: Promise<number> } | null;
     childExited(): boolean;
     closeTerminals(): Promise<void>;
@@ -20,9 +18,6 @@ export async function prepareCheckpoint(
 ) {
   await callbacks.closeTerminals();
   const exec = callbacks.exec();
-  if (exec?.agentapi_native) {
-    return await prepareAgentApiCheckpoint(operationId, deadlineMs, callbacks);
-  }
   const hook = exec?.checkpoint_hook;
   callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
   if (!exec || !hook) {
@@ -60,55 +55,6 @@ export async function prepareCheckpoint(
       operation_id: operationId,
       phase: "failed",
       detail: error instanceof Error ? error.message.slice(0, 512) : "hook failed",
-    });
-    return false;
-  }
-}
-
-async function prepareAgentApiCheckpoint(
-  operationId: string,
-  deadlineMs: number,
-  callbacks: Parameters<typeof prepareCheckpoint>[2],
-) {
-  callbacks.setQuiescing(true);
-  callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiescing" });
-  const deadline = Date.now() + deadlineMs;
-  try {
-    let stable = false;
-    while (Date.now() < deadline) {
-      const state = await callbacks.readAgentApiStatus(Math.min(3000, deadline - Date.now()));
-      if (state === "stable") {
-        stable = true;
-        break;
-      }
-      await Bun.sleep(100);
-    }
-    if (!stable) throw new Error("AgentAPI did not become stable");
-    const syncTime = deadline - Date.now();
-    if (syncTime <= 0) throw new Error("AgentAPI shutdown deadline exceeded");
-    await callbacks.syncAgentApiMessages({ fresh: true, signal: AbortSignal.timeout(syncTime) });
-    const child = callbacks.child();
-    if (!child || callbacks.childExited()) throw new Error("AgentAPI is not running");
-    child.kill("SIGTERM");
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("AgentAPI shutdown deadline exceeded");
-    const code = await Promise.race([
-      child.exited,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), remaining)),
-    ]);
-    if (code === null) {
-      child.kill("SIGKILL");
-      throw new Error("AgentAPI shutdown deadline exceeded");
-    }
-    if (code !== 0 && code !== 143) throw new Error(`AgentAPI exited ${code}`);
-    callbacks.send("checkpoint_status", { operation_id: operationId, phase: "quiesced" });
-    return true;
-  } catch (error) {
-    if (!callbacks.childExited()) callbacks.setQuiescing(false);
-    callbacks.send("checkpoint_status", {
-      operation_id: operationId,
-      phase: "failed",
-      detail: error instanceof Error ? error.message.slice(0, 512) : "quiesce failed",
     });
     return false;
   }

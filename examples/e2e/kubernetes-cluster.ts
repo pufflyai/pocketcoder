@@ -197,7 +197,7 @@ export async function createKubernetesCluster(
       loadImage,
       close,
       async echoTemplate(image: string) {
-        const template = JSON.parse(await readFile(join(ROOT, "examples/harnesses/echo/template.json"), "utf8"));
+        const template = JSON.parse(await readFile(join(ROOT, "examples/templates/controller-probe.json"), "utf8"));
         template.spec.image = image;
         return template;
       },

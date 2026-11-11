@@ -296,3 +296,22 @@ describe("log framing", () => {
     expect(chunks.every((chunk) => Buffer.byteLength(chunk) <= 5)).toBe(true);
   });
 });
+
+test("canonical session frames preserve the same parts as retained producer observations", async () => {
+  const frames: { type: string; payload: unknown }[] = [];
+  const logs = new SupervisorLogs((type, payload) => {
+    frames.push({ type, payload });
+    return true;
+  });
+  logs.addSecret("scoped-workspace-value");
+  const message = {
+    message_id: "native-part",
+    role: "assistant",
+    content: "**scoped-workspace-value** å",
+    parts: [{ type: "text", text: "**scoped-workspace-value** å" }],
+    occurred_at: new Date().toISOString(),
+    metadata: {},
+  };
+  await logs.pump(new Response(`POCKETCODER_CONVERSATION ${JSON.stringify(message)}\n`).body, "stdout");
+  expect(frames).toEqual([{ type: "conversation_message", payload: message }]);
+});

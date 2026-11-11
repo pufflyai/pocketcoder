@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AttachmentMediaTypeSchema } from "../attachments/attachment";
 import { JsonValueSchema } from "../common/json-value";
+import { ConversationMessageInputSchema } from "../conversations/conversation";
 import { WorkloadDigestSchema } from "../templates/workload-capabilities";
 import { WorkloadCancelSchema, WorkloadExecutionReferenceSchema } from "./workload-operation";
 
@@ -11,6 +12,7 @@ export const ProducerObservationSchema = z.discriminatedUnion("phase", [
     fingerprint: WorkloadDigestSchema,
     phase: z.enum(["accepted", "running", "terminal", "canceled"]),
     outcome: JsonValueSchema.nullable(),
+    messages: z.array(ConversationMessageInputSchema).max(1024).optional(),
     publication: z
       .strictObject({
         complete: z.boolean(),
