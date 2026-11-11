@@ -141,6 +141,7 @@ const EnvelopeBase = z.object({
     z.literal(11),
     z.literal(12),
     z.literal(13),
+    z.literal(14),
     z.literal(PROTOCOL_VERSION),
   ]),
   workspace_id: z.uuid(),

@@ -81,6 +81,11 @@ describe("protocol v15", () => {
     expect(SOURCE_CREDENTIAL_MAX_BYTES).toBe(65_536);
   });
 
+  test.each(SUPPORTED_PROTOCOL_VERSIONS.map((v) => [v]))("a supervisor on protocol %i can still send frames", (v) => {
+    const heartbeat = { ...envelope, v, type: "heartbeat", payload: { child: "running" } };
+    expect(AgentFrameSchema.safeParse(heartbeat).success).toBe(true);
+  });
+
   test("validates the server-to-agent attachment frames", () => {
     const operationId = randomUUID();
     const frames = [
