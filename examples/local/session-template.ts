@@ -1,4 +1,5 @@
 import { sessionTemplate, type TemplateManifest, type WorkloadTemplate } from "@pstdio/pocketcoder-contracts";
+import { resolveDockerImage } from "@pstdio/pocketcoder-drivers";
 import { z } from "zod";
 import { type LocalCommandRunner, runLocalCommand } from "./runtime";
 
@@ -9,6 +10,7 @@ export async function imageSessionTemplate(
   version = "2.0.0",
   command: LocalCommandRunner = runLocalCommand,
 ) {
+  const localImage = await resolveDockerImage("docker", image);
   const descriptor = z
     .object({
       runtime: z.object({ digest: z.string() }),
@@ -20,9 +22,12 @@ export async function imageSessionTemplate(
     .parse(
       JSON.parse(
         (
-          await command(["docker", "run", "--rm", "--entrypoint", "cat", image, "/opt/pocketcoder/workload.json"], {
-            quiet: true,
-          })
+          await command(
+            ["docker", "run", "--rm", "--entrypoint", "cat", localImage, "/opt/pocketcoder/workload.json"],
+            {
+              quiet: true,
+            },
+          )
         ).stdout,
       ),
     );

@@ -34,6 +34,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends xvfb x11-utils
+      - name: Prepare and verify Helm before chart tests
+        run: |
+          timeout 30s cat "$(command -v helm)" > /dev/null
+          timeout 30s helm version --short
       - run: bun --no-env-file scripts/ci/run.ts contracts
   performance:
     runs-on: ubuntu-latest
