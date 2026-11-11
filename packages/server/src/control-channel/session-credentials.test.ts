@@ -87,3 +87,18 @@ test("a supervisor too old for session leases never receives them", async () => 
     await w.f.close();
   }
 });
+
+test("a session whose lease requests never completed gets them replayed, not refused at the limit", async () => {
+  const w = await sharedWorkspace();
+  try {
+    const identity = await w.bound();
+    w.f.issuer.controls.reply = "lost";
+    for (let i = 0; i < 2; i++)
+      await expect(w.owner.deliver(identity, w.f.workspace.id, 1)).rejects.toThrow("unavailable");
+    w.f.issuer.controls.reply = "valid";
+    await w.owner.deliver(identity, w.f.workspace.id, 1);
+    expect(w.installed().map((frame) => frame.payload.credentials[0]?.session_id)).toEqual([identity.sessionId]);
+  } finally {
+    await w.f.close();
+  }
+});

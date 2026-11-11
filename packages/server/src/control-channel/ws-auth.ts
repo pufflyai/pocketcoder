@@ -8,12 +8,14 @@ import {
   HEADER_REGISTRATION,
   HEADER_WORKSPACE,
   isTerminal,
+  managed,
   type ProtocolVersion,
   parseDurationMs,
   type RestoreMode,
   RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
   runtimeCredentialPath,
   runtimeCredentialReferences,
+  SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
   snapshotServices,
@@ -106,6 +108,13 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
   )
     return { error: "Runtime credentials require agent protocol version 9." };
+  // Managed workspaces receive only per-session leases, which older supervisors cannot install.
+  if (
+    row?.metadata?.[managed.MANAGED_SESSION_METADATA] &&
+    runtimeCredentialReferences(row.templateSnapshot.spec).length &&
+    credentials.protocolVersion < SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION
+  )
+    return { error: "Session credentials require agent protocol version 15." };
   if (row && waitingProtocolRejected(row, credentials.protocolVersion))
     return { error: `Waiting runtime is ended or requires protocol version ${WAITING_RUNTIME_MIN_PROTOCOL_VERSION}.` };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };

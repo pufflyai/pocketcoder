@@ -24,25 +24,32 @@ export function sessionCredentials(deps: Pick<WsDeps, "store" | "hub" | "workspa
       const row = await deps.store.getWorkspace(workspaceId);
       const slots = row ? templateCredentialReferences(row.templateSnapshot) : [];
       if (!slots.length) return;
+      const leases = deps.workspaceLeases;
       const connection = connectionOf(workspaceId);
-      if (!deps.workspaceLeases || !connection) throw unavailable();
-      const held = (await deps.store.listPendingWorkspaceLeases(workspaceId)).filter(
+      if (!leases || !connection) throw unavailable();
+      const pending = (await deps.store.listPendingWorkspaceLeases(workspaceId)).filter(
         (lease) =>
-          lease.state === "delivered" &&
           lease.managedAuthority?.sessionId === identity.sessionId &&
           lease.managedAuthority.generation === generation &&
           (lease.issuerExpiresAt ?? lease.requestExpiresAt) > new Date(),
       );
-      const missing = slots.filter((slot) => !held.some((lease) => lease.managedAuthority?.slot === slot));
-      if (!missing.length) return;
       const credentials = [];
-      for (const slot of missing)
-        credentials.push(
-          credentialDelivery(
-            await deps.workspaceLeases.issueManaged(identity, workspaceId, generation, slot, randomUUID()),
-          ),
-        );
-      deps.hub.send(connection, "credential_install", { credentials });
+      try {
+        for (const slot of slots) {
+          const own = pending.filter((lease) => lease.managedAuthority?.slot === slot);
+          if (own.some((lease) => lease.state === "delivered")) continue;
+          // An unfinished request is retried as itself, so failed mints never pile up against the limit.
+          const unfinished = own.find((lease) => lease.state === "requested" || lease.state === "issued");
+          const issued = unfinished
+            ? await leases.replay(workspaceId, unfinished.id)
+            : await leases.issueManaged(identity, workspaceId, generation, slot, randomUUID());
+          credentials.push(credentialDelivery(issued));
+        }
+      } catch {
+        // One session's issuer or store refusal must not stop placement of the others.
+        throw unavailable();
+      }
+      if (credentials.length) deps.hub.send(connection, "credential_install", { credentials });
     },
     async revoke(workspaceId: string, sessionId: string) {
       await deps.workspaceLeases?.revokeSession(workspaceId, sessionId);

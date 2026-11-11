@@ -110,11 +110,17 @@ export class WorkspaceCredentials {
 
   // Shared compute keeps running when one session ends or its lease expires; only its leases go.
   private drop(sessionId: string) {
+    const folders = new Set<string>();
     for (const [path, { value }] of this.files) {
       if (value.session_id !== sessionId) continue;
+      folders.add(dirname(path));
       this.directories.get(dirname(path))?.remove(basename(path));
       this.files.delete(path);
       this.confirmations.delete(value.lease_id);
+    }
+    for (const folder of folders) {
+      this.directories.get(folder)?.close();
+      this.directories.delete(folder);
     }
   }
 

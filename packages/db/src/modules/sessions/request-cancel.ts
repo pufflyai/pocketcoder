@@ -125,6 +125,33 @@ async function stopRequest(
   return { cancel: current.managed?.cancel ?? cancel, execution };
 }
 
+// A slot held on compute the session never bound to had no process, so close releases it at once.
+async function releaseUnboundSlots(
+  context: DatabaseContext,
+  tx: Transaction,
+  id: ManagedSessionIdentity,
+  boundWorkspaceId: string | null,
+  at: Date,
+) {
+  const table = context.tables.managedCapacity;
+  const held = (await tx.select().from(table)).filter(
+    (row) =>
+      row.workspaceId !== boundWorkspaceId &&
+      row.record.sessions.some((s) => s.sessionId === id.sessionId && !s.stoppedAt),
+  );
+  for (const { workspaceId } of held) {
+    const [row] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId)).for("update");
+    if (!row) continue;
+    const sessions = row.record.sessions.map((s) =>
+      s.sessionId === id.sessionId ? { ...s, stoppedAt: s.stoppedAt ?? at.toISOString() } : s,
+    );
+    await tx
+      .update(table)
+      .set({ record: { ...row.record, sessions } })
+      .where(eq(table.workspaceId, workspaceId));
+  }
+}
+
 // Close completes once every request of the session is terminal and, for exclusive credentialed
 // compute, its workspace has ended with every credential revoked or expired.
 async function settleClose(context: DatabaseContext, tx: Transaction, id: ManagedSessionIdentity, at: Date) {
@@ -145,6 +172,7 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
     )
     .limit(1);
   if (open.length) return session.close;
+  await releaseUnboundSlots(context, tx, id, session.binding?.workspaceId ?? null, at);
   const owned = await ownedWorkspaces(context, tx, id, session.binding);
   for (const workspaceId of owned) {
     const [workspace] = await tx.select().from(tables.workspaces).where(eq(tables.workspaces.id, workspaceId));

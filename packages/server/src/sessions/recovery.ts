@@ -146,7 +146,9 @@ export function createSessionRecovery(deps: {
 
   return {
     async tick() {
-      for (const candidate of await recovery.candidates()) {
+      const candidates = await recovery.candidates();
+      // Closes first: a join in this tick must not land on compute a close is about to stop.
+      for (const candidate of [...candidates.filter((c) => c.closing), ...candidates.filter((c) => !c.closing)]) {
         try {
           if (candidate.closing) await stopClosed(candidate);
           else if (candidate.binding) await replace(candidate, candidate.binding);

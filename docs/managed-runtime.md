@@ -83,7 +83,11 @@ sees only its own session's paths. The session becomes ready once they are
 installed. Closing a session on shared compute revokes only its leases and stops
 only its process; the last session to leave stops the workspace. A session lease
 that expires is removed on its own; the workspace keeps running. Session leases
-need supervisor protocol 15.
+need supervisor protocol 15; a managed workspace whose template names credentials
+refuses an older supervisor. A managed workspace receives no workspace-level
+leases, so only session turns can use template credentials, not terminals,
+checkpoint hooks or other services. The existing delivery limits of 64
+credentials and 512 KiB cover all sessions of one workspace together.
 
 Lease requests bind session, profile, physical incarnation, generation, slot and
 broker version. Only slots declared by the pinned template/profile may be used.
