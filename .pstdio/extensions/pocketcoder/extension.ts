@@ -5,6 +5,8 @@ import { relaunchMachine, resumeMachine } from "./src/machine-lifecycle";
 import { machineLifecycleActions } from "./src/machine-lifecycle-actions";
 import { watchMachine } from "./src/machine-watch";
 import { createMachineProvider } from "./src/machines";
+import { createManagedHarness } from "./src/managed-agent";
+import { openManagedSessions } from "./src/managed-sessions";
 import { instancesView, machinesView, templatesView } from "./src/native-tables";
 import { instanceKind, machineKind } from "./src/resources";
 import { tableCommands } from "./src/table-commands";
@@ -18,9 +20,10 @@ export default defineExtension({
     resumeMachine,
     ...Object.values(machineLifecycleActions),
     watchMachine,
+    openManagedSessions,
   ],
   workspaceTypes: [createMachineProvider()],
-  harnesses: [createMachineHarness()],
+  harnesses: [createMachineHarness(), createManagedHarness()],
   resourceKinds: [instanceKind, machineKind],
   views: [instancesView, templatesView, machinesView],
   pages: [instancesPage, instancePage],
