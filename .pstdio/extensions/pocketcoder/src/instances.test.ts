@@ -47,6 +47,18 @@ test("starts isolated 1.0 instances with private, expiring owner keys and restar
     expect(first).not.toHaveProperty("token");
     expect((await instances.list()).map((item) => item.name).sort()).toEqual(["First", "Second"]);
     const auth = JSON.parse(await readFile(join(root, first.id, "owner.json"), "utf8"));
+    const consumer = JSON.parse(await readFile(join(root, first.id, "managed.json"), "utf8"));
+    expect(consumer.principalId).toBe(auth.principalId);
+    const client = await instances.managedClient(first.id);
+    expect(await client.sessions.list()).toEqual([]);
+    await expect(client.workspaces.list()).rejects.toMatchObject({ status: 403 });
+    await expect(client.principals.list()).rejects.toMatchObject({ status: 403 });
+    await expect(client.secrets.list()).rejects.toMatchObject({ status: 403 });
+    const operator = await instances.client(first.id);
+    await expect(operator.principals.list()).rejects.toMatchObject({ status: 403 });
+    expect((await operator.keys.list(auth.principalId)).items.map((key) => key.effective_scopes)).not.toContainEqual([
+      "admin",
+    ]);
     expect(Date.parse(auth.expiresAt)).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60 * 1000);
     expect((await stat(join(root, first.id, "owner.json"))).mode & 0o777).toBe(0o600);
     expect((await stat(join(root, first.id))).mode & 0o777).toBe(0o700);
@@ -86,12 +98,19 @@ test("an expired owner key renews itself while the controller runs, so the insta
     const ownerPath = join(root, instance.id, "owner.json");
     const issued = JSON.parse(await readFile(ownerPath, "utf8"));
     await writeFile(ownerPath, JSON.stringify({ ...issued, expiresAt: new Date(Date.now() - 1_000).toISOString() }));
+    const consumerPath = join(root, instance.id, "managed.json");
+    const consumer = JSON.parse(await readFile(consumerPath, "utf8"));
+    await writeFile(
+      consumerPath,
+      JSON.stringify({ ...consumer, expiresAt: new Date(Date.now() - 1_000).toISOString() }),
+    );
 
     // The table, stop and remove paths all go through these calls at once.
     const [workspaces] = await Promise.all([
       instances.items(instance.id, "/v1/workspaces"),
       instances.request(instance.id, "/v1/templates"),
       instances.connection(instance.id),
+      instances.managedClient(instance.id).then((client) => client.sessions.list()),
     ]);
     expect(workspaces).toEqual([]);
     expect(await instances.connection(instance.id)).toBe("Connected");
@@ -99,6 +118,10 @@ test("an expired owner key renews itself while the controller runs, so the insta
     expect(renewed.token).not.toBe(issued.token);
     expect(Date.parse(renewed.expiresAt)).toBeGreaterThan(Date.now());
     expect((await stat(ownerPath)).mode & 0o777).toBe(0o600);
+    const renewedConsumer = JSON.parse(await readFile(consumerPath, "utf8"));
+    expect(renewedConsumer.token).not.toBe(consumer.token);
+    expect(renewedConsumer.principalId).toBe(renewed.principalId);
+    expect(Date.parse(renewedConsumer.expiresAt)).toBeLessThanOrEqual(Date.parse(renewed.expiresAt));
   } finally {
     for (const id of await readdir(root)) await instances.stop(id);
     await rm(root, { recursive: true, force: true });

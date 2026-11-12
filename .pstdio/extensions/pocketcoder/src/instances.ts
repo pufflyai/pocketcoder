@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { resolveExecutable } from "./executable";
 import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
+import { createLabKeys } from "./lab-keys";
 import { freePort, runCli } from "./local-cli";
 import { managedConfiguration } from "./managed-configuration";
-import { createOwnerKeys, type OwnerKey } from "./owner-keys";
 
 export interface Instance {
   id: string;
@@ -61,6 +61,7 @@ export function createInstances(root: string) {
     write,
     async (id, args) => cli(await read<Instance>(id, "instance.json"), args),
     async (id) => (await read<Instance>(id, "instance.json")).url,
+    async (id) => consumerKeys.token(id),
   );
   const get = async (id: string) => {
     const instance = await read<Instance>(id, "instance.json");
@@ -94,14 +95,7 @@ export function createInstances(root: string) {
       return (error as NodeJS.ErrnoException).code !== "ESRCH";
     }
   };
-  const ownerKeys = createOwnerKeys({
-    read: (id) => read<OwnerKey>(id, "owner.json"),
-    // This owner key stays on the host. Provider refs and workspace files contain only IDs.
-    write: (id, key) => write(id, "owner.json", key),
-    create: async (instance, expiresAt) =>
-      JSON.parse(await cli(instance, ["superuser", "create", "--automation", "--expires", expiresAt, "--json"])),
-    get,
-  });
+  const { operator: ownerKeys, consumer: consumerKeys } = createLabKeys({ read, write, cli, get });
   const start = async (id: string, binary?: string) => {
     if (binary) {
       // Check the new path before saving it, so a bad path cannot break an instance that worked before.
@@ -111,8 +105,10 @@ export function createInstances(root: string) {
     }
     const instance = await get(id);
     if (instance.error) throw new Error(instance.error);
+    await managed.initialize(id);
     if (instance.state === "stopped") await cli(instance, ["server", "start"]);
     await ownerKeys.issue(instance);
+    await consumerKeys.issue(instance);
     if (instance.removed) await write(id, "instance.json", { ...instance, removed: false });
     return get(id);
   };

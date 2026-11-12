@@ -1,6 +1,6 @@
 import type { Instance } from "./instances";
 
-export type OwnerKey = { token: string; expiresAt: string };
+export type OwnerKey = { token: string; expiresAt: string; principalId: string };
 
 const keyLifetimeMs = 24 * 60 * 60 * 1000;
 
@@ -9,12 +9,19 @@ const keyLifetimeMs = 24 * 60 * 60 * 1000;
 export function createOwnerKeys(deps: {
   read: (id: string) => Promise<OwnerKey>;
   write: (id: string, key: OwnerKey) => Promise<void>;
-  create: (instance: Instance, expiresAt: string) => Promise<{ token: string; key: { expires_at: string } }>;
+  create: (
+    instance: Instance,
+    expiresAt: string,
+  ) => Promise<{ token: string; key: { expires_at: string; principal_id: string } }>;
   get: (id: string) => Promise<Instance>;
 }) {
   const issue = async (instance: Instance) => {
     const issued = await deps.create(instance, new Date(Date.now() + keyLifetimeMs).toISOString());
-    await deps.write(instance.id, { token: issued.token, expiresAt: issued.key.expires_at });
+    await deps.write(instance.id, {
+      token: issued.token,
+      expiresAt: issued.key.expires_at,
+      principalId: issued.key.principal_id,
+    });
     return issued.token;
   };
   // Table rows load in parallel; one renewal serves them all.

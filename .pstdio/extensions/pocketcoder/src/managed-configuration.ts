@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { managed } from "@pstdio/pocketcoder-sdk";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { labScopes } from "./lab-keys";
 
 // The Lab is an operator for its own controller. Sessions use the written consumer key.
 export function managedConfiguration(
@@ -9,6 +10,7 @@ export function managedConfiguration(
   write: (id: string, file: string, value: unknown) => Promise<void>,
   cli: (id: string, args: string[]) => Promise<unknown>,
   url: (id: string) => Promise<string>,
+  token: (id: string) => Promise<string>,
 ) {
   return {
     async configure(id: string, name: string, template: string, templateVersion: string) {
@@ -30,7 +32,7 @@ export function managedConfiguration(
     async client(id: string) {
       return new PocketCoderClient({
         baseUrl: await url(id),
-        apiKey: (await readFile(join(directory(id), "managed.token"), "utf8")).trim(),
+        apiKey: await token(id),
       });
     },
     async initialize(id: string) {
@@ -40,9 +42,8 @@ export function managedConfiguration(
         principals: [
           {
             name: "lab",
-            scopes: ["sessions:read", "sessions:write"],
+            scopes: labScopes,
             templates: ["*"],
-            key: { target: { kind: "file", path: join(directory(id), "managed.token") } },
             profiles: {},
           },
         ],

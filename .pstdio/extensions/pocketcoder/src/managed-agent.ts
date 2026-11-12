@@ -75,7 +75,6 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
     return {
       agentSessionId,
       timeoutStrategy: "provider",
-      // The cancel ID stays in memory: saving it could bring back a request that already finished.
       async stop() {
         await client.sessions.cancel(managedSessionId);
       },

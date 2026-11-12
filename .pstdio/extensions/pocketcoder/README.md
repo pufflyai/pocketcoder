@@ -85,9 +85,9 @@ The CLI supports the same options: `--external-id`, `--launch-input`, `--metadat
 
 ## Share one machine between managed sessions
 
-Managed sessions let the controller choose the machine. Run **Open managed sessions** (`pst pocketcoder.pocketcoder sessions open --instance <instance-id> --template <name>@<version> --count 2`). The first call for an instance and template provisions a credential-free execution profile with room for five sessions per machine and four managed machines per instance. Each session opens as its own chat. The command waits for the first session's machine before opening the rest, because a session joins a machine only after one of that template has shown it runs conversations side by side.
+Managed sessions let the controller choose the machine. Run **Open managed sessions** (`pst pocketcoder.pocketcoder sessions open --instance <instance-id> --template <name>@<version> --count 2`). The first call for an instance and template writes a credential-free profile with room for five sessions per machine and four machines per owner. Each session opens as its own chat. The controller waits for the first machine to report parallel conversation support before joining the other sessions.
 
-Open **Machines** to see the sessions share one machine. Closing one session leaves the machine and its other sessions running; the last session to close stops it. Templates that name credentials need a credential binding, which Lab does not provision. Use an instance whose controller includes managed placement; Lab sets the session queue and stop deadlines it needs.
+Open **Machines** to see the sessions share one machine. Closing one session leaves the machine and its other sessions running; the last session to close stops it. Templates that name credentials need an issuer in the principal file, which Lab does not configure. The controller sets dispatch deadlines from the profile. Lab's operator and chat keys share one principal, so Machines shows managed compute too. The chat key has only session access.
 
 ## Write a template with an agent
 
@@ -141,7 +141,7 @@ pst pocketcoder.pocketcoder instances start --instance-id <instance-id>
 
 Machine states update from the controller's change feed. **Starting machine** and **Starting agent** are startup states; connect only when the state is **Ready**. Failed, expired, and stopped machines give recovery guidance instead of asking you to wait for readiness.
 
-Instance folders are private (0700); metadata and owner-key files are 0600. Owner keys expire after 24 hours. They stay outside project files, provider references, command results, and machine mounts. The caller's `.env` and PocketCoder settings do not carry into another instance. Instances continue running after the pstdio application closes. Reopen pstdio to reconnect or stop them.
+Instance folders are private (0700); metadata and key files are 0600. Operator and chat keys expire after 24 hours. The bootstrap owner key stays in memory; persistent keys have no admin scope. They stay outside project files, provider references, command results, and machine mounts. The caller's `.env` and PocketCoder settings do not carry into another instance. Instances continue running after the pstdio application closes. Reopen pstdio to reconnect or stop them.
 
 ## Validation and host gaps
 
