@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import type { PriorMessage } from "@pstdio/pocketcoder-contracts";
 
+// The starter ships independently, so this small writer has no private package dependencies.
 // Pi v3's append-only session format. Only a new file is seeded, so retries retain native memory.
 export function seedPiSession(path: string, messages: PriorMessage[] | undefined) {
   if (!messages?.length || existsSync(path)) return;

@@ -3,6 +3,7 @@ import type { ManagedCapacityIdentity, ManagedCapacityRecord } from "@pstdio/poc
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext, unavailable } from "../managed/authority-context";
+import { requireProfileTemplate } from "../managed/profile-template";
 import { sessionWriter } from "../sessions/observations";
 
 export async function placeManagedCapacity(context: DatabaseContext, tx: Transaction, id: ManagedCapacityIdentity) {
@@ -16,8 +17,6 @@ export async function placeManagedCapacity(context: DatabaseContext, tx: Transac
   if (!principal || principal.disabledAt) throw unavailable();
   const session = await sessionWriter(context).read(tx, id);
   if (session.close || id.generation < 1) throw new ApiError("session.closed", "Invalid placement generation.");
-  const { profile } = await authorityContext(context).profile(tx, id.principalId, session.session.profile);
-  const placement = managed.managedPlacement(id.principalId, session.session, profile);
   const rows = await tx.select().from(table);
   const known = rows.find((r) => r.workspaceId === id.workspaceId);
   if (known?.record.drainingAt || known?.record.state === "released") throw unavailable();
@@ -26,6 +25,9 @@ export async function placeManagedCapacity(context: DatabaseContext, tx: Transac
     if (participant.generation !== id.generation) throw new ApiError("revision.stale", "Process generation changed.");
     return;
   }
+  const configured = await authorityContext(context).profile(tx, id.principalId, session.session.profile);
+  const profile = requireProfileTemplate(configured.profile);
+  const placement = managed.managedPlacement(id.principalId, session.session, profile);
   if (known && (known.record.placementKey !== placement.key || placement.mode !== "shared")) throw unavailable();
   if (
     rows.some(

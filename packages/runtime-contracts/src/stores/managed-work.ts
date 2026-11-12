@@ -96,10 +96,9 @@ export interface ManagedCapacityRecord {
 }
 export interface ManagedCapacityStore {
   reserve(identity: ManagedSessionIdentity, generation: number, at: Date): Promise<ManagedPlacementIntent | null>;
+  cancelPlacement(identity: ManagedSessionIdentity, workspaceId: string, at: Date): Promise<boolean>;
   retire(identity: ManagedSessionIdentity, at: Date): Promise<boolean>;
   drains(): Promise<{ workspaceId: string; principalId: string }[]>;
-  // A live workspace a shared session may join, or null when it needs new compute.
-  joinable(identity: ManagedSessionIdentity): Promise<string | null>;
   releaseUnlaunched(workspaceId: string, at: Date): Promise<void>;
   reconcile(at: Date): Promise<void>;
   place(identity: ManagedCapacityIdentity): Promise<void>;

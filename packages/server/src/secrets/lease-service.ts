@@ -116,7 +116,7 @@ export function createWorkspaceLeaseService({
       await store.recordWorkspaceLeaseRevoked(id, row.requestId, now());
     else await store.recordWorkspaceLeaseExpired(id, now());
   }
-  async function issue(workspaceId: string, name: string, purpose: WorkspaceLeasePurpose, _requestId = randomUUID()) {
+  async function issue(workspaceId: string, name: string, purpose: WorkspaceLeasePurpose) {
     if (!vault || admissionFenced()) throw unavailable();
     const config = await vault.resolve(name, purpose);
     if (config.type === "registry") throw unavailable();
@@ -131,13 +131,7 @@ export function createWorkspaceLeaseService({
     });
     return deliver({ ...config.value, revoke: true }, row);
   }
-  async function issueManaged(
-    identity: ManagedSessionIdentity,
-    workspaceId: string,
-    generation: number,
-    slot: string,
-    _requestId = randomUUID(),
-  ) {
+  async function issueManaged(identity: ManagedSessionIdentity, workspaceId: string, generation: number, slot: string) {
     if (!store.managed || admissionFenced()) throw unavailable();
     const bound = await store.managed.profiles.leaseAuthority(identity, workspaceId, generation, slot);
     const config = await managedIssuer(identity.principalId, bound.authority.issuer);
@@ -184,9 +178,17 @@ export function createWorkspaceLeaseService({
         return;
       }
       const config = await configFor(row);
-      // An ordinary renewal must never send a generation-wide revoke. Keep the optional
-      // notice obligation until the generation ends, even after this credential expires.
-      if (config.revoke) await store.supersedeWorkspaceLease(id, now());
+      // One row keeps the generation-wide revoke obligation. Earlier expired credentials
+      // can close without revoking the newer credential that replaced them.
+      const a = row.managedAuthority;
+      const generation = (await store.listPendingWorkspaceLeases(row.workspaceId)).filter(
+        (other) =>
+          other.managedAuthority?.principalId === a.principalId &&
+          other.managedAuthority.sessionId === a.sessionId &&
+          other.managedAuthority.generation === a.generation &&
+          other.managedAuthority.issuer === a.issuer,
+      );
+      if (config.revoke && generation.at(-1)?.id === id) await store.supersedeWorkspaceLease(id, now());
       else await store.recordWorkspaceLeaseExpired(id, now());
     },
     async replay(workspaceId: string, leaseId: string) {
@@ -199,7 +201,7 @@ export function createWorkspaceLeaseService({
         throw unavailable();
       return fresh(row);
     },
-    async renew(workspaceId: string, previousLeaseId: string, _requestId: string) {
+    async renew(workspaceId: string, previousLeaseId: string) {
       const previous = await store.getWorkspaceLease(previousLeaseId);
       if (!previous || previous.workspaceId !== workspaceId || previous.purpose !== "runtime-issuer")
         throw unavailable();

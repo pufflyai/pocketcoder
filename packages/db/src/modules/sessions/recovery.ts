@@ -21,7 +21,8 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
   const transition = (id: ManagedSessionIdentity, state: managed.Session["state"], reason: string | null) =>
     db.transaction(async (tx) => {
       const row = await writer.read(tx, id);
-      if (row.session.state === state || row.session.state === "closed") return row.session;
+      if ((row.session.state === state && row.session.reasonCode === reason) || row.session.state === "closed")
+        return row.session;
       return writer.update(tx, id, row.session.revision, state, reason);
     });
   return {

@@ -5,12 +5,12 @@ import type { DatabaseContext, Transaction } from "../../database/context";
 import { unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
 import { requireCapacityLaunch } from "./capacity-admission";
-import { joinableWorkspace } from "./capacity-join";
+import { cancelManagedPlacement } from "./capacity-cancel";
 import { placeManagedCapacity } from "./capacity-placement";
 import { reserveManagedPlacement } from "./capacity-reservation";
 import { retireManagedWorkspace } from "./capacity-retirement";
 
-export function createManagedCapacity(context: DatabaseContext, now = () => new Date()): ManagedCapacityStore {
+export function createManagedCapacity(context: DatabaseContext): ManagedCapacityStore {
   const { db, tables } = context;
   const table = tables.managedCapacity;
   async function write(tx: Transaction, workspaceId: string, record: ManagedCapacityRecord) {
@@ -19,7 +19,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       .values({ workspaceId, record })
       .onConflictDoUpdate({ target: table.workspaceId, set: { record } });
   }
-  async function lockOwner(tx: Transaction, workspaceId: string, at = now()) {
+  async function lockOwner(tx: Transaction, workspaceId: string) {
     const [known] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId));
     if (!known) return null;
     const [principal] = await tx
@@ -64,6 +64,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
     });
   }
   return {
+    cancelPlacement: (identity, workspaceId, at) => cancelManagedPlacement(context, identity, workspaceId, at),
     retire: (identity, at) => retireManagedWorkspace(context, identity, at),
     reserve: (identity, generation, at) => reserveManagedPlacement(context, identity, generation, at),
     async drains() {
@@ -71,7 +72,6 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
         .filter((r) => r.record.drainingAt && r.record.state !== "released")
         .map((r) => ({ workspaceId: r.workspaceId, principalId: r.record.principalId }));
     },
-    joinable: (identity) => joinableWorkspace(context, identity),
     releaseUnlaunched,
     async reconcile(at) {
       const rows = await db.select().from(table);
@@ -87,7 +87,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
     async claimLaunch(workspaceId, attempt, at) {
       at = new Date(at);
       await db.transaction(async (tx) => {
-        const record = await lockOwner(tx, workspaceId, at);
+        const record = await lockOwner(tx, workspaceId);
         if (!record) return;
         if (record.launchAttempt === attempt && record.submitted) return;
         const [workspace] = await tx

@@ -30,9 +30,7 @@ export async function renewCredential(
       retry = issuerBackoff();
       renewals.set(connection, retry);
     }
-    const issued = await retry.run(previous.id, () =>
-      deps.workspaceLeases!.renew(row.id, previous.id, payload.request_id),
-    );
+    const issued = await retry.run(previous.id, () => deps.workspaceLeases!.renew(row.id, previous.id));
     if (!(await activeConnectionWorkspace(deps, connection))) return;
     await deps.assertAccountAllowed?.();
     deps.hub.send(connection, "credential_renewed", {

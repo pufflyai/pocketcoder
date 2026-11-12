@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionIdentity } from "@pstdio/pocketcoder-runtime-contracts";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext, unavailable } from "../managed/authority-context";
+import { requireProfileTemplate } from "../managed/profile-template";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { sessionWriter } from "../sessions/observations";
 import { placeManagedCapacity } from "./capacity-placement";
@@ -32,7 +33,8 @@ export async function reserveManagedPlacement(
     if (session.close) return null;
     if (session.placement) return session.placement;
     if (session.binding || generation !== session.lastGeneration + 1) return null;
-    const { profile } = await authorityContext(context).profile(tx, id.principalId, session.session.profile);
+    const configured = await authorityContext(context).profile(tx, id.principalId, session.session.profile);
+    const profile = requireProfileTemplate(configured.profile);
     const placement = managed.managedPlacement(id.principalId, session.session, profile);
     const owned = (await tx.select().from(capacity)).filter(
       (r) =>
@@ -68,7 +70,7 @@ export async function reserveManagedPlacement(
       generation,
       requestedAt: at.toISOString(),
       templateName: profile.template,
-      templateVersion: profile.templateVersion!,
+      templateVersion: profile.templateVersion,
       templateDigest: profile.templateDigest,
     };
     await tx.update(tables.managedSessions).set({ placement: intent }).where(writer.where(id));
@@ -89,7 +91,18 @@ async function beginOwnerDrain(
   const { tables } = context,
     capacity = tables.managedCapacity,
     writer = sessionWriter(context);
-  const requests = await tx.select().from(tables.conversationRequests);
+  const requests = await tx
+    .select()
+    .from(tables.conversationRequests)
+    .where(
+      and(
+        eq(tables.conversationRequests.principalId, id.principalId),
+        inArray(
+          tables.conversationRequests.workspaceId,
+          owned.map((row) => row.workspaceId),
+        ),
+      ),
+    );
   const victim = idleVictim(owned, workspaces, requests, templateDigest, group);
   if (!victim) return;
   await tx

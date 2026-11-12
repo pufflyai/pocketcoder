@@ -2,6 +2,7 @@ import { ApiError, hasScope, type Scope, templateCredentialReferences } from "@p
 import { and, eq } from "drizzle-orm";
 import type { DatabaseContext, QueryContext, Transaction } from "../../database/context";
 import { lockKeyAuthority } from "../auth/authority";
+import { profileTemplate } from "./profile-template";
 
 export const unavailable = () => new ApiError("profile.not_found", "Session profile is unavailable.");
 export const conflict = () => new ApiError("idempotency.conflict", "The request identity has changed.");
@@ -20,22 +21,13 @@ export function authorityContext({ tables }: DatabaseContext) {
       .from(p)
       .where(and(eq(p.principalId, principalId), eq(p.name, name)));
     if (!row) throw unavailable();
-    const t = tables.templates;
-    const [template] = await tx
-      .select()
-      .from(t)
-      .where(
-        and(
-          eq(t.name, row.template),
-          row.templateVersion ? eq(t.version, row.templateVersion) : eq(t.status, "active"),
-        ),
-      );
+    const template = await profileTemplate(tx, tables.templates, row);
     return {
       ...row,
       profile: {
         name,
         template: row.template,
-        templateVersion: template?.version ?? null,
+        templateVersion: row.templateVersion ?? template?.version ?? null,
         issuer: row.issuer ?? undefined,
         placement: row.placement,
         limits: { workspacesPerOwner: row.workspacesPerOwner, sessionsPerWorkspace: row.sessionsPerWorkspace },

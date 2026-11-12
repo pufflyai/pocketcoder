@@ -39,7 +39,7 @@ export interface ManagedProfileStore {
     profiles: Record<string, managed.ProfileConfig>,
     issuers: Record<string, managed.SessionIssuer>,
     dryRun?: boolean,
-  ): Promise<{ profiles: string[]; issuers: string[] }>;
+  ): Promise<{ profiles: string[]; issuers: string[]; unavailableProfiles: string[] }>;
   get(keyId: string, name: string): Promise<managed.SessionProfile>;
   issuer(principalId: string, name: string): Promise<managed.SessionIssuer>;
   leaseAuthority(
@@ -102,12 +102,15 @@ export interface ManagedHistoryStore {
   snapshot(
     keyId: string,
     sessionId: string,
+    after?: { records: number; events: number },
   ): Promise<{
     session: managed.Session;
     requests: managed.Request[];
     records: import("@pstdio/pocketcoder-contracts").ConversationRecordDocument[];
     eventCursor: string;
     binding: ManagedBinding | null;
+    recordCursor: number;
+    reset: boolean;
   }>;
   history(keyId: string, sessionId: string, cursor: string | null, limit: number): Promise<managed.HistoryPage>;
   events(keyId: string, sessionId: string, after: string | null, limit: number): Promise<managed.RuntimeEvent[]>;

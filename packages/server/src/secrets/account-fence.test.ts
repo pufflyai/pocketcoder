@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { randomUUID } from "node:crypto";
 import { createIssuerClient } from "./issuer-client";
 import { createWorkspaceLeaseService } from "./lease-service";
 import { leaseServiceFixture } from "./lease-service-fixture";
@@ -39,13 +38,11 @@ test("the account fence closes authority minted by an already accepted HTTPS req
     expect(await f.issuer.resource(f.issuer.controls.captured, f.workspace.id)).toBe(401);
     expect(await f.store.listPendingWorkspaceLeases()).toEqual([]);
     expect(f.issuer.controls.mintCalls).toBe(1);
-    await expect(service.issue(f.workspace.id, "runtime", "runtime-issuer", randomUUID())).rejects.toThrow(
-      "unavailable",
-    );
+    await expect(service.issue(f.workspace.id, "runtime", "runtime-issuer")).rejects.toThrow("unavailable");
     expect(f.issuer.controls.mintCalls).toBe(1);
     const [lease] = await f.store.listWorkspaceLeases(f.workspace.id);
     if (!lease) throw new Error("Lease receipt missing");
-    await expect(service.renew(f.workspace.id, lease.id, randomUUID())).rejects.toThrow("unavailable");
+    await expect(service.renew(f.workspace.id, lease.id)).rejects.toThrow("unavailable");
     await service.revokeWorkspace(f.workspace.id);
     expect(f.issuer.controls.mintCalls).toBe(1);
   } finally {

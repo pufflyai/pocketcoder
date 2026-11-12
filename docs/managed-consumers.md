@@ -12,21 +12,21 @@ Mount this file only into the controller and set `POCKETCODER_PRINCIPALS_FILE`:
 ```json
 {
   "principals": [{
-    "name": "onefin-backend",
+    "name": "chat-backend",
     "scopes": ["sessions:read", "sessions:write"],
-    "templates": ["onefin-agent"],
+    "templates": ["chat-agent"],
     "key": { "target": { "kind": "file", "path": "/run/backend-key/token" } },
     "issuers": {
-      "onefin": {
+      "chat": {
         "url": "https://backend.example/internal/agent-issuer",
-        "tokenFile": "/etc/pocketcoder/issuers/onefin/token",
+        "tokenFile": "/etc/pocketcoder/issuers/chat/token",
         "revoke": false
       }
     },
     "profiles": {
       "chat": {
-        "template": "onefin-agent",
-        "issuer": "onefin",
+        "template": "chat-agent",
+        "issuer": "chat",
         "placement": "shared",
         "limits": { "workspacesPerOwner": 1, "sessionsPerWorkspace": 5 },
         "dispatchDeadlineSeconds": 600
@@ -42,7 +42,7 @@ the backend namespace first. Grant the controller service account `get` and
 `patch` on that Secret name only; it needs no namespace-wide create permission.
 Mount the issuer token separately in the controller's own namespace.
 
-Publish `onefin-agent` through the template API with operator authority. The
+Publish `chat-agent` through the template API with operator authority. The
 profile follows its active release. To roll back, add a `templateVersion` pin.
 Use `pcd principals plan`, then `pcd principals reconcile` for an immediate file
 update, or let the five-minute reconciliation pass apply it. A ConfigMap change
@@ -90,14 +90,13 @@ seed. The consumer does not copy agent files or wait for the first workspace.
 ## Attribute agent work
 
 The agent process sees `POCKETCODER_TURN_ID`. A tool can send it in a header such
-as `X-Onefin-Turn`. The consumer chooses the chat from the credential, then
+as `X-Chat-Turn`. The consumer chooses the chat from the credential, then
 checks that the feed lists this turn for that chat before displaying work under
 it. If it does not, display the work at chat level. The turn ID is a display hint;
 shared-workspace siblings can read one another's files and environment.
 
 The [reference consumer](../examples/clients/managed-runtime/consumer.ts) uses
-only the public SDK. Onefin's separate repository must adopt this contract in
-its own rollout; PocketCoder does not change its business authorization or model
-spend controls.
+only the public SDK. Consumers adopt this contract in their own rollout;
+PocketCoder does not change their business authorization or model spend controls.
 
 Run `bun --no-env-file examples/e2e/kubernetes-managed-sessions.ts` to qualify the managed API on an owned Kind cluster. It runs five parallel chats on one workspace, drains idle compute for another group, and checks close cleanup. The fixture deletes its own cluster and images after the run.

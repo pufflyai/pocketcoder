@@ -81,6 +81,8 @@ export async function reconcileManagedPrincipals(deps: ReconcileDeps) {
       dryRun,
     );
     sessions.push({ name: principal.name, ...changes });
+    for (const profile of changes.unavailableProfiles)
+      logger.warn("principals.profile_unavailable", { name: principal.name, profile, dry_run: dryRun });
     if (changes.profiles.length || changes.issuers.length)
       logger.info("principals.sessions", {
         name: principal.name,

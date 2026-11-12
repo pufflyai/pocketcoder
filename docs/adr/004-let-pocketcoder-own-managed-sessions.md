@@ -7,7 +7,7 @@ Status: Accepted (PC-186)
 In 0.13 and 0.14, PocketCoder made managed authority immutable: profile revisions, credential
 bindings with a pinned issuer version and a fixed expiry, and budget policies with revisions
 and periods. No recorded failure motivates these rules (the PC-186 research). They also
-push generic work onto every consumer. Onefin's first integration spends about 60% of its code
+push generic work onto every consumer. An early consumer integration spends about 60% of its code
 on provisioning mirrors, a stateful issuer, replay storage, a conversation merge and a
 running-turn lookup. The Lab rebuilds the same pieces.
 

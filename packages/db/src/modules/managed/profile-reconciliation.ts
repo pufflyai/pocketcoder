@@ -2,6 +2,7 @@ import { digestOf, managed } from "@pstdio/pocketcoder-contracts";
 import { and, eq } from "drizzle-orm";
 import { type DatabaseContext, lock, type Transaction } from "../../database/context";
 import { unavailable } from "./authority-context";
+import { profileTemplate } from "./profile-template";
 
 type Tables = DatabaseContext["tables"];
 function profileValues(input: managed.ProfileConfig) {
@@ -19,27 +20,30 @@ function profileValues(input: managed.ProfileConfig) {
 }
 async function applyProfile(
   tx: Transaction,
-  table: Tables["managedProfiles"],
+  tables: Tables,
   principalId: string,
   name: string,
   input: managed.ProfileConfig | undefined,
   previous: Tables["managedProfiles"]["$inferSelect"] | undefined,
   dryRun: boolean,
 ) {
+  const table = tables.managedProfiles;
   const where = and(eq(table.principalId, principalId), eq(table.name, name));
   if (!input) {
-    if (!previous || previous.disabled) return false;
+    if (!previous || previous.disabled) return { changed: false, unavailable: false };
     if (!dryRun) await tx.update(table).set({ disabled: true, updatedAt: new Date() }).where(where);
-    return true;
+    return { changed: true, unavailable: false };
   }
-  const value = profileValues(input);
-  if (previous && Object.entries(value).every(([k, v]) => previous[k as keyof typeof previous] === v)) return false;
+  const template = await profileTemplate(tx, tables.templates, input);
+  const value = { ...profileValues(input), disabled: !template };
+  if (previous && Object.entries(value).every(([k, v]) => previous[k as keyof typeof previous] === v))
+    return { changed: false, unavailable: !template };
   if (!dryRun)
     await tx
       .insert(table)
       .values({ principalId, name, ...value, updatedAt: new Date() })
       .onConflictDoUpdate({ target: [table.principalId, table.name], set: { ...value, updatedAt: new Date() } });
-  return true;
+  return { changed: true, unavailable: !template };
 }
 async function applyIssuers(
   tx: Transaction,
@@ -80,22 +84,22 @@ export function profileReconciliation({ db, tables }: DatabaseContext) {
         .from(tables.managedProfiles)
         .where(eq(tables.managedProfiles.principalId, principalId));
       const profiles: string[] = [];
+      const unavailableProfiles: string[] = [];
       for (const name of new Set([...Object.keys(declared), ...known.map((p) => p.name)])) {
         const input = declared[name];
         if (input?.issuer && !configured[input.issuer]) throw unavailable();
-        if (
-          await applyProfile(
-            tx,
-            tables.managedProfiles,
-            principalId,
-            name,
-            input,
-            known.find((p) => p.name === name),
-            dryRun,
-          )
-        )
-          profiles.push(name);
+        const result = await applyProfile(
+          tx,
+          tables,
+          principalId,
+          name,
+          input,
+          known.find((p) => p.name === name),
+          dryRun,
+        );
+        if (result.changed) profiles.push(name);
+        if (result.unavailable) unavailableProfiles.push(name);
       }
-      return { profiles, issuers };
+      return { profiles, issuers, unavailableProfiles };
     });
 }

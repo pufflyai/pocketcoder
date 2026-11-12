@@ -3,7 +3,7 @@ import { onefinCredentials } from "./credentials";
 
 const token = (jti: string, exp: number) =>
   `test.${Buffer.from(JSON.stringify({ jti, exp, task_id: "task" })).toString("base64url")}.test`;
-test("Onefin redeems one-use input, rotates its scoped token, and revokes the latest token", async () => {
+test("The external agent redeems one-use input, rotates its scoped token, and revokes the latest token", async () => {
   const calls: { path: string; authorization: string | null; body: unknown }[] = [];
   const old = token("old", Date.now() / 1000 + 30),
     fresh = token("fresh", Date.now() / 1000 + 3600);

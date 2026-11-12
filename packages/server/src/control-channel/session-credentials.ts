@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   ApiError,
   SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
@@ -32,7 +31,7 @@ async function credentialsFor(
       const known = current[index];
       const issued = known
         ? await leases.replay(target.workspaceId, known.id)
-        : await leases.issueManaged(target.identity, target.workspaceId, target.generation, slot, randomUUID());
+        : await leases.issueManaged(target.identity, target.workspaceId, target.generation, slot);
       minted.push(issued.lease.id);
       credentials.push(credentialDelivery(issued));
     }
@@ -99,6 +98,7 @@ export function sessionCredentials(
       return false;
     },
     async revoke(workspaceId: string, sessionId: string) {
+      retry.forget(`${workspaceId}:${sessionId}:`);
       await deps.workspaceLeases?.revokeSession(workspaceId, sessionId);
       const connection = connectionOf(workspaceId);
       if (connection) deps.hub.send(connection, "credential_remove", { session_id: sessionId });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startOnefin } from "./start";
 
-test("Onefin revokes an acquired lease if local startup fails", async () => {
+test("The external agent revokes an acquired lease if local startup fails", async () => {
   const root = await mkdtemp(join(tmpdir(), "onefin-start-"));
   const blocked = join(root, "blocked");
   await writeFile(blocked, "file");
@@ -32,7 +32,7 @@ test("Onefin revokes an acquired lease if local startup fails", async () => {
   }
 });
 
-test("Onefin revokes a lease redeemed while startup is stopping", async () => {
+test("The external agent revokes a lease redeemed while startup is stopping", async () => {
   const redeeming = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const revoked: string[] = [];

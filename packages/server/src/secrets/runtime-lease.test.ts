@@ -12,9 +12,8 @@ test("a running workspace renews with fresh HTTPS credentials and lets the previ
     expect(await f.issuer.resource(initial.credential, f.workspace.id)).toBe(200);
     expect(await f.issuer.resource(initial.credential, randomUUID())).toBe(401);
     expect(await f.issuer.resource(initial.credential, f.workspace.id, "other")).toBe(401);
-    const requestId = randomUUID();
     f.issuer.controls.reply = "lost";
-    await expect(f.service.renew(f.workspace.id, initial.lease.id, requestId)).rejects.toThrow();
+    await expect(f.service.renew(f.workspace.id, initial.lease.id)).rejects.toThrow();
     const pending = (await f.store.listPendingWorkspaceLeases(f.workspace.id)).find(
       (row) => row.id !== initial.lease.id,
     );
@@ -22,7 +21,7 @@ test("a running workspace renews with fresh HTTPS credentials and lets the previ
     expect(pending.state).toBe("superseded");
     await f.vault.put(f.key.id, "runtime", { ...f.config, type: "runtime-issuer" });
     f.issuer.controls.reply = "valid";
-    const renewed = await f.service.renew(f.workspace.id, initial.lease.id, requestId);
+    const renewed = await f.service.renew(f.workspace.id, initial.lease.id);
     expect(renewed.lease.id).not.toBe(pending.id);
     expect(renewed.lease.secretVersionId).not.toBe(pending.secretVersionId);
     expect(renewed.lease.requestDigest).not.toBe(pending.requestDigest);
@@ -31,7 +30,7 @@ test("a running workspace renews with fresh HTTPS credentials and lets the previ
     expect(await f.issuer.resource(initial.credential, f.workspace.id)).toBe(200);
     await f.service.revokeWorkspace(f.workspace.id);
     expect(await f.issuer.resource(renewed.credential, f.workspace.id)).toBe(401);
-    await expect(f.service.renew(f.workspace.id, renewed.lease.id, randomUUID())).rejects.toThrow();
+    await expect(f.service.renew(f.workspace.id, renewed.lease.id)).rejects.toThrow();
   } finally {
     await f.close();
   }
@@ -62,7 +61,7 @@ test.each(["preserving", "terminating"] as const)(
       const initial = await f.service.issue(f.workspace.id, "runtime", "runtime-issuer");
       await f.store.transition(f.workspace.id, { from: ["provisioning"], to: "connected", at: new Date() });
       await f.store.transition(f.workspace.id, { from: ["connected"], to: state, at: new Date() });
-      await expect(f.service.renew(f.workspace.id, initial.lease.id, randomUUID())).rejects.toThrow();
+      await expect(f.service.renew(f.workspace.id, initial.lease.id)).rejects.toThrow();
       f.issuer.controls.reply = "outage";
       await expect(f.service.revokeWorkspace(f.workspace.id)).rejects.toThrow();
       expect((await f.store.getWorkspaceLease(initial.lease.id))?.state).toBe("revoking");
@@ -82,7 +81,7 @@ test("an uncertain runtime mint is revoked by its recorded request identity", as
     await f.vault.put(f.key.id, "runtime", { ...f.config, type: "runtime-issuer" });
     const requestId = randomUUID();
     f.issuer.controls.reply = "lost";
-    await expect(f.service.issue(f.workspace.id, "runtime", "runtime-issuer", requestId)).rejects.toThrow();
+    await expect(f.service.issue(f.workspace.id, "runtime", "runtime-issuer")).rejects.toThrow();
     const captured = f.issuer.controls.captured;
     const [request] = await f.store.listPendingWorkspaceLeases(f.workspace.id);
     expect(request?.requestId).not.toBe(requestId);
@@ -109,10 +108,10 @@ test("setup completion cannot revoke later runtime credentials in the same works
     const runtime = await f.service.issue(f.workspace.id, "runtime", "runtime-issuer");
     expect(await f.issuer.resource(runtime.credential, f.workspace.id)).toBe(200);
     f.issuer.controls.leaseLifetimeMs = 100;
-    const earlier = await f.service.renew(f.workspace.id, runtime.lease.id, randomUUID());
+    const earlier = await f.service.renew(f.workspace.id, runtime.lease.id);
     await f.service.completeRenewal(f.workspace.id, runtime.lease.id, earlier.lease.id);
     f.issuer.controls.leaseLifetimeMs = 30000;
-    const newest = await f.service.renew(f.workspace.id, earlier.lease.id, randomUUID());
+    const newest = await f.service.renew(f.workspace.id, earlier.lease.id);
     await f.service.completeRenewal(f.workspace.id, earlier.lease.id, newest.lease.id);
     await Bun.sleep(120);
     await f.service.expire(earlier.lease.id);

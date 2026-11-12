@@ -89,3 +89,39 @@ test("closing a reused session UUID cannot release another principal's reservati
     await f.dispose();
   }
 });
+
+test("canceling an uncreated placement fences a late workspace insert", async () => {
+  const f = await managedFixture();
+  try {
+    await provision(f);
+    const id = { principalId: f.principal.id, sessionId: f.sessionId };
+    const intent = await f.store.managed.capacity.reserve(id, 1, new Date());
+    if (!intent) throw new Error("Missing placement");
+    expect(await f.store.managed.capacity.cancelPlacement(id, intent.workspaceId, new Date())).toBe(true);
+    await expect(
+      f.store.insertWorkspace({
+        id: intent.workspaceId,
+        principalId: f.principal.id,
+        externalId: "stale-placement",
+        idempotencyKey: "stale-placement",
+        requestDigest: "stale-placement",
+        templateId: f.template.id,
+        templateSnapshot: {
+          name: f.template.name,
+          version: f.template.version,
+          digest: f.template.digest,
+          spec: f.parsed.manifest.spec,
+        },
+        launchInput: null,
+        metadata: { "pocketcoder.managed-session": f.sessionId },
+        deadlineAt: new Date(Date.now() + 60000),
+        createdAt: new Date(),
+      }),
+    ).rejects.toMatchObject({ code: "revision.stale" });
+    expect(await f.store.getWorkspace(intent.workspaceId)).toBeNull();
+    const rows = await f.context.db.select().from(f.context.tables.managedCapacity);
+    expect(rows[0]?.record).toMatchObject({ state: "released", cleanup: { basis: "never_launched" } });
+  } finally {
+    await f.dispose();
+  }
+});

@@ -9,14 +9,13 @@ import { type AppEnv, requireScope } from "../http/middleware";
 const Cursor = z.object({
   instance: z.string(),
   session: z.string(),
-  events: z.string(),
-  version: z.number().int().nonnegative(),
+  events: z.number().int().nonnegative(),
+  records: z.number().int().nonnegative(),
+  live: z.string(),
 });
-type Tracked = { digest: string; version: number };
 
 export function registerConversationRoute(app: OpenAPIHono<AppEnv>, store: Store, live: LiveTurns) {
   const instance = randomUUID();
-  const views = new Map<string, { version: number; items: Map<string, Tracked> }>();
   app.openapi(
     createRoute({
       method: "get",
@@ -42,41 +41,38 @@ export function registerConversationRoute(app: OpenAPIHono<AppEnv>, store: Store
       // Read live before durable state: a turn that commits between these reads is deduplicated.
       const binding = await store.managed.sessions.binding(c.get("keyId"), sessionId);
       const turns = binding ? live.open(binding.workspaceId, sessionId) : [];
-      const snapshot = await store.managed.history.snapshot(c.get("keyId"), sessionId);
       const owner = digestOf({ principal: c.get("principal").id, sessionId });
       let cursor: z.infer<typeof Cursor> | undefined;
+      let reset = false;
       if (after) {
         try {
-          cursor = Cursor.parse(JSON.parse(Buffer.from(after, "base64url").toString()));
+          const raw = JSON.parse(Buffer.from(after, "base64url").toString());
+          const header = Cursor.pick({ instance: true, session: true }).parse(raw);
+          if (header.session !== owner) throw new Error("Foreign cursor");
+          reset = header.instance !== instance;
+          if (!reset) cursor = Cursor.parse(raw);
         } catch {
           throw new ApiError("events.cursor_invalid", "Invalid conversation cursor.");
         }
-        if (cursor.session !== owner)
-          throw new ApiError("events.cursor_invalid", "Cursor does not belong to this session.");
       }
-      const known = views.get(owner);
-      const reset = Boolean(after && (cursor?.instance !== instance || !known || cursor.version > known.version));
-      const view = known ?? { version: 0, items: new Map<string, Tracked>() };
-      const messages = conversationMessages(snapshot, turns);
-      const from = reset || !cursor ? -1 : cursor.version;
-      const changed = (key: string, value: unknown) => {
-        const digest = digestOf(value),
-          previous = view.items.get(key);
-        if (previous?.digest !== digest) view.items.set(key, { digest, version: ++view.version });
-        return (view.items.get(key)?.version ?? 0) > from;
-      };
-      const requests = snapshot.requests.filter((r) => changed(`request:${r.requestId}`, r));
-      const updates = [...messages.values()]
-        .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
-        .filter((m) => changed(`message:${m.messageId}`, m));
-      views.set(owner, view);
+      const snapshot = await store.managed.history.snapshot(c.get("keyId"), sessionId, cursor);
+      reset ||= snapshot.reset;
+      const fingerprint = digestOf(turns);
+      const changedTurns = reset || !cursor || cursor.live !== fingerprint ? turns : [];
+      const messages = conversationMessages(snapshot, changedTurns);
       return c.json(
         {
           session: { state: snapshot.session.state, reasonCode: snapshot.session.reasonCode },
-          requests,
-          messages: updates,
+          requests: snapshot.requests,
+          messages: [...messages.values()].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)),
           cursor: Buffer.from(
-            JSON.stringify({ instance, session: owner, events: snapshot.eventCursor, version: view.version }),
+            JSON.stringify({
+              instance,
+              session: owner,
+              events: Number(snapshot.eventCursor.split(":")[1]),
+              records: snapshot.recordCursor,
+              live: fingerprint,
+            }),
           ).toString("base64url"),
           reset,
         },
@@ -92,6 +88,7 @@ function conversationMessages(
 ) {
   const messages = new Map<string, managed.SessionMessage>();
   const add = (
+    requestId: string | undefined,
     turnId: string,
     items: {
       message_id: string;
@@ -102,12 +99,11 @@ function conversationMessages(
     }[],
     final: boolean,
   ) => {
-    const request = snapshot.requests.find((r) => r.turnId === turnId);
-    if (!request) return;
+    if (!requestId) return;
     for (const message of items)
       messages.set(message.message_id, {
         messageId: message.message_id,
-        requestId: request.requestId,
+        requestId,
         turnId,
         role: message.role,
         parts: message.parts ?? [{ type: "text", text: message.content }],
@@ -115,7 +111,9 @@ function conversationMessages(
         final,
       });
   };
-  for (const turn of turns) if (turn.type === "turn") add(turn.turn_id, turn.messages, false);
-  for (const record of snapshot.records) if (record.turn_id) add(record.turn_id, record.messages, true);
+  for (const turn of turns)
+    if (turn.type === "turn") add(turn.messages[0]?.identity?.request_id, turn.turn_id, turn.messages, false);
+  for (const record of snapshot.records)
+    if (record.turn_id) add(record.request?.request_id, record.turn_id, record.messages, true);
   return messages;
 }

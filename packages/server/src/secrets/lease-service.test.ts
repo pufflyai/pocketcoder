@@ -115,9 +115,8 @@ test("a teardown fence during HTTPS mint prevents delivery and revokes the late 
 test("each delivery mints a new credential within its workspace deadline", async () => {
   const f = await fixture();
   try {
-    const requestId = randomUUID();
-    const first = await f.service.issue(f.workspace.id, "source", "setup-issuer", requestId);
-    const second = await f.service.issue(f.workspace.id, "source", "setup-issuer", requestId);
+    const first = await f.service.issue(f.workspace.id, "source", "setup-issuer");
+    const second = await f.service.issue(f.workspace.id, "source", "setup-issuer");
     expect(second.lease.id).not.toBe(first.lease.id);
     expect(second.credential).not.toBe(first.credential);
     expect(second.lease.issuerExpiresAt).toEqual(first.lease.issuerExpiresAt);

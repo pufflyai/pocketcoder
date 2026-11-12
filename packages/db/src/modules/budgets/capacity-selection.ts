@@ -1,5 +1,5 @@
 import type { DatabaseContext } from "../../database/context";
-import { parallel } from "./capacity-join";
+import { parallel } from "./capacity-capabilities";
 
 type Capacity = DatabaseContext["tables"]["managedCapacity"]["$inferSelect"];
 type Workspace = DatabaseContext["tables"]["workspaces"]["$inferSelect"];

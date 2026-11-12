@@ -15,7 +15,7 @@ test("managed reconnects mint fresh, retain cleanup obligations, and need no bin
       incarnationId: p.incarnationId,
       generation: 1,
     });
-    const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime", randomUUID());
+    const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
     const second = await f.service.replay(f.workspace.id, first.lease.id);
     expect(second.credential).not.toBe(first.credential);
     expect(second.lease.requestId).not.toBe(first.lease.requestId);
@@ -54,7 +54,7 @@ test("a mint arriving after close is dropped and cannot make the session ready",
       entered.resolve();
       await release.promise;
     };
-    const pending = f.service.issueManaged(id, f.workspace.id, 1, "runtime", randomUUID());
+    const pending = f.service.issueManaged(id, f.workspace.id, 1, "runtime");
     await entered.promise;
     await f.store.managed.sessions.close(f.key.id, id.sessionId, new Date());
     release.resolve();
@@ -90,7 +90,7 @@ test("renewal expiry preserves the new credential and close retries its generati
     f.issuer.controls.leaseLifetimeMs = 150;
     const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
     f.issuer.controls.leaseLifetimeMs = 30000;
-    const next = await f.service.renew(f.workspace.id, first.lease.id, randomUUID());
+    const next = await f.service.renew(f.workspace.id, first.lease.id);
     await f.service.completeRenewal(f.workspace.id, first.lease.id, next.lease.id);
     await Bun.sleep(160);
     await reconcileSetupLeases(f.store, f.service, {} as never);
@@ -99,7 +99,7 @@ test("renewal expiry preserves the new credential and close retries its generati
     await f.store.managed.sessions.close(f.key.id, id.sessionId, new Date());
     f.issuer.controls.reply = "outage";
     await expect(f.service.revokeSession(f.workspace.id, id.sessionId)).rejects.toThrow();
-    expect((await f.store.listPendingWorkspaceLeases(f.workspace.id)).length).toBe(2);
+    expect((await f.store.listPendingWorkspaceLeases(f.workspace.id)).length).toBe(1);
     f.issuer.controls.reply = "valid";
     await f.service.revokeSession(f.workspace.id, id.sessionId);
     expect(f.issuer.controls.revokeCalls).toBe(1);

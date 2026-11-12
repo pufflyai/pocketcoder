@@ -13,11 +13,11 @@ From the integration checkout:
 ```sh
 bun install
 bun install --cwd .pstdio/extensions/pocketcoder
-bun run build:native
+bun run lab:prepare
 pst extensions dev .pstdio/extensions/pocketcoder
 ```
 
-The extension keeps its own dependencies and `bun.lock`, so the root `bun install` does not install them. Install them before you run the root typecheck or tests.
+The extension keeps its own dependencies and `bun.lock`. Install them before the root typecheck or tests. `lab:prepare` builds the native executable and SDK, then installs a self-contained SDK copy in the extension’s own `node_modules`. The host can load that copy without following workspace links. Run it again after SDK changes or dependency installation.
 
 Leave the executable field blank to use this project's `out/native/pocketcoder`. Lab tries `PATH` if there is no local build. An explicit executable path is also supported; relative paths use the project folder. Run `bun run build:native` if neither exists. Lab validates the executable before saving an instance.
 
@@ -27,9 +27,7 @@ Leave the executable field blank to use this project's `out/native/pocketcoder`.
 2. Each instance has native **Templates** and **Machines** page tabs with native data tables. They read the controller directly, including machines launched through other clients. The selection is saved for this project.
 3. Use **Save template** to add a JSON or YAML manifest to the project catalog. **Launch instance** chooses a catalog template and names the instance. The executable field is optional and uses the local build by default.
 4. Use **Import templates** with an absolute prepared folder path to publish more versions into the selected instance. Published versions are immutable; changed manifests need a new version.
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
-7. **Delete machine** stops execution, waits for a terminal state and removes the row from Lab. The controller retains its audit record. Failed machines remain visible with their error until dismissed.
+5. **Delete machine** stops execution, waits for a terminal state and removes the row from Lab. The controller retains its audit record. Failed machines remain visible with their error until dismissed.
 8. The instance dropdown and instance table offer **Start instance** and **Stop instance**. Stop requires every active machine to end first. Owner keys expire after 24 hours; while the controller runs, the Lab issues a new one when the old one expires. A broken saved executable does not prevent browsing other instances; its table row shows the error.
 
 ### Prompt Studio and Codex template
@@ -44,7 +42,6 @@ Then choose it in **Launch instance** and launch a machine with the **Prompt Stu
 
 Cloud relay chat needs a remote device and workspace linked to this project. A safely enrolled machine can declare `pstdio.connection=relay`, `pstdio.device_id` and `pstdio.workspace_id` in its launch metadata. Connect checks the device is remote and online, then creates the native Codex session on it.
 
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
 
 The template keeps Prompt Studio in the foreground and publishes its private runtime descriptor so local setup commands attach to that server. The connection status becomes available only after project setup completes. Codex starts on demand when a session uses it; the status document reports its installed version.
 
@@ -101,7 +98,7 @@ Build a runnable template with a digest-pinned Docker image:
 
 ```sh
 bun run build:native
-bun run local:pstdio -- --output /tmp/pocketcoder-file-agent.json
+bun --no-env-file scripts/pstdio-demo.ts --output /tmp/pocketcoder-file-agent.json
 ```
 
 Open **PocketCoder Lab → Save template** and paste that file. Choose **Launch instance** with the absolute `out/native/pocketcoder` path, open the new instance, then **Launch machine → file-agent@1.0.0 → Connect to agent**. Send text and attach a text file in the native session composer. The reply includes the exact file text. Other file types return their byte count and SHA-256 digest.
@@ -111,22 +108,6 @@ This reference agent echoes messages and reads files. It does not call an LLM or
 The demo has a ten-minute workspace lifetime, a 1 MiB per-file limit, 8 MiB of staged inputs, and at most 16 files. Launch a new machine after expiry. The local instance derives input storage limits from its selected template; these are local test capacities. The build retains the Docker image so the saved template can launch again. Stop unused instances from **Instance actions**.
 
 The harness saves a pending request before sending it. Reconnect replays the same request ID and body after a lost response. Session history comes from the controller's existing request records, including after machine deletion. The host keeps its own uploaded-file links for the native composer.
-
-## Chat with the local Onefin agent
-
-The local `onefin-pstdio` template runs Onefin's agent in a disposable PocketCoder machine. It uses the local Onefin backend and model gateway. The template selects the model; Prompt Studio supplies the chat interface.
-
-Open **PocketCoder Lab**, choose **Onefin local**, open **Machines**, then open the ready machine's row menu and choose **Connect to agent**. Type messages in that native session. Connecting again opens the same saved conversation.
-
-Create a fresh machine with the configured local helper:
-
-```sh
-bun --no-env-file .pstdio/extension-storage/pocketcoder.pocketcoder/onefin/launch.ts
-```
-
-The helper gets a one-use bootstrap from the local backend, passes its task ID and tenant metadata through **Launch machine**, waits for readiness, and creates the native chat session. It prints the machine and session IDs. Its `config.json` holds the selected instance, template, backend container and dev user. Keep standing API keys out of launch input; controller credentials stay in the private host instance folder.
-
-This local template supports text chat. Its home and agent state use temporary memory storage. Machines expire after two hours, or after twenty idle minutes. This template has no checkpoints, so **Resume machine** explains that it is unavailable. Use the helper to create a fresh machine, or supply a new backend bootstrap and task metadata through **Relaunch machine**. The local backend's restricted controller key expires after twelve hours and needs renewal before creating or using later chats. The original Onefin deployment template is separate from this local variant.
 
 ## Data and credentials
 

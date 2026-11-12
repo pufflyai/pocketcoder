@@ -82,7 +82,12 @@ export function createSessionRecovery(deps: {
     const workspace = await store.getWorkspace(binding.workspaceId);
     if (candidate.session.reasonCode === "credentials_refused") return;
     if (candidate.session.reasonCode === "workspace_draining" && workspace && !workspace.terminalAt) return;
-    if (!ended(workspace) && candidate.queueCount && workspace?.templateDigest !== candidate.templateDigest) {
+    if (
+      candidate.templateDigest &&
+      !ended(workspace) &&
+      candidate.queueCount &&
+      workspace?.templateDigest !== candidate.templateDigest
+    ) {
       await store.managed.capacity.retire(candidate.id, now());
       return;
     }
@@ -103,8 +108,13 @@ export function createSessionRecovery(deps: {
   async function continuePlacement(candidate: Candidate, placement: NonNullable<Candidate["placement"]>) {
     let workspace = await store.getWorkspace(placement.workspaceId);
     if (!workspace) {
-      const template = (await store.listTemplates(null)).find((row) => row.digest === placement.templateDigest);
-      if (!template) throw new ApiError("template.not_found", "The session template is unavailable.");
+      const template = (await store.listTemplates(null)).find(
+        (row) => row.digest === placement.templateDigest && row.status !== "retired",
+      );
+      if (!template) {
+        await store.managed.capacity.cancelPlacement(candidate.id, placement.workspaceId, now());
+        return;
+      }
       const key = `managed-session:${candidate.id.sessionId}:${placement.generation}`;
       workspace = await launcher.create(
         await principalOf(candidate),
@@ -160,6 +170,14 @@ export function createSessionRecovery(deps: {
     if (intent) await continuePlacement(candidate, intent);
   }
 
+  async function advance(candidate: Candidate) {
+    if (candidate.closing) return stopClosed(candidate);
+    if (candidate.binding) return replace(candidate, candidate.binding);
+    if (candidate.placement) return continuePlacement(candidate, candidate.placement);
+    if (!candidate.templateDigest) return recovery.transition(candidate.id, "suspended", "template_unavailable");
+    return place(candidate);
+  }
+
   return {
     async tick() {
       for (const drain of await store.managed.capacity.drains()) {
@@ -172,9 +190,7 @@ export function createSessionRecovery(deps: {
       // Closes first: a join in this tick must not land on compute a close is about to stop.
       for (const candidate of [...candidates.filter((c) => c.closing), ...candidates.filter((c) => !c.closing)]) {
         try {
-          if (candidate.closing) await stopClosed(candidate);
-          else if (candidate.binding) await replace(candidate, candidate.binding);
-          else await place(candidate);
+          await advance(candidate);
         } catch (error) {
           // One session's refusal must not stop placement or recovery of the others.
           if (!(error instanceof ApiError)) throw error;
