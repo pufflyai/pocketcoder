@@ -17,7 +17,7 @@ import { Readiness } from "../observability/health";
 import { createStructuredLogger, type StructuredLogger } from "../observability/observability";
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
 import { createRegistryResolver } from "../secrets/registry-resolver";
-import { createSecretVault } from "../secrets/secret-vault";
+import { controllerVault } from "../secrets/secret-vault";
 import { builtTimerDeps, startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { inputStorageOptions } from "./input-storage-config";
@@ -90,9 +90,8 @@ async function loadDeclaredState(config: ServerConfig, store: Store, log: Server
 }
 
 function configuredRegistry(config: ServerConfig, store: Store) {
-  return config.secretKey
-    ? createRegistryResolver(createSecretVault(store, Buffer.from(config.secretKey, "base64url")))
-    : undefined;
+  const vault = controllerVault(store, config);
+  return vault ? createRegistryResolver(vault) : undefined;
 }
 
 export async function startPocketCoderServer(
@@ -142,6 +141,7 @@ export async function startPocketCoderServer(
       ...(secretResolver ? { secretResolver } : {}),
       pepper: config.pepper,
       ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+      ...(config.clusterLocalIssuers ? { clusterLocalIssuers: true } : {}),
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
       limits: config.limits,

@@ -23,8 +23,13 @@ async function enforceReferenceLimit(
     .update(leases)
     .set({ state: "expired", closedAt: input.at, updatedAt: input.at })
     .where(and(sameReference, lte(leases.issuerExpiresAt, input.at)));
-  const pending = await tx.select({ id: leases.id }).from(leases).where(sameReference);
-  if (pending.length >= 2) throw new Error("Workspace lease limit reached");
+  const pending = await tx.select({ authority: leases.managedAuthority }).from(leases).where(sameReference);
+  // Sessions sharing a workspace each keep a lease and its renewal on the same issuer.
+  const own = input.managedAuthority;
+  const counted = own
+    ? pending.filter(({ authority }) => authority?.sessionId === own.sessionId && authority.slot === own.slot)
+    : pending;
+  if (counted.length >= 2) throw new Error("Workspace lease limit reached");
 }
 
 function assertRequestIdentity(row: WorkspaceLeaseRow, input: WorkspaceLeaseRequest, templateDigest: string) {

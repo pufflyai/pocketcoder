@@ -4,7 +4,7 @@ import type {
   ManagedRecoveryStore,
   ManagedSessionIdentity,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, gt, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, gt, ne, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { sessionWriter } from "./observations";
 import { ownedWorkspaces } from "./session-workspaces";
@@ -53,7 +53,7 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
         const id = { principalId: row.principalId, sessionId: row.sessionId };
         candidates.push({
           closing: row.close !== null,
-          ownedWorkspaceIds: row.close ? await ownedWorkspaces(context, db, id, row.session, row.binding) : [],
+          ownedWorkspaceIds: row.close ? await ownedWorkspaces(context, db, id, row.binding) : [],
           openRequests: open.filter((r) => r.principalId === row.principalId && r.sessionId === row.sessionId).length,
           templateDigest:
             profiles.find((p) => p.profileId === row.session.profileId && p.revision === row.session.profileRevision)

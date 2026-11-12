@@ -163,3 +163,12 @@ test("local defaults need no supplied keys and callback uses the separate agent 
   expect(() => loadConfig({ POCKETCODER_HTTP: "127.0.0.1:8091" })).toThrow("different ports");
   expect(() => loadConfig({ POCKETCODER_AGENT_HTTP: "host:0" })).toThrow("port");
 });
+
+test.each([
+  { value: undefined, allowed: undefined },
+  { value: "false", allowed: undefined },
+  { value: "true", allowed: true },
+])("cluster-local plain HTTP issuers are allowed only by an explicit true ($value)", ({ value, allowed }) => {
+  const env = { POCKETCODER_AUTH_PEPPER: "test-pepper", POCKETCODER_CLUSTER_LOCAL_ISSUERS: value };
+  expect(loadConfig(env).clusterLocalIssuers).toBe(allowed);
+});

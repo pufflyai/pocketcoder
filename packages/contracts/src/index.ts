@@ -184,6 +184,7 @@ export {
   RestoreModeSchema,
   RestoreStatusPayload,
   RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
+  SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
   type ServerFrame,
   ServerFrameSchema,
   ServiceHealthPayload,

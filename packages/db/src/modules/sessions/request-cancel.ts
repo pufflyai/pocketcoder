@@ -4,7 +4,7 @@ import type {
   ManagedSessionIdentity,
   ManagedStopResult,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { lockStorageCapacity } from "../persistence/reservation-capacity";
 import { pendingWorkspaceLeases } from "../secrets/lease-fence";
@@ -125,6 +125,33 @@ async function stopRequest(
   return { cancel: current.managed?.cancel ?? cancel, execution };
 }
 
+// A slot held on compute the session never bound to had no process, so close releases it at once.
+async function releaseUnboundSlots(
+  context: DatabaseContext,
+  tx: Transaction,
+  id: ManagedSessionIdentity,
+  boundWorkspaceId: string | null,
+  at: Date,
+) {
+  const table = context.tables.managedCapacity;
+  const held = (await tx.select().from(table)).filter(
+    (row) =>
+      row.workspaceId !== boundWorkspaceId &&
+      row.record.sessions.some((s) => s.sessionId === id.sessionId && !s.stoppedAt),
+  );
+  for (const { workspaceId } of held) {
+    const [row] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId)).for("update");
+    if (!row) continue;
+    const sessions = row.record.sessions.map((s) =>
+      s.sessionId === id.sessionId ? { ...s, stoppedAt: s.stoppedAt ?? at.toISOString() } : s,
+    );
+    await tx
+      .update(table)
+      .set({ record: { ...row.record, sessions } })
+      .where(eq(table.workspaceId, workspaceId));
+  }
+}
+
 // Close completes once every request of the session is terminal and, for exclusive credentialed
 // compute, its workspace has ended with every credential revoked or expired.
 async function settleClose(context: DatabaseContext, tx: Transaction, id: ManagedSessionIdentity, at: Date) {
@@ -145,7 +172,8 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
     )
     .limit(1);
   if (open.length) return session.close;
-  const owned = await ownedWorkspaces(context, tx, id, session.session, session.binding);
+  await releaseUnboundSlots(context, tx, id, session.binding?.workspaceId ?? null, at);
+  const owned = await ownedWorkspaces(context, tx, id, session.binding);
   for (const workspaceId of owned) {
     const [workspace] = await tx.select().from(tables.workspaces).where(eq(tables.workspaces.id, workspaceId));
     const leases = await tx.select().from(tables.workspaceLeases).where(pendingWorkspaceLeases(tables, workspaceId));
@@ -160,6 +188,11 @@ async function settleClose(context: DatabaseContext, tx: Transaction, id: Manage
       .where(eq(tables.managedCapacity.workspaceId, shared.workspaceId));
     const participant = capacity?.record.sessions.find((s) => s.sessionId === id.sessionId);
     if (participant && !participant.stoppedAt) return session.close;
+    const leases = await tx
+      .select()
+      .from(tables.workspaceLeases)
+      .where(pendingWorkspaceLeases(tables, shared.workspaceId));
+    if (leases.some((lease) => lease.managedAuthority?.sessionId === id.sessionId)) return session.close;
   }
   const close = { ...session.close, completedAt: at.toISOString() };
   await tx.update(tables.managedSessions).set({ close }).where(writer.where(id));

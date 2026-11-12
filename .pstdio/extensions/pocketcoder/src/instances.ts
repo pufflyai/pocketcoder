@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { resolveExecutable } from "./executable";
 import { inputEnvironment, instanceLimits, requireTemplateCapacity } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
@@ -30,6 +31,15 @@ export class PocketCoderHttpError extends Error {
   }
 }
 
+// Managed sessions need explicit queue limits and stop deadlines; these are local test values.
+const MANAGED_SESSION_ENV = {
+  POCKETCODER_SESSION_QUEUE: JSON.stringify({ count: 8, bytes: 8 * 1024 * 1024 }),
+  POCKETCODER_SESSION_STOP_SECONDS: "60",
+};
+
+// The owner's SDK client, used for managed sessions that the controller places on machines itself.
+const ownerClient = (baseUrl: string, apiKey: string) => new PocketCoderClient({ baseUrl, apiKey });
+
 export const instancesFor = (projectId: string) =>
   createInstances(join(homedir(), ".local", "share", "pocketcoder-pstdio", projectId));
 
@@ -44,6 +54,7 @@ export function createInstances(root: string) {
     POCKETCODER_STORAGE_BACKEND: "filesystem",
     POCKETCODER_WORKSPACE_DATA_DIR: join(directory(instance.id), "workspaces"),
     POCKETCODER_CHECKPOINT_DIR: join(directory(instance.id), "checkpoints"),
+    ...MANAGED_SESSION_ENV,
     ...(instance.workloadLimits ? inputEnvironment(directory(instance.id), instance.workloadLimits) : {}),
   });
   const cli = async (instance: Instance, args: string[], extra: Record<string, string> = {}) => {
@@ -124,6 +135,8 @@ export function createInstances(root: string) {
     return response.json() as Promise<T>;
   };
   return {
+    client: async (id: string) =>
+      ownerClient((await read<Instance>(id, "instance.json")).url, await ownerKeys.token(id)),
     async bindSession(sessionId: string, instanceId: string, machineId: string, conversationId?: string) {
       directory(sessionId);
       directory(instanceId);

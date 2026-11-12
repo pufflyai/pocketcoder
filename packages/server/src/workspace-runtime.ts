@@ -5,14 +5,14 @@ import { composeCheckpointRuntime } from "./persistence/checkpoint-runtime";
 import { disposableSourceRuntime } from "./persistence/source-runtime";
 import { createIssuerClient } from "./secrets/issuer-client";
 import { createWorkspaceLeaseService } from "./secrets/lease-service";
-import { createSecretVault } from "./secrets/secret-vault";
+import { controllerVault } from "./secrets/secret-vault";
 
 export function workspaceSecretFactory(pepper: string) {
   return { generate: generateOpaqueSecret, digest: (secret: string) => digestOpaque(pepper, secret) };
 }
 
 export function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
-  const vault = deps.secretKey ? createSecretVault(deps.store, Buffer.from(deps.secretKey, "base64url")) : undefined;
+  const vault = controllerVault(deps.store, deps);
   const workspaceLeases = vault
     ? createWorkspaceLeaseService({
         store: deps.store,

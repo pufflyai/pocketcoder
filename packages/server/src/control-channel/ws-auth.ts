@@ -8,16 +8,19 @@ import {
   HEADER_REGISTRATION,
   HEADER_WORKSPACE,
   isTerminal,
+  managed,
   type ProtocolVersion,
   parseDurationMs,
   type RestoreMode,
   RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION,
   runtimeCredentialPath,
   runtimeCredentialReferences,
+  SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SOURCE_CREDENTIAL_MIN_PROTOCOL_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
   snapshotServices,
   TERMINAL_REPLAY_BUFFER_BYTES,
+  templateCredentialReferences,
   WAITING_RUNTIME_MIN_PROTOCOL_VERSION,
   waitingExecSpec,
 } from "@pstdio/pocketcoder-contracts";
@@ -92,6 +95,19 @@ async function authenticateRegistration(
   };
 }
 
+// Managed workspaces receive only per-session leases, which older supervisors cannot install. The
+// references are the ones session delivery issues: runtime policy references or workload slots.
+export function sessionCredentialsUnsupported(
+  row: Pick<WorkspaceRow, "metadata" | "templateSnapshot">,
+  protocolVersion: number,
+) {
+  return Boolean(
+    row.metadata?.[managed.MANAGED_SESSION_METADATA] &&
+      templateCredentialReferences(row.templateSnapshot).length &&
+      protocolVersion < SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
+  );
+}
+
 async function authenticateConnection(deps: WsDeps, credentials: WsCredentials): Promise<WsAuthResult> {
   if (!SUPPORTED_PROTOCOL_VERSIONS.includes(credentials.protocolVersion as ProtocolVersion)) {
     return { error: "Unsupported agent protocol version." };
@@ -106,6 +122,8 @@ async function authenticateConnection(deps: WsDeps, credentials: WsCredentials):
     credentials.protocolVersion < RUNTIME_CREDENTIAL_MIN_PROTOCOL_VERSION
   )
     return { error: "Runtime credentials require agent protocol version 9." };
+  if (row && sessionCredentialsUnsupported(row, credentials.protocolVersion))
+    return { error: "Session credentials require agent protocol version 15." };
   if (row && waitingProtocolRejected(row, credentials.protocolVersion))
     return { error: `Waiting runtime is ended or requires protocol version ${WAITING_RUNTIME_MIN_PROTOCOL_VERSION}.` };
   if (!row || row.purgeRequestedAt || isTerminal(row.state)) return { error: "Unknown workspace." };

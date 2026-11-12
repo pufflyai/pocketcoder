@@ -1,5 +1,13 @@
 # @pstdio/pocketcoder-cli
 
+## 0.14.0
+
+### Minor Changes
+
+- [#170](https://github.com/pufflyai/pocketcoder/pull/170) [`fa8d840`](https://github.com/pufflyai/pocketcoder/commit/fa8d8400ef7e390e75b9e04ba2548461b9913335) Thanks [@au-re](https://github.com/au-re)! - Accept a plain HTTP credential issuer on a `*.svc.cluster.local` host when the controller sets `POCKETCODER_CLUSTER_LOCAL_ISSUERS=true`.
+
+- [#168](https://github.com/pufflyai/pocketcoder/pull/168) [`9b75a30`](https://github.com/pufflyai/pocketcoder/commit/9b75a30a7afbab571a4bbc52ec3f773682e51732) Thanks [@au-re](https://github.com/au-re)! - Run credentialed sessions of one profile in one workspace when the profile sets `credentialPlacement: "shared"`, with leases issued, renewed and revoked per session.
+
 ## 0.13.0
 
 ### Minor Changes

@@ -1,5 +1,5 @@
 import { ApiError, managed, type WorkspaceCreateRequest } from "@pstdio/pocketcoder-contracts";
-import type { PrincipalRow, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
+import type { ManagedSessionIdentity, PrincipalRow, Store, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 
 type Candidate = Awaited<ReturnType<Store["managed"]["recovery"]["candidates"]>>[number];
 
@@ -26,9 +26,17 @@ const ended = (workspace: WorkspaceRow | null) =>
 // session row, so a crash between steps resumes from the recorded placement on the next tick.
 // Accepted requests keep their logical identities; only proved never-started work is dispatched
 // again, through the existing dispatcher and its binding-revision checks.
+// Installs a bound session's own leases on its workspace and revokes them when it leaves shared compute.
+export interface SessionCredentialOwner {
+  // True once the session's workspace confirmed every credential it needs.
+  deliver(identity: ManagedSessionIdentity, workspaceId: string, generation: number): Promise<boolean>;
+  revoke(workspaceId: string, sessionId: string): Promise<void>;
+}
+
 export function createSessionRecovery(deps: {
   store: Store;
   launcher: PlacementLauncher;
+  credentials?: SessionCredentialOwner;
   now?: () => Date;
   onError?: (error: unknown) => void;
 }) {
@@ -42,9 +50,27 @@ export function createSessionRecovery(deps: {
     return principal;
   }
 
+  async function credentialsInstalled(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
+    if (!deps.credentials) return true;
+    try {
+      return await deps.credentials.deliver(candidate.id, binding.workspaceId, binding.generation);
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      deps.onError?.(error);
+      return false;
+    }
+  }
+
   async function replace(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
     const workspace = await store.getWorkspace(binding.workspaceId);
     if (live(workspace, binding.incarnationId)) {
+      // A credentialed session is ready, and its requests dispatch, only while its workspace has
+      // confirmed its credentials; losing them sends it back to provisioning until they return.
+      if (!(await credentialsInstalled(candidate, binding))) {
+        if (candidate.session.state === "ready")
+          await recovery.transition(candidate.id, "provisioning", "credentials_pending");
+        return;
+      }
       if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
       return;
     }
@@ -92,6 +118,7 @@ export function createSessionRecovery(deps: {
     }
     const binding = candidate.binding;
     if (!binding || candidate.ownedWorkspaceIds.includes(binding.workspaceId) || candidate.openRequests) return;
+    await deps.credentials?.revoke(binding.workspaceId, candidate.id.sessionId);
     const identity = { ...candidate.id, workspaceId: binding.workspaceId, generation: binding.generation };
     await store.managed.capacity.processStopped(identity, binding.incarnationId, now());
   }
@@ -104,6 +131,17 @@ export function createSessionRecovery(deps: {
     if (!template) throw new ApiError("template.not_found", "The pinned template is unavailable.");
     if (candidate.session.state === "failed") await recovery.transition(candidate.id, "provisioning", null);
     const generation = candidate.lastGeneration + 1;
+    // Capacity first: a crash before the intent is recorded finds the same held workspace again.
+    const shared = await store.managed.capacity.joinable(candidate.id);
+    if (shared) {
+      await store.managed.capacity.place({ ...candidate.id, workspaceId: shared, generation });
+      await recovery.recordPlacement(candidate.id, {
+        workspaceId: shared,
+        generation,
+        requestedAt: now().toISOString(),
+      });
+      return;
+    }
     // The same key after a crash returns the same workspace instead of launching another.
     const key = `managed-session:${candidate.id.sessionId}:${generation}`;
     const workspace = await launcher.create(
@@ -125,7 +163,9 @@ export function createSessionRecovery(deps: {
 
   return {
     async tick() {
-      for (const candidate of await recovery.candidates()) {
+      const candidates = await recovery.candidates();
+      // Closes first: a join in this tick must not land on compute a close is about to stop.
+      for (const candidate of [...candidates.filter((c) => c.closing), ...candidates.filter((c) => !c.closing)]) {
         try {
           if (candidate.closing) await stopClosed(candidate);
           else if (candidate.binding) await replace(candidate, candidate.binding);

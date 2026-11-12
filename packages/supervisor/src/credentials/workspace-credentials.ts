@@ -4,9 +4,10 @@ import { basename, dirname } from "node:path";
 import type { AgentFrame, ServerFrame, WorkspaceCredential } from "@pstdio/pocketcoder-contracts";
 import { openLeaseDirectory } from "./lease-directory";
 
-type CredentialMessage =
-  | Pick<Extract<AgentFrame, { type: "credential_renew" }>, "type" | "payload">
-  | Pick<Extract<AgentFrame, { type: "credential_installed" }>, "type" | "payload">;
+type CredentialMessage = Pick<
+  Extract<AgentFrame, { type: "credential_renew" | "credential_installed" | "credential_install_ack" }>,
+  "type" | "payload"
+>;
 type Renewed = Extract<ServerFrame, { type: "credential_renewed" }>["payload"];
 type Confirmation = Extract<AgentFrame, { type: "credential_installed" }>["payload"];
 type Installed = { value: WorkspaceCredential; renewAt: number; requestId: string | null; retryAt: number };
@@ -78,6 +79,19 @@ export class WorkspaceCredentials {
     this.schedule();
   }
 
+  // A session's leases from the controller; the acknowledgement lets it mark the session ready.
+  async installSession(values: WorkspaceCredential[]) {
+    await this.install(values);
+    this.callbacks.send({ type: "credential_install_ack", payload: { lease_ids: values.map((v) => v.lease_id) } });
+  }
+
+  removeSession(sessionId: string) {
+    return this.serialize(async () => {
+      this.drop(sessionId);
+      this.schedule();
+    });
+  }
+
   completeSetup() {
     return this.serialize(async () => {
       this.setupMemoryExpiry = null;
@@ -99,6 +113,29 @@ export class WorkspaceCredentials {
     this.directories.clear();
     this.files.clear();
     this.confirmations.clear();
+  }
+
+  // Shared compute keeps running when one session ends or its lease expires; only its leases go.
+  private drop(sessionId: string) {
+    for (const [path, { value }] of [...this.files]) if (value.session_id === sessionId) this.forget(path);
+  }
+
+  // An expired session lease goes alone; the session's other leases stay and the controller replaces it.
+  private dropExpiredSessions(now: number) {
+    for (const [path, { value }] of [...this.files])
+      if (value.session_id && Date.parse(value.expires_at) <= now) this.forget(path);
+  }
+
+  // Removes one lease file, and closes its folder once no lease of that folder is left.
+  private forget(path: string) {
+    const folder = dirname(path);
+    const lease = this.files.get(path)?.value;
+    this.directories.get(folder)?.remove(basename(path));
+    this.files.delete(path);
+    if (lease) this.confirmations.delete(lease.lease_id);
+    if ([...this.files.keys()].some((other) => dirname(other) === folder)) return;
+    this.directories.get(folder)?.close();
+    this.directories.delete(folder);
   }
 
   private serialize(work: () => Promise<void>) {
@@ -140,6 +177,7 @@ export class WorkspaceCredentials {
       }
       next = Math.min(next, this.setupMemoryExpiry);
     }
+    this.dropExpiredSessions(now);
     for (const row of this.files.values()) {
       const expiry = Date.parse(row.value.expires_at);
       if (expiry <= now) {

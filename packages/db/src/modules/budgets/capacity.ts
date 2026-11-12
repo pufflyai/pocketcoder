@@ -5,6 +5,7 @@ import type { DatabaseContext, Transaction } from "../../database/context";
 import { unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
 import { requireCapacityLaunch } from "./capacity-admission";
+import { joinableWorkspace } from "./capacity-join";
 import { placeManagedCapacity } from "./capacity-placement";
 import { lockScopes } from "./scope-locks";
 
@@ -70,6 +71,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
     });
   }
   return {
+    joinable: (identity) => joinableWorkspace(context, identity),
     releaseUnlaunched,
     async reconcile(at) {
       const rows = await db.select().from(table);

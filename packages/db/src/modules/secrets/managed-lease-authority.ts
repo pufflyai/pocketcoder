@@ -32,7 +32,12 @@ export async function managedLeaseActive(
     .from(profiles)
     .where(and(eq(profiles.profileId, authority.profileId), eq(profiles.revision, authority.profileRevision)));
   const [registered] = await tx.select().from(credentials).where(eq(credentials.bindingId, authority.bindingId));
-  if (!principal || principal.disabledAt || !session || !profile || !registered || occupants.length !== 1) return false;
+  if (!principal || principal.disabledAt || !session || !profile || !registered) return false;
+  // Shared placement admits only sessions of this same profile, so every occupant holds equal authority.
+  const sharing = occupants.some(
+    (s) => s.session.profileId !== authority.profileId || s.session.profileRevision !== authority.profileRevision,
+  );
+  if (sharing || (occupants.length > 1 && profile.profile.credentialPlacement !== "shared")) return false;
   const binding = registered.binding;
   return (
     !["closed", "failed"].includes(session.session.state) &&
