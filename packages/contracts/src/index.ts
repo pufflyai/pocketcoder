@@ -290,6 +290,7 @@ export * from "./workspaces/execution-envelope";
 export * from "./workspaces/execution-runtime";
 export * from "./workspaces/finite-process";
 export * from "./workspaces/lifetime";
+export * from "./workspaces/native-publication";
 export * from "./workspaces/producer-observation";
 export * from "./workspaces/service-control";
 export * from "./workspaces/workload-operation";

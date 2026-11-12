@@ -1,4 +1,5 @@
 import { prepareStorage } from "./bootstrap/prepare-storage";
+import { publishFileCommand } from "./sessions/publication-command";
 import { serveSessions } from "./sessions/serve";
 import { supervise } from "./supervisor";
 
@@ -14,8 +15,8 @@ function usage(): never {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  if (command === "session" && rest[0] === "serve") {
-    serveSessions(rest.slice(1));
+  if (command === "session") {
+    await sessionCommand(rest);
     return;
   }
   if (command === "service") {
@@ -47,6 +48,12 @@ async function main(): Promise<void> {
   }
   const code = await supervise(inputPath);
   process.exit(code);
+}
+
+async function sessionCommand([action, ...args]: string[]) {
+  if (action === "publish-file") return publishFileCommand(args);
+  if (action !== "serve") usage();
+  serveSessions(args);
 }
 
 if (import.meta.main) {

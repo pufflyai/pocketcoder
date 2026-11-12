@@ -7,6 +7,7 @@ import {
   executionAckEnvelope,
   executionCancelEnvelope,
   executionLookupEnvelope,
+  executionPublicationPolicy,
   WORKLOAD_OPERATION_CAPABILITIES,
   type WorkloadAcceptance,
   type WorkloadInputProperty,
@@ -51,8 +52,7 @@ export function validateExecution(
   )
     executionConflict("Installed operation adapter does not match acceptance.");
   validateOwner(input, adapter.kind, adapter.protocol, runtime.profile);
-  if (input.execution.owner === "conversation-request")
-    validateServiceRoutes(spec.services, declared.service, input, identity);
+  if (input.execution.owner === "conversation-request") validateServiceRoutes(spec, declared.service, input, identity);
   validateCapabilities(
     runtime.profile,
     operation.requiredCapabilities,
@@ -76,14 +76,14 @@ export function validateExecution(
 }
 
 function validateServiceRoutes(
-  services: WorkloadTemplate["spec"]["services"],
+  spec: WorkloadTemplate["spec"],
   name: string | undefined,
   input: WorkloadAcceptance,
   identity: ConversationRequestIdentity | null,
 ) {
-  const routes = services[name ?? ""]?.routes ?? [];
+  const routes = spec.services[name ?? ""]?.routes ?? [];
   const envelopes = {
-    accept: executionAcceptEnvelope(input, identity),
+    accept: executionAcceptEnvelope(input, identity, undefined, executionPublicationPolicy(spec, input.operation)),
     lookup: executionLookupEnvelope(input.execution),
     ack: executionAckEnvelope(input),
     // Cancel identities are UUIDs, so the accepted request ID has the same encoded size.

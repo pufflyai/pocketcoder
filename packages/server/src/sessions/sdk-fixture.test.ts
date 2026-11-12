@@ -9,10 +9,11 @@ import { FakeDriver } from "@pstdio/pocketcoder-testkit";
 import { buildServer } from "../app";
 import { registerServerTestCleanup } from "../testing/test-server-cleanup";
 import type { managedFixture } from "./managed-fixture.test";
+import { sessionStorageCapacity } from "./storage-fixture.test";
 
 // The real HTTP app over the managed fixture's store, reached by the real SDK. The fixture's own
 // dispatcher runs work on its producer; this server only serves the public API.
-export async function sdkClient(m: Awaited<ReturnType<typeof managedFixture>>, options: { stopSeconds?: number } = {}) {
+export async function sdkClient(m: Awaited<ReturnType<typeof managedFixture>>) {
   const key = issueMachineKey("test-pepper");
   await m.f.store.insertMachineKey({
     id: key.id,
@@ -43,12 +44,7 @@ export async function sdkClient(m: Awaited<ReturnType<typeof managedFixture>>, o
         transferMs: 1000,
         retentionMs: 600000,
       },
-      capacity: async () => ({
-        workspace: { bytes: 8388608, files: 16 },
-        principal: { bytes: 16777216, files: 32 },
-        instance: { bytes: 33554432, files: 64 },
-        freeDisk: { bytes: 67108864, files: 128, headroomBytes: 0, headroomFiles: 0 },
-      }),
+      capacity: async () => sessionStorageCapacity(),
     },
   });
   registerServerTestCleanup(m.f.store, server);
@@ -56,6 +52,7 @@ export async function sdkClient(m: Awaited<ReturnType<typeof managedFixture>>, o
     server.app.request(input instanceof Request ? input : input.toString(), init)) as typeof fetch;
   return {
     server,
+    keyId: key.id,
     client: new PocketCoderClient({ baseUrl: "http://127.0.0.1:8090", apiKey: key.token, fetch: fetchApp }),
   };
 }

@@ -1,5 +1,6 @@
 import type { ConversationRequestIdentity } from "../conversations/identity";
 import { executionInputManifestId } from "./execution-dispatch";
+import type { NativePublicationPolicy } from "./native-publication";
 import type { WorkloadAcceptance } from "./workload-operation";
 
 export const INPUT_PROJECTION_TARGET = "/run/pocketcoder/inputs";
@@ -12,12 +13,18 @@ export function executionAcceptEnvelope(
   acceptance: WorkloadAcceptance,
   conversationIdentity: ConversationRequestIdentity | null,
   inputDirectory?: string,
+  publicationPolicy?: NativePublicationPolicy,
 ) {
   // Publishers use this fixed workload path, so admission can size it before pinning files.
   const directory =
     inputDirectory ??
     (acceptance.inputs.objects.length ? inputProjectionDirectory(executionInputManifestId(acceptance)) : undefined);
-  return { acceptance, conversationIdentity, ...(directory ? { inputDirectory: directory } : {}) };
+  return {
+    acceptance,
+    conversationIdentity,
+    ...(directory ? { inputDirectory: directory } : {}),
+    ...(publicationPolicy ? { publicationPolicy } : {}),
+  };
 }
 
 export function executionLookupEnvelope(execution: WorkloadAcceptance["execution"]) {

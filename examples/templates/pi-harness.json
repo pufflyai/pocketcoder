@@ -35,8 +35,8 @@
           "required": ["message"],
           "additionalProperties": false
         },
-        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel"],
-        "outputRoots": []
+        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel", "explicit-publication"],
+        "outputRoots": ["/workspace"]
       }
     },
     "services": {

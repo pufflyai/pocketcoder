@@ -30,7 +30,7 @@ const descriptor = {
     artifact: runtime,
     command: ["/usr/local/bin/bun", runtime, "supervise", "--launch-input", "/run/pocketcoder/input"],
     entrypoint: ["/usr/local/bin/docker-entrypoint.sh"],
-    capabilities: ["workspace-services"],
+    capabilities: ["workspace-services", ...(mode === "pi" ? ["explicit-publication"] : [])],
   },
   checkpoint: {
     artifact: "/opt/pocketcoder/quiesce.ts",
@@ -56,7 +56,7 @@ const descriptor = {
         "unknown-outcome",
         "parallel-conversations",
         "immutable-inputs",
-        ...(mode === "pi" ? ["history-seed"] : []),
+        ...(mode === "pi" ? ["history-seed", "explicit-publication"] : []),
       ],
       environment: [
         "POCKETCODER_SESSION_DIRECTORY",
