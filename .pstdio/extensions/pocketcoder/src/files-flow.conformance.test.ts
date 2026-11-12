@@ -50,7 +50,7 @@ test("a real local agent reads exact uploads, survives a lost reply, follows up 
     const instance = await instances.launch({
       name: "File flow",
       binary: join(repo, "out/native/pocketcoder"),
-      manifest,
+      manifests: [manifest],
     });
     instanceId = instance.id;
     operation.params = { instance: instance.id, template: "file-agent", templateVersion: "1.0.0" };

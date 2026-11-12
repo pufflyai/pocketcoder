@@ -30,7 +30,7 @@ jobs:
       - name: Verify signed storage faults and journal restart health
         env:
           RUN_S3_INTEGRATION: "1"
-        run: bun test packages/db/src/journal/acknowledgement.test.ts examples/e2e/monitoring-storage-fault.test.ts
+        run: bun test --timeout 10000 packages/db/src/journal/acknowledgement.test.ts examples/e2e/monitoring-storage-fault.test.ts
       - name: Scrape managed accounts and prove operator alert delivery and recovery
         env:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}

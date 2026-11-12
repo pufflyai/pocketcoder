@@ -69,7 +69,7 @@ test.each([
       const instance = await instances.launch({
         name: "local",
         binary: join(repo, "out/native/pocketcoder"),
-        manifest,
+        manifests: [manifest],
       });
       instanceId = instance.id;
       const workspaceId = randomUUID();

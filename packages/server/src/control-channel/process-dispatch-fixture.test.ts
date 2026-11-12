@@ -40,6 +40,9 @@ export async function processDispatchFixture(
   );
   root = f.directory ?? "";
   const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));
+  await prepareFixtureSupervisor(serviceDirectory, async () => {
+    if (!shared) await f.dispose();
+  });
   const hub = shared?.hub ?? new Hub();
   const liveTurns = new LiveTurns(f.store);
   const transport = executionTransport(
@@ -85,6 +88,7 @@ export async function processDispatchFixture(
   let runtimeReady = false;
   let epoch = 1;
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;
@@ -164,25 +168,42 @@ export async function processDispatchFixture(
       launch_mode: "create",
     }),
   );
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      resolve(import.meta.dir, "../../../supervisor/src/index.ts"),
-      "supervise",
-      "--launch-input",
-      input,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
+  const { child, stderr, stdout } = supervisorChild(serviceDirectory, input);
   const waitFor = async (predicate: () => Promise<boolean>) => {
     const deadline = Date.now() + 4000;
     while (!(await predicate())) {
-      if (Date.now() > deadline) throw new Error("Process dispatch did not settle");
+      if (Date.now() > deadline) {
+        child.kill("SIGKILL");
+        await child.exited;
+        throw new Error(`Process dispatch did not settle: ${await stderr} ${await stdout}`);
+      }
       await Bun.sleep(10);
     }
     await pipeline;
   };
-  await waitFor(async () => runtimeReady);
+  const dispose = async () => {
+    const cleanups = [
+      () => dispatcher.stop(),
+      async () => {
+        child.kill("SIGKILL");
+        await child.exited;
+        await Promise.all([stderr, stdout]);
+      },
+      () => pipeline,
+      () => server.stop(true),
+      () => rm(serviceDirectory, { recursive: true, force: true }),
+      async () => {
+        if (!shared) await f.dispose();
+      },
+    ];
+    await runFixtureCleanups(cleanups);
+  };
+  try {
+    await waitFor(async () => runtimeReady);
+  } catch (error) {
+    await dispose().catch((cleanupError) => console.error("Fixture cleanup failed", cleanupError));
+    throw error;
+  }
   return {
     ...f,
     hub,
@@ -223,14 +244,46 @@ export async function processDispatchFixture(
     disconnect() {
       hub.get(f.id)?.ws.close();
     },
-    async dispose() {
-      await dispatcher.stop();
-      child.kill("SIGKILL");
-      await child.exited;
-      await pipeline;
-      await server.stop(true);
-      await rm(serviceDirectory, { recursive: true, force: true });
-      if (!shared) await f.dispose();
-    },
+    dispose,
   };
+}
+
+async function prepareFixtureSupervisor(directory: string, closeStore: () => Promise<void>) {
+  // Match the shipped bundle without parsing the source tree for every child.
+  try {
+    const built = await Bun.build({
+      entrypoints: [resolve(import.meta.dir, "../../../supervisor/src/index.ts")],
+      target: "bun",
+      outdir: directory,
+    });
+    if (!built.success) throw new Error(built.logs.map(String).join("\n"));
+  } catch (error) {
+    const cleanup = await Promise.allSettled([rm(directory, { recursive: true, force: true }), closeStore()]);
+    for (const result of cleanup)
+      if (result.status === "rejected") console.error("Fixture cleanup failed", result.reason);
+    throw error;
+  }
+}
+
+function supervisorChild(directory: string, input: string) {
+  const child = Bun.spawn([process.execPath, join(directory, "index.js"), "supervise", "--launch-input", input], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  // A full output pipe must not prevent the real child from reaching readiness.
+  const stderr = new Response(child.stderr).text();
+  const stdout = new Response(child.stdout).text();
+  return { child, stderr, stdout };
+}
+
+async function runFixtureCleanups(cleanups: (() => unknown | Promise<unknown>)[]) {
+  const errors: unknown[] = [];
+  for (const cleanup of cleanups) {
+    try {
+      await cleanup();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "Process fixture cleanup failed");
 }

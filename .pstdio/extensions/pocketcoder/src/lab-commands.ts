@@ -28,7 +28,7 @@ export function createLabCommands(getInstances = instancesFor) {
         try {
           [machines, templates] = await Promise.all([
             controller.items<ControllerMachine>(selected.id, "/v1/workspaces"),
-            controller.items<LabTemplate>(selected.id, "/v1/templates"),
+            controller.publishedTemplates(selected.id),
           ]);
         } catch (reason) {
           error = String(reason);
@@ -46,8 +46,6 @@ export function createLabCommands(getInstances = instancesFor) {
             name: machine.external_id,
             state: machine.state,
             template: `${machine.template.name}@${machine.template.version}`,
-            connection:
-              machine.metadata["pstdio.connection"] === "relay" ? "Prompt Studio relay" : "PocketCoder session",
             error: machine.failure?.log_tail ?? machine.reason_code ?? "",
           })),
       };

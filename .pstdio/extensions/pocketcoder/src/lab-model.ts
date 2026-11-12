@@ -3,7 +3,6 @@ export interface LabMachine {
   name: string;
   template: string;
   state: string;
-  connection: string;
   error: string;
 }
 export interface LabTemplate {

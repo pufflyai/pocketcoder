@@ -1,14 +1,11 @@
-import { type CommandContext, defineCommand, params } from "@pstdio/sdk/extensions";
-import { resolveExecutable } from "./executable";
-import { catalogChoices, launchInstance } from "./instance-commands";
+import { defineCommand, params } from "@pstdio/sdk/extensions";
+import { catalogChoices, launchInstance, publishTemplate, startInstance, stopInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
 import { connectMachine, deleteMachine, launchMachine } from "./machine-commands";
-import type { Machine } from "./machines";
-
 import { changed } from "./resources";
-import { deleteTemplate, saveTemplate } from "./template-commands";
+import { deleteTemplates, saveTemplate } from "./template-commands";
 
 export const instanceChoices = defineCommand({
   id: "instances.choices",
@@ -25,12 +22,6 @@ const instanceParam = params.select({
   required: true,
   options: { command: instanceChoices.ref, valueField: "value", labelField: "label" },
 });
-const instanceIdParam = params.text({ label: "Instance ID", resolvedFrom: "resource" });
-const resourceId = (ctx: CommandContext, id: string | undefined, type: string) => {
-  if (id) return id;
-  if (ctx.resource?.type === type) return ctx.resource.id;
-  throw new Error(`Choose a PocketCoder ${type}.`);
-};
 
 export const templateChoices = defineCommand({
   id: "templates.choices",
@@ -48,50 +39,6 @@ export const templateChoices = defineCommand({
   },
 });
 
-export const startInstance = defineCommand({
-  id: "instances.start",
-  title: "Start instance",
-  cli: true,
-  mutating: true,
-  params: { instanceId: instanceIdParam },
-  async run(ctx, input) {
-    const instances = instancesFor(ctx.projectId);
-    const id = resourceId(ctx, input.instanceId, "instance");
-    const saved = await instances.get(id);
-    const workspace = await ctx.workspaces.getDefault();
-    const binary = await resolveExecutable({
-      binary: saved.binary,
-      projectRoot: workspace?.rootPath ?? workspace?.root_path ?? undefined,
-    });
-    const instance = await instances.start(id, binary);
-    await ctx.events.emit(changed, {});
-    return instance;
-  },
-});
-export const stopInstance = defineCommand({
-  id: "instances.stop",
-  title: "Stop PocketCoder instance",
-  cli: true,
-  mutating: true,
-  params: { instanceId: instanceIdParam },
-  async run(ctx, input) {
-    const instances = instancesFor(ctx.projectId);
-    const instanceId = resourceId(ctx, input.instanceId, "instance");
-    const instance = await instances.get(instanceId);
-    if (instance.state === "running") {
-      const machines = await instances.items<Machine>(instanceId, "/v1/workspaces");
-      if (
-        machines.some((machine) =>
-          ["queued", "provisioning", "connected", "ready", "preserving", "terminating"].includes(machine.state),
-        )
-      )
-        throw new Error("Delete or cancel this instance's active machines before stopping it.");
-      await instances.stop(instanceId);
-    }
-    await ctx.events.emit(changed, {});
-    return { instanceId, state: "stopped" };
-  },
-});
 export const importTemplates = defineCommand({
   id: "templates.import",
   title: "Import agent templates",
@@ -118,7 +65,7 @@ export const refresh = defineCommand({
 export const commands = [
   ...Object.values(labCommands),
   saveTemplate,
-  deleteTemplate,
+  deleteTemplates,
   catalogChoices,
   instanceChoices,
   templateChoices,
@@ -127,6 +74,7 @@ export const commands = [
   stopInstance,
   removeInstance,
   importTemplates,
+  publishTemplate,
   launchMachine,
   connectMachine,
   deleteMachine,

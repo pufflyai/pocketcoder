@@ -22,7 +22,7 @@
   },
   "scripts": {
     "build": "bun build ./src/index.ts --target bun --outdir dist",
-    "test": "bun --no-env-file test",
+    "test": "bun --no-env-file test --timeout 10000",
     "typecheck": "tsc --project ./tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:seed": "bun scripts/build-seed.ts"

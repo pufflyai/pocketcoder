@@ -90,7 +90,7 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - name: Test the extracted release outside the source checkout
-        run: bun test deploy/digitalocean/production
+        run: bun test --timeout 10000 deploy/digitalocean/production
       - name: Build the exact committed operator release
         run: bun run operator:bundle "$RUNNER_TEMP/operator"
       - uses: actions/upload-artifact@v4

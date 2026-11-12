@@ -9,3 +9,17 @@ export const instanceTarget = (projectId: string, instance: Pick<Instance, "id" 
   page: instancePageRef,
   resource: { type: "instance", extensionId: owner, projectId, id: instance.id, label: instance.name, icon: "server" },
 });
+export const catalogPageRef = qualifyRef(owner, { kind: "page", id: "catalog" });
+export const templatePageRef = qualifyRef(owner, { kind: "page", id: "template" });
+export const templateTarget = (projectId: string, path: string) => ({
+  kind: "page" as const,
+  page: templatePageRef,
+  resource: {
+    type: "template",
+    extensionId: owner,
+    projectId,
+    id: path,
+    label: path.split("/").pop() ?? path,
+    icon: "package",
+  },
+});

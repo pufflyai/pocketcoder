@@ -26,7 +26,7 @@ test("invalid current template limits fail before creating or starting an instan
         const source = structuredClone(manifest);
         source.spec.limits[key] = value;
         await expect(
-          instances.launch({ name: "invalid", binary: "/missing-binary", manifest: source }),
+          instances.launch({ name: "invalid", binary: "/missing-binary", manifests: [source] }),
         ).rejects.toThrow(`Template limits.${key}`);
         expect(await readdir(root)).toEqual([]);
       }
@@ -59,6 +59,48 @@ test("starts isolated 1.0 instances with private, expiring owner keys and restar
   } finally {
     for (const id of await readdir(root)) await instances.stop(id);
     await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("an instance publishes every chosen template, sized for the largest, and accepts more later", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pocketcoder-many-templates-"));
+  const imports = await mkdtemp(join(tmpdir(), "pocketcoder-template-import-"));
+  const instances = createInstances(root);
+  const manifest = await Bun.file(
+    resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json"),
+  ).json();
+  const named = (name: string, inputFiles: number) => {
+    const copy = structuredClone(manifest);
+    copy.metadata.name = name;
+    copy.spec.limits.inputFiles = inputFiles;
+    copy.spec.network = { mode: "unrestricted" };
+    return copy;
+  };
+  try {
+    const instance = await instances.launch({ name: "Many", binary, manifests: [named("a", 3), named("b", 7)] });
+    expect(instance.workloadLimits?.inputFiles).toBe(7);
+    await instances.publish(instance.id, named("c", 1));
+    for (const key of ["inputFiles", "stagedInputBytes", "inputFileBytes", "inFlightTransfers"]) {
+      const oversized = named(`too-large-${key.toLowerCase()}`, 1);
+      oversized.spec.limits[key] = (instance.workloadLimits?.[key] ?? 0) + 1;
+      await expect(instances.publish(instance.id, oversized)).rejects.toThrow("Launch a new instance");
+    }
+    await writeFile(join(imports, "a-fit.json"), JSON.stringify(named("from-directory-a", 1)));
+    await writeFile(join(imports, "z-oversized.json"), JSON.stringify(named("from-directory-z", 8)));
+    await expect(instances.importTemplates(instance.id, imports)).rejects.toThrow("Launch a new instance");
+    expect((await instances.publishedTemplates(instance.id)).map((template) => template.name).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    await rm(join(imports, "z-oversized.json"));
+    await instances.importTemplates(instance.id, imports);
+    const templates = await instances.items<{ name: string }>(instance.id, "/v1/templates");
+    expect(templates.map((template) => template.name).sort()).toEqual(["a", "b", "c", "from-directory-a"]);
+  } finally {
+    for (const id of await readdir(root)) await instances.stop(id);
+    await rm(root, { recursive: true, force: true });
+    await rm(imports, { recursive: true, force: true });
   }
 }, 30_000);
 
@@ -123,3 +165,27 @@ test("reconnecting the same machine retains its conversation seed", async () => 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("directory templates size the instance before its first start", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-directory-instance-"));
+  const templates = await mkdtemp(join(tmpdir(), "pc-directory-templates-"));
+  const instances = createInstances(root);
+  try {
+    const manifest = await Bun.file(
+      resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json"),
+    ).json();
+    manifest.metadata.name = "from-directory";
+    manifest.spec.limits.inputFiles = 13;
+    manifest.spec.network = { mode: "unrestricted" };
+    await writeFile(join(templates, "agent.json"), JSON.stringify(manifest));
+    const instance = await instances.launch({ name: "Directory launch", binary, templates });
+    expect(instance.workloadLimits?.inputFiles).toBe(13);
+    expect((await instances.publishedTemplates(instance.id)).map((template) => template.name)).toEqual([
+      "from-directory",
+    ]);
+  } finally {
+    for (const id of await readdir(root)) await instances.stop(id);
+    await rm(root, { recursive: true, force: true });
+    await rm(templates, { recursive: true, force: true });
+  }
+}, 30_000);

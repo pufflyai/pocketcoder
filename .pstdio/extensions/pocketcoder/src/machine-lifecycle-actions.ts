@@ -14,7 +14,7 @@ const inputParams = {
   }),
   metadata: params.longText({
     label: "New application metadata (JSON, optional)",
-    description: "Supply new metadata and relay device/workspace IDs. Old values are not copied.",
+    description: "Relay templates need new pstdio.device_id and pstdio.workspace_id here. Old values are not copied.",
   }),
 };
 const sourceTarget = (id: string) => machineTarget({ resource: { type: "machine", id } });

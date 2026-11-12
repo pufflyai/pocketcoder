@@ -4,9 +4,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { resolveExecutable } from "./executable";
-import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
+import { inputEnvironment, instanceLimits, requireTemplateCapacity } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 import { createOwnerKeys, type OwnerKey } from "./owner-keys";
+import { snapshotTemplateDirectory, snapshotTemplateImport } from "./template-import";
 
 export interface Instance {
   id: string;
@@ -43,30 +44,8 @@ export const instancesFor = (projectId: string) =>
   createInstances(join(homedir(), ".local", "share", "pocketcoder-pstdio", projectId));
 
 export function createInstances(root: string) {
-  const directory = (id: string) => {
-    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
-    return join(root, id);
-  };
-  const read = async <T>(id: string, file: string) =>
-    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
-  const write = async (id: string, file: string, value: unknown) => {
-    const path = join(directory(id), file);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
-    await rename(temporary, path);
-  };
-  const environment = (instance: Instance) => ({
-    POCKETCODER_DIR: join(directory(instance.id), "data"),
-    POCKETCODER_STATE_DIR: join(directory(instance.id), "state"),
-    POCKETCODER_HTTP: new URL(instance.url).host,
-    POCKETCODER_AGENT_HTTP: `0.0.0.0:${instance.agentPort}`,
-    POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${instance.agentPort}`,
-    POCKETCODER_STORAGE_BACKEND: "filesystem",
-    POCKETCODER_WORKSPACE_DATA_DIR: join(directory(instance.id), "workspaces"),
-    POCKETCODER_CHECKPOINT_DIR: join(directory(instance.id), "checkpoints"),
-    ...MANAGED_SESSION_ENV,
-    ...(instance.workloadLimits ? inputEnvironment(directory(instance.id), instance.workloadLimits) : {}),
-  });
+  const { directory, read, write } = instanceFiles(root);
+  const environment = (instance: Instance) => instanceEnvironment(instance, directory(instance.id));
   const cli = async (instance: Instance, args: string[], extra: Record<string, string> = {}) => {
     const result = await runCli(instance.binary, directory(instance.id), { ...environment(instance), ...extra }, args);
     if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `PocketCoder ${args[0]} failed.`);
@@ -216,57 +195,107 @@ export function createInstances(root: string) {
       binary?: string;
       projectRoot?: string;
       templates?: string;
-      manifest?: unknown;
+      manifests?: unknown[];
     }) {
-      const manifest = input.manifest as
-        | { apiVersion?: string; spec?: { limits?: Record<string, number> } }
-        | undefined;
-      const workloadLimits =
-        manifest?.apiVersion === "pocketcoder.dev/v1" ? validatedWorkloadLimits(manifest.spec?.limits) : undefined;
-      const binary = await resolveExecutable(input);
-      const id = randomUUID();
-      await mkdir(directory(id), { recursive: true, mode: 0o700 });
-      await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
-      const operatorPort = await freePort();
-      let agentPort = await freePort();
-      while (agentPort === operatorPort) agentPort = await freePort();
-      const instance: Instance = {
-        id,
-        name: input.name,
-        binary,
-        url: `http://127.0.0.1:${operatorPort}`,
-        agentPort,
-        state: "stopped",
-        ...(workloadLimits ? { workloadLimits } : {}),
-      };
-      await write(id, "instance.json", instance);
+      const snapshot = input.templates ? await snapshotTemplateDirectory(input.templates) : undefined;
       try {
-        const started = await start(id);
-        if (input.manifest)
-          await request(id, "/v1/templates", {
-            method: "POST",
-            body: JSON.stringify({ manifest: input.manifest }),
-          });
-        if (input.templates) await this.importTemplates(id, input.templates);
-        return started;
-      } catch (error) {
-        await this.stop(id);
-        await rm(directory(id), { recursive: true });
-        throw error;
+        const workloadLimits = instanceLimits([...(input.manifests ?? []), ...(snapshot?.manifests ?? [])]);
+        const binary = await resolveExecutable(input);
+        const id = randomUUID();
+        await mkdir(directory(id), { recursive: true, mode: 0o700 });
+        await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
+        const operatorPort = await freePort();
+        let agentPort = await freePort();
+        while (agentPort === operatorPort) agentPort = await freePort();
+        const instance: Instance = {
+          id,
+          name: input.name,
+          binary,
+          url: `http://127.0.0.1:${operatorPort}`,
+          agentPort,
+          state: "stopped",
+          ...(workloadLimits ? { workloadLimits } : {}),
+        };
+        await write(id, "instance.json", instance);
+        try {
+          const started = await start(id);
+          for (const manifest of input.manifests ?? []) await this.publish(id, manifest);
+          if (snapshot) await this.importTemplates(id, snapshot.directory);
+          return started;
+        } catch (error) {
+          await this.stop(id);
+          await rm(directory(id), { recursive: true });
+          throw error;
+        }
+      } finally {
+        await snapshot?.dispose();
       }
+    },
+    async publishedTemplates(id: string) {
+      const templates = await this.items<{ name: string; version: string; status: string; description?: string }>(
+        id,
+        "/v1/templates",
+      );
+      return templates.filter((template) => template.status !== "retired");
+    },
+    async retire(id: string, name: string, version: string) {
+      // The controller keeps the snapshot that existing machines of this version use.
+      await request(id, `/v1/templates/${encodeURIComponent(name)}/${encodeURIComponent(version)}`, {
+        method: "DELETE",
+      });
+    },
+    async publish(id: string, manifest: unknown) {
+      requireTemplateCapacity(manifest, (await read<Instance>(id, "instance.json")).workloadLimits);
+      await request(id, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
     },
     async importTemplates(id: string, templates: string) {
       const instance = await get(id);
-      const owner = await read<{ token: string }>(id, "owner.json");
-      await cli(instance, ["templates", "import", templates], {
-        POCKETCODER_URL: instance.url,
-        POCKETCODER_KEY: owner.token,
-      });
+      const snapshot = await snapshotTemplateImport(templates, instance.workloadLimits);
+      try {
+        const owner = await read<{ token: string }>(id, "owner.json");
+        await cli(instance, ["templates", "import", snapshot.directory], {
+          POCKETCODER_URL: instance.url,
+          POCKETCODER_KEY: owner.token,
+        });
+      } finally {
+        await snapshot.dispose();
+      }
     },
     async stop(id: string) {
       const instance = await get(id);
       if (instance.state === "running") await cli(instance, ["server", "stop"]);
       return get(id);
     },
+  };
+}
+
+function instanceFiles(root: string) {
+  const directory = (id: string) => {
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
+    return join(root, id);
+  };
+  const read = async <T>(id: string, file: string) =>
+    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
+  const write = async (id: string, file: string, value: unknown) => {
+    const path = join(directory(id), file);
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
+    await rename(temporary, path);
+  };
+  return { directory, read, write };
+}
+
+function instanceEnvironment(instance: Instance, root: string) {
+  return {
+    POCKETCODER_DIR: join(root, "data"),
+    POCKETCODER_STATE_DIR: join(root, "state"),
+    POCKETCODER_HTTP: new URL(instance.url).host,
+    POCKETCODER_AGENT_HTTP: `0.0.0.0:${instance.agentPort}`,
+    POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${instance.agentPort}`,
+    POCKETCODER_STORAGE_BACKEND: "filesystem",
+    POCKETCODER_WORKSPACE_DATA_DIR: join(root, "workspaces"),
+    POCKETCODER_CHECKPOINT_DIR: join(root, "checkpoints"),
+    ...MANAGED_SESSION_ENV,
+    ...(instance.workloadLimits ? inputEnvironment(root, instance.workloadLimits) : {}),
   };
 }

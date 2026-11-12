@@ -71,7 +71,7 @@ test("managed Lab sessions share one machine and keep running when a sibling clo
     await writeFile(join(root, "echo.json"), JSON.stringify(template));
     const instance = await instances.launch({
       name: "Managed sessions",
-      manifest: template,
+      manifests: [template],
       binary: join(repo, "out/native/pocketcoder"),
     });
     instanceId = instance.id;

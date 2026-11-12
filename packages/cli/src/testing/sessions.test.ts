@@ -20,7 +20,7 @@ const withoutIntent = (output: string) =>
       .join("\n"),
   );
 
-// Every CLI call spawns a new process, so each test keeps its call count small enough for the default timeout.
+// Each workflow stays within the default deadline while using real CLI processes.
 async function managedCli() {
   const f = await managedFixture();
   const directory = await mkdtemp(join(tmpdir(), "pc-cli-sessions-"));
@@ -110,7 +110,7 @@ test("budget commands drive the managed API without opening the database", async
   expect(await json(["budgets", "usage", "--scope", f.scopeId])).toMatchObject({ scopeId: f.scopeId });
 });
 
-test("session commands drive the managed API without opening the database", async () => {
+test("session submission preserves uploaded input and replays the same request", async () => {
   await using managed = await managedCli();
   const { f, directory, cli, json } = managed;
   const sessionId = f.sessionId;
@@ -131,6 +131,29 @@ test("session commands drive the managed API without opening the database", asyn
   expect((await json(["sessions", "request", "--session", sessionId, "--request", requestId])).requestId).toBe(
     requestId,
   );
+  expect(
+    (await json(["sessions", "cancel", "--session", sessionId, "--request", requestId, "--cancel-id", randomUUID()]))
+      .state,
+  ).toBe("completed");
+});
+
+test("session lifecycle commands expose cancellation, history and closure", async () => {
+  await using managed = await managedCli();
+  const { f, cli, json } = managed;
+  const sessionId = f.sessionId;
+  const requestId = randomUUID();
+  await cli([
+    "sessions",
+    "submit",
+    "--session",
+    sessionId,
+    "--request",
+    requestId,
+    "--message",
+    "hello",
+    "--deadline",
+    new Date(Date.now() + 60_000).toISOString(),
+  ]);
   const cancelId = randomUUID();
   const cancel = ["sessions", "cancel", "--session", sessionId, "--request", requestId, "--cancel-id", cancelId];
   expect((await json(cancel)).state).toBe("completed");

@@ -23,12 +23,14 @@ Leave the executable field blank to use this project's `out/native/pocketcoder`.
 
 ## Dashboard
 
-1. Open **PocketCoder Lab**. On the first visit, it shows the instance table. Open an instance to browse its Templates and Machines. Later visits restore the last Lab page through the host's navigation history. The native breadcrumb dropdown switches instances. **Manage instances** opens the native instance table. Its toolbar can launch an instance or save a template.
+1. Open **PocketCoder Lab**. On the first visit, it shows the instance table. Open an instance to browse its Templates and Machines. Later visits restore the last Lab page through the host's navigation history. The native breadcrumb dropdown switches instances. **Manage instances** opens the native instance table. Its toolbar can launch an instance or open the **Template catalog** page.
 2. Each instance has native **Templates** and **Machines** page tabs with native data tables. They read the controller directly, including machines launched through other clients. The selection is saved for this project.
-3. Use **Save template** to add a JSON or YAML manifest to the project catalog. **Launch instance** chooses a catalog template and names the instance. The executable field is optional and uses the local build by default.
-4. Use **Import templates** with an absolute prepared folder path to publish more versions into the selected instance. Published versions are immutable; changed manifests need a new version.
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
+3. Use **Save template** to add a JSON or YAML manifest to the project catalog. **Launch instance** names the instance and publishes one or more catalog templates into it. The instance's input storage limits fit the largest chosen template. The executable field is optional and uses the local build by default.
+4. Use **Add template** on the Templates tab to publish another catalog template into the selected instance. **Import templates** publishes a prepared folder instead. Published versions are immutable; changed manifests need a new version.
+5. The **Template catalog** page lists the project's saved manifests. Its toolbar saves a new one. Click a row or choose **View template** to open the manifest read-only. **Remove template** deletes the catalog file. On an instance's Templates tab, **View template** opens the matching catalog manifest, and **Remove template** retires that version on the controller. Existing machines keep their template snapshot.
+6. Every Lab table supports selecting several rows. Instances offer **Start**, **Stop** and **Remove** for the selection, Machines offer **Delete**, and both template tables offer **Remove**. Each selected row is tried; a failure on one row is reported without stopping the others.
+
+The template decides how Lab connects to its machines; there is no connection choice at launch. A template with a session adapter gets a native PocketCoder session. Native sessions use canonical request and conversation APIs, and the Lab renders their text, tool, file, and error parts. A template without one, such as the Prompt Studio Codex template, connects through the Prompt Studio Cloud relay.
 7. **Delete machine** stops execution, waits for a terminal state and removes the row from Lab. The controller retains its audit record. Failed machines remain visible with their error until dismissed.
 8. The instance dropdown and instance table offer **Start instance** and **Stop instance**. Stop requires every active machine to end first. Owner keys expire after 24 hours; while the controller runs, the Lab issues a new one when the old one expires. A broken saved executable does not prevent browsing other instances; its table row shows the error.
 
@@ -40,11 +42,10 @@ Build and save the local template:
 bun .pstdio/extensions/pocketcoder/src/codex-template/prepare.ts
 ```
 
-Then choose it in **Launch instance** and launch a machine with the **Prompt Studio Cloud relay** connection. The image pins Prompt Studio and Codex. It runs as UID 10001, with writable container storage for Prompt Studio's installed extensions. Its state is removed with the machine, which expires after one hour. The declared `pstdio` service exposes only a connection status document; it does not expose the unauthenticated dashboard or account credentials.
+Then choose it in **Launch instance** or **Add template** and launch a machine. It has no session adapter, so Lab connects through the **Prompt Studio Cloud relay**. The image pins Prompt Studio and Codex. It runs as UID 10001 with a read-only root, so it can share an instance with native templates. Prompt Studio's state and installed extensions live on a disk-backed `/work` mount. The first start installs those extensions and can take about 95 seconds on macOS. The state is removed with the machine, which expires after one hour. The declared `pstdio` service exposes only a connection status document; it does not expose the unauthenticated dashboard or account credentials.
 
-Cloud relay chat needs a remote device and workspace linked to this project. A safely enrolled machine can declare `pstdio.connection=relay`, `pstdio.device_id` and `pstdio.workspace_id` in its launch metadata. Connect checks the device is remote and online, then creates the native Codex session on it.
+Cloud relay chat needs a remote device and workspace linked to this project. A safely enrolled machine declares `pstdio.device_id` and `pstdio.workspace_id` in its launch metadata. Connect checks the device is remote and online, then creates the native Codex session on it.
 
-Native sessions use canonical request and conversation APIs. The Lab renders their text, tool, file, and error parts. Onefin uses native Pi JSON RPC; the Cloud relay connection remains available for Prompt Studio devices.
 
 The template keeps Prompt Studio in the foreground and publishes its private runtime descriptor so local setup commands attach to that server. The connection status becomes available only after project setup completes. Codex starts on demand when a session uses it; the status document reports its installed version.
 
@@ -60,7 +61,8 @@ This check proves local startup. A live Cloud relay session still requires safe 
 
 ```sh
 pst pocketcoder.pocketcoder templates catalog
-pst pocketcoder.pocketcoder instances launch --name local --binary /absolute/path/pocketcoder --template .pstdio/extension-storage/pocketcoder.pocketcoder/templates/my-agent.json
+pst pocketcoder.pocketcoder instances launch --name local --binary /absolute/path/pocketcoder --templates .pstdio/extension-storage/pocketcoder.pocketcoder/templates/my-agent.json .pstdio/extension-storage/pocketcoder.pocketcoder/templates/other-agent.json
+pst pocketcoder.pocketcoder templates publish --instance <instance-id> --template .pstdio/extension-storage/pocketcoder.pocketcoder/templates/third-agent.json
 pst pocketcoder.pocketcoder instances choices
 pst pocketcoder.pocketcoder templates import --instance <instance-id> --directory /absolute/path/templates
 pst pocketcoder.pocketcoder templates choices --instance <instance-id>
@@ -70,7 +72,7 @@ pst pocketcoder.pocketcoder machines relaunch --instance <instance-id> --machine
 pst pocketcoder.pocketcoder machines resume --instance <instance-id> --machine-id <machine-id> --launch-input '<fresh-json>'
 pst pocketcoder.pocketcoder machines delete --instance <instance-id> --machine-id <machine-id>
 pst pocketcoder.pocketcoder instances stop --instance-id <instance-id>
-pst pocketcoder.pocketcoder instances start --instance-id <instance-id>
+pst pocketcoder.pocketcoder instances start --instance-id <instance-id> [--binary /absolute/path/pocketcoder]
 ```
 
 The generic Create workspace form also exposes the provider. It currently requires instance ID, template name, and optional version as text. The guided Launch machine command has dynamic choices.
@@ -79,9 +81,9 @@ The generic Create workspace form also exposes the provider. It currently requir
 
 Open a machine's row menu in **Machines**. **Relaunch machine** opens a native form and creates a fresh machine from the same template version. Its files and conversation start empty. **Resume machine** restores the latest ready checkpoint into a new machine, including saved files and conversation. Resume reports when no checkpoint exists or conversation restore is unsupported. Neither action changes the original machine.
 
-Both actions accept a new application task ID, fresh one-time launch input, new application metadata, and the agent connection type. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Relay machines need their own enrollment and connection metadata. Run the action to queue the new machine. The form closes on success and stays open with an error if the action fails. Connect to the new machine when ready.
+Both actions accept a new application task ID, fresh one-time launch input, and new application metadata. An empty task ID generates a new ID. Old launch input, application metadata, and relay device/workspace IDs are never copied. Machines of relay templates need their own enrollment and device and workspace metadata. Run the action to queue the new machine. The form closes on success and stays open with an error if the action fails. Connect to the new machine when ready.
 
-The CLI supports the same options: `--external-id`, `--launch-input`, `--metadata`, and `--connection`. Resume also accepts `--template-version` for a compatible version; otherwise the controller selects the checkpoint version or a compatible recovery version.
+The CLI supports the same options: `--external-id`, `--launch-input`, and `--metadata`. Resume also accepts `--template-version` for a compatible version; otherwise the controller selects the checkpoint version or a compatible recovery version.
 
 ## Share one machine between managed sessions
 

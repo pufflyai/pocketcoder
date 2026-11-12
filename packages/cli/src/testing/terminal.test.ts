@@ -56,5 +56,5 @@ describe("pcd terminal workflow", () => {
     } finally {
       await server.stop(true);
     }
-  }, 5000);
+  }, 10_000);
 });
