@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.0
+
+### Minor Changes
+
+- [#171](https://github.com/pufflyai/pocketcoder/pull/171) [`d92ab76`](https://github.com/pufflyai/pocketcoder/commit/d92ab76858f47513f626c5322a17439a06954225) Thanks [@au-re](https://github.com/au-re)! - Run managed chats from configured profiles with fresh credentials, owner limits, portable memory, and one conversation feed.
+
 ## 0.14.0
 
 ### Minor Changes
