@@ -36,6 +36,13 @@ For a private CA, set `POCKETCODER_ISSUER_CA_FILE=/operator/issuer-ca.pem`
 on the controller. Give the agent the resource service's public CA separately.
 TLS verification stays enabled. Issuer redirects are rejected.
 
+An issuer inside the same Kubernetes cluster may use plain HTTP on its Service
+address, for example `http://backend.app.svc.cluster.local:8000/issuer/`. Only
+`*.svc.cluster.local` hosts qualify, and only when the controller sets
+`POCKETCODER_CLUSTER_LOCAL_ISSUERS=true`. Without it the controller refuses to store
+or call such an issuer. The bearer then stays on the cluster network; protect that
+path with a network policy.
+
 ## Use a credential file
 
 Add a reference to the template's `env`, `agent.env`, `harness.env`,

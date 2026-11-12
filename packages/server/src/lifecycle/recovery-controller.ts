@@ -5,7 +5,7 @@ import type { ServerConfig } from "../config/config";
 import { completeRecovery } from "../recovery/complete-recovery";
 import { createOffNodeRecovery } from "../recovery/off-node-recovery";
 import { createRegistryResolver } from "../secrets/registry-resolver";
-import { createSecretVault } from "../secrets/secret-vault";
+import { controllerVault } from "../secrets/secret-vault";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import type { ServerLog } from "./lifecycle";
 import {
@@ -32,7 +32,7 @@ export async function startRecoveryController(config: ServerConfig, options: { l
   try {
     const recovery = await store.recovery.recoveryState();
     if (!recovery) throw new Error("This data folder is not in recovery.");
-    const vault = config.secretKey ? createSecretVault(store, Buffer.from(config.secretKey, "base64url")) : undefined;
+    const vault = controllerVault(store, config);
     const storageDriver = createStorageDriver(config);
     const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
     const driver = createWorkspaceDriver(config, vault ? createRegistryResolver(vault) : undefined, sharedStorage);
@@ -45,6 +45,7 @@ export async function startRecoveryController(config: ServerConfig, options: { l
       ...(secretResolver ? { secretResolver } : {}),
       pepper: config.pepper,
       ...(config.secretKey ? { secretKey: config.secretKey } : {}),
+      ...(config.clusterLocalIssuers ? { clusterLocalIssuers: true } : {}),
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
       limits: config.limits,
