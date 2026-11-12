@@ -34,6 +34,16 @@ export function instanceLimits(manifests: unknown[]) {
   return Object.fromEntries(limitKeys.map((key) => [key, Math.max(...limits.map((limit) => limit[key] as number))]));
 }
 
+export function requireTemplateCapacity(manifest: unknown, available: Record<string, number> | undefined) {
+  const required = instanceLimits([manifest]);
+  if (!required) return;
+  const oversized = limitKeys.filter((key) => !available || (required[key] as number) > (available[key] as number));
+  if (oversized.length)
+    throw new Error(
+      `Template limits exceed this instance: ${oversized.join(", ")}. Launch a new instance with this template selected.`,
+    );
+}
+
 export function inputEnvironment(root: string, limits: Record<string, number>) {
   const capacity = { bytes: limits.stagedInputBytes, files: limits.inputFiles };
   return {

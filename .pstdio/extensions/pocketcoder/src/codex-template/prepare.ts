@@ -23,7 +23,7 @@ const manifest = {
       "Prompt Studio and Codex in a disposable local machine. Cloud enrollment is required before relay chat.",
   },
   spec: {
-    version: `1.0.0-local.${digest.slice(7, 19)}`,
+    version: `1.1.0-local.${digest.slice(7, 19)}`,
     image: `pocketcoder-pstdio-codex:local@${digest}`,
     harness: { command: ["bun", "/opt/pstdio-tools/start.ts"] },
     resources: { cpu: "2", memory: "2Gi" },

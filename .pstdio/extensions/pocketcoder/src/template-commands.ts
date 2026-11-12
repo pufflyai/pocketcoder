@@ -37,9 +37,20 @@ export const deleteTemplates = defineCommand({
     const files = catalogFiles(ctx);
     const listed = new Set((await listCatalog(files)).map((entry) => entry.path));
     if (!input.rowIds.every((path) => listed.has(path))) throw new Error("Choose listed templates.");
-    for (const path of input.rowIds) await files.delete(path);
-    await ctx.events.emit(changed, {});
-    return { paths: input.rowIds };
+    const paths: string[] = [];
+    const failures: string[] = [];
+    for (const path of new Set(input.rowIds)) {
+      try {
+        await files.delete(path);
+        paths.push(path);
+      } catch (error) {
+        failures.push(`${path}: ${String(error)}`);
+      }
+    }
+    if (paths.length) await ctx.events.emit(changed, {});
+    if (failures.length)
+      throw new Error(`Could not remove ${failures.length} template files. Retry these paths:\n${failures.join("\n")}`);
+    return { paths };
   },
 });
 

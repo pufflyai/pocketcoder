@@ -11,18 +11,6 @@ export const machineSessionTarget = (projectId: string, session: { id: string; t
   resource: { type: "session", extensionId: "pstdio", projectId, id: session.id, label: session.title },
 });
 
-export async function previousMachineSession(ctx: CommandContext, instanceId: string, machineId: string) {
-  const candidates = (await ctx.workspaces.list()).filter(
-    (workspace) =>
-      workspace.providerId === `${ctx.extensionId}.workspace-type.machine` &&
-      workspace.anchors_json?.some((anchor) => anchor.id === instanceId),
-  );
-  for (const old of candidates) {
-    const resolved = await ctx.workspaces.resolve(old.id);
-    if (resolved.providerRef?.data.machineId === machineId) return ctx.storage.get<string>(`machine-session:${old.id}`);
-  }
-}
-
 export async function checkRelayDevice(ctx: CommandContext, deviceId: string) {
   const device = (await ctx.account.devices()).find((device) => device.id === deviceId);
   if (!device || device.current) throw new Error("Choose the machine's remote Prompt Studio device, not this host.");

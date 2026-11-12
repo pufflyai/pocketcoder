@@ -2,12 +2,9 @@ import { randomUUID } from "node:crypto";
 import { commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
 import { machineConnection } from "./machine-connection";
-import {
-  checkRelayDevice,
-  latestMachineConversation,
-  machineSessionTarget,
-  previousMachineSession,
-} from "./machine-session";
+import { dismissMachine } from "./machine-dismissal";
+import { checkRelayDevice, latestMachineConversation, machineSessionTarget } from "./machine-session";
+import { machineSessionCache } from "./machine-session-cache";
 import { unavailableMachineMessage } from "./machine-status";
 import { type ControllerMachine, isTerminal, launchInputOf, machinePath, providerParams } from "./machines";
 import { changed } from "./resources";
@@ -78,10 +75,8 @@ export function createMachineCommands(getInstances = instancesFor) {
         () => instances.request(input.instance, `${machinePath(machine.id)}/requests/capabilities`),
         machine.metadata,
       );
-      const key = `machine-session:${input.instance}:${machine.id}`;
-      let sessionId = await ctx.storage.get<string>(key);
-      if (!sessionId && connection.kind === "session")
-        sessionId = await previousMachineSession(ctx, input.instance, machine.id);
+      const cache = machineSessionCache(ctx.storage, input.instance, machine.id, connection);
+      const sessionId = await cache.get();
       if (connection.kind === "relay") await checkRelayDevice(ctx, connection.deviceId);
       const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
       const session =
@@ -107,7 +102,7 @@ export function createMachineCommands(getInstances = instancesFor) {
           machine.id,
           existing ? undefined : await latestMachineConversation(instances, input.instance, machine),
         );
-      await ctx.storage.set(key, session.id);
+      await cache.set(session.id);
       ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
       return { machineId: machine.id, sessionId: session.id };
     },
@@ -130,9 +125,7 @@ export function createMachineCommands(getInstances = instancesFor) {
         );
         machine = change.workspace;
       }
-      const dismissedKey = `dismissed-machines:${input.instance}`;
-      const dismissed = (await ctx.storage.get<string[]>(dismissedKey)) ?? [];
-      await ctx.storage.set(dismissedKey, [...new Set([...dismissed, machine.id])]);
+      await dismissMachine(ctx.storage, input.instance, machine.id);
       await ctx.events.emit(changed, {});
       return { machineId: machine.id, state: machine.state };
     },

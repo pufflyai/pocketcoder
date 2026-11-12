@@ -3,9 +3,10 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveExecutable } from "./executable";
-import { inputEnvironment, instanceLimits } from "./instance-inputs";
+import { inputEnvironment, instanceLimits, requireTemplateCapacity } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 import { createOwnerKeys, type OwnerKey } from "./owner-keys";
+import { snapshotTemplateImport } from "./template-import";
 
 export interface Instance {
   id: string;
@@ -33,18 +34,7 @@ export const instancesFor = (projectId: string) =>
   createInstances(join(homedir(), ".local", "share", "pocketcoder-pstdio", projectId));
 
 export function createInstances(root: string) {
-  const directory = (id: string) => {
-    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
-    return join(root, id);
-  };
-  const read = async <T>(id: string, file: string) =>
-    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
-  const write = async (id: string, file: string, value: unknown) => {
-    const path = join(directory(id), file);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
-    await rename(temporary, path);
-  };
+  const { directory, read, write } = instanceFiles(root);
   const environment = (instance: Instance) => ({
     POCKETCODER_DIR: join(directory(instance.id), "data"),
     POCKETCODER_STATE_DIR: join(directory(instance.id), "state"),
@@ -248,15 +238,21 @@ export function createInstances(root: string) {
       });
     },
     async publish(id: string, manifest: unknown) {
+      requireTemplateCapacity(manifest, (await read<Instance>(id, "instance.json")).workloadLimits);
       await request(id, "/v1/templates", { method: "POST", body: JSON.stringify({ manifest }) });
     },
     async importTemplates(id: string, templates: string) {
       const instance = await get(id);
-      const owner = await read<{ token: string }>(id, "owner.json");
-      await cli(instance, ["templates", "import", templates], {
-        POCKETCODER_URL: instance.url,
-        POCKETCODER_KEY: owner.token,
-      });
+      const snapshot = await snapshotTemplateImport(templates, instance.workloadLimits);
+      try {
+        const owner = await read<{ token: string }>(id, "owner.json");
+        await cli(instance, ["templates", "import", snapshot.directory], {
+          POCKETCODER_URL: instance.url,
+          POCKETCODER_KEY: owner.token,
+        });
+      } finally {
+        await snapshot.dispose();
+      }
     },
     async stop(id: string) {
       const instance = await get(id);
@@ -264,4 +260,20 @@ export function createInstances(root: string) {
       return get(id);
     },
   };
+}
+
+function instanceFiles(root: string) {
+  const directory = (id: string) => {
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
+    return join(root, id);
+  };
+  const read = async <T>(id: string, file: string) =>
+    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
+  const write = async (id: string, file: string, value: unknown) => {
+    const path = join(directory(id), file);
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
+    await rename(temporary, path);
+  };
+  return { directory, read, write };
 }
