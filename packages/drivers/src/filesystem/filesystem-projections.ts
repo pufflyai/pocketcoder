@@ -171,7 +171,10 @@ export class FilesystemInputPublisher {
     await mkdir(temporary, { mode: 0o755 });
     try {
       for (const object of projection.objects) {
-        if (object.backing.workspaceId !== manifest.workspaceId || object.backing.fileId !== object.reference.fileId)
+        if (
+          object.backing.workspaceId !== (object.reference.storageOwnerId ?? manifest.workspaceId) ||
+          object.backing.fileId !== object.reference.fileId
+        )
           throw new Error("Input backing belongs to another object");
         await this.copyObject(object, source, temporary);
       }
