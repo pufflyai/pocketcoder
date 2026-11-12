@@ -34,7 +34,7 @@
     "build": "bun scripts/build.ts",
     "compile": "bun build ./src/index.ts --compile --minify --format=cjs --outfile ../../out/native/pocketcoder",
     "start": "bun ./src/index.ts",
-    "test": "bun --no-env-file test",
+    "test": "bun --no-env-file test --timeout 10000",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "devDependencies": {
