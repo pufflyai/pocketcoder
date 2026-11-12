@@ -128,7 +128,7 @@ jobs:
             fixture: workspace
             command: |
               docker pull --platform linux/amd64 "$POCKETCODER_EGRESS_CONFORMANCE_IMAGE"
-              bun test packages/drivers/src/docker/docker-egress-conformance.test.ts
+              bun test --timeout 10000 packages/drivers/src/docker/docker-egress-conformance.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

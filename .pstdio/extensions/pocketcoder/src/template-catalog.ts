@@ -53,3 +53,23 @@ export async function selectedTemplate(files: Pick<ArtifactMount, "list" | "read
   if (!selected?.template) throw new Error("Choose a listed template with a valid name and version.");
   return selected.template;
 }
+
+export async function catalogPathFor(files: Pick<ArtifactMount, "list" | "readText">, name: string, version: string) {
+  const entry = (await listCatalog(files)).find(
+    ({ template }) => template?.name === name && template.version === version,
+  );
+  if (!entry) throw new Error(`${name}@${version} is not in this project's template catalog.`);
+  return entry.path;
+}
+
+export async function templateDocument(files: Pick<ArtifactMount, "list" | "readText">, path: string) {
+  const template = await selectedTemplate(files, path);
+  return {
+    fileName: path.split("/").pop() ?? path,
+    filePath: path,
+    mimeType: "application/json",
+    content: JSON.stringify(template.manifest, null, 2),
+    // Published versions are immutable, so a changed manifest needs a new version, not an edit.
+    editable: false,
+  };
+}

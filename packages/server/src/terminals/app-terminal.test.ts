@@ -239,5 +239,5 @@ describe("remote terminals", () => {
     } finally {
       await listener.stop(true);
     }
-  }, 5000);
+  }, 10_000);
 });

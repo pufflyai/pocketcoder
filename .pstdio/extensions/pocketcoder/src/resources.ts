@@ -9,3 +9,4 @@ export const machineKind = defineResourceKind({
 });
 export const machineActionsSlot = resourceMenuSlotRef(machineKind.ref, "actions");
 export const changed = eventRef({ extensionId: "pocketcoder.pocketcoder", id: "changed" });
+export const templateKind = defineResourceKind({ id: "template", label: "Agent template", icon: "package" });

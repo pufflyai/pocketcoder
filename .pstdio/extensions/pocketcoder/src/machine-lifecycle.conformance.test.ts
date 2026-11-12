@@ -11,6 +11,7 @@ import { createMachineCommands } from "./machine-commands";
 import { createMachineLifecycleActions } from "./machine-lifecycle-actions";
 import { latestMachineConversation } from "./machine-session";
 import { type ControllerMachine, isTerminal, machinePath } from "./machines";
+import { createSelectionCommands, instanceRowId } from "./selection-commands";
 
 const repo = resolve(import.meta.dir, "../../../..");
 async function command(args: string[]) {
@@ -91,14 +92,13 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const instance = await instances.launch({
       name: "lifecycle",
       binary: join(repo, "out/native/pocketcoder"),
-      manifest,
+      manifests: [manifest],
     });
     instanceId = instance.id;
     const source = await machines.launchMachine.run(ctx, {
       instance: instanceId,
       template: "persistent-echo@1.0.0",
       externalId: "original-task",
-      connection: "session",
       launchInput: JSON.stringify({ bootstrap_code: "original-bootstrap" }),
       metadata: JSON.stringify({
         application: "old-task",
@@ -130,7 +130,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const fresh = await ready(relaunched.machineId);
     expect(fresh.id).not.toBe(source.machineId);
     expect(fresh.external_id).not.toBe("original-task");
-    expect(fresh.metadata).toEqual({ "pstdio.connection": "session" });
+    expect(fresh.metadata).toEqual({});
     expect(fresh.template.name).toBe("persistent-echo");
     expect(fresh.template.version).toBe("1.0.0");
     expect((await instances.request<ControllerMachine>(instanceId, machinePath(source.machineId))).state).toBe("ready");
@@ -169,7 +169,7 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     const restored = await ready(resumed.machineId);
     expect(restored.id).not.toBe(source.machineId);
     expect(restored.external_id).toBe("resumed-task");
-    expect(restored.metadata).toEqual({ application: "new-task", "pstdio.connection": "session" });
+    expect(restored.metadata).toEqual({ application: "new-task" });
     expect(await command(["docker", "exec", `pocketcoder-ws-${restored.id}`, "cat", "/workspace/saved.txt"])).toBe(
       "saved files",
     );
@@ -180,6 +180,13 @@ test("relaunch starts fresh; resume restores a real checkpoint with fresh launch
     expect((await instances.request<ControllerMachine>(instanceId, machinePath(source.machineId))).state).toBe(
       "preserved",
     );
+
+    // Deleting a table selection ends every selected machine.
+    await createSelectionCommands(() => instances).deleteSelectedMachines.run(ctx, {
+      rowIds: machineIds.map((machineId) => instanceRowId(instanceId, machineId)),
+    });
+    for (const machineId of machineIds)
+      expect(isTerminal(await instances.request<ControllerMachine>(instanceId, machinePath(machineId)))).toBe(true);
   } finally {
     await harness.dispose(ctx);
     if (instanceId) {

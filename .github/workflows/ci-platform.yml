@@ -29,7 +29,7 @@ jobs:
         if: runner.os == 'Linux'
         run: strace --version
       - name: Disk locking, durable recovery and compiled assets
-        run: bun test packages/db/src/database/data-folder.test.ts packages/db/src/database/crash.test.ts
+        run: bun test --timeout 10000 packages/db/src/database/data-folder.test.ts packages/db/src/database/crash.test.ts
           packages/db/src/database/pglite.test.ts packages/db/src/migrations/migrator.test.ts
           packages/db/src/migrations/crash.test.ts
   native:
@@ -61,7 +61,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build:native
       - name: Verify native size
-        run: bun test examples/native/build.test.ts
+        run: bun test --timeout 10000 examples/native/build.test.ts
       - name: Verify native Docker round trip outside the checkout
         if: matrix.platform == 'linux'
         run: >

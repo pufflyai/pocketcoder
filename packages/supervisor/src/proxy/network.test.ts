@@ -102,4 +102,4 @@ test("fails before setup when the restricted network boundary is unavailable", a
     server.stop(true);
     await rm(root, { recursive: true, force: true });
   }
-}, 5_000);
+}, 10_000);

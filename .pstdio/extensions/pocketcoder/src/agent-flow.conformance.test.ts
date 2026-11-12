@@ -92,7 +92,7 @@ test("launches a Docker agent in a selected instance, connects, follows up, and 
     await writeFile(join(templates, "echo.json"), JSON.stringify(template));
     const instance = await instances.launch({
       name: "Agent flow",
-      manifest: template,
+      manifests: [template],
       binary: join(repo, "out/native/pocketcoder"),
       templates,
     });

@@ -1,7 +1,8 @@
 import { type CommandContext, defineCommand, params } from "@pstdio/sdk/extensions";
 import { importTemplates } from "./commands";
+import { catalogTemplateParam, publishTemplate } from "./instance-commands";
 import { instancesFor } from "./instances";
-import { connectionParam, connectMachine, deleteMachine, launchMachine } from "./machine-commands";
+import { connectMachine, deleteMachine, launchMachine } from "./machine-commands";
 import { providerParams } from "./machines";
 
 const instanceId = async (ctx: CommandContext) => {
@@ -42,7 +43,6 @@ export const launchSelectedMachine = defineCommand({
       required: true,
       options: { command: selectedTemplateChoices.ref, valueField: "value", labelField: "label" },
     }),
-    connection: connectionParam,
     externalId: providerParams.externalId,
     launchInput: providerParams.launchInput,
     metadata: providerParams.metadata,
@@ -58,6 +58,15 @@ export const importSelectedTemplates = defineCommand({
   params: { directory: params.text({ label: "Prepared template folder", required: true }) },
   async run(ctx, input) {
     return importTemplates.run(ctx, { ...input, instance: await instanceId(ctx) });
+  },
+});
+export const publishSelectedTemplate = defineCommand({
+  id: "templates.publish-selected",
+  title: "Add template",
+  mutating: true,
+  params: { template: catalogTemplateParam },
+  async run(ctx, input) {
+    return publishTemplate.run(ctx, { ...input, instance: await instanceId(ctx) });
   },
 });
 export const connectMachineRow = defineCommand({
@@ -80,6 +89,7 @@ export const tableCommands = [
   selectedTemplateChoices,
   launchSelectedMachine,
   importSelectedTemplates,
+  publishSelectedTemplate,
   connectMachineRow,
   deleteMachineRow,
 ];

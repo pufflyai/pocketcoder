@@ -1,6 +1,13 @@
 import { defineCommand, params } from "@pstdio/sdk/extensions";
+import { catalogPageRef, templateTarget } from "./lab-navigation";
 import { changed } from "./resources";
-import { catalogFiles, listCatalog, parseCatalogTemplate, templateDirectory } from "./template-catalog";
+import {
+  catalogFiles,
+  listCatalog,
+  parseCatalogTemplate,
+  selectedTemplate,
+  templateDirectory,
+} from "./template-catalog";
 
 export const saveTemplate = defineCommand({
   id: "templates.save",
@@ -19,18 +26,62 @@ export const saveTemplate = defineCommand({
   },
 });
 
-export const deleteTemplate = defineCommand({
+export const deleteTemplates = defineCommand({
   id: "templates.delete",
-  title: "Remove catalog template",
+  title: "Remove catalog templates",
   cli: true,
   mutating: true,
-  params: { rowId: params.text({ label: "Template file", required: true }) },
+  // A table selection sends the selected rows' IDs, which are catalog file paths.
+  params: { rowIds: params.list({ label: "Template files", required: true }) },
   async run(ctx, input) {
     const files = catalogFiles(ctx);
-    const listed = (await listCatalog(files)).some((entry) => entry.path === input.rowId);
-    if (!listed) throw new Error("Choose a listed template.");
-    await files.delete(input.rowId);
-    await ctx.events.emit(changed, {});
+    const listed = new Set((await listCatalog(files)).map((entry) => entry.path));
+    const paths: string[] = [];
+    const failures: string[] = [];
+    for (const path of new Set(input.rowIds)) {
+      try {
+        if (!listed.has(path)) throw new Error("Choose listed templates.");
+        await files.delete(path);
+        paths.push(path);
+      } catch (error) {
+        failures.push(`${path}: ${String(error)}`);
+      }
+    }
+    if (paths.length) await ctx.events.emit(changed, {});
+    if (failures.length)
+      throw new Error(`Could not remove ${failures.length} template files. Retry these paths:\n${failures.join("\n")}`);
+    return { paths };
+  },
+});
+
+const rowParam = { rowId: params.text({ label: "Template file", required: true }) };
+
+export const deleteTemplateRow = defineCommand({
+  id: "templates.delete-row",
+  title: "Remove template",
+  mutating: true,
+  params: rowParam,
+  async run(ctx, input) {
+    return deleteTemplates.run(ctx, { rowIds: [input.rowId] });
+  },
+});
+
+export const viewTemplateRow = defineCommand({
+  id: "templates.view-row",
+  title: "View template",
+  params: rowParam,
+  async run(ctx, input) {
+    await selectedTemplate(catalogFiles(ctx), input.rowId);
+    ctx.navigation.open(templateTarget(ctx.projectId, input.rowId));
     return { path: input.rowId };
+  },
+});
+
+export const openCatalog = defineCommand({
+  id: "templates.open-catalog",
+  title: "Open template catalog",
+  async run(ctx) {
+    ctx.navigation.open({ kind: "page", page: catalogPageRef });
+    return {};
   },
 });

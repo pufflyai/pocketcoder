@@ -4,7 +4,8 @@ import {
   type PlacementTabPresentation,
   workbenchModes,
 } from "@pstdio/sdk/extensions";
-import { startInstance, stopInstance } from "./commands";
+import { catalogView } from "./catalog-view";
+import { startInstance, stopInstance } from "./instance-commands";
 import { removeInstance } from "./instance-removal";
 import { instancesFor } from "./instances";
 import { labCommands } from "./lab-commands";
@@ -94,6 +95,16 @@ export const instancesPage = definePage({
   path: "pocketcoder",
   mode: workbenchModes.project,
   main: { kind: "view", presentation: "page", view: instancesView.ref, cardinality: "one" },
+  slots: [],
+});
+export const catalogPage = definePage({
+  id: "catalog",
+  title: "Template catalog",
+  icon: "package",
+  path: "pocketcoder-templates",
+  mode: workbenchModes.project,
+  parent: instancesPage.ref,
+  main: { kind: "view", presentation: "page", view: catalogView.ref, cardinality: "one" },
   slots: [],
 });
 export const instancePage = definePage({

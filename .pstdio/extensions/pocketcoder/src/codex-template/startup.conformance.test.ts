@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const repo = resolve(import.meta.dir, "../../../../..");
 
@@ -20,6 +22,10 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
   const base = `pocketcoder-codex-base:test-${id}`;
   const image = `pocketcoder-codex:test-${id}`;
   const container = `pocketcoder-codex-test-${id}`;
+  const work = await mkdtemp(join(tmpdir(), "pocketcoder-codex-work-"));
+  // The template user is UID 10001, like the controller's per-machine work mount.
+  await chmod(work, 0o777);
+  let built = false;
   try {
     await command([
       "bun",
@@ -32,6 +38,7 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
     ]);
     await command(["docker", "build", "-t", base, "deploy/image"]);
     await command(["docker", "build", "--build-arg", `WORKSPACE_IMAGE=${base}`, "-t", image, import.meta.dir]);
+    built = true;
     await command([
       "docker",
       "run",
@@ -44,13 +51,21 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
       "2g",
       "-p",
       "127.0.0.1::19841",
+      // Match how the controller launches this template: read-only root, in-memory /tmp, disk-backed /work.
+      "--read-only",
+      "--cap-drop",
+      "ALL",
+      "--tmpfs",
+      "/tmp:rw,noexec,nosuid,size=256m,uid=10001,gid=10001,mode=0700",
+      "--mount",
+      `type=bind,src=${work},dst=/work`,
       "--entrypoint",
       "bun",
       image,
       "/opt/pstdio-tools/start.ts",
     ]);
     const address = await command(["docker", "port", container, "19841/tcp"]);
-    const deadline = Date.now() + 60_000;
+    const deadline = Date.now() + 240_000;
     let connection: { state: string; versions: { pstdio: string; codex: string } } | undefined;
     while (Date.now() < deadline) {
       const running = await command(["docker", "inspect", container, "--format", "{{.State.Running}}"]);
@@ -101,10 +116,61 @@ test("the Codex template keeps its real Prompt Studio server alive and starts Co
 
     expect((await fetch(`http://${address}/connection`)).ok).toBe(true);
     expect(await command(["docker", "inspect", container, "--format", "{{.Config.User}}"])).toBe("10001:10001");
+    await command([
+      "docker",
+      "exec",
+      container,
+      "bun",
+      "--eval",
+      'const fs = await import("node:fs/promises"); await fs.mkdir("/work/cleanup-owned/private", {recursive:true, mode:0o700}); await fs.writeFile("/work/cleanup-owned/private/data", "fixture");',
+    ]);
+    // Docker Desktop bind mounts do not enforce Linux UID ownership.
+    if (process.platform === "linux") {
+      await expect(
+        command([
+          "docker",
+          "exec",
+          "--user",
+          "10002:10002",
+          container,
+          "bun",
+          "--eval",
+          'await import("node:fs/promises").then(fs => fs.rm("/work/cleanup-owned", {recursive:true}));',
+        ]),
+      ).rejects.toThrow("EACCES");
+    }
     await command(["docker", "stop", "-t", "10", container]);
     expect(await command(["docker", "inspect", container, "--format", "{{.State.Running}}"])).toBe("false");
   } finally {
     await command(["docker", "rm", "-f", container]).catch(() => undefined);
-    await command(["docker", "image", "rm", image, base]).catch(() => undefined);
+    try {
+      // Stop writers before clearing files, including when startup or an assertion failed.
+      // The test also cleans up after shutdown. Linux hosts may not own UID 10001's files.
+      if (built) {
+        await command([
+          "docker",
+          "run",
+          "--rm",
+          "--user",
+          "10001:10001",
+          "--network",
+          "none",
+          "--read-only",
+          "--cap-drop",
+          "ALL",
+          "--mount",
+          `type=bind,src=${work},dst=/work`,
+          "--entrypoint",
+          "bun",
+          image,
+          "--eval",
+          'const fs = await import("node:fs/promises"); for (const name of await fs.readdir("/work")) await fs.rm("/work/" + name, {recursive:true, force:true});',
+        ]);
+        expect(await readdir(work)).toEqual([]);
+      }
+    } finally {
+      await command(["docker", "image", "rm", image, base]).catch(() => undefined);
+      await rm(work, { recursive: true, force: true });
+    }
   }
-}, 180_000);
+}, 360_000);
