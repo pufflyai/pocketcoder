@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.1
+
+### Patch Changes
+
+- [#173](https://github.com/pufflyai/pocketcoder/pull/173) [`5e236d7`](https://github.com/pufflyai/pocketcoder/commit/5e236d73f52421becd669bb41a404755c1a9f1e5) Thanks [@au-re](https://github.com/au-re)! - Let managed chats read their session-owned uploads on Kubernetes.
+
 ## 0.15.0
 
 ### Minor Changes
