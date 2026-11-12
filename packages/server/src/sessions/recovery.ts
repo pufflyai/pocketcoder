@@ -5,7 +5,12 @@ type Candidate = Awaited<ReturnType<Store["managed"]["recovery"]["candidates"]>>
 
 // The existing workspace service creates and stops compute; tests may launch through a fixture driver.
 export interface PlacementLauncher {
-  create(principal: PrincipalRow, body: WorkspaceCreateRequest, idempotencyKey: string): Promise<WorkspaceRow>;
+  create(
+    principal: PrincipalRow,
+    body: WorkspaceCreateRequest,
+    idempotencyKey: string,
+    workspaceId?: string,
+  ): Promise<WorkspaceRow>;
   stop(principal: PrincipalRow, workspaceId: string): Promise<void>;
 }
 
@@ -61,19 +66,32 @@ export function createSessionRecovery(deps: {
     }
   }
 
-  async function replace(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
-    const workspace = await store.getWorkspace(binding.workspaceId);
-    if (live(workspace, binding.incarnationId)) {
-      // A credentialed session is ready, and its requests dispatch, only while its workspace has
-      // confirmed its credentials; losing them sends it back to provisioning until they return.
-      if (!(await credentialsInstalled(candidate, binding))) {
-        if (candidate.session.state === "ready")
-          await recovery.transition(candidate.id, "provisioning", "credentials_pending");
-        return;
-      }
-      if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
+  async function refreshCredentials(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
+    // A credentialed session is ready, and its requests dispatch, only while its workspace has
+    // confirmed its credentials; losing them sends it back to provisioning until they return.
+    if (!(await credentialsInstalled(candidate, binding))) {
+      if (candidate.session.state === "ready")
+        await recovery.transition(candidate.id, "provisioning", "credentials_pending");
       return;
     }
+    if (candidate.session.state !== "ready") await recovery.transition(candidate.id, "ready", null);
+    return;
+  }
+
+  async function replace(candidate: Candidate, binding: NonNullable<Candidate["binding"]>) {
+    const workspace = await store.getWorkspace(binding.workspaceId);
+    if (candidate.session.reasonCode === "credentials_refused") return;
+    if (candidate.session.reasonCode === "workspace_draining" && workspace && !workspace.terminalAt) return;
+    if (
+      candidate.templateDigest &&
+      !ended(workspace) &&
+      candidate.queueCount &&
+      workspace?.templateDigest !== candidate.templateDigest
+    ) {
+      await store.managed.capacity.retire(candidate.id, now());
+      return;
+    }
+    if (live(workspace, binding.incarnationId)) return refreshCredentials(candidate, binding);
     if (!ended(workspace)) return;
     // Fence the old writer first. Its credentials are revoked as the workspace terminates.
     if (workspace && !workspace.terminalAt) {
@@ -88,8 +106,28 @@ export function createSessionRecovery(deps: {
 
   // Binds the recorded workspace once it is ready, or gives up on one that ended before that.
   async function continuePlacement(candidate: Candidate, placement: NonNullable<Candidate["placement"]>) {
-    const workspace = await store.getWorkspace(placement.workspaceId);
-    if (!workspace || workspace.terminalAt) {
+    let workspace = await store.getWorkspace(placement.workspaceId);
+    if (!workspace) {
+      const template = (await store.listTemplates(null)).find(
+        (row) => row.digest === placement.templateDigest && row.status !== "retired",
+      );
+      if (!template) {
+        await store.managed.capacity.cancelPlacement(candidate.id, placement.workspaceId, now());
+        return;
+      }
+      const key = `managed-session:${candidate.id.sessionId}:${placement.generation}`;
+      workspace = await launcher.create(
+        await principalOf(candidate),
+        {
+          external_id: key,
+          template: { name: template.name, version: template.version },
+          metadata: { [managed.MANAGED_SESSION_METADATA]: candidate.id.sessionId },
+        },
+        key,
+        placement.workspaceId,
+      );
+    }
+    if (workspace.terminalAt) {
       await recovery.failPlacement(candidate.id, placement.workspaceId);
       return;
     }
@@ -127,49 +165,32 @@ export function createSessionRecovery(deps: {
     if (candidate.session.state === "failed" && !candidate.resumeRequested) return;
     if (candidate.queueCount === 0 && !candidate.resumeRequested) return;
     if (candidate.placement) return continuePlacement(candidate, candidate.placement);
-    const template = (await store.listTemplates(null)).find((row) => row.digest === candidate.templateDigest);
-    if (!template) throw new ApiError("template.not_found", "The pinned template is unavailable.");
     if (candidate.session.state === "failed") await recovery.transition(candidate.id, "provisioning", null);
-    const generation = candidate.lastGeneration + 1;
-    // Capacity first: a crash before the intent is recorded finds the same held workspace again.
-    const shared = await store.managed.capacity.joinable(candidate.id);
-    if (shared) {
-      await store.managed.capacity.place({ ...candidate.id, workspaceId: shared, generation });
-      await recovery.recordPlacement(candidate.id, {
-        workspaceId: shared,
-        generation,
-        requestedAt: now().toISOString(),
-      });
-      return;
-    }
-    // The same key after a crash returns the same workspace instead of launching another.
-    const key = `managed-session:${candidate.id.sessionId}:${generation}`;
-    const workspace = await launcher.create(
-      await principalOf(candidate),
-      {
-        external_id: key,
-        template: { name: template.name, version: template.version },
-        metadata: { [managed.MANAGED_SESSION_METADATA]: candidate.id.sessionId },
-      },
-      key,
-    );
-    const intent = await recovery.recordPlacement(candidate.id, {
-      workspaceId: workspace.id,
-      generation,
-      requestedAt: now().toISOString(),
-    });
-    await store.managed.capacity.place({ ...candidate.id, workspaceId: intent.workspaceId, generation });
+    const intent = await store.managed.capacity.reserve(candidate.id, candidate.lastGeneration + 1, now());
+    if (intent) await continuePlacement(candidate, intent);
+  }
+
+  async function advance(candidate: Candidate) {
+    if (candidate.closing) return stopClosed(candidate);
+    if (candidate.binding) return replace(candidate, candidate.binding);
+    if (candidate.placement) return continuePlacement(candidate, candidate.placement);
+    if (!candidate.templateDigest) return recovery.transition(candidate.id, "suspended", "template_unavailable");
+    return place(candidate);
   }
 
   return {
     async tick() {
+      for (const drain of await store.managed.capacity.drains()) {
+        const workspace = await store.getWorkspace(drain.workspaceId);
+        const principal = await store.getPrincipal(drain.principalId);
+        if (workspace && principal && !workspace.terminalAt && workspace.state !== "terminating")
+          await launcher.stop(principal, workspace.id);
+      }
       const candidates = await recovery.candidates();
       // Closes first: a join in this tick must not land on compute a close is about to stop.
       for (const candidate of [...candidates.filter((c) => c.closing), ...candidates.filter((c) => !c.closing)]) {
         try {
-          if (candidate.closing) await stopClosed(candidate);
-          else if (candidate.binding) await replace(candidate, candidate.binding);
-          else await place(candidate);
+          await advance(candidate);
         } catch (error) {
           // One session's refusal must not stop placement or recovery of the others.
           if (!(error instanceof ApiError)) throw error;

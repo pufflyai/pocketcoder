@@ -242,6 +242,7 @@ export async function dockerExecutionFixture(
 function runtimeServer(f: Awaited<ReturnType<typeof createPGliteFixture>>, built: ReturnType<typeof buildServer>) {
   let pipeline = Promise.resolve();
   const server = Bun.serve({
+    hostname: "0.0.0.0",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

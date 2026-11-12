@@ -238,6 +238,7 @@ export * from "./recovery/source-writer";
 export * from "./secrets/credential-slot";
 export * from "./secrets/secret";
 export * as managed from "./sessions";
+export { type PriorMessage, PriorMessageSchema } from "./sessions/history-seed";
 export * from "./templates/finite-outputs";
 export * from "./templates/runtime-credentials";
 export { sessionTemplate } from "./templates/session-template";

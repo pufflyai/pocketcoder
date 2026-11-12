@@ -34,7 +34,7 @@ const managedWorkspace = (row: WorkspaceRow) => Boolean(row.metadata?.[managed.M
 export function latestSessionLeases<T extends WorkspaceLeaseRow>(leases: T[]) {
   const latest = new Map<string, T>();
   const order = (lease: T) => [lease.createdAt.getTime(), lease.requestExpiresAt.getTime()] as const;
-  for (const lease of leases) {
+  for (const lease of leases.filter((r) => !["superseded", "revoking", "revoked", "expired"].includes(r.state))) {
     const key = `${lease.managedAuthority?.sessionId}:${lease.managedAuthority?.slot}`;
     const known = latest.get(key);
     const [created, deadline] = order(lease);

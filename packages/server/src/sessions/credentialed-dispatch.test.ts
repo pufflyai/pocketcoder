@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
-import { randomBytes, randomUUID } from "node:crypto";
-import { createSecretVault } from "../secrets/secret-vault";
+import { randomUUID } from "node:crypto";
 import { fakeProducer, managedFixture } from "./managed-fixture.test";
 
 test("a credentialed session's request waits until its credentials make the session ready", async () => {
@@ -9,41 +8,24 @@ test("a credentialed session's request waits until its credentials make the sess
   try {
     const principalId = m.f.principal.id;
     await m.f.store.updatePrincipal(principalId, ["admin", "secrets:write"], ["*"]);
-    const writer = randomUUID();
-    await m.f.store.insertMachineKey({
-      id: writer,
-      principalId,
-      secretDigest: new Uint8Array([8]),
-      scopes: ["secrets:write"],
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 600_000),
-      revokedAt: null,
-      lastUsedAt: null,
-    });
-    await createSecretVault(m.f.store, randomBytes(32)).put(writer, "issuer", {
-      type: "runtime-issuer",
-      value: { url: "https://issuer.example/mint", authorization: "Bearer test", policy: {} },
-    });
-    const bindingId = randomUUID();
-    await m.f.store.managed.authority.registerCredential(m.keyId, {
-      bindingId,
-      principalId,
-      secretName: "issuer",
-      slots: ["runtime"],
-      authorityExpiresAt: new Date(Date.now() + 600_000),
-    });
     const profileId = randomUUID();
-    await m.f.store.managed.authority.provisionProfile(m.keyId, principalId, {
-      profileId,
-      revision: 1,
-      isolationScopeId: randomUUID(),
-      budgetScopeIds: [m.scopeId],
-      templateDigest: m.f.runtime.template.digest,
-      credentialBindingId: bindingId,
-    });
+    await m.f.store.managed.profiles.reconcile(
+      principalId,
+      {
+        [profileId]: {
+          template: m.f.runtime.template.name,
+          templateVersion: m.f.runtime.template.version,
+          issuer: "issuer",
+          placement: "shared",
+          limits: { workspacesPerOwner: 5, sessionsPerWorkspace: 8 },
+          dispatchDeadlineSeconds: 600,
+        },
+      },
+      { issuer: { url: "https://issuer.example/mint", tokenFile: "/controller/issuer", policy: {}, revoke: false } },
+    );
     const sessionId = randomUUID();
     const identity = { principalId, sessionId };
-    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId, profileRevision: 1 });
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: profileId, owner: "test-owner" });
     await m.f.store.managed.sessions.bind(identity, 0, {
       workspaceId: m.f.id,
       incarnationId: m.f.runtime.incarnationId,

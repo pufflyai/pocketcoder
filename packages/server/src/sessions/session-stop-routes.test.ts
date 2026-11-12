@@ -1,66 +1,51 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { managed } from "@pstdio/pocketcoder-contracts";
-import { createTestStoreFactory, managedPolicy } from "@pstdio/pocketcoder-db/testing";
+import { createTestStoreFactory } from "@pstdio/pocketcoder-db/testing";
 import { authed, createTestServer } from "../testing/test-server.test";
 
 const createStore = createTestStoreFactory();
 
-async function managedServer(options: { stop?: number } = {}) {
+async function managedServer() {
   const store = await createStore();
   const server = await createTestServer(store, {}, undefined, {
     sessionQueueLimits: { count: 4, bytes: 1048576 },
     sessionEventPollMs: 10,
-    ...(options.stop ? { sessionStopSeconds: options.stop } : {}),
   });
   const caller = await store.getMachineKeyWithPrincipal(server.keyId);
   if (!caller) throw Error("Missing caller");
   await store.updatePrincipal(caller.principal.id, ["admin"], ["*"]);
-  const scopeId = randomUUID();
   const profileId = randomUUID();
   const template = (await store.listTemplates(null))[0];
   if (!template) throw Error("Missing template");
-  await store.managed.authority.registerScope(server.keyId, scopeId, caller.principal.id, true);
-  await store.managed.authority.provisionProfile(server.keyId, caller.principal.id, {
-    profileId,
-    revision: 1,
-    isolationScopeId: randomUUID(),
-    budgetScopeIds: [scopeId],
-    templateDigest: template.digest,
-    credentialBindingId: null,
-  });
-  await store.managed.budgets.writePolicy(server.keyId, managedPolicy(scopeId), null);
+  await store.managed.profiles.reconcile(
+    caller.principal.id,
+    { [profileId]: managed.ProfileConfigSchema.parse({ template: template.name, placement: "shared" }) },
+    {},
+  );
   const request = (path: string, method = "GET", body?: unknown) =>
     server.app.request(
       path,
       authed(server.token, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }),
     );
   const sessionId = randomUUID();
-  await request("/v1/sessions", "POST", { sessionId, profileId, profileRevision: 1 });
+  await request("/v1/sessions", "POST", { sessionId, profile: profileId, owner: "test-owner" });
   return { server, request, sessionId };
 }
 
-test("cancel and close routes return pending or completed receipts and need an explicit deadline", async () => {
-  const unconfigured = await managedServer();
-  const missing = await unconfigured.request(`/v1/sessions/${unconfigured.sessionId}/close`, "POST", {
-    cancelId: randomUUID(),
-  });
-  expect(missing.status).toBe(503);
-
-  const { request, sessionId } = await managedServer({ stop: 30 });
+test("cancel and close routes return pending or completed receipts and work with built-in defaults", async () => {
+  const { request, sessionId } = await managedServer();
   const requestId = randomUUID();
   const body = {
     requestId,
     message: "queued",
     attachments: [],
-    dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
   };
   expect((await request(`/v1/sessions/${sessionId}/requests`, "POST", body)).status).toBe(200);
-  const cancelId = randomUUID();
-  const canceled = await request(`/v1/sessions/${sessionId}/requests/${requestId}/cancel`, "POST", { cancelId });
+  const canceled = await request(`/v1/sessions/${sessionId}/requests/${requestId}/cancel`, "POST");
   expect(canceled.status).toBe(200);
-  expect(managed.CancelReceiptSchema.parse(await canceled.json())).toMatchObject({ state: "completed", cancelId });
-  const closed = await request(`/v1/sessions/${sessionId}/close`, "POST", { cancelId: randomUUID() });
+  expect(managed.CancelReceiptSchema.parse(await canceled.json())).toMatchObject({ state: "completed" });
+  const closed = await request(`/v1/sessions/${sessionId}/close`, "POST");
   expect(closed.status).toBe(200);
   expect(await closed.json()).toMatchObject({ scope: "session", state: "completed" });
   const after = await request(`/v1/sessions/${sessionId}/requests`, "POST", { ...body, requestId: randomUUID() });
@@ -70,7 +55,7 @@ test("cancel and close routes return pending or completed receipts and need an e
 });
 
 test("history returns a watermark and the event stream resumes after it", async () => {
-  const { request, sessionId } = await managedServer({ stop: 30 });
+  const { request, sessionId } = await managedServer();
   const history = await request(`/v1/sessions/${sessionId}/history?limit=10`);
   expect(history.status).toBe(200);
   const page = managed.ManagedHistoryPageSchema.parse(await history.json());
@@ -85,7 +70,6 @@ test("history returns a watermark and the event stream resumes after it", async 
     requestId,
     message: "hello",
     attachments: [],
-    dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
   });
   let text = "";
   while (!text.includes(requestId)) text += new TextDecoder().decode((await reader.read()).value);

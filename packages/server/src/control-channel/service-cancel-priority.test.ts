@@ -18,6 +18,7 @@ test("service cancel bypasses its held accept and a full relay budget", async ()
   let canceled = false;
   let acknowledgments = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;

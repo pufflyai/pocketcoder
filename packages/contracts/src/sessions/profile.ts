@@ -1,38 +1,40 @@
 import { z } from "zod";
 
-export const ExecutionProfileSchema = z
-  .strictObject({
-    profileId: z.uuid(),
-    revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-    isolationScopeId: z.uuid(),
-    budgetScopeIds: z
-      .array(z.uuid())
-      .min(1)
-      .max(1000)
-      .refine((items) => new Set(items).size === items.length, "Values must be unique"),
-    templateDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-    credentialBindingId: z.uuid().nullable(),
-    // Absent means exclusive, so existing profiles keep their digests and placement keys.
-    credentialPlacement: z.enum(["exclusive", "shared"]).optional(),
-  })
-  .refine((profile) => profile.credentialBindingId !== null || profile.credentialPlacement === undefined, {
-    message: "Only a credentialed profile can choose its credential placement",
-    path: ["credentialPlacement"],
-  });
-export type ExecutionProfile = z.infer<typeof ExecutionProfileSchema>;
+export const ProfileNameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/);
+export const ProfileConfigSchema = z.strictObject({
+  template: z.string().min(1).max(128),
+  templateVersion: z.string().min(1).max(128).optional(),
+  issuer: ProfileNameSchema.optional(),
+  placement: z.enum(["exclusive", "shared"]).default("exclusive"),
+  limits: z
+    .strictObject({
+      workspacesPerOwner: z.number().int().positive().default(1),
+      sessionsPerWorkspace: z.number().int().positive().default(1),
+    })
+    .default({ workspacesPerOwner: 1, sessionsPerWorkspace: 1 }),
+  dispatchDeadlineSeconds: z.number().int().positive().default(600),
+});
+export type ProfileConfig = z.infer<typeof ProfileConfigSchema>;
+export const SessionProfileSchema = ProfileConfigSchema.extend({
+  name: ProfileNameSchema,
+  templateVersion: z.string().nullable(),
+  disabled: z.boolean(),
+});
+export type SessionProfile = z.infer<typeof SessionProfileSchema>;
 
 export const SessionCreateSchema = z.strictObject({
   sessionId: z.uuid(),
-  profileId: z.uuid(),
-  profileRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  profile: ProfileNameSchema,
+  owner: z.string().min(1).max(128),
+  group: z.string().min(1).max(128).optional(),
 });
 export type SessionCreate = z.infer<typeof SessionCreateSchema>;
-
 export const SessionSchema = z.strictObject({
   sessionId: z.uuid(),
-  profileId: z.uuid(),
-  profileRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  profile: ProfileNameSchema,
+  owner: z.string().min(1).max(128),
+  group: z.string().min(1).max(128),
+  revision: z.number().int().positive(),
   state: z.enum(["provisioning", "ready", "suspended", "closed", "failed"]),
   reasonCode: z.string().min(1).max(256).nullable(),
   createdAt: z.iso.datetime({ offset: true }),

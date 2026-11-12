@@ -3,6 +3,7 @@ import { digestOf } from "../common/canonical";
 import { JsonValueSchema } from "../common/json-value";
 import { ConversationRequestIdentitySchema } from "../conversations/identity";
 import { WorkloadExportReferenceSchema } from "../outputs/export-reference";
+import { PriorMessageSchema } from "../sessions/history-seed";
 import { type WorkloadAcceptance, WorkloadAcceptanceSchema, WorkloadCancelSchema } from "./workload-operation";
 
 export const ExecutionPhaseSchema = z.enum([
@@ -17,6 +18,7 @@ export const ExecutionPhaseSchema = z.enum([
 export type ExecutionPhase = z.infer<typeof ExecutionPhaseSchema>;
 export const ExecutionRecordSchema = z.strictObject({
   acceptance: WorkloadAcceptanceSchema,
+  priorMessages: z.array(PriorMessageSchema).optional(),
   conversationIdentity: ConversationRequestIdentitySchema.nullable(),
   outcome: JsonValueSchema.nullable(),
   acceptedAt: z.iso.datetime(),

@@ -86,9 +86,7 @@ async function executionInput(
     if (
       !request ||
       object?.sessionId !== request.conversationId ||
-      !request.managed?.input?.attachments.some(
-        (ref) => ref.inputId === reference.fileId && ref.sha256 === reference.digest,
-      )
+      !request.managed?.input?.attachments.some((ref) => ref === reference.fileId)
     )
       executionConflict("Input does not belong to this managed request.");
   }

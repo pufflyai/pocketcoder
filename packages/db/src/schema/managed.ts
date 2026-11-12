@@ -3,22 +3,9 @@ import type {
   ManagedBinding,
   ManagedCancelRecord,
   ManagedCapacityRecord,
-  ManagedCredentialBinding,
   ManagedPlacementIntent,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { sql } from "drizzle-orm";
-import {
-  bigint,
-  boolean,
-  integer,
-  jsonb,
-  type PgTableFn,
-  pgTable,
-  primaryKey,
-  text,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { bigint, boolean, integer, jsonb, type PgTableFn, pgTable, primaryKey, text, uuid } from "drizzle-orm/pg-core";
 import type { createAccessTables } from "./access";
 import { timestamptz } from "./columns";
 
@@ -26,49 +13,36 @@ export function createManagedTables(
   table: PgTableFn<string | undefined> = pgTable,
   { principals }: ReturnType<typeof createAccessTables>,
 ) {
-  const managedScopes = table(
-    "managed_scopes",
+  const managedIssuers = table(
+    "managed_issuers",
     {
-      scopeId: uuid("scope_id").primaryKey(),
       principalId: uuid("principal_id")
         .notNull()
         .references(() => principals.id),
-      installation: boolean("installation").notNull(),
-      lastClockAt: timestamptz("last_clock_at").notNull(),
+      name: text("name").notNull(),
+      config: jsonb("config").$type<managed.SessionIssuer>().notNull(),
     },
-    (row) => [uniqueIndex("managed_installation_scope").on(row.installation).where(sql`${row.installation} = true`)],
-  );
-  const managedScopeGrants = table(
-    "managed_scope_grants",
-    {
-      scopeId: uuid("scope_id")
-        .notNull()
-        .references(() => managedScopes.scopeId),
-      principalId: uuid("principal_id")
-        .notNull()
-        .references(() => principals.id),
-    },
-    (row) => [primaryKey({ columns: [row.scopeId, row.principalId] })],
+    (row) => [primaryKey({ columns: [row.principalId, row.name] })],
   );
   const managedProfiles = table(
     "managed_profiles",
     {
-      profileId: uuid("profile_id").notNull(),
-      revision: integer("revision").notNull(),
       principalId: uuid("principal_id")
         .notNull()
         .references(() => principals.id),
-      profile: jsonb("profile").$type<managed.ExecutionProfile>().notNull(),
-      businessSlots: jsonb("business_slots").$type<string[]>().notNull(),
+      name: text("name").notNull(),
+      template: text("template_name").notNull(),
+      templateVersion: text("template_version"),
+      issuer: text("issuer"),
+      placement: text("placement").$type<"exclusive" | "shared">().notNull(),
+      workspacesPerOwner: integer("workspaces_per_owner").notNull(),
+      sessionsPerWorkspace: integer("sessions_per_workspace").notNull(),
+      dispatchDeadlineSeconds: integer("dispatch_deadline_seconds").notNull(),
+      disabled: boolean("disabled").notNull().default(false),
+      updatedAt: timestamptz("updated_at").notNull(),
     },
-    (row) => [primaryKey({ columns: [row.profileId, row.revision] })],
+    (row) => [primaryKey({ columns: [row.principalId, row.name] })],
   );
-  const managedCredentials = table("managed_credentials", {
-    bindingId: uuid("binding_id").primaryKey(),
-    binding: jsonb("binding")
-      .$type<Omit<ManagedCredentialBinding, "authorityExpiresAt"> & { authorityExpiresAt: string }>()
-      .notNull(),
-  });
   const managedSessions = table(
     "managed_sessions",
     {
@@ -85,8 +59,9 @@ export function createManagedTables(
       nextRequestSequence: bigint("next_request_sequence", { mode: "number" }).notNull().default(1),
       queueCount: integer("queue_count").notNull().default(0),
       queueBytes: bigint("queue_bytes", { mode: "number" }).notNull().default(0),
-      // Close is persisted once; retries keep its identity and deadline.
+      // Close is persisted once; retries return the same receipt.
       close: jsonb("close").$type<ManagedCancelRecord>(),
+      cancel: jsonb("cancel").$type<ManagedCancelRecord>(),
       // The placement owner records the workspace it created before binding, so a restart reuses it.
       placement: jsonb("placement").$type<ManagedPlacementIntent>(),
       resumeRequestedAt: timestamptz("resume_requested_at"),
@@ -105,29 +80,15 @@ export function createManagedTables(
     },
     (row) => [primaryKey({ columns: [row.principalId, row.sessionId, row.sequence] })],
   );
-  const budgetPolicies = table(
-    "budget_policies",
-    {
-      scopeId: uuid("scope_id")
-        .notNull()
-        .references(() => managedScopes.scopeId),
-      revision: integer("revision").notNull(),
-      policy: jsonb("policy").$type<managed.BudgetPolicy>().notNull(),
-    },
-    (row) => [primaryKey({ columns: [row.scopeId, row.revision] })],
-  );
   const managedCapacity = table("managed_capacity", {
     workspaceId: uuid("workspace_id").primaryKey(),
     record: jsonb("record").$type<ManagedCapacityRecord>().notNull(),
   });
   return {
-    managedScopes,
-    managedScopeGrants,
+    managedIssuers,
     managedProfiles,
-    managedCredentials,
     managedSessions,
     managedObservations,
     managedCapacity,
-    budgetPolicies,
   };
 }

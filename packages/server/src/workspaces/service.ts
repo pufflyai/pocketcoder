@@ -162,6 +162,7 @@ export class WorkspaceService {
     principal: PrincipalRow,
     body: WorkspaceCreateRequest,
     idempotencyKey: string,
+    workspaceId?: string,
   ): Promise<{ workspace: WorkspaceRow; created: boolean }> {
     const { store, limits } = this.deps;
     const requestDigest = digestOf(body);
@@ -188,7 +189,7 @@ export class WorkspaceService {
     }
     const result = await store.insertWorkspace(
       {
-        id: randomUUID(),
+        id: workspaceId ?? randomUUID(),
         principalId: principal.id,
         externalId: body.external_id,
         idempotencyKey,

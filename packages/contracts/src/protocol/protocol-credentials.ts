@@ -28,3 +28,5 @@ export const CredentialInstallPayload = z.object({ credentials: z.array(Workspac
 export const CredentialRemovePayload = z.object({ session_id: z.uuid() });
 // Sent once a `credential_install` is written, so a session becomes ready only with its files present.
 export const CredentialInstallAckPayload = z.object({ lease_ids: z.array(z.uuid()).min(1).max(64) });
+
+export const CredentialRemoveAckPayload = z.object({ session_id: z.uuid() });

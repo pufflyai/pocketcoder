@@ -67,6 +67,7 @@ test("weak producer lost response becomes unknown without another request or an 
   const f = await conversationFixture(["unknown-outcome"]);
   let calls = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch() {
       calls++;

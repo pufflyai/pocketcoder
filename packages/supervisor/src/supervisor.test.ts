@@ -66,6 +66,7 @@ describe("warm pool bootstrap", () => {
     };
     let enrollmentHeader = "";
     const server = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       fetch(request, server) {
         enrollmentHeader = request.headers.get("x-pocketcoder-pool-enrollment") ?? "";
@@ -119,6 +120,7 @@ describe("process signals", () => {
       markRunning = resolveRunning;
     });
     const server = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       fetch(request, server) {
         if (server.upgrade(request)) return;

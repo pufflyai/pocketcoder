@@ -3,11 +3,12 @@ import { onefinCredentials } from "./credentials";
 
 const token = (jti: string, exp: number) =>
   `test.${Buffer.from(JSON.stringify({ jti, exp, task_id: "task" })).toString("base64url")}.test`;
-test("Onefin redeems one-use input, rotates its scoped token, and revokes the latest token", async () => {
+test("The external agent redeems one-use input, rotates its scoped token, and revokes the latest token", async () => {
   const calls: { path: string; authorization: string | null; body: unknown }[] = [];
   const old = token("old", Date.now() / 1000 + 30),
     fresh = token("fresh", Date.now() / 1000 + 3600);
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -43,6 +44,7 @@ test("closing during refresh revokes the new lease and prevents later reads", as
   const old = token("old", Date.now() / 1000 + 1),
     fresh = token("fresh", Date.now() / 1000 + 3600);
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -82,6 +84,7 @@ test("closing during refresh revokes the new lease and prevents later reads", as
 test("a minted credential is revoked when its task binding is rejected", async () => {
   const revoked: string[] = [];
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname.endsWith("revoke/")) {

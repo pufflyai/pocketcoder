@@ -27,7 +27,11 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
       const target = await bootstrapLocalOwnerKey(source, pepper, { request_id: "target", expires_at });
       const oldWriter = source.journalSnapshot().writer;
       await source.close();
-      const endpoint = Bun.serve({ port: 0, fetch: () => new Response() });
+      const endpoint = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => new Response(),
+      });
       const unavailable = endpoint.url.toString();
       endpoint.stop(true);
       const offline = createJournalReplica({ ...fixture.config, endpoint: unavailable }, accountId, outerKey);

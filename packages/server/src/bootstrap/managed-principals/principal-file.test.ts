@@ -39,3 +39,25 @@ test("the admission map comes from the same file and needs no controller", () =>
     principals: [{ id: managedPrincipalId("backend"), name: "backend", admission_template: "standard" }],
   });
 });
+
+test("consumer profiles and issuers need only declarative configuration", () => {
+  const file = parsePrincipalFile(
+    JSON.stringify({
+      principals: [
+        {
+          ...backend,
+          issuers: { business: { url: "https://issuer.example/mint", tokenFile: "/etc/issuer/token" } },
+          profiles: { chat: { template: "echo", issuer: "business", placement: "shared" } },
+        },
+      ],
+    }),
+  );
+  expect(file.principals[0]?.profiles.chat).toEqual({
+    template: "echo",
+    issuer: "business",
+    placement: "shared",
+    limits: { workspacesPerOwner: 1, sessionsPerWorkspace: 1 },
+    dispatchDeadlineSeconds: 600,
+  });
+  expect(file.principals[0]?.issuers.business?.revoke).toBe(false);
+});

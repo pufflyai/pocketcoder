@@ -18,6 +18,7 @@ export async function processDispatchFixture(
   shared?: Awaited<ReturnType<typeof executionFixture>> & { hub: Hub },
   options: {
     concurrency?: number;
+    workspaceId?: string;
     canDispatch?: () => boolean;
     capabilities?: import("@pstdio/pocketcoder-contracts").WorkloadCapability[];
     readCapacity?: import("@pstdio/pocketcoder-runtime-core").ReadStorageCapacity;
@@ -36,7 +37,7 @@ export async function processDispatchFixture(
       ];
       configure?.(source);
     },
-    { mode: "disk", base: shared, capabilities: options.capabilities },
+    { mode: "disk", base: shared, capabilities: options.capabilities, workspaceId: options.workspaceId },
   );
   root = f.directory ?? "";
   const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));

@@ -56,10 +56,10 @@ test.each(["memory", "disk"] as const)("public session files upload exact bytes 
     });
   let server = build();
   const base = `/v1/sessions/${f.sessionId}`;
-  const call = (path: string, method = "GET", body?: string, contentType = "application/json") =>
+  const call = (path: string, method = "GET", body?: string, contentType = "application/json", name = "test.txt") =>
     server.app.request(path, {
       method,
-      headers: { authorization: `Bearer ${token.token}`, "content-type": contentType },
+      headers: { authorization: `Bearer ${token.token}`, "content-type": contentType, "x-pocketcoder-file-name": name },
       ...(body === undefined ? {} : { body }),
     });
   try {
@@ -71,29 +71,19 @@ test.each(["memory", "disk"] as const)("public session files upload exact bytes 
       sizeBytes: Buffer.byteLength(bytes),
       sha256: `sha256:${sha256Hex(Buffer.from(bytes))}`,
     };
-    expect((await call(`${base}/inputs`, "POST", JSON.stringify({ ...input, name: "../escape" }))).status).toBe(400);
-    expect((await call(`${base}/inputs`, "POST", JSON.stringify({ ...input, mediaType: "invalid" }))).status).toBe(400);
-    const bad = { ...input, inputId: randomUUID() };
-    expect((await call(`${base}/inputs`, "POST", JSON.stringify(bad))).status).toBe(200);
-    expect(
-      (await call(`${base}/inputs/${bad.inputId}/content`, "PUT", "wrong bytes", "application/octet-stream")).status,
-    ).toBe(400);
-    expect(await (await call(`${base}/inputs/${bad.inputId}`)).json()).toMatchObject({ state: "rejected" });
-    expect((await call(`${base}/inputs`, "POST", JSON.stringify(input))).status).toBe(200);
-    const registered = managed.InputObjectSchema.parse(await (await call(`${base}/inputs/${input.inputId}`)).json());
+    expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain", "../escape")).status).toBe(400);
+    expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "invalid")).status).toBe(400);
+    const uploaded = await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain");
+    expect(uploaded.status).toBe(200);
+    const registered = managed.InputObjectSchema.parse(await uploaded.json());
+    expect(registered.state).toBe("ready");
+    expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain")).status).toBe(200);
+    expect((await call(`${base}/inputs/${input.inputId}`, "PUT", "different bytes", "text/plain")).status).toBe(409);
     const body = {
       requestId: randomUUID(),
       message: "read the uploaded test",
-      attachments: [registered.reference],
-      dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
+      attachments: [registered.reference.inputId],
     };
-    expect((await call(`${base}/requests`, "POST", JSON.stringify(body))).status).toBe(404);
-    const uploaded = await call(`${base}/inputs/${input.inputId}/content`, "PUT", bytes, "application/octet-stream");
-    expect(uploaded.status).toBe(200);
-    expect(await uploaded.json()).toMatchObject({ state: "ready", reference: registered.reference });
-    expect(
-      (await call(`${base}/inputs/${input.inputId}/content`, "PUT", bytes, "application/octet-stream")).status,
-    ).toBe(200);
     const accepted = await call(`${base}/requests`, "POST", JSON.stringify(body));
     expect(accepted.status).toBe(200);
     const receipt = await accepted.json();

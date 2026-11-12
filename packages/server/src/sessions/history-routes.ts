@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import type { LiveTurns } from "../conversations/live-turns";
 import { MANAGED_ERROR_RESPONSES } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
+import { registerConversationRoute } from "./conversation-route";
 
 const PAGE = 100;
 const KEEPALIVE_MS = 15_000;
@@ -16,33 +17,8 @@ export function registerSessionHistoryRoutes(
   store: Store,
   options: { pollMs: number; liveTurns: LiveTurns },
 ) {
+  registerConversationRoute(app, store, options.liveTurns);
   const base = "/v1/sessions/{sessionId}";
-  app.openapi(
-    createRoute({
-      method: "get",
-      path: base + "/conversation/open",
-      tags: ["Managed sessions"],
-      operationId: "getManagedOpenTurns",
-      middleware: [requireScope("sessions:read")] as const,
-      request: { params: z.object({ sessionId: z.uuid() }) },
-      responses: {
-        200: {
-          description: "Canonical turns in progress",
-          content: { "application/json": { schema: managed.managedSchemas.OpenTurns } },
-        },
-        ...MANAGED_ERROR_RESPONSES,
-      },
-    }),
-    async (c) => {
-      const { sessionId } = c.req.valid("param");
-      const binding = await store.managed.sessions.binding(c.get("keyId"), sessionId);
-      return c.json({
-        turns: binding
-          ? options.liveTurns.open(binding.workspaceId).filter((turn) => turn.conversation_id === sessionId)
-          : [],
-      });
-    },
-  );
   app.openapi(
     createRoute({
       method: "get",

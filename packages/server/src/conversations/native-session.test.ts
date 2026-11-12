@@ -13,7 +13,11 @@ import { processDispatchFixture } from "../control-channel/process-dispatch-fixt
 
 test("native execution replay commits structured history before acknowledgement after controller recovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc-native-controller-"));
-  const listener = Bun.serve({ port: 0, fetch: () => new Response() });
+  const listener = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const port = Number(listener.port);
   await listener.stop(true);
   const f = await processDispatchFixture((source) => {
@@ -107,7 +111,11 @@ test("native execution replay commits structured history before acknowledgement 
       limits: DEFAULT_LIMITS,
       workspaceServerUrl: "http://localhost",
     });
-    const listener = Bun.serve({ port: 0, fetch: built.app.fetch });
+    const listener = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: built.app.fetch,
+    });
     const client = new PocketCoderClient({ baseUrl: listener.url.toString(), apiKey: key.token });
     const conversationId = crypto.randomUUID();
     const request = {

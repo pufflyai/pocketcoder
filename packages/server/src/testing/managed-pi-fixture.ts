@@ -1,8 +1,8 @@
-import { randomBytes } from "node:crypto";
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
+import { managedPrincipalId } from "../bootstrap/managed-principals/principal-file";
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "../lifecycle/lifecycle";
 import { createTestIssuer } from "../secrets/issuer-test-server";
@@ -16,7 +16,11 @@ export const EGRESS_IMAGE =
 const ISSUER_SECRET = "model-gateway";
 
 function freePort() {
-  const server = Bun.serve({ port: 0, fetch: () => new Response() });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const port = Number(server.port);
   server.stop(true);
   return port;
@@ -44,12 +48,11 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
     POCKETCODER_WORKSPACE_DATA_DIR: join(root, "work"),
     POCKETCODER_CHECKPOINT_DIR: join(root, "checkpoints"),
     POCKETCODER_INPUT_DIR: join(root, "launch"),
-    POCKETCODER_SECRET_KEY: randomBytes(32).toString("base64url"),
+    POCKETCODER_PRINCIPALS_FILE: join(root, "principals.json"),
     POCKETCODER_ISSUER_CA_FILE: caFile,
     POCKETCODER_EGRESS_IMAGE: EGRESS_IMAGE,
     POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL: "40",
     POCKETCODER_SESSION_QUEUE: JSON.stringify({ count: options.queueCount ?? 8, bytes: 1048576 }),
-    POCKETCODER_SESSION_STOP_SECONDS: "60",
     POCKETCODER_SESSION_EVENT_RETENTION: "1000",
     POCKETCODER_INPUT_STORAGE: JSON.stringify({
       root: join(root, "canonical"),
@@ -72,6 +75,25 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
     }),
   };
   const template = await piManagedTemplate(images, gateway.port, ISSUER_SECRET);
+  const tokenFile = join(root, "issuer.token"),
+    keyFile = join(root, "consumer.token");
+  await writeFile(tokenFile, issuer.authorization.slice(7));
+  const configured = (
+    limits = { workspacesPerOwner: 4, sessionsPerWorkspace: 4 },
+    placement: "exclusive" | "shared" = "exclusive",
+  ) => ({
+    principals: [
+      {
+        name: "consumer",
+        scopes: ["sessions:read", "sessions:write"],
+        templates: [template.metadata.name],
+        key: { target: { kind: "file", path: keyFile } },
+        issuers: { [ISSUER_SECRET]: { url: issuer.url, tokenFile, policy: issuer.policy, revoke: false } },
+        profiles: { chat: { template: template.metadata.name, issuer: ISSUER_SECRET, placement, limits } },
+      },
+    ],
+  });
+  await writeFile(env.POCKETCODER_PRINCIPALS_FILE, JSON.stringify(configured()));
   const start = async () => {
     const config = loadConfig({ ...env, POCKETCODER_WORKLOAD_LIMITS: JSON.stringify(template.spec.limits) });
     return startPocketCoderServer(config, { log: (line) => logs.push(line) });
@@ -101,7 +123,8 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
   ]);
   if (code) throw new Error(`Owner key creation failed: ${err}`);
   const issued = JSON.parse(out) as { token: string; key: { principal_id: string } };
-  const client = new PocketCoderClient({ baseUrl, apiKey: issued.token });
+  const admin = new PocketCoderClient({ baseUrl, apiKey: issued.token });
+  const client = new PocketCoderClient({ baseUrl, apiKey: (await Bun.file(keyFile).text()).trim() });
   const http = async (path: string, method: string, body: unknown) => {
     const reply = await fetch(`${baseUrl}${path}`, {
       method,
@@ -111,11 +134,6 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
     if (!reply.ok) throw new Error(`${method} ${path}: ${reply.status} ${await reply.text()}`);
     return reply.json();
   };
-  // The issuer configuration stays in the encrypted controller vault, never in a workspace.
-  await http(`/v1/secrets/${ISSUER_SECRET}`, "PUT", {
-    type: "runtime-issuer",
-    value: { url: issuer.url, authorization: issuer.authorization, policy: issuer.policy },
-  });
   const published = (await http("/v1/templates", "POST", { manifest: template })) as { digest: string };
   return {
     root,
@@ -125,7 +143,30 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
     template,
     templateDigest: published.digest,
     client,
-    principalId: issued.key.principal_id,
+    admin,
+    async configure(
+      limits: { workspacesPerOwner: number; sessionsPerWorkspace: number },
+      placement: "exclusive" | "shared" = "exclusive",
+    ) {
+      await writeFile(env.POCKETCODER_PRINCIPALS_FILE, JSON.stringify(configured(limits, placement)));
+      const command = Bun.spawn(
+        [
+          process.execPath,
+          "--no-env-file",
+          resolve(import.meta.dir, "../../../cli/src/index.ts"),
+          "principals",
+          "reconcile",
+          "--dir",
+          env.POCKETCODER_DIR,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const error = new Response(command.stderr).text();
+      await new Response(command.stdout).text();
+      if (await command.exited) throw new Error(await error);
+      return "chat";
+    },
+    principalId: managedPrincipalId("consumer"),
     logs,
     async restart() {
       await server.stop();
@@ -139,22 +180,17 @@ export async function managedPiFixture(options: { queueCount?: number } = {}) {
     },
     // Containers of this controller's workspaces only; other workspaces on the host are untouched.
     async containers() {
-      const ids: string[] = [];
-      for await (const workspace of client.workspaces.all())
-        ids.push(
-          ...(await dockerCommand("ps", "-aq", "--filter", `label=pocketcoder.workspace=${workspace.id}`)).split("\n"),
-        );
-      return ids.filter(Boolean);
+      return (await dockerCommand("ps", "-aq", "--filter", `label=pocketcoder.template-digest=${published.digest}`))
+        .split(String.fromCharCode(10))
+        .filter(Boolean);
     },
     async workspaceContainer(workspaceId: string) {
       return dockerCommand("ps", "-q", "--filter", `label=pocketcoder.workspace=${workspaceId}`);
     },
     async close() {
-      const leftover: string[] = [];
-      for await (const workspace of client.workspaces.all())
-        leftover.push(
-          ...(await dockerCommand("ps", "-aq", "--filter", `label=pocketcoder.workspace=${workspace.id}`)).split("\n"),
-        );
+      const leftover = (
+        await dockerCommand("ps", "-aq", "--filter", `label=pocketcoder.template-digest=${published.digest}`)
+      ).split(String.fromCharCode(10));
       await server.stop();
       if (leftover.filter(Boolean).length) await dockerCommand("rm", "-f", ...leftover.filter(Boolean)).catch(() => {});
       gateway.stop();

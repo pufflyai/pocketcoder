@@ -1,7 +1,8 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { jsonLines } from "./json-lines";
 import { PiEvents } from "./pi-events";
+import { seedPiSession } from "./pi-history";
 import type { SessionRun, SessionRunner } from "./producer";
 import { sessionEnvironment } from "./session-env";
 
@@ -11,9 +12,16 @@ export function piRunner(command: string[], directory: string): SessionRunner {
   return async (run) => {
     run.signal.throwIfAborted();
     const session = join(directory, `${run.identity.conversation_id}.jsonl`);
+    seedPiSession(session, run.priorMessages);
+    const env = sessionEnvironment(process.env, run.identity.conversation_id);
+    const leasePaths = Object.values(env).filter((value): value is string =>
+      Boolean(value?.startsWith(`/run/pocketcoder/secrets/leases/sessions/${run.identity.conversation_id}/`)),
+    );
+    let credentialExpired = false;
     const child = Bun.spawn([...command, "--mode", "rpc", "--session", session], {
       env: {
-        ...sessionEnvironment(process.env, run.identity.conversation_id),
+        ...env,
+        POCKETCODER_TURN_ID: run.identity.turn_id,
         POCKETCODER_CONVERSATION_ID: run.identity.conversation_id,
       },
       stdin: "pipe",
@@ -32,6 +40,12 @@ export function piRunner(command: string[], directory: string): SessionRunner {
       }
     };
     run.signal.addEventListener("abort", abort, { once: true });
+    const credentials = setInterval(() => {
+      if (!credentialExpired && leasePaths.some((path) => !existsSync(path))) {
+        credentialExpired = true;
+        abort();
+      }
+    }, 250);
     const files = run.acceptance.inputs.objects.map((file) => `${run.inputDirectory}/${file.fileId} (${file.name})`);
     const message =
       String(run.acceptance.input.message) +
@@ -40,8 +54,9 @@ export function piRunner(command: string[], directory: string): SessionRunner {
       child.stdin.write(`${JSON.stringify({ id: run.identity.request_id, type: "prompt", message })}\n`);
       await child.stdin.flush();
       const events = await settle(child.stdout, run);
-      if (events.aborted) return "canceled";
+      if (events.aborted || credentialExpired) return "canceled";
     } finally {
+      clearInterval(credentials);
       run.signal.removeEventListener("abort", abort);
       clearTimeout(killTimer);
       try {

@@ -11,6 +11,7 @@ test.each(["maintenance", "shutdown"])("%s drains held dispatch without admittin
   });
   let accepts = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });

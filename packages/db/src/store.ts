@@ -1,14 +1,13 @@
 import type { Store } from "@pstdio/pocketcoder-runtime-contracts";
 import { type BackupOptions, writeBackup } from "./backup/write-backup";
 import { createLifecycle, type DatabaseContext, type DatabaseOpenOptions } from "./database/context";
-import { createPGliteContext } from "./database/pglite-context";
-import { createPostgresContext, type PostgresOptions } from "./database/postgres-context";
+import { openPGliteStoreContext, openPostgresStoreContext } from "./database/open-store";
+import type { PostgresOptions } from "./database/postgres-context";
 import { createWorkspaceWaiter } from "./database/workspace-changes";
 import type { JournalSnapshot } from "./journal/acknowledgement";
 import { createJournalAcknowledgement } from "./journal/acknowledgement";
 import { createManagedRuntime } from "./managed-runtime";
 import { createAuth } from "./modules/auth/repository";
-import { convertLegacyConversations } from "./modules/conversations/legacy-conversion";
 import { createConversations } from "./modules/conversations/repository";
 import { createLogs } from "./modules/logs/repository";
 import { createNetworkAudit } from "./modules/network-audit/repository";
@@ -38,8 +37,6 @@ import { extendWorkspaceDeadline } from "./modules/workspaces/lifetime";
 import { createWorkspaces } from "./modules/workspaces/repository";
 import { createTransitions } from "./modules/workspaces/transitions";
 import { createRecovery } from "./recovery/recovery";
-import { createRecordReplay } from "./recovery/replay-records";
-
 export class DatabaseStore implements Store {
   readonly managed: Store["managed"];
   readonly executions: Store["executions"];
@@ -51,37 +48,15 @@ export class DatabaseStore implements Store {
   readonly storageReservations: ReturnType<typeof createStorageReservations>;
   readonly backup: (options: BackupOptions) => ReturnType<typeof writeBackup>;
   readonly recovery: ReturnType<typeof createRecovery>;
-
   static async openPGlite(dataDir?: string, options?: DatabaseOpenOptions) {
-    const context = await createPGliteContext(dataDir, options);
-    try {
-      await convertLegacyConversations(context);
-    } catch (error) {
-      await context.close();
-      throw error;
-    }
-    return new DatabaseStore(context);
+    return new DatabaseStore(await openPGliteStoreContext(dataDir, options));
   }
-
-  // A database restore can roll back revocations and deletions. Journal records name exact
-  // targets, so replaying all of them on every start keeps those changes in force.
   static async openPostgres(options: PostgresOptions) {
-    const context = await createPostgresContext(options);
-    try {
-      await convertLegacyConversations(context, { onProgress: options.onConversionProgress });
-      const replay = createRecordReplay(context);
-      for (const record of context.journal?.records() ?? []) await replay(record.event);
-    } catch (error) {
-      await context.close();
-      throw error;
-    }
-    return new DatabaseStore(context);
+    return new DatabaseStore(await openPostgresStoreContext(options));
   }
-
   readonly driver: DatabaseContext["driver"];
   // Test fixtures and operator commands reach the raw connection through this.
   readonly context: DatabaseContext;
-
   constructor(context: DatabaseContext) {
     this.driver = context.driver;
     this.context = context;
@@ -116,6 +91,9 @@ export class DatabaseStore implements Store {
     this.publishTemplate = templates.publishTemplate;
     this.retireTemplate = journal.after(templates.retireTemplate);
     const leases = createWorkspaceLeases(context);
+    this.supersedeWorkspaceLease = leases.supersedeWorkspaceLease;
+    this.acknowledgeSessionLeaseRemoval = leases.acknowledgeSessionLeaseRemoval;
+    this.acknowledgeLeaseRevocation = leases.acknowledgeLeaseRevocation;
     this.requestWorkspaceLease = leases.requestWorkspaceLease;
     this.getWorkspaceLease = leases.getWorkspaceLease;
     this.listWorkspaceLeases = leases.listWorkspaceLeases;
@@ -248,6 +226,9 @@ export class DatabaseStore implements Store {
   readonly retireSecret: Store["retireSecret"];
   readonly readSecret: Store["readSecret"];
   readonly readSecretVersion: Store["readSecretVersion"];
+  readonly supersedeWorkspaceLease: Store["supersedeWorkspaceLease"];
+  readonly acknowledgeSessionLeaseRemoval: Store["acknowledgeSessionLeaseRemoval"];
+  readonly acknowledgeLeaseRevocation: Store["acknowledgeLeaseRevocation"];
   readonly requestWorkspaceLease: Store["requestWorkspaceLease"];
   readonly getWorkspaceLease: Store["getWorkspaceLease"];
   readonly listWorkspaceLeases: Store["listWorkspaceLeases"];

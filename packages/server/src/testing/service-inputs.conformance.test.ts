@@ -18,7 +18,11 @@ const available =
   Bun.spawnSync(["docker", "image", "inspect", serviceProbeImage], { stdout: "ignore", stderr: "ignore" }).exitCode ===
   0;
 function freePort() {
-  const server = Bun.serve({ port: 0, fetch: () => new Response() });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const port = Number(server.port);
   server.stop(true);
   return port;

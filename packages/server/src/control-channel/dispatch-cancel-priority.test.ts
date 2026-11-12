@@ -13,6 +13,7 @@ test.each([1, 20])(
     });
     let entered = false;
     const producer = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
         const path = new URL(request.url).pathname;

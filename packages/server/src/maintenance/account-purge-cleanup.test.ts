@@ -10,7 +10,11 @@ import { openControllerStore } from "../bootstrap/controller-store";
 
 async function start(directory: string, config: string) {
   const availablePort = () => {
-    const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+    const probe = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(),
+    });
     const port = probe.port;
     probe.stop(true);
     return port;

@@ -74,6 +74,7 @@ test("an unavailable producer cannot starve another accepted workspace", async (
   const first = f.acceptance();
   const second = other.acceptance();
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const input = (await request.json()) as { execution: { workspaceId: string } };

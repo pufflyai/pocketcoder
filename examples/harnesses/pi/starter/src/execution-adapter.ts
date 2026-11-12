@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { PriorMessage } from "./history-seed";
 import { type ModelRoute, readBearer, routeFromEnv, writeModelConfig } from "./model-route";
 import { startTurn, type TurnResult } from "./pi-turn";
 import { collectPublication } from "./publication";
@@ -33,6 +35,7 @@ type Envelope = {
   acceptance?: { execution: Execution; fingerprint: string; input?: { message?: unknown } };
   conversationIdentity?: { conversation_id: string } | null;
   inputDirectory?: string;
+  priorMessages?: PriorMessage[];
   execution: Execution;
   fingerprint: string;
 };
@@ -100,7 +103,8 @@ export function createExecutionAdapter(config: AdapterConfig) {
     turns.set(turnId, turn);
     let bearer: string;
     try {
-      bearer = await readBearer(config.route);
+      const route = sessionRoute(config.route, sessionId);
+      bearer = await readBearer(route);
     } catch {
       await finish(
         turn,
@@ -116,6 +120,8 @@ export function createExecutionAdapter(config: AdapterConfig) {
       agentDir: config.agentDir,
       sessionDir: config.sessionDir,
       sessionId,
+      turnId,
+      priorMessages: body.priorMessages,
       cwd: config.workspaceDir,
       prompt: await prompt(message, body.inputDirectory),
       outputDir,
@@ -123,7 +129,13 @@ export function createExecutionAdapter(config: AdapterConfig) {
       bearer,
     });
     turn.abort = run.abort;
-    turn.settled = run.result.then((result) => finish(turn, turnId, outputDir, result, startedAt));
+    const bearerFile = sessionRoute(config.route, sessionId).bearerFile;
+    const timer = setInterval(() => {
+      if (!existsSync(bearerFile)) run.abort();
+    }, 250);
+    turn.settled = run.result
+      .then((result) => finish(turn, turnId, outputDir, result, startedAt))
+      .finally(() => clearInterval(timer));
     return Response.json(turn.fact);
   }
 
@@ -195,4 +207,11 @@ if (import.meta.main) {
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
+}
+
+function sessionRoute(route: ModelRoute, sessionId: string) {
+  const prefix = "/run/pocketcoder/secrets/leases/";
+  const name = route.bearerFile.startsWith(prefix) ? route.bearerFile.slice(prefix.length) : null;
+  if (!name || name.includes("/")) return route;
+  return { ...route, bearerFile: `${prefix}sessions/${sessionId}/${name}` };
 }

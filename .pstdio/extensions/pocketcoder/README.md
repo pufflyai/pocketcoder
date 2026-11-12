@@ -13,11 +13,11 @@ From the integration checkout:
 ```sh
 bun install
 bun install --cwd .pstdio/extensions/pocketcoder
-bun run build:native
+bun run lab:prepare
 pst extensions dev .pstdio/extensions/pocketcoder
 ```
 
-The extension keeps its own dependencies and `bun.lock`, so the root `bun install` does not install them. Install them before you run the root typecheck or tests.
+The extension keeps its own dependencies and `bun.lock`. Install them before the root typecheck or tests. `lab:prepare` builds the native executable and SDK, then installs a self-contained SDK copy in the extension’s own `node_modules`. The host can load that copy without following workspace links. Run it again after SDK changes or dependency installation.
 
 Leave the executable field blank to use this project's `out/native/pocketcoder`. Lab tries `PATH` if there is no local build. An explicit executable path is also supported; relative paths use the project folder. Run `bun run build:native` if neither exists. Lab validates the executable before saving an instance.
 
@@ -87,9 +87,9 @@ The CLI supports the same options: `--external-id`, `--launch-input`, and `--met
 
 ## Share one machine between managed sessions
 
-Managed sessions let the controller choose the machine. Run **Open managed sessions** (`pst pocketcoder.pocketcoder sessions open --instance <instance-id> --template <name>@<version> --count 2`). The first call for an instance and template provisions a credential-free execution profile with room for five sessions per machine and four managed machines per instance. Each session opens as its own chat. The command waits for the first session's machine before opening the rest, because a session joins a machine only after one of that template has shown it runs conversations side by side.
+Managed sessions let the controller choose the machine. Run **Open managed sessions** (`pst pocketcoder.pocketcoder sessions open --instance <instance-id> --template <name>@<version> --count 2`). The first call for an instance and template writes a credential-free profile with room for five sessions per machine and four machines per owner. Each session opens as its own chat. The controller waits for the first machine to report parallel conversation support before joining the other sessions.
 
-Open **Machines** to see the sessions share one machine. Closing one session leaves the machine and its other sessions running; the last session to close stops it. Templates that name credentials need a credential binding, which Lab does not provision. Use an instance whose controller includes managed placement; Lab sets the session queue and stop deadlines it needs.
+Open **Machines** to see the sessions share one machine. Closing one session leaves the machine and its other sessions running; the last session to close stops it. Templates that name credentials need an issuer in the principal file, which Lab does not configure. The controller sets dispatch deadlines from the profile. Lab's operator and chat keys share one principal, so Machines shows managed compute too. The chat key has only session access.
 
 ## Write a template with an agent
 
@@ -103,7 +103,7 @@ Build a runnable template with a digest-pinned Docker image:
 
 ```sh
 bun run build:native
-bun run local:pstdio -- --output /tmp/pocketcoder-file-agent.json
+bun --no-env-file scripts/pstdio-demo.ts --output /tmp/pocketcoder-file-agent.json
 ```
 
 Open **PocketCoder Lab → Save template** and paste that file. Choose **Launch instance** with the absolute `out/native/pocketcoder` path, open the new instance, then **Launch machine → file-agent@1.0.0 → Connect to agent**. Send text and attach a text file in the native session composer. The reply includes the exact file text. Other file types return their byte count and SHA-256 digest.
@@ -113,22 +113,6 @@ This reference agent echoes messages and reads files. It does not call an LLM or
 The demo has a ten-minute workspace lifetime, a 1 MiB per-file limit, 8 MiB of staged inputs, and at most 16 files. Launch a new machine after expiry. The local instance derives input storage limits from its selected template; these are local test capacities. The build retains the Docker image so the saved template can launch again. Stop unused instances from **Instance actions**.
 
 The harness saves a pending request before sending it. Reconnect replays the same request ID and body after a lost response. Session history comes from the controller's existing request records, including after machine deletion. The host keeps its own uploaded-file links for the native composer.
-
-## Chat with the local Onefin agent
-
-The local `onefin-pstdio` template runs Onefin's agent in a disposable PocketCoder machine. It uses the local Onefin backend and model gateway. The template selects the model; Prompt Studio supplies the chat interface.
-
-Open **PocketCoder Lab**, choose **Onefin local**, open **Machines**, then open the ready machine's row menu and choose **Connect to agent**. Type messages in that native session. Connecting again opens the same saved conversation.
-
-Create a fresh machine with the configured local helper:
-
-```sh
-bun --no-env-file .pstdio/extension-storage/pocketcoder.pocketcoder/onefin/launch.ts
-```
-
-The helper gets a one-use bootstrap from the local backend, passes its task ID and tenant metadata through **Launch machine**, waits for readiness, and creates the native chat session. It prints the machine and session IDs. Its `config.json` holds the selected instance, template, backend container and dev user. Keep standing API keys out of launch input; controller credentials stay in the private host instance folder.
-
-This local template supports text chat. Its home and agent state use temporary memory storage. Machines expire after two hours, or after twenty idle minutes. This template has no checkpoints, so **Resume machine** explains that it is unavailable. Use the helper to create a fresh machine, or supply a new backend bootstrap and task metadata through **Relaunch machine**. The local backend's restricted controller key expires after twelve hours and needs renewal before creating or using later chats. The original Onefin deployment template is separate from this local variant.
 
 ## Data and credentials
 
@@ -143,7 +127,7 @@ pst pocketcoder.pocketcoder instances start --instance-id <instance-id>
 
 Machine states update from the controller's change feed. **Starting machine** and **Starting agent** are startup states; connect only when the state is **Ready**. Failed, expired, and stopped machines give recovery guidance instead of asking you to wait for readiness.
 
-Instance folders are private (0700); metadata and owner-key files are 0600. Owner keys expire after 24 hours. They stay outside project files, provider references, command results, and machine mounts. The caller's `.env` and PocketCoder settings do not carry into another instance. Instances continue running after the pstdio application closes. Reopen pstdio to reconnect or stop them.
+Instance folders are private (0700); metadata and key files are 0600. Operator and chat keys expire after 24 hours. The bootstrap owner key stays in memory; persistent keys have no admin scope. They stay outside project files, provider references, command results, and machine mounts. The caller's `.env` and PocketCoder settings do not carry into another instance. Instances continue running after the pstdio application closes. Reopen pstdio to reconnect or stop them.
 
 ## Validation and host gaps
 

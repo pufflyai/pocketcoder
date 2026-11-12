@@ -3,6 +3,7 @@ import type { ManagedHistoryStore } from "@pstdio/pocketcoder-runtime-contracts"
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DatabaseContext } from "../../database/context";
+import { conversationSnapshot } from "./conversation-snapshot";
 import { workAuthority } from "./work-authority";
 
 const PageCursorSchema = z.strictObject({
@@ -44,6 +45,7 @@ export function createManagedHistory(context: DatabaseContext): ManagedHistorySt
   const { managedObservations: observations, conversations, conversationRecords: records } = tables;
   const authorize = workAuthority(context);
   return {
+    snapshot: conversationSnapshot(context),
     // The session row lock orders this read after every terminal commit that holds it, so the
     // records and the event watermark come from one consistent point.
     async history(keyId, sessionId, raw, limit) {

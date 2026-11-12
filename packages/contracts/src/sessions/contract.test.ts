@@ -1,81 +1,30 @@
-import { describe, expect, test } from "bun:test";
-import examples from "./fixtures/parent-revision-2.json";
-import { managedSchemas } from "./schemas";
+import { expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { CollectionResultSchema } from "./collection";
+import collections from "./fixtures/collection-v1.json";
+import { ProfileConfigSchema, SessionCreateSchema } from "./profile";
+import { RequestInputSchema } from "./request";
 
-const accepts = (name: keyof typeof managedSchemas, value: unknown) => managedSchemas[name].safeParse(value).success;
-
-describe("managed integration revision 1", () => {
-  test("accepts every parent revision-2 example", () => {
-    for (const [name, value] of Object.entries(examples)) {
-      expect(accepts(name as keyof typeof managedSchemas, value), name).toBe(true);
-    }
+test("profiles supply usable defaults and session identities need an owner", () => {
+  expect(ProfileConfigSchema.parse({ template: "agent" })).toEqual({
+    template: "agent",
+    placement: "exclusive",
+    limits: { workspacesPerOwner: 1, sessionsPerWorkspace: 1 },
+    dispatchDeadlineSeconds: 600,
   });
-  test("requires all profile scopes and rejects unsafe token values and write timestamps", () => {
-    const { budgetScopeIds: _, ...withoutScopes } = examples.ExecutionProfile;
-    expect(accepts("ExecutionProfile", withoutScopes)).toBe(false);
-    expect(accepts("ExecutionProfile", { ...examples.ExecutionProfile, budgetScopeIds: [] })).toBe(false);
-    expect(
-      accepts("ExecutionProfile", {
-        ...examples.ExecutionProfile,
-        budgetScopeIds: [examples.ExecutionProfile.budgetScopeIds[0], examples.ExecutionProfile.budgetScopeIds[0]],
-      }),
-    ).toBe(false);
-    for (const value of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN]) {
-      expect(
-        accepts("BudgetPolicyWrite", {
-          ...examples.BudgetPolicyWrite,
-          limits: { ...examples.BudgetPolicyWrite.limits, workspaceStarts: value },
-        }),
-      ).toBe(false);
-    }
-    expect(accepts("BudgetPolicyWrite", examples.BudgetPolicy)).toBe(false);
-  });
-  test("rejects invalid Unicode and counts message UTF-8 bytes", () => {
-    for (const message of ["\ud800", "\udc00", "a\ud800b", "😀".repeat(65537)]) {
-      expect(accepts("RequestInput", { ...examples.RequestInput, message })).toBe(false);
-    }
-    expect(accepts("RequestInput", { ...examples.RequestInput, message: "😀".repeat(65536) })).toBe(true);
-  });
-  test("rejects inconsistent resource events", () => {
-    const event = examples.RuntimeEvent;
-    for (const value of [
-      { ...event, sessionId: examples.ExecutionProfile.profileId },
-      { ...event, requestId: null },
-      { ...event, revision: 2 },
-      { ...event, kind: "session.updated" },
-      { ...event, kind: "session.updated", data: examples.Session },
-    ])
-      expect(accepts("RuntimeEvent", value)).toBe(false);
-    expect(
-      accepts("RuntimeEvent", { ...event, requestId: null, kind: "session.updated", data: examples.Session }),
-    ).toBe(true);
-  });
-  test("requires outcome, cancellation, and cleanup evidence to agree with state", () => {
-    expect(accepts("Request", { ...examples.Request, state: "terminal" })).toBe(false);
-    expect(accepts("Request", { ...examples.Request, outcome: "completed" })).toBe(false);
-    expect(
-      accepts("Request", {
-        ...examples.Request,
-        state: "terminal",
-        outcome: "canceled",
-        finalResponse: "Retained text",
-      }),
-    ).toBe(true);
-    expect(accepts("CancelReceipt", { ...examples.CancelReceipt, state: "completed" })).toBe(false);
-    expect(accepts("CancelReceipt", { ...examples.CancelReceipt, scope: "session" })).toBe(false);
-    expect(accepts("CleanupReceipt", { ...examples.CleanupReceipt, state: "proved" })).toBe(false);
-  });
+  expect(SessionCreateSchema.safeParse({ sessionId: randomUUID(), profile: "chat" }).success).toBe(false);
+  expect(ProfileConfigSchema.safeParse({ template: "agent", limits: { workspacesPerOwner: 0 } }).success).toBe(false);
 });
-
-test("collection distinguishes zero-file success, partial selection and loss", async () => {
-  const { default: collections } = await import("./fixtures/collection-v1.json");
-  for (const value of Object.values(collections)) expect(accepts("CollectionResult", value)).toBe(true);
-  const lost = collections.lostBeforeAnyFile;
-  expect(accepts("CollectionResult", { ...lost, errors: [] })).toBe(false);
-  expect(accepts("CollectionResult", { ...collections.emptyComplete, errors: ["unexpected"] })).toBe(false);
-  expect(accepts("CollectionResult", { ...lost, manifestDigest: null })).toBe(false);
-  expect(accepts("CollectionResult", { ...collections.pending, completeness: "complete" })).toBe(false);
-  expect(
-    accepts("Request", { ...examples.Request, collection: { ...lost, requestId: examples.Session.sessionId } }),
-  ).toBe(false);
+test("request text rejects invalid Unicode and counts UTF-8 bytes", () => {
+  const input = { requestId: randomUUID(), attachments: [] };
+  for (const message of ["\ud800", "\udc00", "😀".repeat(65537)])
+    expect(RequestInputSchema.safeParse({ ...input, message }).success).toBe(false);
+  expect(RequestInputSchema.safeParse({ ...input, message: "😀".repeat(65536) }).success).toBe(true);
+});
+test("collection distinguishes empty success, partial selection and loss", () => {
+  for (const value of Object.values(collections)) expect(CollectionResultSchema.safeParse(value).success).toBe(true);
+  expect(CollectionResultSchema.safeParse({ ...collections.lostBeforeAnyFile, errors: [] }).success).toBe(false);
+  expect(CollectionResultSchema.safeParse({ ...collections.emptyComplete, errors: ["unexpected"] }).success).toBe(
+    false,
+  );
 });

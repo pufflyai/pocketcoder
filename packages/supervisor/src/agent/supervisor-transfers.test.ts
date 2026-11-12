@@ -33,6 +33,7 @@ test("authenticated HTTP restore verifies source identity and publishes fresh de
   const frames: Array<{ type: string; payload: unknown }> = [];
   const destination = { workspaceId: bound.binding.destination.workspaceId, connectionId: randomUUID(), epoch: 4 };
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       expect(request.headers.get("authorization")).toBe("Bearer destination-one-use");
@@ -108,6 +109,7 @@ test("disconnect cancels a real HTTP download without installation", async () =>
     },
   });
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch() {
       receiving();
@@ -170,6 +172,7 @@ test("HTTP upload deadline drains prepared custody and clears one-use credential
     release = resolve;
   });
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       await request.arrayBuffer();

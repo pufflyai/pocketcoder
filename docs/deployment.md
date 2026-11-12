@@ -410,6 +410,17 @@ What the controller does with the file:
   without the controller: `pcd principals admission-map --file principals.json`
   prints it, so a GitOps pipeline can render it into the hook's own config.
 
+Session profiles and issuers can also be declared per principal. See
+[consumer setup](managed-consumers.md) for a complete `issuers` and `profiles`
+example, limits, token-file rotation and template release pins. Removed profiles
+stay disabled for new sessions while existing sessions keep their last settings.
+Managed-only deployments need no vault encryption key. Queue limits default to
+eight requests and 8 MiB per session; the history seed defaults to 1 MiB.
+
+`pcd principals plan` includes profile and issuer changes. Apply the mounted file
+immediately with `pcd principals reconcile`, or wait for the next five-minute
+pass. Keep the controller running when its principals ConfigMap changes.
+
 Secret targets:
 
 | `kind` | Fields | Notes |

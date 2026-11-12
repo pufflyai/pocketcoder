@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import {
   ApiError,
   SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION,
   templateCredentialReferences,
 } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionIdentity, WorkspaceLeaseRow } from "@pstdio/pocketcoder-runtime-core";
+import { issuerBackoff } from "../secrets/issuer-backoff";
 import { credentialDelivery, latestSessionLeases } from "./workspace-credentials";
 import type { WsDeps } from "./ws-types";
 
@@ -17,7 +17,7 @@ export const SESSION_CREDENTIAL_LIMITS = { count: 64, bytes: 524_288 };
 type Leases = NonNullable<WsDeps["workspaceLeases"]>;
 type Target = { identity: ManagedSessionIdentity; workspaceId: string; generation: number };
 
-// A known request is replayed as itself, so failed mints never pile up against the limit.
+// An unacknowledged delivery always uses a fresh mint.
 async function credentialsFor(
   leases: Leases,
   target: Target,
@@ -31,8 +31,8 @@ async function credentialsFor(
       const known = current[index];
       const issued = known
         ? await leases.replay(target.workspaceId, known.id)
-        : await leases.issueManaged(target.identity, target.workspaceId, target.generation, slot, randomUUID());
-      if (!known) minted.push(issued.lease.id);
+        : await leases.issueManaged(target.identity, target.workspaceId, target.generation, slot);
+      minted.push(issued.lease.id);
       credentials.push(credentialDelivery(issued));
     }
   } catch {
@@ -47,7 +47,9 @@ async function credentialsFor(
 export function sessionCredentials(
   deps: Pick<WsDeps, "store" | "hub" | "workspaceLeases">,
   limits = SESSION_CREDENTIAL_LIMITS,
+  now = Date.now,
 ) {
+  const retry = issuerBackoff(now);
   const connectionOf = (workspaceId: string) => {
     const connection = deps.hub.get(workspaceId);
     return connection?.registered && connection.protocolVersion >= SESSION_CREDENTIAL_MIN_PROTOCOL_VERSION
@@ -80,24 +82,23 @@ export function sessionCredentials(
         pending.filter((lease) => lease.managedAuthority && lease.managedAuthority.sessionId !== identity.sessionId),
       );
       if (siblings.length + slots.length > limits.count) throw unavailable();
-      const { credentials, minted } = await credentialsFor(
-        leases,
-        { identity, workspaceId, generation },
-        slots,
-        current,
+      const key = `${workspaceId}:${identity.sessionId}:${generation}`;
+      const { credentials, minted } = await retry.run(key, () =>
+        credentialsFor(leases, { identity, workspaceId, generation }, slots, current),
       );
       const bytes =
         siblings.reduce((sum, lease) => sum + (lease.credentialBytes ?? 0), 0) +
         credentials.reduce((sum, value) => sum + Buffer.byteLength(value.credential), 0);
       if (bytes > limits.bytes) {
         // Leases minted for a refused install must not count against the workspace later.
-        for (const id of minted) await leases.revoke(id).catch(() => {});
+        for (const id of minted) await leases.discard(id);
         throw unavailable();
       }
       deps.hub.send(connection, "credential_install", { credentials });
       return false;
     },
     async revoke(workspaceId: string, sessionId: string) {
+      retry.forget(`${workspaceId}:${sessionId}:`);
       await deps.workspaceLeases?.revokeSession(workspaceId, sessionId);
       const connection = connectionOf(workspaceId);
       if (connection) deps.hub.send(connection, "credential_remove", { session_id: sessionId });

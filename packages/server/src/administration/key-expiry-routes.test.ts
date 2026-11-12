@@ -74,7 +74,11 @@ test("an automation key sees only the principals it manages", async () => {
 
 test("the SDK lists expiring keys", async () => {
   const app = await expiryServer();
-  const server = Bun.serve({ port: 0, fetch: app.app.fetch });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: app.app.fetch,
+  });
   try {
     const client = new PocketCoderClient({ baseUrl: server.url.toString(), apiKey: app.ownerToken });
     const result = await client.keys.expiring({ withinHours: 24 * 8 });

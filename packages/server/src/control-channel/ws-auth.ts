@@ -261,12 +261,15 @@ export function execSpecOf(row: WorkspaceRow, sourceCredential: string | null, r
   };
 }
 
-export async function sourceCredentialFor(deps: WsDeps, row: WorkspaceRow) {
+export async function sourceCredentialFor(deps: Pick<WsDeps, "store" | "workspaceLeases">, row: WorkspaceRow) {
   const reference = sourceCredentialReference(row);
   if (!reference) return null;
   if (!deps.workspaceLeases) throw new Error("No setup issuer is configured.");
   const previous = (await deps.store.listPendingWorkspaceLeases(row.id)).find(
-    (lease) => lease.secretName === reference.slice(10),
+    (lease) =>
+      lease.purpose === "setup-issuer" &&
+      lease.secretName === reference.slice(10) &&
+      ["requested", "issued", "delivered"].includes(lease.state),
   );
   return previous
     ? deps.workspaceLeases.replay(row.id, previous.id)

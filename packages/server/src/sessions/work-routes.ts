@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedQueueLimits, Store } from "@pstdio/pocketcoder-runtime-core";
+import { dispositionFilename } from "../attachments/attachments";
 import type { InputStorage, InputStorageOptions } from "../attachments/input-storage";
 import { MANAGED_ERROR_RESPONSES, managedBodyLimit } from "../http/managed-routes";
 import { type AppEnv, requireScope } from "../http/middleware";
@@ -34,13 +36,11 @@ export function registerSessionWorkRoutes(
       responses: response(managed.RequestSchema, "Accepted or identically replayed request"),
     }),
     async (c) => {
-      if (!options.queue)
-        throw new ApiError("capacity.queue_full", "Explicit session queue limits are not configured.");
       const result = await store.managed.requests.accept(
         c.get("keyId"),
         c.req.valid("param").sessionId,
         c.req.valid("json"),
-        options.queue,
+        options.queue ?? { count: 8, bytes: 8388608 },
       );
       return c.json(result.request, 200);
     },
@@ -77,49 +77,51 @@ export function registerSessionWorkRoutes(
   );
   app.openapi(
     createRoute({
-      method: "post",
-      path: `${base}/inputs`,
-      tags: ["Managed sessions"],
-      operationId: "registerManagedInput",
-      middleware: [requireScope("sessions:write")] as const,
-      request: {
-        params: sessionParams,
-        body: { content: { "application/json": { schema: managed.InputUploadSchema } } },
-      },
-      responses: response(managed.InputObjectSchema, "Registered or replayed immutable input"),
-    }),
-    async (c) => {
-      if (!options.storage) throw new ApiError("attachment.unsupported", "Immutable input storage is not configured.");
-      return c.json(
-        await store.managed.files.register(
-          c.get("keyId"),
-          c.req.valid("param").sessionId,
-          c.req.valid("json"),
-          options.storage.limits,
-        ),
-        200,
-      );
-    },
-  );
-  app.openapi(
-    createRoute({
       method: "put",
-      path: `${base}/inputs/{inputId}/content`,
+      path: `${base}/inputs/{inputId}`,
       tags: ["Managed sessions"],
       operationId: "uploadManagedInput",
       middleware: [requireScope("sessions:write")] as const,
       request: { params: inputParams, body: { content: { "application/octet-stream": { schema: z.any() } } } },
-      responses: response(managed.InputObjectSchema, "Verified immutable bytes"),
+      responses: response(managed.InputObjectSchema, "Verified immutable input, or identical replay"),
     }),
     async (c) => {
-      if (!options.inputs) throw new ApiError("attachment.unsupported", "Immutable input storage is not configured.");
+      if (!options.inputs || !options.storage)
+        throw new ApiError("attachment.unsupported", "Immutable input storage is not configured.");
       const { sessionId, inputId } = c.req.valid("param");
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of c.req.raw.body ?? []) {
+        size += chunk.byteLength;
+        if (size > options.storage.limits.fileBytes)
+          throw new ApiError("attachment.too_large", "Input exceeds its per-file limit.");
+        chunks.push(chunk);
+      }
+      const bytes = Buffer.concat(chunks);
+      const descriptor = managed.InputUploadSchema.safeParse({
+        inputId,
+        name:
+          dispositionFilename(c.req.header("content-disposition") ?? "") ??
+          c.req.header("x-pocketcoder-file-name") ??
+          "attachment",
+        mediaType: c.req.header("content-type") ?? "application/octet-stream",
+        sizeBytes: size,
+        sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      });
+      if (!descriptor.success) throw new ApiError("attachment.invalid", "Invalid file name or media type.");
+      const object = await store.managed.files.register(
+        c.get("keyId"),
+        sessionId,
+        descriptor.data,
+        options.storage.limits,
+      );
+      if (object.state === "ready") return c.json(object, 200);
       const upload = await store.managed.files.upload(c.get("keyId"), sessionId, inputId);
       await options.inputs.upload(
         upload.principalId,
         upload.reference,
         upload.expiresAt,
-        c.req.raw.body,
+        new Response(bytes).body,
         c.req.raw.signal,
         sessionId,
       );

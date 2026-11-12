@@ -19,6 +19,7 @@ test("example clients consume canonical typed messages without decoding terminal
     { type: "committed", conversation_id, turn_id, status: "completed", last_seq: 1 },
   ];
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: () =>
       new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {

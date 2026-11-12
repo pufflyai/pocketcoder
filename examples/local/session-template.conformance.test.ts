@@ -12,7 +12,9 @@ import { imageSessionTemplate } from "./session-template";
 const root = resolve(import.meta.dir, "../..");
 const tag = `pocketcoder-session-template:test-${randomUUID()}`;
 const loadedTag = `${tag}-loaded`;
+const archiveTag = `${tag}-archive`;
 let image: Awaited<ReturnType<typeof buildLocalImage>>;
+let archiveImageId: string;
 let directory: string;
 
 beforeAll(async () => {
@@ -23,10 +25,17 @@ beforeAll(async () => {
   );
   await runLocalCommand([process.execPath, "run", "build:native"], { cwd: root, quiet: true });
   image = await buildLocalImage({ root, imageTag: tag, context: "deploy/image" });
+  // Archive loading verifies identity and template parsing; it needs no runtime binaries.
+  await writeFile(join(directory, "Dockerfile"), "FROM scratch\nCOPY marker /fixture\n");
+  await writeFile(join(directory, "marker"), "native archive fixture\n");
+  await runLocalCommand(["docker", "build", "--tag", archiveTag, directory], { quiet: true });
+  archiveImageId = (
+    await runLocalCommand(["docker", "image", "inspect", archiveTag, "--format", "{{.Id}}"], { quiet: true })
+  ).stdout;
 }, 60_000);
 
 afterAll(async () => {
-  await runLocalCommand(["docker", "image", "rm", tag, loadedTag], { quiet: true }).catch(() => {});
+  await runLocalCommand(["docker", "image", "rm", tag, loadedTag, archiveTag], { quiet: true }).catch(() => {});
   await rm(directory, { recursive: true, force: true });
 });
 
@@ -63,11 +72,13 @@ test("native checkpoint templates use the installed structured producer and cano
 
 test("native fixture archives reload canonical templates without changing image identity", async () => {
   const manifest = await imageSessionTemplate(image.image);
+  manifest.spec.image = `${archiveTag}@${archiveImageId}`;
   await mkdir(join(directory, "templates"));
   await writeFile(join(directory, "templates/echo.json"), JSON.stringify(manifest));
-  await runLocalCommand(["docker", "save", "--output", join(directory, "echo-image.tar"), tag], { quiet: true });
+  await runLocalCommand(["docker", "save", "--output", join(directory, "echo-image.tar"), archiveTag], { quiet: true });
+  await runLocalCommand(["docker", "image", "rm", archiveTag], { quiet: true });
   const loaded = await loadNativeFixture(directory, loadedTag);
-  expect(loaded.image).toBe(`${loadedTag}@${image.imageId}`);
+  expect(loaded.image).toBe(`${loadedTag}@${archiveImageId}`);
   expect(loaded.template.manifest).toEqual({ ...manifest, spec: { ...manifest.spec, image: loaded.image } });
 });
 

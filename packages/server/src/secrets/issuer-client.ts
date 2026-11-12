@@ -1,51 +1,25 @@
-import { ApiError, digestOf, type SecretPutRequest } from "@pstdio/pocketcoder-contracts";
+import { ApiError, type SecretPutRequest } from "@pstdio/pocketcoder-contracts";
 import type { WorkspaceLeaseRow } from "@pstdio/pocketcoder-runtime-core";
 import { z } from "zod";
 
 type IssuerConfig = Extract<SecretPutRequest, { type: "setup-issuer" }>["value"];
-const IdentitySchema = z.strictObject({
-  managed_authority: z.record(z.string(), z.json()).optional(),
-  workspace_id: z.uuid(),
-  source_url: z.url().nullable(),
-  source_revision: z.string().min(1).nullable(),
-  template_digest: z.string(),
-  request_id: z.uuid(),
-  request_digest: z.string(),
-  policy_digest: z.string(),
-  purpose: z.enum(["setup-issuer", "runtime-issuer"]),
-  expires_at: z.iso.datetime(),
-  policy: z.record(z.string(), z.json()),
-});
-const MintSchema = IdentitySchema.extend({
-  lease_id: z.string().min(1).max(1024),
+const MintSchema = z.strictObject({
   credential: z
     .string()
     .min(1)
     .refine((value) => !value.includes("\0") && Buffer.byteLength(value) <= 32_768),
+  expires_at: z.iso.datetime(),
 });
-const RevokeSchema = IdentitySchema.extend({ revoked: z.literal(true) });
 const unavailable = () => new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
-const identityOf = (row: WorkspaceLeaseRow) => ({
-  ...(row.managedAuthority ? { managed_authority: row.managedAuthority } : {}),
-  workspace_id: row.workspaceId,
-  source_url: row.sourceUrl,
-  source_revision: row.sourceRevision,
-  template_digest: row.templateDigest,
-  request_id: row.requestId,
-  request_digest: row.requestDigest,
-  policy_digest: row.policyDigest,
-  purpose: row.purpose,
-  expires_at: row.requestExpiresAt.toISOString(),
-});
-
-async function readReply(response: Response) {
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw unavailable();
+export class CredentialsRefused extends Error {
+  constructor() {
+    super("Session credentials were refused.");
   }
+}
+async function readReply(response: Response) {
   if (!response.body) throw unavailable();
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const reader = response.body.getReader(),
+    chunks: Uint8Array[] = [];
   let bytes = 0;
   try {
     while (true) {
@@ -61,65 +35,62 @@ async function readReply(response: Response) {
     reader.releaseLock();
   }
 }
-
 export function createIssuerClient(options: { ca?: string } = {}) {
-  async function post<T>(
-    config: IssuerConfig,
-    row: WorkspaceLeaseRow,
-    operation: "mint" | "revoke",
-    validate: (reply: unknown) => T,
-  ) {
-    // The vault owns the destination, authentication and policy. Redirects cannot
-    // carry controller authority to a destination chosen by an issuer response.
+  async function post(config: IssuerConfig, body: object) {
     try {
-      if (digestOf(config.policy) !== row.policyDigest) throw unavailable();
       const response = await fetch(config.url, {
         method: "POST",
         redirect: "error",
         signal: AbortSignal.timeout(5000),
         headers: { authorization: config.authorization, "content-type": "application/json" },
-        body: JSON.stringify({ operation, ...identityOf(row), policy: config.policy }),
+        body: JSON.stringify(body),
         ...(options.ca ? { tls: { ca: options.ca } } : {}),
       });
-      return validate(await readReply(response));
-    } catch {
+      if (response.status === 403) {
+        const reply = await readReply(response);
+        if (reply && typeof reply === "object" && "refused" in reply && reply.refused === true)
+          throw new CredentialsRefused();
+        throw unavailable();
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw unavailable();
+      }
+      return response;
+    } catch (error) {
+      if (error instanceof CredentialsRefused) throw error;
       throw unavailable();
     }
   }
-  function bound(row: WorkspaceLeaseRow, result: z.infer<typeof IdentitySchema>) {
-    const expected = identityOf(row);
-    if (
-      digestOf(result.managed_authority ?? null) !== digestOf(row.managedAuthority) ||
-      result.workspace_id !== expected.workspace_id ||
-      result.source_url !== expected.source_url ||
-      result.source_revision !== expected.source_revision ||
-      result.template_digest !== expected.template_digest ||
-      result.request_id !== expected.request_id ||
-      result.request_digest !== expected.request_digest ||
-      result.policy_digest !== expected.policy_digest ||
-      result.purpose !== expected.purpose ||
-      digestOf(result.policy) !== row.policyDigest
-    )
-      throw unavailable();
-  }
   return {
-    mint(config: IssuerConfig, row: WorkspaceLeaseRow) {
-      return post(config, row, "mint", (reply) => {
-        const parsed = MintSchema.safeParse(reply);
-        if (!parsed.success) throw unavailable();
-        bound(row, parsed.data);
-        const expiresAt = new Date(parsed.data.expires_at);
-        if (expiresAt <= row.createdAt || expiresAt > row.requestExpiresAt) throw unavailable();
-        return { leaseId: parsed.data.lease_id, credential: parsed.data.credential, expiresAt };
+    async mint(config: IssuerConfig, row: WorkspaceLeaseRow) {
+      const a = row.managedAuthority;
+      const response = await post(config, {
+        operation: "mint",
+        request_id: row.requestId,
+        session_id: a?.sessionId ?? row.workspaceId,
+        generation: a?.generation ?? (row.purpose === "setup-issuer" ? 1 : 2),
+        profile: a?.profile ?? null,
+        owner: a?.owner ?? row.workspaceId,
+        group: a?.group ?? row.workspaceId,
+        slot: a?.slot ?? row.secretName,
+        expires_at: row.requestExpiresAt.toISOString(),
+        policy: config.policy,
       });
+      const result = MintSchema.safeParse(await readReply(response));
+      if (!result.success) throw unavailable();
+      const expiresAt = new Date(result.data.expires_at);
+      if (expiresAt <= new Date() || expiresAt > row.requestExpiresAt) throw unavailable();
+      return { credential: result.data.credential, expiresAt };
     },
-    revoke(config: IssuerConfig, row: WorkspaceLeaseRow) {
-      return post(config, row, "revoke", (reply) => {
-        const parsed = RevokeSchema.safeParse(reply);
-        if (!parsed.success) throw unavailable();
-        bound(row, parsed.data);
-        if (parsed.data.expires_at !== row.requestExpiresAt.toISOString()) throw unavailable();
+    async revoke(config: IssuerConfig, row: WorkspaceLeaseRow) {
+      const response = await post(config, {
+        operation: "revoke",
+        session_id: row.managedAuthority?.sessionId ?? row.workspaceId,
+        generation: row.managedAuthority?.generation ?? (row.purpose === "setup-issuer" ? 1 : 2),
       });
+      await response.body?.cancel();
+      if (response.status !== 200) throw unavailable();
     },
   };
 }

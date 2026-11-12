@@ -100,7 +100,11 @@ test("public issuance requires a future expiry and explicit bounded scopes", asy
 
 test("SDK inventory, reconciliation and revocation use the real public server", async () => {
   const f = await fixture();
-  const server = Bun.serve({ port: 0, fetch: f.app.fetch });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: f.app.fetch,
+  });
   const client = new PocketCoderClient({ baseUrl: server.url.toString(), apiKey: f.token });
   try {
     const issued = await client.keys.issue(f.target.id, { ...f.body, scopes: ["workspaces:read"] });

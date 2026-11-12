@@ -152,12 +152,10 @@ export function conversationTransport(deps: {
         if (current?.finalizationBasis === "never_sent") await finalizeServiceExecution(deps, current, workspace);
         return;
       }
-      const reply = await call(
-        record,
-        workspace,
-        "accept",
-        executionAcceptEnvelope(record.acceptance, record.conversationIdentity, inputDirectory),
-      );
+      const reply = await call(record, workspace, "accept", {
+        ...executionAcceptEnvelope(record.acceptance, record.conversationIdentity, inputDirectory),
+        ...(record.priorMessages ? { priorMessages: record.priorMessages } : {}),
+      });
       if ((await observe(record, workspace, reply)) === "absent")
         throw new ApiError("relay.upstream_error", "Producer did not accept the operation.");
     },

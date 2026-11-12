@@ -32,13 +32,15 @@ test.each(["docker", "kubernetes"] as const)(
         expect(lease.purpose).toBe("runtime-issuer");
         expect(lease.requestExpiresAt.getTime() - lease.createdAt.getTime()).toBeLessThanOrEqual(300_000);
       }
-      const row = await f.store.getWorkspace(id);
-      if (!row) throw new Error("Missing workspace");
       f.issuer.controls.reply = "outage";
-      await f.built.scheduler.finalize(row, "canceled", "canceled_by_caller", new Date());
+      // Cancel marks the workspace terminating before its provider stops, so the harness exit cannot read as a crash.
+      await f.client.workspaces.cancel(id);
+      await f.built.scheduler.drain();
       expect((await f.store.getWorkspace(id))?.state).toBe("terminating");
       expect((await f.store.listPendingWorkspaceLeases(id)).length).toBeGreaterThan(0);
       f.issuer.controls.reply = "valid";
+      const row = await f.store.getWorkspace(id);
+      if (!row) throw new Error("Missing workspace");
       await f.built.scheduler.finalize(row, "canceled", "canceled_by_caller", new Date());
       expect((await f.store.getWorkspace(id))?.state).toBe("canceled");
       expect(await f.issuer.resource(renewed.credential, id)).toBe(401);

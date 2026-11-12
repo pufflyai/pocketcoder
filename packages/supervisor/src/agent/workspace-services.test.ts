@@ -7,7 +7,11 @@ import { WorkspaceServices } from "./workspace-services";
 
 test("a declared website starts from the shell facility, can restart, and stops with its workspace", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc133-services-"));
-  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+  const probe = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const port = probe.port;
   probe.stop(true);
   const services = new WorkspaceServices(

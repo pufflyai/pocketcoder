@@ -1,16 +1,5 @@
 import { z } from "zod";
 
-export const BudgetUsageSchema = z.strictObject({
-  scopeId: z.uuid(),
-  policyRevision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  periodStart: z.iso.datetime({ offset: true }),
-  periodEnd: z.iso.datetime({ offset: true }),
-  workspaceStarts: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-  activeWorkspaces: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-  asOf: z.iso.datetime({ offset: true }),
-});
-export type BudgetUsage = z.infer<typeof BudgetUsageSchema>;
-
 const CleanupReceiptFieldsSchema = z.strictObject({
   workspaceId: z.uuid(),
   generationId: z.string().min(1).max(256),

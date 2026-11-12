@@ -68,6 +68,13 @@ function completion(body: ChatRequest): {
   delta: Record<string, unknown>;
   finishReason: "stop" | "tool_calls";
 } {
+  if (lastUserPrompt(body) === "Repeat the earlier diagnostic token.") {
+    const previous = body.messages
+      ?.filter((m) => m.role === "assistant")
+      .map((m) => textOf(m.content))
+      .findLast((text) => /^pocketcoder-doctor-[\da-f-]+$/.test(text));
+    return { delta: { role: "assistant", content: previous ?? "No earlier context." }, finishReason: "stop" };
+  }
   const write = WRITE_PROMPT.exec(lastUserPrompt(body).split("\n\nAttached files")[0] ?? "");
   if (write?.[1] && write[2]) return writeCompletion(body, write[1], write[2]);
   const token = /^Reply with exactly this diagnostic token: (pocketcoder-doctor-[\da-f-]+)$/.exec(

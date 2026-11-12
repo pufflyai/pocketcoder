@@ -5,8 +5,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ManagedRuntimeConsumer } from "../../../../examples/clients/managed-runtime/consumer";
-import { IntentFile } from "../../../../examples/clients/managed-runtime/intents";
-import { provision } from "../../../../examples/clients/managed-runtime/provision";
 import { PI_FIXTURE_CONTENT } from "../../../../examples/harnesses/pi/fake-gateway";
 import { waitFor } from "./e2e-test-support";
 import { managedPiFixture } from "./managed-pi-fixture";
@@ -59,29 +57,12 @@ test.skipIf(!enabled)(
         MemTotal: number;
         ServerVersion: string;
       };
-      // One installation scope per controller, with room for the largest run. Each run then gets its
-      // own scope whose limits equal that run's size, so admission is bounded by explicit capacity.
-      const base = await provision(f.client, {
-        principalId: f.principalId,
-        templateDigest: f.templateDigest,
-        limits: { workspaceStarts: 100, maxActiveWorkspaces: 20, maxChatProcessesPerWorkspace: 1 },
-      });
-      const installationScopeId = base.profile.budgetScopeIds.find((id) => id !== base.scopeId);
       for (const count of [1, 5, 20]) {
-        const { profile, scopeId } = await provision(f.client, {
-          principalId: f.principalId,
-          templateDigest: f.templateDigest,
-          installationScopeId,
-          limits: { workspaceStarts: count * 2, maxActiveWorkspaces: count, maxChatProcessesPerWorkspace: 1 },
-        });
-        const consumer = new ManagedRuntimeConsumer(
-          f.client,
-          await IntentFile.open(join(directory, `intents-${count}.json`)),
-          { canUse: () => true },
-        );
+        const profile = await f.configure({ workspacesPerOwner: count, sessionsPerWorkspace: 1 });
+        const consumer = new ManagedRuntimeConsumer(f.client, { canUse: () => true });
         const stop = sampler(() => f.containers());
         const started = Date.now();
-        const sessions = await Promise.all(Array.from({ length: count }, () => consumer.startSession(profile)));
+        const sessions = await Promise.all(Array.from({ length: count }, () => consumer.startSession(profile, "user")));
         const turns = await Promise.all(
           sessions.map(async (session) => {
             const asked = await consumer.ask("user", session.sessionId, "Read the fixture file.");
@@ -95,19 +76,16 @@ test.skipIf(!enabled)(
           }),
         );
         const elapsed = (Date.now() - started) / 1000;
-        const usage = await f.client.authority.usage(scopeId);
+        const active = [];
+        for await (const workspace of f.admin.workspaces.all())
+          if (!["canceled", "failed", "succeeded", "expired"].includes(workspace.state)) active.push(workspace);
         for (const turn of turns)
           expect(turn.done.request).toMatchObject({ outcome: "completed", finalResponse: PI_FIXTURE_CONTENT });
-        expect(usage.activeWorkspaces).toBeLessThanOrEqual(count);
+        expect(active.length).toBeLessThanOrEqual(count);
         // Close every session; the placement owner stops each session's own workspace.
         const closing = Date.now();
         await Promise.all(turns.map(({ session }) => consumer.close("user", session.sessionId)));
         await waitFor(async () => (await f.containers()).length === 0, 300_000, "workspace cleanup");
-        await waitFor(
-          async () => (await f.client.authority.usage(scopeId)).activeWorkspaces === 0,
-          120_000,
-          "capacity release",
-        );
         const peak = await stop();
         const times = turns.map((turn) => turn.seconds).sort((a, b) => a - b);
         results.push({
@@ -117,7 +95,6 @@ test.skipIf(!enabled)(
           firstTurnSeconds: Math.round(times[0] ?? 0),
           lastTurnSeconds: Math.round(times.at(-1) ?? 0),
           cleanupSeconds: Math.round((Date.now() - closing) / 1000),
-          workspaceStarts: usage.workspaceStarts,
           peakContainers: peak.containers,
           peakCpuPercent: peak.cpuPercent,
           peakMemoryMiB: peak.memoryMiB,

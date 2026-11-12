@@ -25,7 +25,8 @@ async function sharedWorkspace(protocolVersion: 14 | 15 = 15, limits = SESSION_C
   const connection = hub.attach(f.workspace.id, randomUUID(), 1, socket, protocolVersion);
   connection.registered = true;
   const deps = { store: f.store, hub, workspaceLeases: f.service } as unknown as WsDeps;
-  const owner = sessionCredentials(deps, limits);
+  let time = Date.now();
+  const owner = sessionCredentials(deps, limits, () => time);
   async function bound() {
     const identity = await profile.session();
     await f.store.managed.sessions.bind(identity, 0, {
@@ -40,17 +41,29 @@ async function sharedWorkspace(protocolVersion: 14 | 15 = 15, limits = SESSION_C
   // The supervisor confirms every lease of the latest install, as `credential_install_ack` does.
   const confirm = () =>
     acknowledgeInstall(connection, { lease_ids: (installed().at(-1) ?? []).map((value) => value.lease_id) });
-  return { f, frames, connection, deps, owner, bound, installed, confirm };
+  return {
+    f,
+    frames,
+    connection,
+    deps,
+    owner,
+    bound,
+    installed,
+    confirm,
+    advance: (ms: number) => {
+      time += ms;
+    },
+  };
 }
 
 test("each bound session receives, renews and loses its own leases in its own folder", async () => {
   const w = await sharedWorkspace();
   try {
     const [first, second] = [await w.bound(), await w.bound()];
-    // Unconfirmed leases are sent again unchanged; a confirmed session needs nothing more.
+    // Unconfirmed deliveries mint fresh; a confirmed session needs nothing more.
     expect(await w.owner.deliver(first, w.f.workspace.id, 1)).toBe(false);
     expect(await w.owner.deliver(first, w.f.workspace.id, 1)).toBe(false);
-    expect(w.installed()[1]).toEqual(w.installed()[0]);
+    expect(w.installed()[1]?.[0]?.lease_id).not.toBe(w.installed()[0]?.[0]?.lease_id);
     w.confirm();
     expect(await w.owner.deliver(first, w.f.workspace.id, 1)).toBe(true);
     expect(await w.owner.deliver(second, w.f.workspace.id, 1)).toBe(false);
@@ -80,8 +93,9 @@ test("each bound session receives, renews and loses its own leases in its own fo
 
     await w.owner.revoke(w.f.workspace.id, first.sessionId);
     expect(w.frames.at(-1)).toMatchObject({ type: "credential_remove", payload: { session_id: first.sessionId } });
-    expect(await w.f.issuer.resource(own.credential, w.f.workspace.id)).toBe(401);
-    expect(await w.f.issuer.resource(sibling.credential, w.f.workspace.id)).toBe(200);
+    await w.f.service.removed(w.f.workspace.id, first.sessionId);
+    expect((await w.f.store.getWorkspaceLease(own.lease_id))?.state).toBe("revoked");
+    expect(await w.f.issuer.resource(sibling.credential, second.sessionId)).toBe(200);
   } finally {
     await w.f.close();
   }
@@ -104,6 +118,8 @@ test("a session whose lease requests never completed gets them replayed, not ref
     w.f.issuer.controls.reply = "lost";
     for (let i = 0; i < 2; i++)
       await expect(w.owner.deliver(identity, w.f.workspace.id, 1)).rejects.toThrow("unavailable");
+    expect(w.f.issuer.controls.mintCalls).toBe(1);
+    w.advance(1000);
     w.f.issuer.controls.reply = "valid";
     await w.owner.deliver(identity, w.f.workspace.id, 1);
     expect(w.installed().map((credentials) => credentials[0]?.session_id)).toEqual([identity.sessionId]);
@@ -131,7 +147,11 @@ test.each([
         );
       expect(results.filter((result) => result === "sent")).toHaveLength(admitted);
       const pending = await w.f.store.listPendingWorkspaceLeases(w.f.workspace.id);
-      const holders = new Set(pending.map((lease) => lease.managedAuthority?.sessionId));
+      const holders = new Set(
+        pending
+          .filter((r) => !["superseded", "revoking"].includes(r.state))
+          .map((lease) => lease.managedAuthority?.sessionId),
+      );
       expect(holders.size).toBe(admitted);
       expect(w.installed()).toHaveLength(admitted);
     } finally {

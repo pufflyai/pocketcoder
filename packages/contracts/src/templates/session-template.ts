@@ -42,7 +42,7 @@ export function sessionTemplate(input: {
             routes: ["accept", "lookup", "cancel", "ack"].map((action) => ({
               method: "POST",
               path: `/executions/${action}`,
-              maxRequestBytes: 1024 * 1024,
+              maxRequestBytes: 2 * 1024 * 1024,
               maxResponseBytes: 8 * 1024 * 1024,
               deadlineSeconds: 30,
             })),

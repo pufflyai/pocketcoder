@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tokenSocket } from "./token-socket";
 
-test("Onefin tools can read the current scoped credential over the Unix socket", async () => {
+test("The external agent tools can read the current scoped credential over the Unix socket", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc-onefin-token-"));
   const path = join(root, "token.sock");
   const server = await tokenSocket(path, async () => "workspace-scoped-token");

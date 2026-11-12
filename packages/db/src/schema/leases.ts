@@ -1,17 +1,6 @@
 import { WORKSPACE_LEASE_STATES, type WorkspaceLeaseRow } from "@pstdio/pocketcoder-runtime-contracts";
 import { sql } from "drizzle-orm";
-import {
-  check,
-  foreignKey,
-  index,
-  integer,
-  jsonb,
-  type PgTableFn,
-  pgTable,
-  text,
-  unique,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, type PgTableFn, pgTable, text, unique, uuid } from "drizzle-orm/pg-core";
 import { sqlValues, timestamptz } from "./columns";
 import type { createSecretTables } from "./secrets";
 import type { createWorkspaceTables } from "./workspaces";
@@ -19,7 +8,7 @@ import type { createWorkspaceTables } from "./workspaces";
 export function createLeaseTables(
   table: PgTableFn<string | undefined> = pgTable,
   { workspaces }: Pick<ReturnType<typeof createWorkspaceTables>, "workspaces">,
-  { secretVersions }: ReturnType<typeof createSecretTables>,
+  _secrets: ReturnType<typeof createSecretTables>,
 ) {
   const workspaceLeaseFences = table("workspace_lease_fences", {
     workspaceId: uuid("workspace_id")
@@ -37,7 +26,7 @@ export function createLeaseTables(
         .notNull()
         .references(() => workspaces.id),
       secretName: text("secret_name").notNull(),
-      secretVersionId: uuid("secret_version_id").notNull(),
+      secretVersionId: uuid("secret_version_id"),
       purpose: text("purpose").$type<WorkspaceLeaseRow["purpose"]>().notNull(),
       sourceUrl: text("source_url"),
       sourceRevision: text("source_revision"),
@@ -46,7 +35,8 @@ export function createLeaseTables(
       requestId: uuid("request_id").notNull(),
       requestDigest: text("request_digest").notNull(),
       requestExpiresAt: timestamptz("request_expires_at").notNull(),
-      issuerLeaseId: text("issuer_lease_id"),
+      removedAt: timestamptz("removed_at"),
+      revokeAcknowledgedAt: timestamptz("revoke_acknowledged_at"),
       issuerExpiresAt: timestamptz("issuer_expires_at"),
       credentialBytes: integer("credential_bytes"),
       state: text("state").$type<WorkspaceLeaseRow["state"]>().notNull(),
@@ -57,10 +47,6 @@ export function createLeaseTables(
     },
     (row) => [
       unique().on(row.secretName, row.requestId),
-      foreignKey({
-        columns: [row.secretVersionId, row.secretName, row.purpose],
-        foreignColumns: [secretVersions.id, secretVersions.name, secretVersions.type],
-      }),
       check("workspace_leases_purpose", sql`${row.purpose} IN ('setup-issuer', 'runtime-issuer')`),
       check("workspace_leases_state", sql`${row.state} IN ${sqlValues(WORKSPACE_LEASE_STATES)}`),
       check(
@@ -69,7 +55,7 @@ export function createLeaseTables(
       ),
       check(
         "workspace_leases_issuer_expiry",
-        sql`(${row.issuerLeaseId} IS NULL AND ${row.issuerExpiresAt} IS NULL) OR (${row.issuerLeaseId} IS NOT NULL AND ${row.issuerExpiresAt} IS NOT NULL AND ${row.issuerExpiresAt} > ${row.createdAt} AND ${row.issuerExpiresAt} <= ${row.requestExpiresAt})`,
+        sql`${row.issuerExpiresAt} IS NULL OR (${row.issuerExpiresAt} > ${row.createdAt} AND ${row.issuerExpiresAt} <= ${row.requestExpiresAt})`,
       ),
       check("workspace_leases_closed", sql`(${row.state} IN ('revoked', 'expired')) = (${row.closedAt} IS NOT NULL)`),
       check(
@@ -78,7 +64,7 @@ export function createLeaseTables(
       ),
       check(
         "workspace_leases_acknowledged",
-        sql`${row.state} NOT IN ('issued', 'delivered', 'expired') OR (${row.issuerLeaseId} IS NOT NULL AND ${row.credentialBytes} IS NOT NULL)`,
+        sql`${row.state} NOT IN ('issued', 'delivered') OR (${row.issuerExpiresAt} IS NOT NULL AND ${row.credentialBytes} IS NOT NULL)`,
       ),
       index("workspace_leases_workspace").on(row.workspaceId, row.state),
     ],

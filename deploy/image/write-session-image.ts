@@ -56,6 +56,7 @@ const descriptor = {
         "unknown-outcome",
         "parallel-conversations",
         "immutable-inputs",
+        ...(mode === "pi" ? ["history-seed"] : []),
       ],
       environment: [
         "POCKETCODER_SESSION_DIRECTORY",

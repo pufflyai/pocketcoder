@@ -36,6 +36,7 @@ test("source harness drains, measured HTTP upload completes and control remains 
     uploaded = r;
   });
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request, server) {
       if (server.upgrade(request)) return;

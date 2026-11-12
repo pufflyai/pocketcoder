@@ -6,6 +6,7 @@ import {
   type WorkspaceState,
 } from "@pstdio/pocketcoder-contracts";
 import type { WSContext } from "hono/ws";
+import { activeConnectionWorkspace } from "./connection-authority";
 import { acknowledgeInstall, confirmCredential, renewCredential } from "./credential-frames";
 import type { LiveConnection } from "./hub";
 import { handleRuntimeFrame } from "./runtime-frames";
@@ -124,6 +125,10 @@ export async function handleConnectedFrame(
     case "credential_installed":
       await confirmCredential(deps, connection, frame.payload);
       return;
+    case "credential_remove_ack":
+      if (await activeConnectionWorkspace(deps, connection))
+        await deps.workspaceLeases?.removed(connection.workspaceId, frame.payload.session_id);
+      break;
     case "credential_install_ack":
       acknowledgeInstall(connection, frame.payload);
       return;

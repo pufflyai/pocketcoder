@@ -44,14 +44,11 @@ export function createSchema(schema?: string) {
 
 // Kit uses unqualified tables; runtime queries use the same definitions with a configured schema.
 export const {
-  managedScopes,
-  managedScopeGrants,
   managedProfiles,
-  managedCredentials,
+  managedIssuers,
   managedSessions,
   managedObservations,
   managedCapacity,
-  budgetPolicies,
   workspaceLeases,
   workspaceLeaseFences,
   secrets,

@@ -5,11 +5,12 @@ import type { DatabaseContext, Transaction } from "../../database/context";
 import { unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
 import { requireCapacityLaunch } from "./capacity-admission";
-import { joinableWorkspace } from "./capacity-join";
+import { cancelManagedPlacement } from "./capacity-cancel";
 import { placeManagedCapacity } from "./capacity-placement";
-import { lockScopes } from "./scope-locks";
+import { reserveManagedPlacement } from "./capacity-reservation";
+import { retireManagedWorkspace } from "./capacity-retirement";
 
-export function createManagedCapacity(context: DatabaseContext, now = () => new Date()): ManagedCapacityStore {
+export function createManagedCapacity(context: DatabaseContext): ManagedCapacityStore {
   const { db, tables } = context;
   const table = tables.managedCapacity;
   async function write(tx: Transaction, workspaceId: string, record: ManagedCapacityRecord) {
@@ -18,7 +19,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       .values({ workspaceId, record })
       .onConflictDoUpdate({ target: table.workspaceId, set: { record } });
   }
-  async function lockOwner(tx: Transaction, workspaceId: string, at = now()) {
+  async function lockOwner(tx: Transaction, workspaceId: string) {
     const [known] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId));
     if (!known) return null;
     const [principal] = await tx
@@ -32,7 +33,6 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
         principalId: known.record.principalId,
         sessionId: participant.sessionId,
       });
-    at.setTime((await lockScopes(context, tx, known.record.scopeIds, at)).getTime());
     const [current] = await tx.select().from(table).where(eq(table.workspaceId, workspaceId)).for("update");
     return current?.record ?? null;
   }
@@ -45,16 +45,10 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
         .from(tables.workspaces)
         .where(eq(tables.workspaces.id, workspaceId))
         .for("update");
-      if (
-        !workspace?.terminalAt ||
-        workspace.providerRef ||
-        workspace.runtimeRegistration ||
-        record.starts.at(-1)?.submitted
-      )
-        return;
+      if (!workspace?.terminalAt || workspace.providerRef || workspace.runtimeRegistration || record.submitted) return;
       const cleanup: managed.CleanupReceipt = {
         workspaceId,
-        generationId: String(record.starts.at(-1)?.attempt ?? 0),
+        generationId: String(record.launchAttempt),
         revision: 1,
         state: "proved",
         basis: "never_launched",
@@ -64,14 +58,20 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       await write(tx, workspaceId, {
         ...record,
         state: "released",
-        admittedAttempt: undefined,
         sessions: record.sessions.map((session) => ({ ...session, stoppedAt: at.toISOString() })),
         cleanup,
       });
     });
   }
   return {
-    joinable: (identity) => joinableWorkspace(context, identity),
+    cancelPlacement: (identity, workspaceId, at) => cancelManagedPlacement(context, identity, workspaceId, at),
+    retire: (identity, at) => retireManagedWorkspace(context, identity, at),
+    reserve: (identity, generation, at) => reserveManagedPlacement(context, identity, generation, at),
+    async drains() {
+      return (await db.select().from(table))
+        .filter((r) => r.record.drainingAt && r.record.state !== "released")
+        .map((r) => ({ workspaceId: r.workspaceId, principalId: r.record.principalId }));
+    },
     releaseUnlaunched,
     async reconcile(at) {
       const rows = await db.select().from(table);
@@ -87,9 +87,9 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
     async claimLaunch(workspaceId, attempt, at) {
       at = new Date(at);
       await db.transaction(async (tx) => {
-        const record = await lockOwner(tx, workspaceId, at);
+        const record = await lockOwner(tx, workspaceId);
         if (!record) return;
-        if (record.starts.some((start) => start.attempt === attempt && start.submitted)) return;
+        if (record.launchAttempt === attempt && record.submitted) return;
         const [workspace] = await tx
           .select()
           .from(tables.workspaces)
@@ -103,11 +103,8 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
           state: "launch_claimed",
           cleanup: null,
           sessions: record.sessions.map((session) => ({ ...session, stoppedAt: null })),
-          admittedAttempt: undefined,
-          starts: [
-            ...record.starts.filter((start) => start.attempt !== attempt),
-            { attempt, claimedAt: at.toISOString(), submitted: true },
-          ],
+          launchAttempt: attempt,
+          submitted: true,
         });
       });
     },
@@ -115,16 +112,12 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       await db.transaction(async (tx) => {
         const record = await lockOwner(tx, workspaceId);
         if (!record) return;
-        if (record.starts.some((start) => start.attempt > attempt))
-          throw new ApiError("revision.stale", "Launch attempt changed.");
-        const starts = record.starts.some((start) => start.attempt === attempt)
-          ? record.starts.map((start) => (start.attempt === attempt ? { ...start, submitted: false } : start))
-          : [...record.starts, { attempt, claimedAt: at.toISOString(), submitted: false }];
+        if (record.launchAttempt > attempt) throw new ApiError("revision.stale", "Launch attempt changed.");
         await write(tx, workspaceId, {
           ...record,
           state: "reserved",
-          admittedAttempt: undefined,
-          starts,
+          launchAttempt: attempt,
+          submitted: false,
           cleanup: {
             workspaceId,
             generationId: String(attempt),
@@ -141,7 +134,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       await db.transaction(async (tx) => {
         const record = await lockOwner(tx, workspaceId);
         if (!record || record.cleanup?.capacityReleasedAt) return;
-        if ((record.admittedAttempt ?? record.starts.at(-1)?.attempt ?? 0) !== attempt)
+        if (record.launchAttempt !== attempt)
           throw new ApiError("revision.stale", "Cleanup targets a stale launch generation.");
         if (record.cleanup?.state === "pending") return;
         const cleanup: managed.CleanupReceipt = {
@@ -160,7 +153,7 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
       return db.transaction(async (tx) => {
         const record = await lockOwner(tx, workspaceId);
         if (!record) return null;
-        if ((record.admittedAttempt ?? record.starts.at(-1)?.attempt ?? 0) !== attempt)
+        if (record.launchAttempt !== attempt)
           throw new ApiError("revision.stale", "Cleanup targets a stale launch generation.");
         if (record.cleanup?.capacityReleasedAt) return record.cleanup;
         const cleanup: managed.CleanupReceipt = {
@@ -175,7 +168,6 @@ export function createManagedCapacity(context: DatabaseContext, now = () => new 
         await write(tx, workspaceId, {
           ...record,
           state: "released",
-          admittedAttempt: undefined,
           sessions: record.sessions.map((s) => ({ ...s, stoppedAt: s.stoppedAt ?? at.toISOString() })),
           cleanup,
         });

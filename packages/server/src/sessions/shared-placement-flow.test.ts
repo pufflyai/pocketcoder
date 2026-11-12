@@ -27,8 +27,8 @@ async function placementFixture(port: number | undefined) {
   // Whether the workspace has confirmed the session's credentials, as the credential owner reports it.
   const installed = { value: true };
   const launcher: PlacementLauncher = {
-    async create(_principal, body) {
-      const next = await m.launch();
+    async create(_principal, body, _key, workspaceId) {
+      const next = await m.launch(workspaceId);
       launched.push(next);
       // The workspace service stores the metadata naming the session that placement launched it for.
       await m.f.context.db
@@ -56,15 +56,14 @@ async function placementFixture(port: number | undefined) {
   });
   async function placedSession() {
     const sessionId = randomUUID();
-    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: m.profileId, owner: "test-owner" });
     await m.submit(sessionId, "complete");
     return sessionId;
   }
   const ticks = async (count: number) => {
     for (let i = 0; i < count; i++) await recovery.tick();
   };
-  const close = (sessionId: string) =>
-    m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId: randomUUID() }, 30000, new Date());
+  const close = (sessionId: string) => m.f.store.managed.sessions.close(m.keyId, sessionId, new Date());
   const state = async (sessionId: string) => (await m.f.store.managed.sessions.get(m.keyId, sessionId)).state;
   return { m, launched, stopped, credentials, installed, placedSession, ticks, close, state };
 }
@@ -78,7 +77,6 @@ test("a shared session joins compute with room, and closing one session leaves i
     await p.ticks(3);
     expect(p.launched).toHaveLength(1);
     for (const sessionId of [first, second]) expect(await p.state(sessionId)).toBe("ready");
-    expect((await p.m.f.store.managed.budgets.usage(p.m.keyId, p.m.scopeId)).activeWorkspaces).toBe(1);
     expect(new Set(p.credentials)).toEqual(new Set([`deliver:${first}`, `deliver:${second}`]));
 
     await p.close(first);
@@ -110,11 +108,18 @@ test("a session closed before it binds never keeps shared compute alive", async 
 
 test("a shared session launches new compute once the joined workspace is at its process limit", async () => {
   await sharedPlacement(async (p) => {
-    const { effectiveAt: _, ...policy } = await p.m.f.store.managed.budgets.readPolicy(p.m.keyId, p.m.scopeId);
-    await p.m.f.store.managed.budgets.writePolicy(
-      p.m.keyId,
-      { ...policy, revision: policy.revision + 1, limits: { ...policy.limits, maxChatProcessesPerWorkspace: 1 } },
-      policy.revision,
+    await p.m.f.store.managed.profiles.reconcile(
+      p.m.f.principal.id,
+      {
+        [p.m.profileId]: {
+          template: p.m.f.runtime.template.name,
+          templateVersion: p.m.f.runtime.template.version,
+          placement: "shared",
+          limits: { workspacesPerOwner: 5, sessionsPerWorkspace: 1 },
+          dispatchDeadlineSeconds: 600,
+        },
+      },
+      {},
     );
     await p.placedSession();
     await p.ticks(1);

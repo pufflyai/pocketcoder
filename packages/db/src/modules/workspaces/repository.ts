@@ -41,6 +41,44 @@ export function createWorkspaces(context: DatabaseContext) {
       );
     return external ? { kind: "conflict", conflict: "external_id", workspace: workspaceFromRow(external) } : null;
   }
+  async function lockSession(tx: Transaction, input: WorkspaceInsert, sessionId: string | undefined) {
+    if (!sessionId) return undefined;
+    await tx
+      .select({ id: context.tables.principals.id })
+      .from(context.tables.principals)
+      .where(eq(context.tables.principals.id, input.principalId))
+      .for("update");
+    const session = await sessionWriter(context).read(tx, { principalId: input.principalId, sessionId });
+    // Close must either see this queued workspace or fence its insertion before it completes.
+    if (session.session.state === "closed") throw new ApiError("session.closed", "Session has ended.");
+    return session;
+  }
+  async function requirePlacement(
+    tx: Transaction,
+    input: WorkspaceInsert,
+    sessionId: string | undefined,
+    session: Awaited<ReturnType<ReturnType<typeof sessionWriter>["read"]>>,
+  ) {
+    const intent = session.placement;
+    const [capacity] = await tx
+      .select()
+      .from(context.tables.managedCapacity)
+      .where(eq(context.tables.managedCapacity.workspaceId, input.id))
+      .for("update");
+    if (
+      !intent ||
+      intent.workspaceId !== input.id ||
+      intent.templateDigest !== input.templateSnapshot.digest ||
+      !capacity ||
+      capacity.record.principalId !== input.principalId ||
+      capacity.record.state !== "reserved" ||
+      capacity.record.submitted ||
+      !capacity.record.sessions.some(
+        (s) => s.sessionId === sessionId && s.generation === intent.generation && !s.stoppedAt,
+      )
+    )
+      throw new ApiError("revision.stale", "Managed placement changed before workspace creation.");
+  }
   return {
     async insertWorkspace(
       input: WorkspaceInsert,
@@ -48,19 +86,11 @@ export function createWorkspaces(context: DatabaseContext) {
     ): Promise<WorkspaceInsertResult> {
       return db.transaction(async (tx) => {
         const sessionId = input.metadata[managed.MANAGED_SESSION_METADATA];
-        if (sessionId) {
-          await tx
-            .select({ id: context.tables.principals.id })
-            .from(context.tables.principals)
-            .where(eq(context.tables.principals.id, input.principalId))
-            .for("update");
-          const session = await sessionWriter(context).read(tx, { principalId: input.principalId, sessionId });
-          // Close must either see this queued workspace or fence its insertion before it completes.
-          if (session.session.state === "closed") throw new ApiError("session.closed", "Session has ended.");
-        }
+        const session = await lockSession(tx, input, sessionId);
         await lock(tx, `${schema}:workspace-queue`, 7350);
         const existing = await conflict(tx, input);
         if (existing) return existing;
+        if (session) await requirePlacement(tx, input, sessionId, session);
         if (options.maxQueuedWorkspaces !== undefined) {
           const [queued] = await tx.select({ count: count() }).from(workspaces).where(eq(workspaces.state, "queued"));
           if (requiredRow(queued).count >= options.maxQueuedWorkspaces) return { kind: "capacity_exceeded" };

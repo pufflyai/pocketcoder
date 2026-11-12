@@ -1,8 +1,11 @@
 import { type AgentFrame, runtimeCredentialReferences } from "@pstdio/pocketcoder-contracts";
+import { issuerBackoff } from "../secrets/issuer-backoff";
 import { activeConnectionWorkspace } from "./connection-authority";
 import type { LiveConnection } from "./hub";
 import { credentialDelivery } from "./workspace-credentials";
 import type { WsDeps } from "./ws-types";
+
+const renewals = new WeakMap<LiveConnection, ReturnType<typeof issuerBackoff>>();
 
 export async function renewCredential(
   deps: WsDeps,
@@ -22,7 +25,12 @@ export async function renewCredential(
   )
     return;
   try {
-    const issued = await deps.workspaceLeases.renew(row.id, previous.id, payload.request_id);
+    let retry = renewals.get(connection);
+    if (!retry) {
+      retry = issuerBackoff();
+      renewals.set(connection, retry);
+    }
+    const issued = await retry.run(previous.id, () => deps.workspaceLeases!.renew(row.id, previous.id));
     if (!(await activeConnectionWorkspace(deps, connection))) return;
     await deps.assertAccountAllowed?.();
     deps.hub.send(connection, "credential_renewed", {

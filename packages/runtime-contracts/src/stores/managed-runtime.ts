@@ -20,45 +20,42 @@ export interface ManagedBinding {
   incarnationId: string;
   generation: number;
 }
-export interface ManagedCredentialBinding {
-  bindingId: string;
-  principalId: string;
-  secretName: string;
-  secretVersionId: string;
-  slots: string[];
-  authorityExpiresAt: Date;
+export interface ManagedProfile extends managed.SessionProfile {
+  templateDigest: string;
+  businessSlots: string[];
 }
 export interface ManagedLeaseAuthority extends ManagedSessionIdentity {
-  profileId: string;
-  profileRevision: number;
+  profile: string;
+  owner: string;
+  group: string;
   generation: number;
   incarnationId: string;
-  bindingId: string;
   slot: string;
-  authorityExpiresAt: string;
+  issuer: string;
 }
-export interface ManagedAuthorityStore {
-  registerScope(keyId: string, scopeId: string, principalId: string, installation?: boolean): Promise<void>;
-  provisionProfile(
-    keyId: string,
+export interface ManagedProfileStore {
+  reconcile(
     principalId: string,
-    input: managed.ExecutionProfile,
-  ): Promise<managed.ExecutionProfile>;
-  profile(keyId: string, profileId: string, revision: number): Promise<managed.ExecutionProfile>;
-  registerCredential(
-    keyId: string,
-    binding: Omit<ManagedCredentialBinding, "secretVersionId"> & { secretVersionId?: string },
-  ): Promise<void>;
+    profiles: Record<string, managed.ProfileConfig>,
+    issuers: Record<string, managed.SessionIssuer>,
+    dryRun?: boolean,
+  ): Promise<{ profiles: string[]; issuers: string[]; unavailableProfiles: string[] }>;
+  get(keyId: string, name: string): Promise<managed.SessionProfile>;
+  issuer(principalId: string, name: string): Promise<managed.SessionIssuer>;
   leaseAuthority(
     identity: ManagedSessionIdentity,
     workspaceId: string,
     generation: number,
     slot: string,
-  ): Promise<{ authority: ManagedLeaseAuthority; secretName: string; secretVersionId: string }>;
+  ): Promise<{ authority: ManagedLeaseAuthority; issuer: managed.SessionIssuer }>;
 }
 export interface ManagedSessionStore {
   create(keyId: string, input: managed.SessionCreate): Promise<managed.Session>;
   get(keyId: string, sessionId: string): Promise<managed.Session>;
+  list(
+    keyId: string,
+    filters: { owner?: string; state?: "open" | managed.Session["state"] },
+  ): Promise<(managed.Session & { activeRequestId: string | null })[]>;
   bind(identity: ManagedSessionIdentity, expectedRevision: number, binding: ManagedBinding | null): Promise<number>;
   appendObservation(
     identity: ManagedSessionIdentity,
@@ -66,24 +63,10 @@ export interface ManagedSessionStore {
     state: managed.Session["state"],
     reasonCode: string | null,
   ): Promise<managed.Session>;
-  close(
-    keyId: string,
-    sessionId: string,
-    command: managed.CancelCommand,
-    windowMs: number,
-    at: Date,
-  ): Promise<ManagedStopResult>;
+  close(keyId: string, sessionId: string, at: Date): Promise<ManagedStopResult>;
+  cancel(keyId: string, sessionId: string, at: Date): Promise<ManagedStopResult>;
   // The current physical binding behind a logical session, after the caller's read authority is rechecked.
   binding(keyId: string, sessionId: string): Promise<(ManagedBinding & { bindingRevision: number }) | null>;
-}
-export interface ManagedBudgetStore {
-  writePolicy(
-    keyId: string,
-    input: managed.BudgetPolicyWrite,
-    expectedRevision: number | null,
-  ): Promise<managed.BudgetPolicy>;
-  readPolicy(keyId: string, scopeId: string): Promise<managed.BudgetPolicy>;
-  usage(keyId: string, scopeId: string): Promise<managed.BudgetUsage>;
 }
 export interface ManagedRecoveryCandidate {
   id: ManagedSessionIdentity;
@@ -116,6 +99,19 @@ export interface ManagedRecoveryStore {
   ): Promise<managed.Session>;
 }
 export interface ManagedHistoryStore {
+  snapshot(
+    keyId: string,
+    sessionId: string,
+    after?: { records: number; events: number },
+  ): Promise<{
+    session: managed.Session;
+    requests: managed.Request[];
+    records: import("@pstdio/pocketcoder-contracts").ConversationRecordDocument[];
+    eventCursor: string;
+    binding: ManagedBinding | null;
+    recordCursor: number;
+    reset: boolean;
+  }>;
   history(keyId: string, sessionId: string, cursor: string | null, limit: number): Promise<managed.HistoryPage>;
   events(keyId: string, sessionId: string, after: string | null, limit: number): Promise<managed.RuntimeEvent[]>;
   prune(keepEvents: number): Promise<number>;
@@ -123,9 +119,8 @@ export interface ManagedHistoryStore {
 export interface ManagedRuntimeStore {
   history: ManagedHistoryStore;
   recovery: ManagedRecoveryStore;
-  authority: ManagedAuthorityStore;
+  profiles: ManagedProfileStore;
   sessions: ManagedSessionStore;
-  budgets: ManagedBudgetStore;
   requests: ManagedRequestStore;
   files: ManagedFileStore;
   capacity: ManagedCapacityStore;

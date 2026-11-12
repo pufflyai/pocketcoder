@@ -13,6 +13,7 @@ test.each(["x".repeat(70_000), "🙂".repeat(18_000)])(
   async (prompt) => {
     let accepts = 0;
     const producer = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
         if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });

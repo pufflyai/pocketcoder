@@ -22,6 +22,7 @@ describe("audit upload queue", () => {
       uploaded = resolve;
     });
     const server = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
         requests += 1;

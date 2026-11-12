@@ -33,14 +33,14 @@ test("HTTPS issuance persists identity first, delivers only scoped authority and
   }
 });
 
-test("a lost mint response remains pending and exact request-ID revocation closes its actual issuer authority", async () => {
+test("a lost mint response remains pending and generation revocation closes its actual issuer authority", async () => {
   const f = await fixture();
   try {
     f.issuer.controls.reply = "lost";
     await expect(f.service.issue(f.workspace.id, "source", "setup-issuer")).rejects.toThrow("unavailable");
     const [row] = await f.store.listPendingWorkspaceLeases(f.workspace.id);
     if (!row) throw new Error("Missing test lease");
-    expect(row).toMatchObject({ state: "requested", issuerLeaseId: null });
+    expect(row).toMatchObject({ state: "superseded", issuerExpiresAt: null });
     expect(await f.issuer.resource(f.issuer.controls.captured, f.workspace.id)).toBe(200);
     f.issuer.controls.reply = "outage";
     await expect(f.service.revokeWorkspace(f.workspace.id)).rejects.toThrow("unavailable");
@@ -62,7 +62,7 @@ test.each(["wrong-workspace", "long-expiry", "redirect"] as const)(
       f.issuer.controls.reply = reply;
       await expect(f.service.issue(f.workspace.id, "source", "setup-issuer")).rejects.toThrow("unavailable");
       const [row] = await f.store.listPendingWorkspaceLeases(f.workspace.id);
-      expect(row).toMatchObject({ state: "requested", issuerLeaseId: null, deliveredAt: null });
+      expect(row).toMatchObject({ state: "superseded", issuerExpiresAt: null, deliveredAt: null });
       expect(f.issuer.controls.redirectCalls).toBe(0);
       f.issuer.controls.reply = "valid";
       await f.service.revokeWorkspace(f.workspace.id);
@@ -112,16 +112,15 @@ test("a teardown fence during HTTPS mint prevents delivery and revokes the late 
   }
 });
 
-test("request retry keeps one issuer credential and cannot extend its stored expiry", async () => {
+test("each delivery mints a new credential within its workspace deadline", async () => {
   const f = await fixture();
   try {
-    const requestId = randomUUID();
-    const first = await f.service.issue(f.workspace.id, "source", "setup-issuer", requestId);
-    const second = await f.service.issue(f.workspace.id, "source", "setup-issuer", requestId);
-    expect(second.lease.id).toBe(first.lease.id);
-    expect(second.credential).toBe(first.credential);
+    const first = await f.service.issue(f.workspace.id, "source", "setup-issuer");
+    const second = await f.service.issue(f.workspace.id, "source", "setup-issuer");
+    expect(second.lease.id).not.toBe(first.lease.id);
+    expect(second.credential).not.toBe(first.credential);
     expect(second.lease.issuerExpiresAt).toEqual(first.lease.issuerExpiresAt);
-    expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toHaveLength(1);
+    expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toHaveLength(2);
     await f.service.revokeWorkspace(f.workspace.id);
     expect(await f.issuer.resource(first.credential, f.workspace.id)).toBe(401);
   } finally {
@@ -129,7 +128,7 @@ test("request retry keeps one issuer credential and cannot extend its stored exp
   }
 });
 
-test("setup completion tombstones a mint already in flight before connection", async () => {
+test("setup completion fences a mint already in flight before connection", async () => {
   const f = await fixture();
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
@@ -215,24 +214,16 @@ test("HTTP error rejection cancels the real issuer response without waiting for 
   }
 });
 
-test.each(["mint", "revoke"] as const)(
-  "deep JSON in an HTTPS %s reply yields only the generic issuer error",
-  async (operation) => {
-    const f = await fixture();
-    try {
-      const issued =
-        operation === "revoke" ? await f.service.issue(f.workspace.id, "source", "setup-issuer") : undefined;
-      f.issuer.controls.reply = "deep-policy";
-      const pending = issued
-        ? f.service.revoke(issued.lease.id)
-        : f.service.issue(f.workspace.id, "source", "setup-issuer");
-      await expect(pending).rejects.toMatchObject({
-        code: "secret.unavailable",
-        message: "Workspace issuer is unavailable.",
-      });
-      expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toHaveLength(1);
-    } finally {
-      await f.close();
-    }
-  },
-);
+test("deep JSON in an HTTPS mint reply yields only the generic issuer error", async () => {
+  const f = await fixture();
+  try {
+    f.issuer.controls.reply = "deep-policy";
+    await expect(f.service.issue(f.workspace.id, "source", "setup-issuer")).rejects.toMatchObject({
+      code: "secret.unavailable",
+      message: "Workspace issuer is unavailable.",
+    });
+    expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});

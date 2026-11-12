@@ -13,7 +13,11 @@ import { checkpointHttpFixture } from "./checkpoint-transfer-fixture.test";
 
 test("checkpoint deletion is enforced during remote outage and its worker waits across restart", async () => {
   const f = await checkpointHttpFixture(new TextEncoder().encode("bytes that must stay pending"));
-  const endpoint = Bun.serve({ port: 0, fetch: () => new Response() });
+  const endpoint = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const unavailable = endpoint.url.toString();
   await endpoint.stop(true);
   let store = f.store;

@@ -8,6 +8,33 @@ export function registerSessionRoutes(app: OpenAPIHono<AppEnv>, store: Store) {
   app.use("/v1/sessions", managedBodyLimit(16384));
   app.openapi(
     createRoute({
+      method: "get",
+      path: "/v1/sessions",
+      operationId: "listManagedSessions",
+      tags: ["Managed sessions"],
+      middleware: [requireScope("sessions:read")] as const,
+      request: {
+        query: z.object({
+          owner: z.string().min(1).max(128).optional(),
+          state: z.enum(["open", "provisioning", "ready", "suspended", "closed", "failed"]).optional(),
+        }),
+      },
+      responses: {
+        200: {
+          description: "Sessions owned by this principal",
+          content: {
+            "application/json": {
+              schema: z.array(managed.SessionSchema.extend({ activeRequestId: z.uuid().nullable() })),
+            },
+          },
+        },
+        ...MANAGED_ERROR_RESPONSES,
+      },
+    }),
+    async (c) => c.json(await store.managed.sessions.list(c.get("keyId"), c.req.valid("query")), 200),
+  );
+  app.openapi(
+    createRoute({
       method: "post",
       path: "/v1/sessions",
       operationId: "createManagedSession",

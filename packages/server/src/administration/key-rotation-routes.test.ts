@@ -80,7 +80,11 @@ test("a dedicated automation key rotates only the principals it manages", async 
 
 test("the SDK rotates a key through the public server", async () => {
   const app = await rotationServer();
-  const server = Bun.serve({ port: 0, fetch: app.app.fetch });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: app.app.fetch,
+  });
   try {
     const client = new PocketCoderClient({ baseUrl: server.url.toString(), apiKey: app.ownerToken });
     const rotated = await client.keys.rotate(app.customer.id, app.current.key.id, { request_id: "sdk-next" });

@@ -88,6 +88,8 @@ bun run ci:test
 
 Run `bun run pack:check` as well when publishable output changes.
 
+The root test command runs performance checks before other suites. CI runs them on a separate runner. Both use the same workloads and thresholds.
+
 Workflow syntax is checked with actionlint. Live Docker, Kubernetes, native platform, and hosted cache behavior are also verified by the full workflow. Fix a slow or failing check instead of widening its timeout or removing it from the gate.
 
 

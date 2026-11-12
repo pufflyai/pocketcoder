@@ -34,6 +34,15 @@ export async function writeManagedRequest(
       .where(writer.where(id));
   }
   if (next.queueReleased && next.contentRemoved) next = withoutRequestContent(next);
+  const capacity = context.tables.managedCapacity;
+  if (next.physicalExecution) {
+    const [held] = await tx.select().from(capacity).where(eq(capacity.workspaceId, next.physicalExecution.workspaceId));
+    if (held)
+      await tx
+        .update(capacity)
+        .set({ record: { ...held.record, lastUsedAt: new Date().toISOString() } })
+        .where(eq(capacity.workspaceId, held.workspaceId));
+  }
   const at = new Date().toISOString();
   next = stopFacts(next, at);
   if (canonicalJson(row.managed) === canonicalJson(next)) return;
@@ -71,9 +80,6 @@ function stopFacts(next: ManagedRecord, at: string): ManagedRecord {
   const { cancel, request } = next;
   if (request.state === "terminal")
     return cancel && !cancel.completedAt ? { ...next, cancel: { ...cancel, completedAt: at } } : next;
-  // A missed stop deadline stays pending; the request says why instead of claiming completion.
-  if (cancel && !cancel.completedAt && cancel.cancelDeadline <= at)
-    return { ...next, request: { ...request, reasonCode: "cancel_deadline_exceeded" } };
   return next;
 }
 export async function syncManagedExecution(

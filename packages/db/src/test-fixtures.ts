@@ -176,10 +176,9 @@ export function createTestStoreFactory() {
   };
 }
 
-export { managedFixture, policy as managedPolicy, provision as provisionManaged } from "./modules/managed/fixture.test";
+export { managedFixture, provision as provisionManaged } from "./modules/managed/fixture.test";
 export { sessionWorkFixture } from "./modules/sessions/work-fixture.test";
 export { executionFixture } from "./modules/workspaces/execution-fixture.test";
-
 export {
   executionConversationIdentity,
   serviceExecutionTemplate,

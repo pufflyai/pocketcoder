@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CollectionResultSchema } from "./collection";
-import { InputReferenceSchema, MAX_SESSION_FILE_REFERENCES } from "./files";
+import { MAX_SESSION_FILE_REFERENCES } from "./files";
 
 export const RequestInputSchema = z.strictObject({
   requestId: z.uuid(),
@@ -10,8 +10,7 @@ export const RequestInputSchema = z.strictObject({
     .max(262144)
     .refine((value) => value.isWellFormed(), "Message must contain valid Unicode")
     .refine((value) => new TextEncoder().encode(value).length <= 262144, "Message exceeds 256 KiB UTF-8"),
-  attachments: z.array(InputReferenceSchema).max(MAX_SESSION_FILE_REFERENCES),
-  dispatchDeadline: z.iso.datetime({ offset: true }),
+  attachments: z.array(z.uuid()).max(MAX_SESSION_FILE_REFERENCES).default([]),
 });
 export type RequestInput = z.infer<typeof RequestInputSchema>;
 
@@ -49,20 +48,13 @@ export const RequestSchema = z
   });
 export type Request = z.infer<typeof RequestSchema>;
 
-export const CancelCommandSchema = z.strictObject({
-  cancelId: z.uuid(),
-});
-export type CancelCommand = z.infer<typeof CancelCommandSchema>;
-
 const CancelReceiptFieldsSchema = z.strictObject({
   sessionId: z.uuid(),
   requestId: z.uuid().nullable(),
-  cancelId: z.uuid(),
   scope: z.enum(["request", "session"]),
   state: z.enum(["pending", "completed"]),
   acceptedAt: z.iso.datetime({ offset: true }),
   completedAt: z.iso.datetime({ offset: true }).nullable(),
-  cancelDeadline: z.iso.datetime({ offset: true }),
 });
 const CancelTargetSchema = z.union([
   CancelReceiptFieldsSchema.extend({ scope: z.literal("request"), requestId: z.uuid() }),

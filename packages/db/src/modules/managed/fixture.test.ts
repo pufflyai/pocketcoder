@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { managed } from "@pstdio/pocketcoder-contracts";
+import { managed } from "@pstdio/pocketcoder-contracts";
 import { eq } from "drizzle-orm";
 import { createPGliteFixture, insertTestWorkspace } from "../../test-fixtures";
 
@@ -16,39 +16,23 @@ export async function managedFixture(mode: "memory" | "disk" = "memory") {
     revokedAt: null,
     lastUsedAt: null,
   });
-  const scopeId = randomUUID();
-  const profile: managed.ExecutionProfile = {
-    profileId: randomUUID(),
-    revision: 1,
-    isolationScopeId: randomUUID(),
-    budgetScopeIds: [scopeId],
+  const profile = {
+    name: randomUUID(),
     templateDigest: f.template.digest,
-    credentialBindingId: null,
+    ...managed.ProfileConfigSchema.parse({
+      template: f.template.name,
+      placement: "shared",
+      limits: { workspacesPerOwner: 2, sessionsPerWorkspace: 5 },
+    }),
   };
-  return { ...f, keyId, scopeId, profile, sessionId: randomUUID() };
-}
-export function policy(scopeId: string, revision = 1): managed.BudgetPolicyWrite {
-  return {
-    scopeId,
-    revision,
-    period: "utc_day",
-    limits: {
-      workspaceStarts: 10,
-      maxActiveWorkspaces: 2,
-      maxRunningRequestsPerSession: 1,
-      maxChatProcessesPerWorkspace: 5,
-    },
-  };
+  return { ...f, keyId, profile, sessionId: randomUUID() };
 }
 export async function provision(f: Awaited<ReturnType<typeof managedFixture>>) {
-  await f.store.managed.authority.registerScope(f.keyId, f.scopeId, f.principal.id, true);
-  await f.store.managed.authority.provisionProfile(f.keyId, f.principal.id, f.profile);
-  await f.store.managed.budgets.writePolicy(f.keyId, policy(f.scopeId), null);
-  return f.store.managed.sessions.create(f.keyId, {
-    sessionId: f.sessionId,
-    profileId: f.profile.profileId,
-    profileRevision: 1,
-  });
+  const template = (await f.store.listTemplates(null)).find((t) => t.digest === f.profile.templateDigest)!;
+  const config = { ...f.profile, template: template.name, templateVersion: template.version };
+  const { name, templateDigest: _digest, ...settings } = config;
+  await f.store.managed.profiles.reconcile(f.principal.id, { [name]: settings }, {});
+  return f.store.managed.sessions.create(f.keyId, { sessionId: f.sessionId, profile: name, owner: "test-owner" });
 }
 
 export async function bindCompute(f: Awaited<ReturnType<typeof managedFixture>>) {

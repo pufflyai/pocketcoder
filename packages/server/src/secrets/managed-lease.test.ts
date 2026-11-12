@@ -1,78 +1,175 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { insertTestWorkspace } from "@pstdio/pocketcoder-db/testing";
+import { reconcileSetupLeases } from "../lifecycle/setup-lease-reconciliation";
 import { leaseServiceFixture } from "./lease-service-fixture";
 import { credentialedProfile } from "./managed-lease-fixture";
 
-test("real issuer leases bind one exclusive session and generation with a finite immutable ceiling", async () => {
-  const f = await leaseServiceFixture("memory", undefined, undefined, true);
+// A stateless issuer returns different bytes on every call; the controller never re-mints an ID.
+test("managed reconnects mint fresh, retain cleanup obligations, and need no binding expiry", async () => {
+  const f = await leaseServiceFixture();
   try {
-    const { template, config, scopeId, bindingId, profileId, incarnationId, authorityExpiresAt, session } =
-      await credentialedProfile(f);
-    const identity = await session();
-    await f.store.managed.sessions.bind(identity, 0, { workspaceId: f.workspace.id, incarnationId, generation: 1 });
-    const requestId = randomUUID();
-    f.issuer.controls.reply = "lost";
-    await expect(f.service.issueManaged(identity, f.workspace.id, 1, "runtime", requestId)).rejects.toThrow();
-    f.issuer.controls.reply = "valid";
-    const issued = await f.service.issueManaged(identity, f.workspace.id, 1, "runtime", requestId);
-    expect(issued.lease.managedAuthority).toMatchObject({ ...identity, generation: 1, incarnationId, bindingId });
-    expect(issued.lease.requestExpiresAt.getTime()).toBeLessThanOrEqual(authorityExpiresAt.getTime());
-    expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(200);
-    await expect(f.service.issueManaged(identity, f.workspace.id, 2, "runtime", randomUUID())).rejects.toThrow();
-    await expect(f.service.issueManaged(identity, f.workspace.id, 1, "other", randomUUID())).rejects.toThrow();
-    await expect(f.service.issueManaged(identity, f.workspace.id, 1, "extra", randomUUID())).rejects.toThrow();
-    await f.vault.put(f.key.id, "runtime", { ...f.config, type: "runtime-issuer" });
-    const renewal = await f.service.renew(f.workspace.id, issued.lease.id, randomUUID());
-    expect(renewal.lease.secretVersionId).toBe(config.id);
-    await f.service.completeRenewal(f.workspace.id, issued.lease.id, renewal.lease.id);
-    const siblingId = randomUUID();
-    await f.store.managed.sessions.create(f.key.id, { sessionId: siblingId, profileId, profileRevision: 1 });
-    await expect(
-      f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId: siblingId }, 0, {
-        workspaceId: f.workspace.id,
-        incarnationId,
-        generation: 1,
-      }),
-    ).rejects.toThrow();
-    const { effectiveAt: _, ...budget } = await f.store.managed.budgets.readPolicy(f.key.id, scopeId);
-    await f.store.managed.budgets.writePolicy(
-      f.key.id,
-      { ...budget, revision: 2, limits: { ...budget.limits, maxActiveWorkspaces: 1 } },
-      1,
+    const p = await credentialedProfile(f, { credentialPlacement: "shared" });
+    const id = await p.session();
+    await f.store.managed.sessions.bind(id, 0, {
+      workspaceId: f.workspace.id,
+      incarnationId: p.incarnationId,
+      generation: 1,
+    });
+    const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
+    const second = await f.service.replay(f.workspace.id, first.lease.id);
+    expect(second.credential).not.toBe(first.credential);
+    expect(second.lease.requestId).not.toBe(first.lease.requestId);
+    expect((await f.store.getWorkspaceLease(first.lease.id))?.state).toBe("superseded");
+    expect((await f.store.listPendingWorkspaceLeases(f.workspace.id)).length).toBe(2);
+    expect(second.lease.managedAuthority).toMatchObject({
+      ...id,
+      profile: p.profileId,
+      owner: "test-owner",
+      generation: 1,
+      slot: "runtime",
+    });
+    await f.service.revokeSession(f.workspace.id, id.sessionId);
+    expect(f.issuer.controls.revokeCalls).toBe(0);
+    expect((await f.store.listPendingWorkspaceLeases(f.workspace.id)).length).toBe(2);
+    await f.service.removed(f.workspace.id, id.sessionId);
+    expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a mint arriving after close is dropped and cannot make the session ready", async () => {
+  const f = await leaseServiceFixture();
+  try {
+    const p = await credentialedProfile(f);
+    const id = await p.session();
+    await f.store.managed.sessions.bind(id, 0, {
+      workspaceId: f.workspace.id,
+      incarnationId: p.incarnationId,
+      generation: 1,
+    });
+    const entered = Promise.withResolvers<void>(),
+      release = Promise.withResolvers<void>();
+    f.issuer.controls.beforeMint = async () => {
+      entered.resolve();
+      await release.promise;
+    };
+    const pending = f.service.issueManaged(id, f.workspace.id, 1, "runtime");
+    await entered.promise;
+    await f.store.managed.sessions.close(f.key.id, id.sessionId, new Date());
+    release.resolve();
+    await expect(pending).rejects.toThrow();
+    expect((await f.store.managed.sessions.get(f.key.id, id.sessionId)).state).toBe("closed");
+    expect((await f.store.listWorkspaceLeases(f.workspace.id)).every((r) => r.state !== "delivered")).toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("renewal expiry preserves the new credential and close retries its generation notice", async () => {
+  const f = await leaseServiceFixture();
+  try {
+    const p = await credentialedProfile(f);
+    const {
+      name,
+      disabled: _disabled,
+      templateVersion,
+      ...profile
+    } = await f.store.managed.profiles.get(f.key.id, p.profileId);
+    await f.store.managed.profiles.reconcile(
+      f.principal.id,
+      { [name]: { ...profile, ...(templateVersion ? { templateVersion } : {}) } },
+      { runtime: { ...p.config, revoke: true } },
     );
-    const additional = [];
-    for (let index = 0; index < 4; index++) {
-      const nextSession = index === 0 ? siblingId : randomUUID();
-      if (index > 0)
-        await f.store.managed.sessions.create(f.key.id, { sessionId: nextSession, profileId, profileRevision: 1 });
-      const nextWorkspace = await insertTestWorkspace(
-        { ...f, parsed: template.parsed ?? f.parsed, template: template.row },
-        randomUUID(),
-      );
-      const placement = {
-        principalId: f.principal.id,
-        sessionId: nextSession,
-        workspaceId: nextWorkspace.id,
-        generation: 1,
-      };
-      additional.push(placement);
-      await expect(f.store.managed.capacity.place(placement)).rejects.toThrow("budget");
-    }
-    expect((await f.store.managed.budgets.usage(f.key.id, scopeId)).activeWorkspaces).toBe(1);
-    await f.store.managed.budgets.writePolicy(f.key.id, { ...budget, revision: 3 }, 2);
-    for (const placement of additional) await f.store.managed.capacity.place(placement);
-    expect((await f.store.managed.budgets.usage(f.key.id, scopeId)).activeWorkspaces).toBe(5);
-    await expect(f.service.issue(f.workspace.id, "runtime", "runtime-issuer")).rejects.toThrow();
-    const current = await f.store.managed.sessions.get(f.key.id, identity.sessionId);
-    await f.store.managed.sessions.appendObservation(identity, current.revision, "closed", null);
-    await expect(f.service.renew(f.workspace.id, renewal.lease.id, randomUUID())).rejects.toThrow();
+    const id = await p.session();
+    await f.store.managed.sessions.bind(id, 0, {
+      workspaceId: f.workspace.id,
+      incarnationId: p.incarnationId,
+      generation: 1,
+    });
+    f.issuer.controls.leaseLifetimeMs = 150;
+    const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
+    f.issuer.controls.leaseLifetimeMs = 30000;
+    const next = await f.service.renew(f.workspace.id, first.lease.id);
+    await f.service.completeRenewal(f.workspace.id, first.lease.id, next.lease.id);
+    await Bun.sleep(160);
+    await reconcileSetupLeases(f.store, f.service, {} as never);
+    expect(await f.issuer.resource(next.credential, id.sessionId)).toBe(200);
+    expect(f.issuer.controls.revokeCalls).toBe(0);
+    await f.store.managed.sessions.close(f.key.id, id.sessionId, new Date());
     f.issuer.controls.reply = "outage";
-    await expect(f.service.revokeWorkspace(f.workspace.id)).rejects.toThrow();
-    expect((await f.store.getWorkspaceLease(renewal.lease.id))?.state).toBe("revoking");
+    await expect(f.service.revokeSession(f.workspace.id, id.sessionId)).rejects.toThrow();
+    expect((await f.store.listPendingWorkspaceLeases(f.workspace.id)).length).toBe(1);
     f.issuer.controls.reply = "valid";
-    await f.service.revokeWorkspace(f.workspace.id);
-    expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(401);
+    await f.service.revokeSession(f.workspace.id, id.sessionId);
+    expect(f.issuer.controls.revokeCalls).toBe(1);
+    expect(await f.issuer.resource(next.credential, id.sessionId)).toBe(401);
+    await f.service.removed(f.workspace.id, id.sessionId);
+    expect(await f.store.listPendingWorkspaceLeases(f.workspace.id)).toEqual([]);
+  } finally {
+    await f.close();
+  }
+});
+
+test.each(["refused", "forbidden"] as const)(
+  "issuer %s replies distinguish a refusal from an outage",
+  async (reply) => {
+    const f = await leaseServiceFixture();
+    try {
+      const p = await credentialedProfile(f);
+      const id = await p.session();
+      await f.store.managed.sessions.bind(id, 0, {
+        workspaceId: f.workspace.id,
+        incarnationId: p.incarnationId,
+        generation: 1,
+      });
+      const accepted = await f.store.managed.requests.accept(
+        f.key.id,
+        id.sessionId,
+        { requestId: randomUUID(), message: "first", attachments: [] },
+        { count: 8, bytes: 1048576 },
+      );
+      f.issuer.controls.reply = reply;
+      await expect(f.service.issueManaged(id, f.workspace.id, 1, "runtime")).rejects.toThrow();
+      const failed = await f.store.managed.requests.get(f.key.id, id.sessionId, accepted.request.requestId);
+      expect(failed.state).toBe(reply === "refused" ? "terminal" : "accepted");
+      if (reply === "refused") {
+        expect(failed.reasonCode).toBe("credentials_refused");
+        f.issuer.controls.reply = "valid";
+        await expect(f.service.issueManaged(id, f.workspace.id, 1, "runtime")).rejects.toThrow();
+        expect(f.issuer.controls.mintCalls).toBe(1);
+        await f.store.managed.requests.accept(
+          f.key.id,
+          id.sessionId,
+          { requestId: randomUUID(), message: "retry on new work", attachments: [] },
+          { count: 8, bytes: 1048576 },
+        );
+        const issued = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
+        expect(await f.issuer.resource(issued.credential, id.sessionId)).toBe(200);
+      }
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test("managed minting reads a rotated operator token file on the next call", async () => {
+  const f = await leaseServiceFixture();
+  try {
+    const p = await credentialedProfile(f);
+    const id = await p.session();
+    await f.store.managed.sessions.bind(id, 0, {
+      workspaceId: f.workspace.id,
+      incarnationId: p.incarnationId,
+      generation: 1,
+    });
+    const first = await f.service.issueManaged(id, f.workspace.id, 1, "runtime");
+    const token = randomUUID();
+    f.issuer.controls.authorization = `Bearer ${token}`;
+    await Bun.write(p.config.tokenFile, token);
+    const next = await f.service.replay(f.workspace.id, first.lease.id);
+    expect(next.credential).not.toBe(first.credential);
+    expect(await f.issuer.resource(next.credential, id.sessionId)).toBe(200);
   } finally {
     await f.close();
   }

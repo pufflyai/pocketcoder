@@ -1,5 +1,5 @@
 import type { WorkspaceLeaseRequest } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, asc, eq, notInArray } from "drizzle-orm";
+import { and, asc, eq, notInArray, sql } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { requiredRow } from "../../database/required-row";
 import { leaseWorkspaceActive } from "./lease-authority";
@@ -33,6 +33,32 @@ export function createWorkspaceLeases(context: DatabaseContext) {
     requiredRow((await tx.update(leases).set(patch).where(eq(leases.id, id)).returning())[0]);
   return {
     requestWorkspaceLease: (input: WorkspaceLeaseRequest) => requestLease(context, input),
+    async supersedeWorkspaceLease(id: string, at: Date) {
+      await db
+        .update(leases)
+        .set({ state: "superseded", updatedAt: at })
+        .where(and(eq(leases.id, id), notInArray(leases.state, [...closed, "revoking"])));
+    },
+    async acknowledgeSessionLeaseRemoval(workspaceId: string, sessionId: string, at: Date) {
+      await db
+        .update(leases)
+        .set({ removedAt: at })
+        .where(and(eq(leases.workspaceId, workspaceId), sql`${leases.managedAuthority}->>'sessionId' = ${sessionId}`));
+    },
+    async acknowledgeLeaseRevocation(id: string, at: Date) {
+      const [row] = await db.select().from(leases).where(eq(leases.id, id));
+      if (!row) return;
+      const a = row.managedAuthority;
+      const same = a
+        ? and(
+            sql`${leases.managedAuthority}->>'sessionId' = ${a.sessionId}`,
+            sql`${leases.managedAuthority}->>'principalId' = ${a.principalId}`,
+            sql`${leases.managedAuthority}->>'issuer' = ${a.issuer}`,
+            sql`(${leases.managedAuthority}->>'generation')::integer <= ${a.generation}`,
+          )
+        : eq(leases.id, id);
+      await db.update(leases).set({ revokeAcknowledgedAt: at }).where(same);
+    },
     async getWorkspaceLease(id: string) {
       return (await db.select().from(leases).where(eq(leases.id, id)))[0] ?? null;
     },
@@ -56,33 +82,18 @@ export function createWorkspaceLeases(context: DatabaseContext) {
         )
         .orderBy(asc(leases.createdAt), asc(leases.id));
     },
-    async recordWorkspaceLeaseIssued(
-      id: string,
-      issuerLeaseId: string,
-      expiresAt: Date,
-      credentialBytes: number,
-      at: Date,
-    ) {
+    async recordWorkspaceLeaseIssued(id: string, expiresAt: Date, credentialBytes: number, at: Date) {
       return db.transaction(async (tx) => {
         const { row, owner } = await writable(tx, id);
-        if (isClosed(row.state)) return null;
+        if (isClosed(row.state) || row.state === "superseded") return null;
         if (
-          !issuerLeaseId ||
-          issuerLeaseId.length > 1024 ||
           !Number.isInteger(credentialBytes) ||
           credentialBytes < 1 ||
-          credentialBytes > 65_536 ||
+          credentialBytes > 32_768 ||
           expiresAt <= row.createdAt ||
           expiresAt > row.requestExpiresAt
         )
           throw new Error("Lease issuer expiry or identity is invalid");
-        if (
-          row.issuerLeaseId &&
-          (row.issuerLeaseId !== issuerLeaseId ||
-            row.issuerExpiresAt?.getTime() !== expiresAt.getTime() ||
-            row.credentialBytes !== credentialBytes)
-        )
-          throw new Error("Lease request identity changed");
         const stopped =
           row.state === "revoking" ||
           (await fenced(tx, owner.id)) ||
@@ -91,7 +102,7 @@ export function createWorkspaceLeases(context: DatabaseContext) {
         let state = row.state;
         if (stopped) state = "revoking";
         else if (state !== "delivered") state = "issued";
-        return update(tx, id, { issuerLeaseId, issuerExpiresAt: expiresAt, credentialBytes, state, updatedAt: at });
+        return update(tx, id, { issuerExpiresAt: expiresAt, credentialBytes, state, updatedAt: at });
       });
     },
     async recordWorkspaceLeaseDelivered(id: string, at: Date) {
@@ -135,7 +146,7 @@ export function createWorkspaceLeases(context: DatabaseContext) {
       return db.transaction(async (tx) => {
         const { row } = await writable(tx, id);
         if (isClosed(row.state)) return row;
-        if (!row.issuerExpiresAt || row.issuerExpiresAt > at) return null;
+        if ((row.issuerExpiresAt ?? row.requestExpiresAt) > at) return null;
         return update(tx, id, { state: "expired", closedAt: at, updatedAt: at });
       });
     },

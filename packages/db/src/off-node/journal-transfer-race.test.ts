@@ -23,6 +23,7 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
     });
     let delay = false;
     const proxy = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
         const path = new URL(request.url);

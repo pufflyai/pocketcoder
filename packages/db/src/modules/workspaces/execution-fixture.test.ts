@@ -14,6 +14,7 @@ export async function executionFixture(
     capabilities?: import("@pstdio/pocketcoder-contracts").WorkloadCapability[];
     base?: Awaited<ReturnType<typeof createPGliteFixture>>;
     ready?: boolean;
+    workspaceId?: string;
     mode?: "memory" | "disk";
   } = {},
 ) {
@@ -25,7 +26,7 @@ export async function executionFixture(
   const adapter = source.spec.adapters.main;
   if (!adapter) throw new Error("Fixture adapter missing");
   const template = workloadSnapshotOf(parseWorkloadTemplate(source));
-  const id = randomUUID();
+  const id = options.workspaceId ?? randomUUID();
   const result = await f.store.insertWorkspace({
     id,
     principalId: f.principal.id,

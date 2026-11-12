@@ -19,6 +19,51 @@ const command = async (args: string[]) => {
   if (code) throw new Error(stderr);
 };
 
+async function repairProfile(
+  instances: ReturnType<typeof createInstances>,
+  instanceId: string,
+  profile: string,
+  template: { metadata: { name: string }; spec: { version: string } },
+  sessionId: string,
+  ask: (expected: "completed" | "disconnected") => Promise<void>,
+) {
+  const client = await instances.client(instanceId);
+  await instances.configureManagedProfile(instanceId, profile, template.metadata.name, "9.9.9");
+  for (const workspace of await instances.items<{ id: string }>(instanceId, "/v1/workspaces").catch(() => []))
+    await client.workspaces.cancel(workspace.id);
+  const answer = ask("disconnected");
+  // The harness keeps the accepted request while the controller waits for a usable profile.
+  const deadline = Date.now() + 30000;
+  while ((await client.sessions.get(sessionId)).reasonCode !== "template_unavailable") {
+    if (Date.now() >= deadline) throw new Error("Missing template suspension was not reported");
+    await Bun.sleep(100);
+  }
+  expect(await client.profiles.get(profile)).toMatchObject({ templateVersion: "9.9.9", disabled: true });
+  const pending = (await client.sessions.conversation(sessionId)).requests.filter((r) => r.state !== "terminal");
+  expect(pending).toHaveLength(1);
+  const [waiting] = pending;
+  if (!waiting) throw new Error("Missing pending request");
+  await instances.stop(instanceId);
+  await answer;
+  await instances.start(instanceId);
+  const restarted = await instances.client(instanceId);
+  expect(await restarted.sessions.get(sessionId)).toMatchObject({
+    state: "suspended",
+    reasonCode: "template_unavailable",
+  });
+  await instances.configureManagedProfile(instanceId, profile, template.metadata.name, template.spec.version);
+  await ask("completed");
+  expect(await restarted.requests.get(sessionId, waiting.requestId)).toMatchObject({
+    state: "terminal",
+    outcome: "completed",
+  });
+  expect((await restarted.sessions.conversation(sessionId)).requests).toHaveLength(3);
+  expect(await restarted.sessions.get(sessionId)).toMatchObject({ state: "ready", reasonCode: null });
+  expect(
+    (await instances.items<{ state: string }>(instanceId, "/v1/workspaces")).filter((w) => w.state === "ready"),
+  ).toHaveLength(1);
+}
+
 test("managed Lab sessions share one machine and keep running when a sibling closes", async () => {
   await command([
     "bun",
@@ -83,12 +128,12 @@ test("managed Lab sessions share one machine and keep running when a sibling clo
     });
     expect(opened.sessions).toHaveLength(2);
 
-    const ask = async (sessionId: string, prompt: string) => {
+    const ask = async (sessionId: string, prompt: string, expected: "completed" | "disconnected" = "completed") => {
       const patches: JsonPatch[] = [];
       const events: HarnessEventSink = { push: (patch) => void patches.push(patch), getMessages: () => [] };
       const run = await harness.start(harnessCtx, { sessionId, prompt, events });
-      expect(await run.done).toEqual({ status: "completed" });
-      expect(JSON.stringify(patches)).toContain(`echo: ${prompt}`);
+      expect(await run.done).toEqual({ status: expected });
+      if (expected === "completed") expect(JSON.stringify(patches)).toContain(`echo: ${prompt}`);
     };
     const [first, second] = opened.sessions;
     if (!first || !second) throw new Error("Missing managed sessions");
@@ -99,13 +144,16 @@ test("managed Lab sessions share one machine and keep running when a sibling clo
     expect(await live()).toHaveLength(1);
 
     const client = await instances.client(instance.id);
-    await client.sessions.close(first.managedSessionId, { cancelId: randomUUID() });
+    await client.sessions.close(first.managedSessionId);
     await ask(second.sessionId, "still answering");
     expect(await live()).toHaveLength(1);
+    await repairProfile(instances, instance.id, opened.profile, template, second.managedSessionId, (expected) =>
+      ask(second.sessionId, "answer after profile repair", expected),
+    );
   } finally {
     if (instanceId) {
       const client = await instances.client(instanceId);
-      for (const machine of await instances.items<{ id: string }>(instanceId, "/v1/workspaces"))
+      for (const machine of await instances.items<{ id: string }>(instanceId, "/v1/workspaces").catch(() => []))
         await client.workspaces.cancel(machine.id).catch(() => {});
       await instances.stop(instanceId).catch(() => {});
     }

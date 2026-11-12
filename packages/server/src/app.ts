@@ -152,7 +152,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const metrics = deps.metrics ?? new RuntimeMetrics();
   const log = (message: string) => logger.info("runtime.message", { message });
   const hub = new Hub(terminalCallbacks(store));
-  const { workspaceLeases, checkpointTransfers, transferRuntime } = composeWorkspaceRuntime(deps, hub);
+  const { workspaceLeases, workspaceIssuer, checkpointTransfers, transferRuntime } = composeWorkspaceRuntime(deps, hub);
   const poolHub = new PoolConnectionHub();
   const secretFactory = workspaceSecretFactory(pepper);
   const warmPool = deps.warmPools
@@ -177,6 +177,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     ...(transferRuntime ? { transferRuntime } : {}),
     ...(deps.secretResolver ? { secretResolver: deps.secretResolver } : {}),
     revokeWorkspaceLeases: workspaceLeases?.revokeWorkspace,
+    workspaceIssuer,
     completeOutputCleanup: finiteExportCleanup(store),
     finalizeOutputs: finiteExports({
       store,

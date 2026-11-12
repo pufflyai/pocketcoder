@@ -12,7 +12,6 @@ test("logical requests queue without compute, replay once and reject changed inp
       requestId: randomUUID(),
       message: "run tests",
       attachments: [],
-      dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
     };
     const requests = f.store.managed.requests;
     const accepted = await requests.accept(f.keyId, f.sessionId, input, { count: 2, bytes: 1024 });
@@ -47,7 +46,7 @@ test("legacy receipts cannot reserve or retarget managed request identities", as
     const accepted = await f.store.managed.requests.accept(
       f.keyId,
       f.sessionId,
-      { requestId, message: "run", attachments: [], dispatchDeadline: new Date(Date.now() + 60000).toISOString() },
+      { requestId, message: "run", attachments: [] },
       { count: 1, bytes: 1024 },
     );
     await expect(
