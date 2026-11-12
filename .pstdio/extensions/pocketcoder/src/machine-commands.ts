@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { commandRef, defineCommand, params } from "@pstdio/sdk/extensions";
 import { instancesFor } from "./instances";
 import { machineConnection } from "./machine-connection";
+import { serializeMachineConnection } from "./machine-connection-queue";
 import { dismissMachine } from "./machine-dismissal";
 import { checkRelayDevice, latestMachineConversation, machineSessionTarget } from "./machine-session";
 import { machineSessionCache } from "./machine-session-cache";
@@ -66,45 +67,47 @@ export function createMachineCommands(getInstances = instancesFor) {
     mutating: true,
     params: machineParams,
     async run(ctx, input) {
-      const instances = getInstances(ctx.projectId);
-      const machine = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
-      await ctx.events.emit(changed, {});
-      const unavailable = unavailableMachineMessage(machine);
-      if (unavailable) throw new Error(unavailable);
-      const connection = await machineConnection(
-        () => instances.request(input.instance, `${machinePath(machine.id)}/requests/capabilities`),
-        machine.metadata,
-      );
-      const cache = machineSessionCache(ctx.storage, input.instance, machine.id, connection);
-      const sessionId = await cache.get();
-      if (connection.kind === "relay") await checkRelayDevice(ctx, connection.deviceId);
-      const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
-      const session =
-        existing ??
-        (await ctx.sessions.create({
-          title: `PocketCoder: ${machine.external_id}`,
-          ...(connection.kind === "relay"
-            ? {
-                deviceId: connection.deviceId,
-                workspaceId: connection.workspaceId,
-                harness: { harnessId: "pstdio.harness-codex.harness.codex" },
-              }
-            : {
-                harness: {
-                  harnessId: `${ctx.extensionId}.harness.agent`,
-                },
-              }),
-        }));
-      if (connection.kind === "session")
-        await instances.bindSession(
-          session.id,
-          input.instance,
-          machine.id,
-          existing ? undefined : await latestMachineConversation(instances, input.instance, machine),
+      return serializeMachineConnection(ctx.projectId, input.instance, input.machineId, async () => {
+        const instances = getInstances(ctx.projectId);
+        const machine = await instances.request<ControllerMachine>(input.instance, machinePath(input.machineId));
+        await ctx.events.emit(changed, {});
+        const unavailable = unavailableMachineMessage(machine);
+        if (unavailable) throw new Error(unavailable);
+        const connection = await machineConnection(
+          () => instances.request(input.instance, `${machinePath(machine.id)}/requests/capabilities`),
+          machine.metadata,
         );
-      await cache.set(session.id);
-      ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
-      return { machineId: machine.id, sessionId: session.id };
+        const cache = machineSessionCache(ctx.storage, input.instance, machine.id, connection);
+        const sessionId = await cache.get();
+        if (connection.kind === "relay") await checkRelayDevice(ctx, connection.deviceId);
+        const existing = sessionId ? await ctx.sessions.get(sessionId) : null;
+        const session =
+          existing ??
+          (await ctx.sessions.create({
+            title: `PocketCoder: ${machine.external_id}`,
+            ...(connection.kind === "relay"
+              ? {
+                  deviceId: connection.deviceId,
+                  workspaceId: connection.workspaceId,
+                  harness: { harnessId: "pstdio.harness-codex.harness.codex" },
+                }
+              : {
+                  harness: {
+                    harnessId: `${ctx.extensionId}.harness.agent`,
+                  },
+                }),
+          }));
+        if (connection.kind === "session")
+          await instances.bindSession(
+            session.id,
+            input.instance,
+            machine.id,
+            existing ? undefined : await latestMachineConversation(instances, input.instance, machine),
+          );
+        await cache.set(session.id);
+        ctx.navigation.open(machineSessionTarget(ctx.projectId, session));
+        return { machineId: machine.id, sessionId: session.id };
+      });
     },
   });
   const deleteMachine = defineCommand({

@@ -45,3 +45,23 @@ test("a template opens as its formatted manifest, found by file or by published 
   expect(JSON.parse(document.content)).toEqual(manifest("example", "2.0.0"));
   expect(document.editable).toBe(false);
 });
+
+test("a stale selected path does not prevent deleting the remaining catalog files", async () => {
+  const { files, ctx } = context();
+  const first = await saveTemplate.run(ctx, { source: JSON.stringify(manifest("first")) });
+  const second = await saveTemplate.run(ctx, { source: JSON.stringify(manifest("second")) });
+  await files.delete(first.path);
+  let refreshes = 0;
+  const changed = {
+    ...ctx,
+    events: {
+      emit: async () => {
+        refreshes++;
+        return { delivered: 0 };
+      },
+    },
+  };
+  await expect(deleteTemplates.run(changed, { rowIds: [first.path, second.path] })).rejects.toThrow(first.path);
+  expect(await listCatalog(files)).toEqual([]);
+  expect(refreshes).toBe(1);
+});

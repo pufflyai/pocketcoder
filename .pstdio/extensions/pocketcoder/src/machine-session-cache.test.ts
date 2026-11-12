@@ -16,7 +16,7 @@ test("cached sessions belong to one machine and connection target", async () => 
   expect(await cache("other-machine", relay).get()).toBeUndefined();
   await cache("machine", session).set("native-chat");
   expect(await cache("machine", session).get()).toBe("native-chat");
-  expect(await cache("machine", relay).get()).toBeUndefined();
+  expect(await cache("machine", relay).get()).toBe("relay-chat");
 });
 
 test("an untyped cached session cannot prove its connection target", async () => {

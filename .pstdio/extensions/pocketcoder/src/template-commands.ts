@@ -36,11 +36,11 @@ export const deleteTemplates = defineCommand({
   async run(ctx, input) {
     const files = catalogFiles(ctx);
     const listed = new Set((await listCatalog(files)).map((entry) => entry.path));
-    if (!input.rowIds.every((path) => listed.has(path))) throw new Error("Choose listed templates.");
     const paths: string[] = [];
     const failures: string[] = [];
     for (const path of new Set(input.rowIds)) {
       try {
+        if (!listed.has(path)) throw new Error("Choose listed templates.");
         await files.delete(path);
         paths.push(path);
       } catch (error) {

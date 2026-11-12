@@ -7,7 +7,7 @@ import { resolveExecutable } from "./executable";
 import { inputEnvironment, instanceLimits, requireTemplateCapacity } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
 import { createOwnerKeys, type OwnerKey } from "./owner-keys";
-import { snapshotTemplateImport } from "./template-import";
+import { snapshotTemplateDirectory, snapshotTemplateImport } from "./template-import";
 
 export interface Instance {
   id: string;
@@ -45,18 +45,7 @@ export const instancesFor = (projectId: string) =>
 
 export function createInstances(root: string) {
   const { directory, read, write } = instanceFiles(root);
-  const environment = (instance: Instance) => ({
-    POCKETCODER_DIR: join(directory(instance.id), "data"),
-    POCKETCODER_STATE_DIR: join(directory(instance.id), "state"),
-    POCKETCODER_HTTP: new URL(instance.url).host,
-    POCKETCODER_AGENT_HTTP: `0.0.0.0:${instance.agentPort}`,
-    POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${instance.agentPort}`,
-    POCKETCODER_STORAGE_BACKEND: "filesystem",
-    POCKETCODER_WORKSPACE_DATA_DIR: join(directory(instance.id), "workspaces"),
-    POCKETCODER_CHECKPOINT_DIR: join(directory(instance.id), "checkpoints"),
-    ...MANAGED_SESSION_ENV,
-    ...(instance.workloadLimits ? inputEnvironment(directory(instance.id), instance.workloadLimits) : {}),
-  });
+  const environment = (instance: Instance) => instanceEnvironment(instance, directory(instance.id));
   const cli = async (instance: Instance, args: string[], extra: Record<string, string> = {}) => {
     const result = await runCli(instance.binary, directory(instance.id), { ...environment(instance), ...extra }, args);
     if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `PocketCoder ${args[0]} failed.`);
@@ -208,33 +197,38 @@ export function createInstances(root: string) {
       templates?: string;
       manifests?: unknown[];
     }) {
-      const workloadLimits = instanceLimits(input.manifests ?? []);
-      const binary = await resolveExecutable(input);
-      const id = randomUUID();
-      await mkdir(directory(id), { recursive: true, mode: 0o700 });
-      await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
-      const operatorPort = await freePort();
-      let agentPort = await freePort();
-      while (agentPort === operatorPort) agentPort = await freePort();
-      const instance: Instance = {
-        id,
-        name: input.name,
-        binary,
-        url: `http://127.0.0.1:${operatorPort}`,
-        agentPort,
-        state: "stopped",
-        ...(workloadLimits ? { workloadLimits } : {}),
-      };
-      await write(id, "instance.json", instance);
+      const snapshot = input.templates ? await snapshotTemplateDirectory(input.templates) : undefined;
       try {
-        const started = await start(id);
-        for (const manifest of input.manifests ?? []) await this.publish(id, manifest);
-        if (input.templates) await this.importTemplates(id, input.templates);
-        return started;
-      } catch (error) {
-        await this.stop(id);
-        await rm(directory(id), { recursive: true });
-        throw error;
+        const workloadLimits = instanceLimits([...(input.manifests ?? []), ...(snapshot?.manifests ?? [])]);
+        const binary = await resolveExecutable(input);
+        const id = randomUUID();
+        await mkdir(directory(id), { recursive: true, mode: 0o700 });
+        await writeFile(join(directory(id), "empty.env"), "", { mode: 0o600 });
+        const operatorPort = await freePort();
+        let agentPort = await freePort();
+        while (agentPort === operatorPort) agentPort = await freePort();
+        const instance: Instance = {
+          id,
+          name: input.name,
+          binary,
+          url: `http://127.0.0.1:${operatorPort}`,
+          agentPort,
+          state: "stopped",
+          ...(workloadLimits ? { workloadLimits } : {}),
+        };
+        await write(id, "instance.json", instance);
+        try {
+          const started = await start(id);
+          for (const manifest of input.manifests ?? []) await this.publish(id, manifest);
+          if (snapshot) await this.importTemplates(id, snapshot.directory);
+          return started;
+        } catch (error) {
+          await this.stop(id);
+          await rm(directory(id), { recursive: true });
+          throw error;
+        }
+      } finally {
+        await snapshot?.dispose();
       }
     },
     async publishedTemplates(id: string) {
@@ -289,4 +283,19 @@ function instanceFiles(root: string) {
     await rename(temporary, path);
   };
   return { directory, read, write };
+}
+
+function instanceEnvironment(instance: Instance, root: string) {
+  return {
+    POCKETCODER_DIR: join(root, "data"),
+    POCKETCODER_STATE_DIR: join(root, "state"),
+    POCKETCODER_HTTP: new URL(instance.url).host,
+    POCKETCODER_AGENT_HTTP: `0.0.0.0:${instance.agentPort}`,
+    POCKETCODER_WORKSPACE_SERVER_URL: `http://host.docker.internal:${instance.agentPort}`,
+    POCKETCODER_STORAGE_BACKEND: "filesystem",
+    POCKETCODER_WORKSPACE_DATA_DIR: join(root, "workspaces"),
+    POCKETCODER_CHECKPOINT_DIR: join(root, "checkpoints"),
+    ...MANAGED_SESSION_ENV,
+    ...(instance.workloadLimits ? inputEnvironment(root, instance.workloadLimits) : {}),
+  };
 }

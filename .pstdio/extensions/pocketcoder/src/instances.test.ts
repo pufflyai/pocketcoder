@@ -165,3 +165,27 @@ test("reconnecting the same machine retains its conversation seed", async () => 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("directory templates size the instance before its first start", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pc-directory-instance-"));
+  const templates = await mkdtemp(join(tmpdir(), "pc-directory-templates-"));
+  const instances = createInstances(root);
+  try {
+    const manifest = await Bun.file(
+      resolve(import.meta.dir, "../../../../examples/workloads/finite-process.json"),
+    ).json();
+    manifest.metadata.name = "from-directory";
+    manifest.spec.limits.inputFiles = 13;
+    manifest.spec.network = { mode: "unrestricted" };
+    await writeFile(join(templates, "agent.json"), JSON.stringify(manifest));
+    const instance = await instances.launch({ name: "Directory launch", binary, templates });
+    expect(instance.workloadLimits?.inputFiles).toBe(13);
+    expect((await instances.publishedTemplates(instance.id)).map((template) => template.name)).toEqual([
+      "from-directory",
+    ]);
+  } finally {
+    for (const id of await readdir(root)) await instances.stop(id);
+    await rm(root, { recursive: true, force: true });
+    await rm(templates, { recursive: true, force: true });
+  }
+}, 30_000);
