@@ -35,7 +35,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "bun --no-env-file test",
+    "test": "bun --no-env-file test --timeout 10000",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {

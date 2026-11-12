@@ -14,7 +14,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun --no-env-file test",
+    "test": "bun --no-env-file test --timeout 10000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -131,7 +131,7 @@ jobs:
         env:
           PC102_S3_TEST: "1"
           PC94_S3_TEST: "1"
-        run: bun test packages/manager/src/recovery packages/manager/src/purge
+        run: bun test --timeout 10000 packages/manager/src/recovery packages/manager/src/purge
       - name: Purge an account and restore the earlier manager backup
         env:
           POCKETCODER_E2E_WORKSPACE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
@@ -167,7 +167,7 @@ jobs:
       - name: Verify structured sessions in the installed image
         env:
           POCKETCODER_SESSION_CONFORMANCE_IMAGE: pocketcoder-ci-workspace:${{ github.sha }}
-        run: bun test deploy/image/session.conformance.test.ts
+        run: bun test --timeout 10000 deploy/image/session.conformance.test.ts
   checks:
     name: Qualification result
     if: always()

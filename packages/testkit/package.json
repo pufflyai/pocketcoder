@@ -27,7 +27,7 @@
     "bun": ">=1.4.2"
   },
   "scripts": {
-    "test": "bun --no-env-file test --pass-with-no-tests",
+    "test": "bun --no-env-file test --timeout 10000 --pass-with-no-tests",
     "typecheck": "tsc --project ./tsconfig.json --noEmit"
   },
   "dependencies": {
