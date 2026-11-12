@@ -24,11 +24,10 @@ export class SessionRequestsApi {
 
   // Stops one request. Queued work ends without dispatch; running work stays pending until the
   // producer reports its terminal state. A request that already completed keeps its outcome.
-  cancel(sessionId: string, requestId: string, command: managed.CancelCommand, options: RequestOptions = {}) {
+  cancel(sessionId: string, requestId: string, options: RequestOptions = {}) {
     return this.transport.request(`${requestPath(sessionId, requestId)}/cancel`, managed.CancelReceiptSchema, {
       ...options,
       method: "POST",
-      body: JSON.stringify(managed.CancelCommandSchema.parse(command)),
     });
   }
 

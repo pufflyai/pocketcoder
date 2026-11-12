@@ -9,17 +9,21 @@ import {
   ConversationRequestIdentitySchema,
   canonicalJson,
   digestOf,
+  type PriorMessage,
+  PriorMessageSchema,
   ProducerObservationSchema,
   type WorkloadAcceptance,
   WorkloadAcceptanceSchema,
   type WorkloadExecutionReference,
   WorkloadExecutionReferenceSchema,
 } from "@pstdio/pocketcoder-contracts";
+import { z } from "zod";
 
 export interface SessionRun {
   acceptance: WorkloadAcceptance;
   identity: ConversationRequestIdentity;
   inputDirectory?: string;
+  priorMessages?: PriorMessage[];
   signal: AbortSignal;
   emit(key: string, role: ConversationMessageInput["role"], parts: ConversationPart[], fact?: ConversationFact): void;
 }
@@ -46,7 +50,12 @@ export class SessionProducer {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
   }
 
-  async accept(raw: { acceptance: unknown; conversationIdentity: unknown; inputDirectory?: string }) {
+  async accept(raw: {
+    acceptance: unknown;
+    conversationIdentity: unknown;
+    inputDirectory?: string;
+    priorMessages?: PriorMessage[];
+  }) {
     const acceptance = WorkloadAcceptanceSchema.parse(raw.acceptance);
     const identity = ConversationRequestIdentitySchema.parse(raw.conversationIdentity);
     const execution = acceptance.execution;
@@ -80,6 +89,7 @@ export class SessionProducer {
       acceptance,
       identity,
       inputDirectory: raw.inputDirectory,
+      priorMessages: raw.priorMessages ? z.array(PriorMessageSchema).parse(raw.priorMessages) : undefined,
       signal: abort.signal,
       emit: (id, role, parts, fact) => this.emit(entry, id, role, parts, fact),
     };

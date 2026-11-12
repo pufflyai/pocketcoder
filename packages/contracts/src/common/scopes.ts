@@ -32,8 +32,6 @@ export const SCOPES = [
   "terminal:read",
   "sessions:read",
   "sessions:write",
-  "budgets:read",
-  "budgets:admin",
   "admin",
 ] as const;
 

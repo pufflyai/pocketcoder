@@ -44,7 +44,6 @@ async function managedCli() {
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
     sessionQueueLimits: { count: 4, bytes: 1048576 },
-    sessionStopSeconds: 30,
     sessionEventPollMs: 10,
     inputStorageOptions: {
       driver: new FilesystemInputStorage(directory, []),
@@ -85,31 +84,6 @@ async function managedCli() {
   };
 }
 
-test("budget commands drive the managed API without opening the database", async () => {
-  await using managed = await managedCli();
-  const { f, directory, cli, json } = managed;
-  const scopeId = randomUUID();
-  await cli(["budgets", "grant", "--scope", scopeId, "--principal", f.principal.id]);
-  const policyFile = join(directory, "policy.json");
-  const policy = {
-    scopeId,
-    revision: 1,
-    period: "utc_day",
-    limits: {
-      workspaceStarts: 2,
-      maxActiveWorkspaces: 1,
-      maxRunningRequestsPerSession: 1,
-      maxChatProcessesPerWorkspace: 1,
-    },
-  };
-  await writeFile(policyFile, JSON.stringify(policy));
-  expect((await json(["budgets", "set-policy", "--file", policyFile])).revision).toBe(1);
-  await writeFile(policyFile, JSON.stringify({ ...policy, revision: 2 }));
-  expect((await json(["budgets", "set-policy", "--file", policyFile, "--expected-revision", "1"])).revision).toBe(2);
-  expect((await json(["budgets", "policy", "--scope", scopeId])).revision).toBe(2);
-  expect(await json(["budgets", "usage", "--scope", f.scopeId])).toMatchObject({ scopeId: f.scopeId });
-});
-
 test("session commands drive the managed API without opening the database", async () => {
   await using managed = await managedCli();
   const { f, directory, cli, json } = managed;
@@ -121,18 +95,16 @@ test("session commands drive the managed API without opening the database", asyn
   expect(input.state).toBe("ready");
   const requestId = randomUUID();
   const submit = ["sessions", "submit", "--session", sessionId, "--request", requestId, "--message", "hello"];
-  const deadline = new Date(Date.now() + 60_000).toISOString();
-  const output = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
+  const output = await cli([...submit, "--input", input.reference.inputId]);
   const accepted = withoutIntent(output);
   expect(accepted).toMatchObject({ requestId, state: "accepted" });
   // A retried submit with the same body replays the original request.
-  const replay = await cli([...submit, "--deadline", deadline, "--input", input.reference.inputId]);
+  const replay = await cli([...submit, "--input", input.reference.inputId]);
   expect(withoutIntent(replay).turnId).toBe(accepted.turnId);
   expect((await json(["sessions", "request", "--session", sessionId, "--request", requestId])).requestId).toBe(
     requestId,
   );
-  const cancelId = randomUUID();
-  const cancel = ["sessions", "cancel", "--session", sessionId, "--request", requestId, "--cancel-id", cancelId];
+  const cancel = ["sessions", "cancel", "--session", sessionId, "--request", requestId];
   expect((await json(cancel)).state).toBe("completed");
   expect(await json(["sessions", "collection", "--session", sessionId, "--request", requestId])).toMatchObject({
     completeness: "lost",
@@ -143,4 +115,18 @@ test("session commands drive the managed API without opening the database", asyn
   expect(events.map((line) => JSON.parse(line).sequence)).toEqual([1, 2]);
   expect((await json(["sessions", "resume", "--session", sessionId])).sessionId).toBe(sessionId);
   expect((await json(["sessions", "close", "--session", sessionId])).scope).toBe("session");
+});
+
+test("managed CLI reads profiles, lists sessions and polls the conversation", async () => {
+  await using managed = await managedCli();
+  const { f, json } = managed;
+  expect((await json(["profiles", "get", "--name", f.profile.name])).name).toBe(f.profile.name);
+  expect(
+    (await json(["sessions", "list", "--owner", "test-owner", "--state", "open"])).map(
+      (s: { sessionId: string }) => s.sessionId,
+    ),
+  ).toEqual([f.sessionId]);
+  const feed = await json(["sessions", "conversation", "--session", f.sessionId]);
+  const delta = await json(["sessions", "conversation", "--session", f.sessionId, "--after", feed.cursor]);
+  expect(delta).toMatchObject({ requests: [], messages: [], reset: false });
 });

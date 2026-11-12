@@ -43,7 +43,7 @@ async function run(dispatcher: ExecutionDispatcher, ticks: number, advance: () =
   }
 }
 
-async function acceptRequest(f: Fixture, conversationId: ReturnType<typeof crypto.randomUUID>, at: Date) {
+async function acceptRequest(f: Fixture, conversationId: string, at: Date) {
   const input = f.acceptance();
   const identity = executionConversationIdentity(input.execution.requestId, conversationId);
   await f.store.executions.accept(input, at, identity);

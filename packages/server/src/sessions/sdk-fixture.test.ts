@@ -31,7 +31,6 @@ export async function sdkClient(m: Awaited<ReturnType<typeof managedFixture>>, o
     limits: DEFAULT_LIMITS,
     workspaceServerUrl: "http://127.0.0.1:0",
     sessionQueueLimits: m.limits,
-    sessionStopSeconds: options.stopSeconds ?? 30,
     sessionEventPollMs: 10,
     // Baseline fixture bounds from the managed tickets; not production defaults.
     inputStorageOptions: {

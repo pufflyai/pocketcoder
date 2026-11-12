@@ -2,8 +2,8 @@
   "app": "pocketcoder",
   "pgliteVersion": "0.5.8",
   "postgresVersion": "18.3",
-  "checksum": "4064fcc044a77f15c503652711a91f6fb8be6b5fa03736ca02946088f4a055a2",
-  "sourceChecksum": "8aafc00f3990396312083e15ea216f090cba51019bf59e04095e97e28aba7d23",
+  "checksum": "e896edbe9c8f632c13cc21c2282bb110be0edde98a7c1d0af95dcf56130eef71",
+  "sourceChecksum": "607a96d278d22bd254a9344a71c80e3d27ae06669cce9f77bb7365bd3464cb2c",
   "engine": {
     "wasm": {
       "checksum": "ce6af6ff027cbf1f22da3f5bbc8b0b30082123e2826f38a27fb91847cd16046f",
@@ -114,6 +114,10 @@
     {
       "name": "20261109111615_outstanding_professor_monster",
       "hash": "0cb07ee319fd6a7b2d3e8334acade84422a49b95bfa1209a3ffab92344fede34"
+    },
+    {
+      "name": "20261112091552_melted_namorita",
+      "hash": "f6b86ad9c789de5c73b6d9bfb32d0f9b33b1ad42d2caadcdfbf9bc7797524117"
     }
   ]
 }

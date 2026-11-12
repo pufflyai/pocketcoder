@@ -265,22 +265,31 @@ never acquire replacement-workspace access. Grant renewal and passive browser
 traffic do not extend workspace lifetime. A workspace deadline extension cannot
 extend previously minted browser or application credentials.
 
-The managed placement contract gives every session with business credentials its
-own workspace by default. A profile may set `credentialPlacement: "shared"` so
-its sessions share a workspace. Each session still gets its own leases: issued,
-renewed, revoked and expired per session and generation, and pointed only at
-that session's process. That is attribution, not secrecy. Siblings run as one
-uid in one trust zone and can read each other's leases. Opt in only when every
-session of the profile may hold the others' authority; only sessions of the same
-profile revision ever share.
-The binding ID is an opaque broker registration, never the credential. Physical
-credentials must expire with their workspace and be reissued after replacement;
-no long-lived authority may enter templates, request JSON, history or logs.
-
-
 ## Managed session authority and capacity
 
-See [managed sessions and capacity budgets](managed-runtime.md) for implemented
-profile provisioning, logical session create/lookup, scope policy and usage routes,
-business-credential placement and pinned broker renewal. Model usage is
-not managed by PocketCoder; see [model access](#model-access-is-a-gateway-concern).
+Managed profiles and issuers come from the controller's principals file. The
+consumer key needs only session read/write permissions. Issuer tokens stay in
+mounted controller files; there is no stored binding expiry or pinned token
+version that can end an otherwise authorized chat.
+
+Shared placement requires the same principal, profile, owner, group and template
+release. It is one trust zone: sibling processes can read each other's files and
+leases. Give each session an expiring credential scoped to its chat, and use
+exclusive placement when siblings must not hold one another's authority.
+
+Every delivery mints fresh. Generation and incarnation fences, install
+acknowledgements, and late-reply rejection stay with the controller. Superseding
+a delivery does not erase its cleanup obligation. Without optional generation
+revoke, a credential can remain valid at the resource until expiry, at most five
+minutes. Close waits for removal or workspace end, plus a revoke acknowledgement
+when enabled. A consumer that needs immediate cutoff also rejects a closed chat
+at its resource.
+
+The agent's turn ID is a display hint. Business authorization comes from its
+credential, and turn attribution is checked against that chat's feed. Agent
+memory on new compute carries canonical text and tool summaries, never raw tool
+output or credential files.
+
+See [managed sessions](managed-runtime.md), [consumer setup](managed-consumers.md)
+and [runtime credentials](runtime-credentials.md). Model access and spend remain
+with the consumer's gateway.

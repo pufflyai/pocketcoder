@@ -23,6 +23,7 @@ export const WORKLOAD_CAPABILITIES = [
   "workspace-cancel",
   "unknown-outcome",
   "parallel-conversations",
+  "history-seed",
 ] as const;
 export const WorkloadCapabilitySchema = z.enum(WORKLOAD_CAPABILITIES);
 export type WorkloadCapability = z.infer<typeof WorkloadCapabilitySchema>;

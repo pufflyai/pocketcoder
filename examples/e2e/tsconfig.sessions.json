@@ -9,6 +9,7 @@
     "docker-checkpoint*.ts",
     "managed-upgrade*.ts",
     "kubernetes-checkpoint.ts",
+    "kubernetes-managed-sessions.ts",
     "managed-account-probes.ts",
     "managed-account-lifecycle.ts",
     "managed-off-node.ts"

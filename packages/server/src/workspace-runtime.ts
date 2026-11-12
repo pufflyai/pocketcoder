@@ -13,14 +13,13 @@ export function workspaceSecretFactory(pepper: string) {
 
 export function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
   const vault = controllerVault(deps.store, deps);
-  const workspaceLeases = vault
-    ? createWorkspaceLeaseService({
-        store: deps.store,
-        vault,
-        issuer: deps.issuerClient ?? createIssuerClient(),
-        admissionFenced: () => deps.maintenance?.fenced ?? false,
-      })
-    : undefined;
+  const workspaceLeases = createWorkspaceLeaseService({
+    store: deps.store,
+    vault,
+    clusterLocalIssuers: deps.clusterLocalIssuers,
+    issuer: deps.issuerClient ?? createIssuerClient(),
+    admissionFenced: () => deps.maintenance?.fenced ?? false,
+  });
   const checkpointRuntime = composeCheckpointRuntime(
     deps.store,
     hub,

@@ -14,9 +14,7 @@ export async function reconcileSetupLeases(
   const interrupted = (row: (typeof pending)[number]) => startup && row.purpose === "setup-issuer";
   const cleanup = pending.filter(
     (row) =>
-      interrupted(row) ||
-      row.state === "revoking" ||
-      (row.issuerExpiresAt !== null && row.issuerExpiresAt <= new Date()),
+      interrupted(row) || row.state === "revoking" || (row.issuerExpiresAt ?? row.requestExpiresAt) <= new Date(),
   );
   for (const id of new Set(cleanup.map((row) => row.workspaceId))) {
     const workspace = await store.getWorkspace(id);
@@ -32,7 +30,10 @@ export async function reconcileSetupLeases(
           new Date(),
         );
       } else {
-        for (const row of cleanup.filter((row) => row.workspaceId === id)) await leases.revoke(row.id);
+        for (const row of cleanup.filter((row) => row.workspaceId === id)) {
+          if (row.state === "revoking") await leases.revoke(row.id);
+          else await leases.expire(row.id);
+        }
       }
     } catch {
       // The durable request remains owned and will retry on the next tick.

@@ -1,19 +1,15 @@
-import {
-  ConversationLiveEventSchema,
-  managed,
-  PreviewOpenResponseSchema,
-  type ViewSessionOptions,
-} from "@pstdio/pocketcoder-contracts";
+import { managed, PreviewOpenResponseSchema, type ViewSessionOptions } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 import { queryString } from "../../transport/common";
 import type { PocketCoderTransport, RequestOptions } from "../../transport/transport";
 import { type SessionEventOptions, sessionEvents } from "./events";
+import { SessionFilesApi } from "./files";
 
 export function sessionPath(sessionId: string) {
   return `/v1/sessions/${encodeURIComponent(sessionId)}`;
 }
 
-// A stop receipt. `state` is "pending" until the stop has evidence; retry with the same cancelId.
+// A stop receipt. `state` is "pending" until the stop has evidence; retry the same operation.
 export type StopReceipt = managed.CancelReceipt;
 
 export interface SessionPreviewOptions extends RequestOptions {
@@ -28,6 +24,34 @@ const SessionPreviewSchema = PreviewOpenResponseSchema.extend({ grantId: z.uuid(
 // replaces and stops compute itself.
 export class SessionsApi {
   constructor(private readonly transport: PocketCoderTransport) {}
+
+  list(query: { owner?: string; state?: "open" | managed.Session["state"] } = {}, options: RequestOptions = {}) {
+    return this.transport.request(
+      `/v1/sessions?${queryString(query)}`,
+      z.array(managed.SessionSchema.extend({ activeRequestId: z.uuid().nullable() })),
+      options,
+    );
+  }
+  cancel(sessionId: string, options: RequestOptions = {}) {
+    return this.transport.request(`${sessionPath(sessionId)}/cancel`, managed.CancelReceiptSchema, {
+      ...options,
+      method: "POST",
+    });
+  }
+  conversation(sessionId: string, query: { after?: string } = {}, options: RequestOptions = {}) {
+    return this.transport.request(
+      `${sessionPath(sessionId)}/conversation?${queryString(query)}`,
+      managed.SessionConversationSchema,
+      options,
+    );
+  }
+  upload(
+    sessionId: string,
+    file: { inputId: string; name: string; mediaType: string; bytes: Uint8Array },
+    options: RequestOptions = {},
+  ) {
+    return new SessionFilesApi(this.transport).put(sessionId, file, options);
+  }
 
   // Creating again with the same body after a lost reply returns the same session.
   create(input: managed.SessionCreate, options: RequestOptions = {}) {
@@ -50,11 +74,10 @@ export class SessionsApi {
     });
   }
 
-  close(sessionId: string, command: managed.CancelCommand, options: RequestOptions = {}) {
+  close(sessionId: string, options: RequestOptions = {}) {
     return this.transport.request(`${sessionPath(sessionId)}/close`, managed.CancelReceiptSchema, {
       ...options,
       method: "POST",
-      body: JSON.stringify(managed.CancelCommandSchema.parse(command)),
     });
   }
 
@@ -84,15 +107,6 @@ export class SessionsApi {
 
   events(sessionId: string, options: SessionEventOptions = {}) {
     return sessionEvents(this.transport, sessionId, options);
-  }
-
-  // Open turns are snapshots; use history and its durable cursor for committed replay.
-  open(sessionId: string, options: RequestOptions = {}) {
-    return this.transport.request(
-      `${sessionPath(sessionId)}/conversation/open`,
-      z.object({ turns: z.array(ConversationLiveEventSchema) }),
-      options,
-    );
   }
 
   // Opens a preview of the session's current compute. A 409 operation.conflict means compute was

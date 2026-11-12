@@ -5,25 +5,17 @@ import { digestOf } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 
 const Identity = z.object({
-  workspace_id: z.uuid(),
-  source_url: z.string().nullable(),
-  source_revision: z.string().nullable(),
-  template_digest: z.string(),
+  session_id: z.uuid(),
+  generation: z.number().int().positive(),
+  profile: z.string().nullable(),
+  owner: z.string(),
+  group: z.string(),
+  slot: z.string(),
   request_id: z.uuid(),
-  request_digest: z.string(),
-  policy_digest: z.string(),
-  purpose: z.literal("runtime-issuer"),
   expires_at: z.iso.datetime(),
   policy: z.record(z.string(), z.json()),
 });
-type Lease = {
-  identity: z.infer<typeof Identity>;
-  fingerprint: string;
-  lease_id: string;
-  credential: string;
-  expires_at: string;
-  revoked: boolean;
-};
+type Lease = { sessionId: string; generation: number; credential: string; expires_at: string };
 const paths = new Set(["/v1/chat/completions", "/v1/responses"]);
 
 // Only the controller holds issuer authority. Workspaces receive separate, expiring leases.
@@ -62,6 +54,7 @@ export async function startLeaseGateway(options: { upstreamUrl: string; upstream
   const authorization = `Bearer ${crypto.randomUUID()}`;
   const policy = { resource: "pi-model-gateway" };
   const leases = new Map<string, Lease>();
+  const revoked = new Map<string, number>();
   const issuer = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -69,44 +62,26 @@ export async function startLeaseGateway(options: { upstreamUrl: string; upstream
     async fetch(request) {
       if (request.method !== "POST" || request.headers.get("authorization") !== authorization)
         return new Response(null, { status: 401 });
-      const parsed = Identity.extend({ operation: z.enum(["mint", "revoke"]) }).safeParse(await request.json());
-      if (!parsed.success) return new Response(null, { status: 400 });
-      const { operation, ...identity } = parsed.data;
-      const fingerprint = digestOf(identity);
-      if (identity.policy_digest !== digestOf(policy) || digestOf(identity.policy) !== digestOf(policy))
-        return new Response(null, { status: 403 });
-      const existing = leases.get(identity.request_id);
-      if (existing && existing.fingerprint !== fingerprint) return new Response(null, { status: 409 });
-      if (operation === "revoke") {
-        const row = existing ?? {
-          identity,
-          fingerprint,
-          lease_id: crypto.randomUUID(),
-          credential: "",
-          expires_at: identity.expires_at,
-          revoked: true,
-        };
-        row.revoked = true;
-        leases.set(identity.request_id, row);
-        return Response.json({ ...identity, revoked: true });
+      const body = (await request.json()) as Record<string, unknown>;
+      if (body.operation === "revoke") {
+        const input = z.object({ session_id: z.uuid(), generation: z.number().int().positive() }).safeParse(body);
+        if (!input.success) return new Response(null, { status: 400 });
+        revoked.set(input.data.session_id, Math.max(revoked.get(input.data.session_id) ?? 0, input.data.generation));
+        return new Response(null, { status: 200 });
       }
-      if (existing?.revoked) return new Response(null, { status: 410 });
+      const parsed = Identity.safeParse(body);
+      if (!parsed.success || body.operation !== "mint") return new Response(null, { status: 400 });
+      const identity = parsed.data;
+      if (digestOf(identity.policy) !== digestOf(policy)) return new Response(null, { status: 403 });
       if (Date.parse(identity.expires_at) <= Date.now()) return new Response(null, { status: 410 });
-      const row = existing ?? {
-        identity,
-        fingerprint,
-        lease_id: crypto.randomUUID(),
+      const row: Lease = {
+        sessionId: identity.session_id,
+        generation: identity.generation,
         credential: crypto.randomUUID(),
-        expires_at: new Date(Math.min(Date.parse(identity.expires_at), Date.now() + 2 * 60 * 60_000)).toISOString(),
-        revoked: false,
+        expires_at: new Date(Math.min(Date.parse(identity.expires_at), Date.now() + 300000)).toISOString(),
       };
-      leases.set(identity.request_id, row);
-      return Response.json({
-        ...identity,
-        lease_id: row.lease_id,
-        credential: row.credential,
-        expires_at: row.expires_at,
-      });
+      leases.set(row.credential, row);
+      return Response.json({ credential: row.credential, expires_at: row.expires_at });
     },
   });
   const server = Bun.serve({
@@ -118,7 +93,7 @@ export async function startLeaseGateway(options: { upstreamUrl: string; upstream
       const lease = [...leases.values()].find(
         (row) =>
           `Bearer ${row.credential}` === request.headers.get("authorization") &&
-          !row.revoked &&
+          row.generation > (revoked.get(row.sessionId) ?? 0) &&
           Date.parse(row.expires_at) > Date.now(),
       );
       if (!lease) return new Response(null, { status: 401 });

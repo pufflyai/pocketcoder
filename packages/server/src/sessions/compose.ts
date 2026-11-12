@@ -1,8 +1,6 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import type { ExecutionDispatcher, ManagedQueueLimits, Store } from "@pstdio/pocketcoder-runtime-core";
 import type { InputStorage, InputStorageOptions } from "../attachments/input-storage";
-import { registerBudgetPolicyRoutes } from "../budgets/policy-routes";
-import { registerBudgetUsageRoutes } from "../budgets/usage-routes";
 import type { LiveTurns } from "../conversations/live-turns";
 import type { AppEnv } from "../http/middleware";
 import type { WorkspaceService } from "../workspaces/service";
@@ -15,8 +13,8 @@ import { registerSessionStopRoutes } from "./stop-routes";
 import { registerSessionWorkRoutes } from "./work-routes";
 
 export interface ManagedSessionDeps {
+  sessionSeedBytes?: number;
   sessionQueueLimits?: ManagedQueueLimits;
-  sessionStopSeconds?: number;
   // Tests shorten the durable event poll; it does not bound any resource.
   sessionEventPollMs?: number;
 }
@@ -39,11 +37,9 @@ export function registerManagedSessionRoutes(
     storage: deps.inputStorageOptions,
     queue: deps.sessionQueueLimits,
   });
-  registerSessionStopRoutes(app, { store, executionDispatcher, stopSeconds: deps.sessionStopSeconds });
+  registerSessionStopRoutes(app, { store, executionDispatcher });
   registerSessionHistoryRoutes(app, store, { pollMs: deps.sessionEventPollMs ?? 250, liveTurns: deps.liveTurns });
   registerProfileRoutes(app, store);
-  registerBudgetPolicyRoutes(app, store);
-  registerBudgetUsageRoutes(app, store);
   registerSessionPreviewRoutes(app, store, deps.previews);
 }
 
@@ -58,7 +54,8 @@ export function composeSessionRecovery(
     store,
     ...(credentials ? { credentials } : {}),
     launcher: {
-      create: async (principal, body, key) => (await service.create(principal, body, key)).workspace,
+      create: async (principal, body, key, workspaceId) =>
+        (await service.create(principal, body, key, workspaceId)).workspace,
       stop: async (principal, id) => {
         await service.cancel(principal, id);
       },

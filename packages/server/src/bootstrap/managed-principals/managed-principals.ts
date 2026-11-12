@@ -72,6 +72,23 @@ export async function reconcileManagedPrincipals(deps: ReconcileDeps) {
   const declared = new Map(file.principals.map((principal) => [principal.name, principal]));
   if (!dryRun) for (const change of principals) await applyPrincipal(store, change, declared.get(change.name));
 
+  const sessions = [];
+  for (const principal of file.principals) {
+    const changes = await store.managed.profiles.reconcile(
+      managedPrincipalId(principal.name),
+      principal.profiles,
+      principal.issuers,
+      dryRun,
+    );
+    sessions.push({ name: principal.name, ...changes });
+    if (changes.profiles.length || changes.issuers.length)
+      logger.info("principals.sessions", {
+        name: principal.name,
+        profiles: changes.profiles.join(","),
+        issuers: changes.issuers.join(","),
+        dry_run: dryRun,
+      });
+  }
   const keys = [];
   for (const principal of file.principals) {
     if (!principal.key) continue;
@@ -90,5 +107,5 @@ export async function reconcileManagedPrincipals(deps: ReconcileDeps) {
   }
   const admission = await reconcileAdmissionMap(deps);
   if (admission === "write") logger.info("principals.admission_map", { action: admission, dry_run: dryRun });
-  return { principals, keys, admissionMap: admission };
+  return { principals, keys, sessions, admissionMap: admission };
 }

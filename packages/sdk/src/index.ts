@@ -59,7 +59,6 @@ export {
   AttachmentsApi,
   type AttachmentUploadInput,
 } from "./resources/attachments/attachments";
-export { type BudgetScopeGrant, type CredentialBinding, ManagedAuthorityApi } from "./resources/budgets/budgets";
 export { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 export type { ConversationMessage, ConversationPage } from "./resources/conversations/conversations";
 export { ConversationsApi } from "./resources/conversations/conversations";

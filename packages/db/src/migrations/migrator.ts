@@ -3,6 +3,7 @@ import type { SqlClient } from "../database/sql-client";
 import { advisoryLockKey, assertValidSchema } from "../database-schema";
 import { FIRST_1_0_MIGRATION, normalizeLegacyJson } from "./legacy-json";
 import { RELEASE_081_MIGRATION } from "./release-081";
+import { MANAGED_SESSION_RESET, resetManagedSessions } from "./reset-managed-sessions";
 import { planUpgrade } from "./upgrade";
 
 const SCHEMA = "pocketcoder";
@@ -65,6 +66,7 @@ export async function migrateDatabase(client: SqlClient, registry: MigrationRegi
       );`);
     if (plan.release081) await tx.query(`DELETE FROM ${table} WHERE name = $1`, [RELEASE_081_MIGRATION.name]);
     for (const migration of pending) {
+      if (migration.name === MANAGED_SESSION_RESET) await resetManagedSessions(tx, schema);
       for (const statement of migration.sql) await tx.exec(statement);
       await tx.query(`INSERT INTO ${table} (hash, created_at, name) VALUES ($1, $2, $3)`, [
         migration.hash,

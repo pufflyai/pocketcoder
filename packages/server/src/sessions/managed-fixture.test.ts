@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WorkloadAcceptance, WorkloadCapability } from "@pstdio/pocketcoder-contracts";
-import { managedPolicy, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
+import { serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
 
 type Execution = WorkloadAcceptance["execution"];
@@ -76,7 +76,7 @@ const CAPABILITIES: WorkloadCapability[] = [
   "parallel-conversations",
 ];
 
-// One shared workspace, an installation budget scope and a credential-free profile.
+// One shared workspace and a credential-free profile.
 export async function managedFixture(port: number | undefined) {
   const configure = (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => {
     serviceExecutionTemplate(source, Number(port));
@@ -96,9 +96,9 @@ export async function managedFixture(port: number | undefined) {
   };
   const f = await processDispatchFixture(configure, undefined, { capabilities: CAPABILITIES });
   // Another launched workspace of the same template, sharing the store and connection hub.
-  const launch = () => processDispatchFixture(configure, f, { capabilities: CAPABILITIES });
+  const launch = (workspaceId?: string) =>
+    processDispatchFixture(configure, f, { capabilities: CAPABILITIES, workspaceId });
   const keyId = randomUUID();
-  const scopeId = randomUUID();
   const profileId = randomUUID();
   await f.store.insertMachineKey({
     id: keyId,
@@ -111,22 +111,23 @@ export async function managedFixture(port: number | undefined) {
     lastUsedAt: null,
   });
   await f.store.publishTemplate(keyId, f.runtime.template.manifest);
-  await f.store.managed.authority.registerScope(keyId, scopeId, f.principal.id, true);
-  await f.store.managed.authority.provisionProfile(keyId, f.principal.id, {
-    profileId,
-    revision: 1,
-    isolationScopeId: randomUUID(),
-    budgetScopeIds: [scopeId],
-    templateDigest: f.runtime.template.digest,
-    credentialBindingId: null,
-  });
-  const policy = managedPolicy(scopeId);
-  policy.limits.maxChatProcessesPerWorkspace = 8;
-  await f.store.managed.budgets.writePolicy(keyId, policy, null);
+  await f.store.managed.profiles.reconcile(
+    f.principal.id,
+    {
+      [profileId]: {
+        template: f.runtime.template.name,
+        templateVersion: f.runtime.template.version,
+        placement: "shared",
+        limits: { workspacesPerOwner: 5, sessionsPerWorkspace: 8 },
+        dispatchDeadlineSeconds: 600,
+      },
+    },
+    {},
+  );
   const limits = { count: 4, bytes: 1048576 };
   async function session() {
     const sessionId = randomUUID();
-    await f.store.managed.sessions.create(keyId, { sessionId, profileId, profileRevision: 1 });
+    await f.store.managed.sessions.create(keyId, { sessionId, profile: profileId, owner: "test-owner" });
     await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId }, 0, {
       workspaceId: f.id,
       incarnationId: f.runtime.incarnationId,
@@ -136,13 +137,7 @@ export async function managedFixture(port: number | undefined) {
   }
   async function submit(sessionId: string, message: string) {
     const requestId = randomUUID();
-    const deadline = new Date(Date.now() + 60000).toISOString();
-    await f.store.managed.requests.accept(
-      keyId,
-      sessionId,
-      { requestId, message, attachments: [], dispatchDeadline: deadline },
-      limits,
-    );
+    await f.store.managed.requests.accept(keyId, sessionId, { requestId, message, attachments: [] }, limits);
     return requestId;
   }
   async function settle(rounds = 3) {
@@ -152,5 +147,5 @@ export async function managedFixture(port: number | undefined) {
     }
   }
   const request = (sessionId: string, requestId: string) => f.store.managed.requests.get(keyId, sessionId, requestId);
-  return { f, launch, keyId, scopeId, profileId, limits, session, submit, settle, request };
+  return { f, launch, keyId, profileId, limits, session, submit, settle, request };
 }

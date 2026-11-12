@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionStore } from "@pstdio/pocketcoder-runtime-contracts";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { type DatabaseContext, lock } from "../../database/context";
 import { placeManagedCapacity } from "../budgets/capacity-placement";
 import { authorityContext, conflict, unavailable } from "../managed/authority-context";
@@ -27,11 +27,12 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
         const [known] = await tx.select().from(sessions).where(writer.where(id));
         if (
           known &&
-          (known.session.profileId !== parsed.profileId || known.session.profileRevision !== parsed.profileRevision)
+          (known.session.profile !== parsed.profile ||
+            known.session.owner !== parsed.owner ||
+            known.session.group !== (parsed.group ?? parsed.owner))
         )
           throw conflict();
-        const profile = await auth.profile(tx, id.principalId, parsed.profileId, parsed.profileRevision);
-        await auth.validateScopes(tx, id.principalId, profile.profile);
+        const profile = await auth.profile(tx, id.principalId, parsed.profile);
         const [template] = await tx
           .select()
           .from(tables.templates)
@@ -39,9 +40,11 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
         if (!template || !actor.authority.templateNames.some((name) => name === "*" || name === template.name))
           throw unavailable();
         if (known) return known.session;
+        if (profile.profile.disabled) throw unavailable();
         const at = new Date().toISOString();
         const session: managed.Session = {
           ...parsed,
+          group: parsed.group ?? parsed.owner,
           revision: 1,
           state: "provisioning",
           reasonCode: null,
@@ -68,22 +71,42 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
     },
     async get(keyId, sessionId) {
       return db.transaction(async (tx) => {
-        const actor = await auth.caller(tx, keyId, "sessions:read");
-        const row = await writer.read(tx, { principalId: actor.authority.principalId, sessionId });
-        const profile = await auth.profile(
-          tx,
-          actor.authority.principalId,
-          row.session.profileId,
-          row.session.profileRevision,
-        );
-        await auth.validateScopes(tx, actor.authority.principalId, profile.profile);
-        const [template] = await tx
-          .select()
-          .from(tables.templates)
-          .where(eq(tables.templates.digest, profile.profile.templateDigest));
-        if (!template || !actor.authority.templateNames.some((name) => name === "*" || name === template.name))
-          throw unavailable();
+        const { row } = await workAuthority(context)(tx, keyId, sessionId, "sessions:read");
         return row.session;
+      });
+    },
+    async list(keyId, filters) {
+      return db.transaction(async (tx) => {
+        const actor = await auth.caller(tx, keyId, "sessions:read");
+        const rows = await tx.select().from(sessions).where(eq(sessions.principalId, actor.authority.principalId));
+        const profiles = await tx
+          .select()
+          .from(tables.managedProfiles)
+          .where(eq(tables.managedProfiles.principalId, actor.authority.principalId));
+        const allowed = new Set(
+          profiles
+            .filter((p) => actor.authority.templateNames.some((name) => name === "*" || name === p.template))
+            .map((p) => p.name),
+        );
+        const r = tables.conversationRequests;
+        const active = await tx
+          .select()
+          .from(r)
+          .where(and(eq(r.principalId, actor.authority.principalId), isNotNull(r.managed)));
+        return rows
+          .filter(
+            ({ session }) =>
+              allowed.has(session.profile) &&
+              (!filters.owner || session.owner === filters.owner) &&
+              (!filters.state ||
+                (filters.state === "open" ? session.state !== "closed" : session.state === filters.state)),
+          )
+          .map(({ session }) => ({
+            ...session,
+            activeRequestId:
+              active.find((r) => r.conversationId === session.sessionId && r.managed?.request.state === "running")
+                ?.requestId ?? null,
+          }));
       });
     },
     async bind(id, expectedRevision, binding) {
@@ -117,7 +140,8 @@ export function createManagedSessions(context: DatabaseContext): ManagedSessionS
     async appendObservation(id, revision, state, reason) {
       return db.transaction((tx) => writer.update(tx, id, revision, state, reason));
     },
-    close: (keyId, sessionId, command, windowMs, at) => stops.close(keyId, sessionId, command, windowMs, at),
+    close: (keyId, sessionId, at) => stops.close(keyId, sessionId, at),
+    cancel: (keyId, sessionId, at) => stops.cancelSession(keyId, sessionId, at),
     async binding(keyId, sessionId) {
       return db.transaction(async (tx) => {
         const { row } = await workAuthority(context)(tx, keyId, sessionId, "sessions:read");

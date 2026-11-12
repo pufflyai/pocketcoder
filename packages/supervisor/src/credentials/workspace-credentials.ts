@@ -5,7 +5,10 @@ import type { AgentFrame, ServerFrame, WorkspaceCredential } from "@pstdio/pocke
 import { openLeaseDirectory } from "./lease-directory";
 
 type CredentialMessage = Pick<
-  Extract<AgentFrame, { type: "credential_renew" | "credential_installed" | "credential_install_ack" }>,
+  Extract<
+    AgentFrame,
+    { type: "credential_renew" | "credential_installed" | "credential_install_ack" | "credential_remove_ack" }
+  >,
   "type" | "payload"
 >;
 type Renewed = Extract<ServerFrame, { type: "credential_renewed" }>["payload"];
@@ -88,6 +91,7 @@ export class WorkspaceCredentials {
   removeSession(sessionId: string) {
     return this.serialize(async () => {
       this.drop(sessionId);
+      this.callbacks.send({ type: "credential_remove_ack", payload: { session_id: sessionId } });
       this.schedule();
     });
   }

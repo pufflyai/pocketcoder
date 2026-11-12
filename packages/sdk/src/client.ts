@@ -1,6 +1,5 @@
 import { AdministrationApi } from "./resources/admin/admin";
 import { AttachmentsApi } from "./resources/attachments/attachments";
-import { ManagedAuthorityApi } from "./resources/budgets/budgets";
 import { CheckpointsApi, OperationsApi } from "./resources/checkpoints/checkpoints";
 import { ConversationsApi } from "./resources/conversations/conversations";
 import { WorkspaceRequestsApi } from "./resources/conversations/requests";
@@ -11,6 +10,7 @@ import { PreviewsApi } from "./resources/previews/previews";
 import { PrincipalsApi } from "./resources/principals/principals";
 import { SecretsApi } from "./resources/secrets/secrets";
 import { SessionFilesApi } from "./resources/sessions/files";
+import { SessionProfilesApi } from "./resources/sessions/profiles";
 import { SessionRequestsApi } from "./resources/sessions/requests";
 import { SessionsApi } from "./resources/sessions/sessions";
 import { TemplatesApi } from "./resources/templates/templates";
@@ -42,7 +42,7 @@ export class PocketCoderClient {
   readonly sessions: SessionsApi;
   readonly requests: SessionRequestsApi;
   readonly files: SessionFilesApi;
-  readonly authority: ManagedAuthorityApi;
+  readonly profiles: SessionProfilesApi;
 
   constructor(config: PocketCoderClientConfig, fetchImpl: typeof fetch = fetch) {
     this.transport = new PocketCoderTransport(config, fetchImpl);
@@ -67,7 +67,7 @@ export class PocketCoderClient {
     this.sessions = new SessionsApi(this.transport);
     this.requests = new SessionRequestsApi(this.transport);
     this.files = new SessionFilesApi(this.transport);
-    this.authority = new ManagedAuthorityApi(this.transport);
+    this.profiles = new SessionProfilesApi(this.transport);
   }
 
   raw(path: string, init: RequestInit = {}) {

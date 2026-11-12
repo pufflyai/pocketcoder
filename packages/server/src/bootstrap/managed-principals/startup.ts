@@ -16,7 +16,7 @@ export function managedPrincipalsConfig(env: Record<string, string | undefined>)
   return { file, dryRun: dryRun === "true" };
 }
 
-// The file is read once at startup. The returned task renews keys on a timer; a dry run has none.
+// Each pass re-reads configuration so changes do not interrupt running turns.
 export async function startManagedPrincipals(deps: {
   config: ReturnType<typeof managedPrincipalsConfig>;
   store: Store;
@@ -25,8 +25,8 @@ export async function startManagedPrincipals(deps: {
 }) {
   const { config } = deps;
   if (!config) return undefined;
-  const file = await readPrincipalFile(config.file);
   const reconcile = async () => {
+    const file = await readPrincipalFile(config.file);
     await reconcileManagedPrincipals({ ...deps, file, dryRun: config.dryRun });
   };
   await reconcile();

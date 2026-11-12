@@ -20,7 +20,7 @@ export interface AttachmentUploadInput {
   onProgress?: (uploadedBytes: number, totalBytes: number) => void;
 }
 
-function contentDisposition(name: string): string {
+export function contentDisposition(name: string): string {
   const clean = name.replace(/[\r\n]/g, "");
   if (/^[ -~]*$/.test(clean)) {
     return `attachment; filename="${clean.replace(/(["\\])/g, "\\$1")}"`;

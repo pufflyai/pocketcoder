@@ -1,6 +1,5 @@
 import type { Argv } from "yargs";
 import { addBackupCommands } from "./backup";
-import { addBudgetCommands } from "./budgets";
 import { addCheckpointCommands } from "./checkpoints";
 import { addDatabaseCommands } from "./db";
 import { addDoctorCommand } from "./doctor";
@@ -12,6 +11,7 @@ import { addSecretCommands } from "./secrets";
 import { addServeCommand } from "./serve";
 import { addServerCommands } from "./server";
 import { addSessionCommands } from "./sessions";
+import { addProfileCommands } from "./sessions/reads";
 import { addStorageCommands } from "./storage";
 import { addSuperuserCommands } from "./superuser";
 import { addTemplateCommands } from "./templates";
@@ -34,7 +34,7 @@ export function addCommands(parser: Argv) {
     addStorageCommands,
     addWorkspaceCommands,
     addSessionCommands,
-    addBudgetCommands,
+    addProfileCommands,
     addDoctorCommand,
   ];
   return resources.reduce((configured, add) => add(configured), parser);

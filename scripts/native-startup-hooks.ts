@@ -84,7 +84,7 @@ const hooks: Record<string, Hook[]> = {
       'await startupPhase("engine-data-zstd", () => unpack(bundlePath, manifest.engine.data.checksum))',
     ],
   ],
-  "packages/db/src/store.ts": [
+  "packages/db/src/database/open-store.ts": [
     [
       "const context = await createPGliteContext(dataDir, options);",
       'const context = await startupPhase("database-context", () => createPGliteContext(dataDir, options));',

@@ -44,6 +44,35 @@ export function createManagedHistory(context: DatabaseContext): ManagedHistorySt
   const { managedObservations: observations, conversations, conversationRecords: records } = tables;
   const authorize = workAuthority(context);
   return {
+    async snapshot(keyId, sessionId) {
+      return db.transaction(async (tx) => {
+        const { id, row } = await authorize(tx, keyId, sessionId, "sessions:read");
+        const [document] = await tx
+          .select()
+          .from(conversations)
+          .where(and(eq(conversations.principalId, id.principalId), eq(conversations.conversationId, sessionId)));
+        const items = document
+          ? await tx
+              .select()
+              .from(records)
+              .where(eq(records.conversationRef, document.id))
+              .orderBy(asc(records.recordSeq))
+          : [];
+        const q = tables.conversationRequests;
+        const requests = await tx
+          .select()
+          .from(q)
+          .where(and(eq(q.principalId, id.principalId), eq(q.conversationId, sessionId)))
+          .orderBy(asc(q.acceptedAt));
+        return {
+          session: row.session,
+          binding: row.binding,
+          requests: requests.flatMap((q) => (q.managed ? [q.managed.request] : [])),
+          records: items.map((r) => r.document),
+          eventCursor: `${sessionId}:${row.nextSequence - 1}`,
+        };
+      });
+    },
     // The session row lock orders this read after every terminal commit that holds it, so the
     // records and the event watermark come from one consistent point.
     async history(keyId, sessionId, raw, limit) {

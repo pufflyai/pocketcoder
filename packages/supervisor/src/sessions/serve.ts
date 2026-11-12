@@ -1,4 +1,8 @@
-import { type ConversationMessageInput, WorkloadExecutionReferenceSchema } from "@pstdio/pocketcoder-contracts";
+import {
+  type ConversationMessageInput,
+  PriorMessageSchema,
+  WorkloadExecutionReferenceSchema,
+} from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 import { echoRunner } from "./echo";
 import { piRunner } from "./pi";
@@ -57,6 +61,7 @@ async function sessionResponse(producer: SessionProducer, request: Request) {
             acceptance: z.unknown(),
             conversationIdentity: z.unknown(),
             inputDirectory: z.string().optional(),
+            priorMessages: z.array(PriorMessageSchema).optional(),
           })
           .parse(body),
       ),

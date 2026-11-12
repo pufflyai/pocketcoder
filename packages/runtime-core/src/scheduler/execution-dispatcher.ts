@@ -58,6 +58,7 @@ export class ExecutionDispatcher {
       inspect(workspace: WorkspaceRow): Promise<{ exists: boolean; running: boolean; containerIdentity?: string }>;
       now?: () => Date;
       concurrency?: number;
+      sessionSeedBytes?: number;
       canDispatch?: () => boolean;
       onHealth?: (failed: boolean) => void;
       onError?: (error: unknown) => void;
@@ -123,7 +124,7 @@ export class ExecutionDispatcher {
   private async scanPending() {
     do {
       this.dirty = false;
-      await this.deps.store.managed.requests.prepare(this.now());
+      await this.deps.store.managed.requests.prepare(this.now(), this.deps.sessionSeedBytes);
       const pending = await this.deps.store.executions.pending();
       this.reconcileFailures(pending);
       for (const record of pending) {

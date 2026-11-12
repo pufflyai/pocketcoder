@@ -7,6 +7,7 @@ import { createSessionRecovery, type PlacementLauncher } from "./recovery";
 async function terminate(store: Awaited<ReturnType<typeof managedFixture>>["f"]["store"], id: string) {
   await store.transition(id, { from: ["ready", "connected"], to: "terminating", at: new Date() });
   await store.transition(id, { from: ["terminating"], to: "canceled", at: new Date() });
+  await store.managed.capacity.cleanup(id, 0, "provider_fenced", new Date());
   // The scheduler records this after its driver removed the workspace's input projections.
   await store.managed.requests.completeCleanup(id);
 }
@@ -18,10 +19,10 @@ test("replacing lost compute keeps the session, never re-dispatches started work
   const created: string[] = [];
   // The fixture driver stands in for the scheduler launch; everything else is the production owner.
   const launcher: PlacementLauncher = {
-    async create(_principal: PrincipalRow, body, key) {
+    async create(_principal: PrincipalRow, body, key, workspaceId) {
       created.push(key);
       expect(body.metadata?.["pocketcoder.managed-session"]).toBeDefined();
-      const next = launched[0] ?? (await m.launch());
+      const next = launched[0] ?? (await m.launch(workspaceId));
       launched[0] = next;
       return (await m.f.store.getWorkspace(next.id)) as WorkspaceRow;
     },
@@ -93,14 +94,14 @@ test("resume is idempotent, placement waits for capacity and a closed session is
     const sessionId = (
       await m.f.store.managed.sessions.create(m.keyId, {
         sessionId: crypto.randomUUID(),
-        profileId: m.profileId,
-        profileRevision: 1,
+        profile: m.profileId,
+        owner: "test-owner",
       })
     ).sessionId;
     const first = await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
     const again = await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
     expect(again.revision).toBe(first.revision);
-    await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId: crypto.randomUUID() }, 30000, new Date());
+    await m.f.store.managed.sessions.close(m.keyId, sessionId, new Date());
     await createSessionRecovery({ store: m.f.store, launcher }).tick();
     expect(created).toEqual([]);
     await expect(m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date())).rejects.toMatchObject({
@@ -113,8 +114,8 @@ test("resume is idempotent, placement waits for capacity and a closed session is
 });
 
 // The workspace service stamps this metadata on compute the placement owner creates.
-async function placed(m: Awaited<ReturnType<typeof managedFixture>>, sessionId: string) {
-  const next = await m.launch();
+async function placed(m: Awaited<ReturnType<typeof managedFixture>>, sessionId: string, workspaceId?: string) {
+  const next = await m.launch(workspaceId);
   await m.f.context.db
     .update(m.f.context.tables.workspaces)
     .set({ metadata: { "pocketcoder.managed-session": sessionId } })
@@ -128,26 +129,25 @@ test("a close during placement stops the placed workspace and completes only aft
   const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
   const sessionId = crypto.randomUUID();
   const launcher: PlacementLauncher = {
-    async create() {
-      const next = await placed(m, sessionId);
+    async create(_principal, _body, _key, workspaceId) {
+      const next = await placed(m, sessionId, workspaceId);
       launched.push(next);
       return (await m.f.store.getWorkspace(next.id)) as WorkspaceRow;
     },
     stop: async (_principal, id) => terminate(m.f.store, id),
   };
   try {
-    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: m.profileId, owner: "test-owner" });
     await m.submit(sessionId, "run queued");
     const recovery = createSessionRecovery({ store: m.f.store, launcher });
     await recovery.tick(); // creates and records the placement, before any binding
     const workspace = launched[0];
     if (!workspace) throw Error("Missing placement");
-    const cancelId = crypto.randomUUID();
-    const close = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());
+    const close = await m.f.store.managed.sessions.close(m.keyId, sessionId, new Date());
     expect(close.receipt.state).toBe("pending");
     await recovery.tick(); // stops the placed workspace
     await m.f.store.managed.requests.prepare(new Date());
-    const replay = await m.f.store.managed.sessions.close(m.keyId, sessionId, { cancelId }, 30000, new Date());
+    const replay = await m.f.store.managed.sessions.close(m.keyId, sessionId, new Date());
     expect(replay.receipt.state).toBe("completed");
     expect((await m.f.store.getWorkspace(workspace.id))?.terminalAt).not.toBeNull();
     await workspace.dispose();
@@ -164,9 +164,9 @@ test("a failed placement consumes its generation, waits for resume and then laun
   const sessionId = crypto.randomUUID();
   const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
   const launcher: PlacementLauncher = {
-    async create(_principal, _body, key) {
+    async create(_principal, _body, key, workspaceId) {
       keys.push(key);
-      const next = await placed(m, sessionId);
+      const next = await placed(m, sessionId, workspaceId);
       launched.push(next);
       // The first launch ends before it was ready.
       if (keys.length === 1) await terminate(m.f.store, next.id);
@@ -175,7 +175,7 @@ test("a failed placement consumes its generation, waits for resume and then laun
     stop: async (_principal, id) => terminate(m.f.store, id),
   };
   try {
-    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profileId: m.profileId, profileRevision: 1 });
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: m.profileId, owner: "test-owner" });
     await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
     const recovery = createSessionRecovery({ store: m.f.store, launcher });
     await recovery.tick(); // places the first workspace
@@ -196,6 +196,35 @@ test("a failed placement consumes its generation, waits for resume and then laun
     expect(keys).toEqual([`managed-session:${sessionId}:1`, `managed-session:${sessionId}:2`]);
     expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).state).not.toBe("failed");
     for (const next of launched) await next.dispose();
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+test("ended compute from an older release detaches before queued work is placed", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  try {
+    const sessionId = await m.session();
+    await m.submit(sessionId, "queued for the current release");
+    await terminate(m.f.store, m.f.id);
+    await m.f.context.db
+      .update(m.f.context.tables.workspaces)
+      .set({ templateDigest: `sha256:${"0".repeat(64)}` })
+      .where(eq(m.f.context.tables.workspaces.id, m.f.id));
+    await createSessionRecovery({
+      store: m.f.store,
+      launcher: {
+        create: async () => {
+          throw Error("not expected");
+        },
+        stop: async () => {
+          throw Error("not expected");
+        },
+      },
+    }).tick();
+    expect(await m.f.store.managed.sessions.binding(m.keyId, sessionId)).toBeNull();
   } finally {
     await m.f.dispose();
     await producer.server.stop(true);

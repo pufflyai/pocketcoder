@@ -58,8 +58,7 @@ test("accepted session inputs remain pinned through expiry and reproject the sam
     const body = {
       requestId: randomUUID(),
       message: "test",
-      attachments: [registered.reference],
-      dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
+      attachments: [registered.reference.inputId],
     };
     await f.store.managed.requests.accept(f.keyId, f.sessionId, body, { count: 2, bytes: 1048576 });
     await f.context.db

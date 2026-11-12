@@ -1,116 +1,87 @@
-# Renewable workspace credentials
+# Runtime credentials
 
-A running agent can use an external resource through a workspace-scoped lease.
-The controller keeps issuer authentication in its encrypted secret store.
-The supervisor writes only the short-lived credential into private memory
-storage. Use the protocol-v9 supervisor in your image.
+The controller holds issuer authentication. Workspaces receive only scoped
+credentials that expire no later than the workspace, and within five minutes.
+The controller stores lease metadata and acknowledgements, never credential bytes.
 
-## Configure an issuer
+## Managed issuer configuration
 
-Run your own HTTPS issuer and resource service. PocketCoder does not include
-a model gateway. Keep this operator file outside all workspace mounts:
+A principal's `issuers` map declares `url`, `tokenFile`, optional `policy`, and
+`revoke` (false by default). Its profiles name an issuer from that same map.
+The controller reads the mounted token file before every call. Rotate the file
+and briefly accept both tokens at the issuer; chats need no profile update.
+Managed issuers do not use the encrypted vault or `POCKETCODER_SECRET_KEY`.
 
-```json
-{
-  "type": "runtime-issuer",
-  "value": {
-    "url": "https://issuer.example/runtime",
-    "authorization": "Bearer <controller-only issuer key>",
-    "policy": {
-      "resources": ["https://gateway.example/models"],
-      "models": ["approved-model"]
-    }
-  }
-}
-```
+URLs must use HTTPS. A plain HTTP URL must end in `.svc.cluster.local`, and the
+controller must set `POCKETCODER_CLUSTER_LOCAL_ISSUERS=true`. Redirects are refused.
+The token file stays in the controller's namespace and outside workspace mounts.
 
-Publish it with `pocketcoder secrets put model-runtime --file
-/operator/runtime-issuer.json`. The API and SDK accept the same typed request.
-The operator needs `secrets:write`. Template publication also needs this scope
-when the template names runtime issuers.
+## Mint
 
-A runtime reference must resolve to a `runtime-issuer`. Setup issuers and
-registry secrets cannot supply runtime authority. Issuer authentication,
-provider keys, and registry credentials stay outside the workspace.
-For a private CA, set `POCKETCODER_ISSUER_CA_FILE=/operator/issuer-ca.pem`
-on the controller. Give the agent the resource service's public CA separately.
-TLS verification stays enabled. Issuer redirects are rejected.
-
-An issuer inside the same Kubernetes cluster may use plain HTTP on its Service
-address, for example `http://backend.app.svc.cluster.local:8000/issuer/`. Only
-`*.svc.cluster.local` hosts qualify, and only when the controller sets
-`POCKETCODER_CLUSTER_LOCAL_ISSUERS=true`. Without it the controller refuses to store
-or call such an issuer. The bearer then stays on the cluster network; protect that
-path with a network policy.
-
-## Use a credential file
-
-Add a reference to the template's `env`, `agent.env`, `harness.env`,
-`terminal.env`, or `checkpointHook.env`:
+The controller sends a bearer-authenticated JSON POST:
 
 ```json
 {
-  "env": {
-    "MODEL_CREDENTIAL_FILE": "secretRef:model-runtime",
-    "MODEL_URL": "https://gateway.example/models"
-  }
+  "operation": "mint",
+  "request_id": "a fresh UUID",
+  "session_id": "the chat UUID",
+  "generation": 3,
+  "profile": "chat",
+  "owner": "user-123",
+  "group": "client-456",
+  "slot": "business-api",
+  "expires_at": "an ISO timestamp within five minutes",
+  "policy": {}
 }
 ```
 
-The supervisor replaces the reference with the path
-`/run/pocketcoder/secrets/leases/model-runtime`. Read this file on each request;
-its contents change during renewal. Do not read it once into a process-wide
-bearer or copy it into a durable agent configuration. For example:
+Reply with `{ "credential": "...", "expires_at": "..." }`. The credential is at
+most 32 KiB, contains no NUL, and expires after now and no later than requested.
+No identity echo, lease ID, digest or deterministic signing is required. Every
+retry, reconnect and unacknowledged delivery mints with a new request ID. The
+issuer may return different bytes every time. A reply for a closed session,
+ended workspace or old generation is dropped.
 
-```ts
-const credential = await Bun.file(process.env.MODEL_CREDENTIAL_FILE).text();
-const reply = await fetch(process.env.MODEL_URL, {
-  headers: { authorization: `Bearer ${credential}` },
-});
-```
+`403 {"refused":true}` means the user no longer has access. Queued requests fail
+with `credentials_refused`; a running turn ends when its credential expires.
+A new request asks again. A bare 403, another non-success reply, timeout or invalid
+reply means unavailable and is retried. Error bodies and credentials never
+appear in public errors or logs.
 
-Use a reviewed agent wrapper when a harness needs credentials in another form.
-Publish the complete template with `pocketcoder templates import ./templates`,
-then run `pocketcoder workspaces create --template <name> --wait`.
-Setup environment references are not enabled; private Git uses the separate
-[source setup flow](private-source.md).
+## Delivery and renewal
 
-## Issuer contract and lifecycle
+Each session slot lives under
+`/run/pocketcoder/secrets/leases/sessions/<session>/<slot>`. The supervisor installs
+at most one value at a path and acknowledges it. Credentialed dispatch requires
+those acknowledgements. Renewal starts halfway through the credential lifetime.
+The previous value stays installed until replacement succeeds, then expires at
+the resource on its own.
 
-Runtime requests use the [setup issuer contract](private-source.md) with
-`purpose: "runtime-issuer"` and null `source_url` and `source_revision`.
-The controller binds the immutable template, workspace, stored policy and
-request ID. The issuer must enforce the policy's resources, workspace identity,
-request digest and deadline. Each credential expires within five minutes or
-the earlier workspace deadline. Repeated mint calls for one request ID return
-the same lease, credential and expiry. Revoke permanently closes that request
-ID, including a mint whose response was lost.
+A superseded delivery is excluded from future delivery selection. Its generation
+cleanup obligation remains until removal, workspace end or expiry is recorded.
+A lost response cannot make the controller forget authority that might exist.
 
-The supervisor asks for a new lease halfway through the current lifetime.
-It retries a lost response with the same request ID and recorded issuer version, installs the replacement
-atomically, and confirms installation before the controller revokes the old
-lease. Reconnection replays pending leases. Expiry stops the agent if renewal
-cannot finish. Passive renewal does not extend workspace idle time or deadlines.
+## End of a generation
 
-Failed startup, preserve, purge, cancellation and termination fence new leases
-and revoke outstanding authority. Cleanup stays pending until the issuer
-acknowledges revocation or a recorded lease has expired. Preserve retries this
-cleanup before it captures files. Canceling a waiting preserve settles its
-operation after revocation and allows purge. Restore receives a new
-workspace identity and fresh authority. Docker checkpoint restore uses the
-existing HTTP archive flow; Kubernetes checkpoint restore is still unavailable.
+When `revoke: true`, close and replacement also send
+`{ "operation": "revoke", "session_id": "...", "generation": 3 }`.
+A 200 reply acknowledges that every credential through that generation is no
+longer needed. The controller retries failures and records the acknowledgement.
+The issuer needs no per-credential registry; the resource can revoke by chat and
+generation. Late mint replies still never reach a workspace.
 
-Run `bun run test:runtime:live` with Docker, kubectl, kind, Git and OpenSSL.
-It builds a disposable supervisor image and uses a local verified HTTPS issuer.
-The agent's resource requests succeed before and after renewal on Docker and
-Kubernetes. The fixture uses only synthetic data and removes its own cluster,
-registry, image tag and temporary files.
+Without revoke, resource access can last until expiry, at most five minutes.
+Close and replacement wait for supervisor removal acknowledgement or the end of
+the workspace. With revoke, they also wait for its acknowledgement. One session's
+cleanup on shared compute leaves its siblings' credentials alone.
 
+## Plain workspaces and setup
 
-## Managed session authority and accounting
+Setup and plain runtime issuers remain vault entries administered through the
+secret API. Registry credentials remain vault entries too. These deployments
+need the controller's vault encryption key. Setup and plain runtime minting use
+the same slim reply and fresh request IDs; their session identity is the workspace
+ID. Setup completion revokes the generation before acknowledging completion.
+No vault key or issuer authentication enters a workspace.
 
-See [managed sessions and capacity budgets](managed-runtime.md) for implemented
-profile provisioning, logical session create/lookup, scope policy and usage routes,
-business-credential placement, per-session leases and pinned broker renewal. Model access and
-model usage limits belong to the deployment's model gateway; see
-[security](security.md#model-access-is-a-gateway-concern).
+Plain workspace issuers use the same slim callback. Setup uses generation `1`; runtime uses generation `2`. Completing setup revokes only setup authority. Normal runtime renewal lets the old credential expire without a generation revoke. Workspace teardown revokes the runtime generation.

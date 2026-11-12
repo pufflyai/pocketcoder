@@ -10,9 +10,9 @@ import {
 import { createHarnessRuns } from "./harness-runs";
 import { instancesFor } from "./instances";
 import { managedBindings } from "./managed-bindings";
-import { historyMessages, openMessages, readManagedMessages, renderMessages } from "./managed-sessions";
+import { readManagedMessages, renderManagedMessages } from "./managed-sessions";
 
-type Pending = { body: managed.RequestInput; cancelId?: string };
+type Pending = { body: managed.RequestInput };
 type Target = { client: PocketCoderClient; instanceId: string; managedSessionId: string };
 const pendingKey = (sessionId: string) => `managed-request:${sessionId}`;
 
@@ -29,13 +29,13 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
       instanceId && managedSessionId
         ? { instanceId, managedSessionId }
         : await getBindings(ctx.projectId).target(input.sessionId ?? "");
-    return { ...ref, client: await instances.client(ref.instanceId) };
+    return { ...ref, client: await instances.managedClient(ref.instanceId) };
   };
 
   function observe(ctx: HarnessContext, input: HarnessStartInput, ref: Target, pending: Pending): HarnessSession {
     const { client, managedSessionId } = ref;
     const agentSessionId = `${ref.instanceId}:${managedSessionId}`;
-    const show = (value: Awaited<ReturnType<typeof renderMessages>>) =>
+    const show = (value: Awaited<ReturnType<typeof renderManagedMessages>>) =>
       input.events.push({ op: "replace", path: "/messages", value });
     const done = (async () => {
       // Resending the saved body is safe: the controller answers a known request ID with the original.
@@ -52,16 +52,19 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
         ctx.logger.warn(`PocketCoder refused the request: ${refused.message}`);
         return { status: "failed" as const };
       }
-      // Committed history is read once per turn; only the live turn is polled.
-      const committed = await historyMessages(client, managedSessionId, input.signal);
+      const messages = new Map<string, managed.SessionMessage>();
+      let after: string | undefined;
       while (!input.signal?.aborted) {
-        const request = await client.requests.get(managedSessionId, pending.body.requestId, { signal: input.signal });
-        if (request.state === "terminal") {
-          show(renderMessages(await historyMessages(client, managedSessionId, input.signal), []));
+        const feed = await client.sessions.conversation(managedSessionId, { after }, { signal: input.signal });
+        after = feed.cursor;
+        if (feed.reset) messages.clear();
+        for (const message of feed.messages) messages.set(message.messageId, message);
+        show(renderManagedMessages([...messages.values()]));
+        const request = feed.requests.find((r) => r.requestId === pending.body.requestId);
+        if (request?.state === "terminal") {
           await ctx.state.delete(pendingKey(input.sessionId));
           return { status: statusOf(request.outcome) };
         }
-        show(renderMessages(committed, await openMessages(client, managedSessionId, input.signal)));
         await Bun.sleep(250);
       }
       return { status: "disconnected" as const };
@@ -74,8 +77,7 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
       timeoutStrategy: "provider",
       // The cancel ID stays in memory: saving it could bring back a request that already finished.
       async stop() {
-        pending.cancelId ??= randomUUID();
-        await client.requests.cancel(managedSessionId, pending.body.requestId, { cancelId: pending.cancelId });
+        await client.sessions.cancel(managedSessionId);
       },
       done,
     };
@@ -102,7 +104,6 @@ export function createManagedHarness(getInstances = instancesFor, getBindings = 
         requestId: randomUUID(),
         message: input.prompt,
         attachments: [],
-        dispatchDeadline: new Date(Date.now() + 10 * 60_000).toISOString(),
       },
     };
     // Saved before sending, so a lost reply is resent unchanged instead of run twice.

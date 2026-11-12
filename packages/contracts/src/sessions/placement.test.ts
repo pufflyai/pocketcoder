@@ -1,51 +1,31 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import examples from "./fixtures/parent-revision-2.json";
 import { managedPlacement } from "./placement";
+import { SessionProfileSchema } from "./profile";
 
-test("business credentials require an exclusive physical workspace for each session", () => {
-  const principalId = randomUUID();
-  const sessionA = randomUUID();
-  const sessionB = randomUUID();
-  const credentialed = { ...examples.ExecutionProfile, credentialBindingId: randomUUID() };
-  const a = managedPlacement(principalId, sessionA, credentialed);
-  expect(a.mode).toBe("exclusive");
-  expect(a).toEqual(managedPlacement(principalId, sessionA, credentialed));
-  expect(a.key).not.toBe(managedPlacement(principalId, sessionB, credentialed).key);
-  const shared = { ...credentialed, credentialBindingId: null };
-  expect(managedPlacement(principalId, sessionA, shared)).toEqual(managedPlacement(principalId, sessionB, shared));
-  expect(managedPlacement(principalId, sessionA, shared).key).not.toBe(
-    managedPlacement(randomUUID(), sessionA, shared).key,
-  );
-  expect(managedPlacement(principalId, sessionA, shared).key).not.toBe(
-    managedPlacement(principalId, sessionA, { ...shared, revision: shared.revision + 1 }).key,
-  );
-});
-
-test("credentialed sessions share a placement only when their one profile opts in", () => {
-  const principalId = randomUUID();
-  const sessionA = randomUUID();
-  const sessionB = randomUUID();
-  const profile = {
-    ...examples.ExecutionProfile,
-    credentialBindingId: randomUUID(),
-    credentialPlacement: "shared" as const,
-  };
-  const a = managedPlacement(principalId, sessionA, profile);
-  expect(a.mode).toBe("shared");
-  expect(a).toEqual(managedPlacement(principalId, sessionB, profile));
-  expect(a.key).not.toBe(managedPlacement(randomUUID(), sessionA, profile).key);
-  expect(a.key).not.toBe(
-    managedPlacement(principalId, sessionA, { ...profile, credentialBindingId: randomUUID() }).key,
-  );
-  expect(a.key).not.toBe(managedPlacement(principalId, sessionA, { ...profile, isolationScopeId: randomUUID() }).key);
-  expect(managedPlacement(principalId, sessionA, { ...profile, credentialPlacement: "exclusive" }).mode).toBe(
-    "exclusive",
-  );
-});
-
-test("only a credentialed profile can choose its credential placement", () => {
-  expect(() =>
-    managedPlacement(randomUUID(), randomUUID(), { ...examples.ExecutionProfile, credentialPlacement: "shared" }),
-  ).toThrow();
+test("sharing belongs to the principal, profile, owner, group and template release", () => {
+  const principal = randomUUID(),
+    session = { sessionId: randomUUID(), profile: "chat", owner: "alice", group: "client-a" };
+  const profile = SessionProfileSchema.parse({
+    name: "chat",
+    template: "agent",
+    templateVersion: "1",
+    disabled: false,
+    placement: "shared",
+  });
+  const key = managedPlacement(principal, session, profile).key;
+  expect(managedPlacement(principal, { ...session, sessionId: randomUUID() }, profile).key).toBe(key);
+  for (const next of [
+    { ...session, owner: "bob" },
+    { ...session, group: "client-b" },
+    { ...session, profile: "other" },
+  ])
+    expect(managedPlacement(principal, next, profile).key).not.toBe(key);
+  for (const next of [
+    { ...profile, templateVersion: "2" },
+    { ...profile, template: "other" },
+    { ...profile, placement: "exclusive" as const },
+  ])
+    expect(managedPlacement(principal, session, next).key).not.toBe(key);
+  expect(managedPlacement(randomUUID(), session, profile).key).not.toBe(key);
 });

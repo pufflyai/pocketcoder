@@ -18,7 +18,7 @@ test("credentialed sessions sharing one workspace each hold and lose only their 
     expect(first.lease.managedAuthority?.sessionId).toBe(closing.sessionId);
     expect(second.lease.managedAuthority?.sessionId).toBe(sibling.sessionId);
     for (const issued of [first, second, last])
-      expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(200);
+      expect(await f.issuer.resource(issued.credential, issued.lease.managedAuthority!.sessionId)).toBe(200);
 
     const current = await f.store.managed.sessions.get(f.key.id, closing.sessionId);
     await f.store.managed.sessions.appendObservation(closing, current.revision, "closed", null);
@@ -27,9 +27,10 @@ test("credentialed sessions sharing one workspace each hold and lose only their 
     await f.service.completeRenewal(f.workspace.id, second.lease.id, renewed.lease.id);
 
     await f.service.revokeSession(f.workspace.id, closing.sessionId);
-    expect(await f.issuer.resource(first.credential, f.workspace.id)).toBe(401);
-    expect(await f.issuer.resource(renewed.credential, f.workspace.id)).toBe(200);
-    expect(await f.issuer.resource(last.credential, f.workspace.id)).toBe(200);
+    await f.service.removed(f.workspace.id, closing.sessionId);
+    expect((await f.store.getWorkspaceLease(first.lease.id))?.state).toBe("revoked");
+    expect(await f.issuer.resource(renewed.credential, sibling.sessionId)).toBe(200);
+    expect(await f.issuer.resource(last.credential, third.sessionId)).toBe(200);
   } finally {
     await f.close();
   }
@@ -43,7 +44,7 @@ test("only sessions of the same opted-in profile join a credentialed workspace",
     await f.store.managed.sessions.bind(await shared.session(), 0, binding);
     const other = await shared.profile();
     await expect(f.store.managed.sessions.bind(await other.session(), 0, binding)).rejects.toThrow(
-      "Placement authority changed",
+      "Session profile is unavailable",
     );
   } finally {
     await f.close();
@@ -62,7 +63,7 @@ test("a session of a workload template receives a lease for its credential slot"
     });
     const issued = await f.service.issueManaged(identity, f.workspace.id, 1, "runtime", randomUUID());
     expect(issued.lease.managedAuthority).toMatchObject({ sessionId: identity.sessionId, slot: "runtime" });
-    expect(await f.issuer.resource(issued.credential, f.workspace.id)).toBe(200);
+    expect(await f.issuer.resource(issued.credential, issued.lease.managedAuthority!.sessionId)).toBe(200);
   } finally {
     await f.close();
   }

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { digestOf } from "@pstdio/pocketcoder-contracts";
 
 type Reply =
+  | "refused"
+  | "forbidden"
   | "valid"
   | "lost"
   | "wrong-workspace"
@@ -14,15 +16,13 @@ type Reply =
   | "outage-stream"
   | "deep-policy";
 type RequestIdentity = {
-  managed_authority?: Record<string, unknown>;
-  workspace_id: string;
-  source_url: string | null;
-  source_revision: string | null;
-  template_digest: string;
+  session_id: string;
+  generation: number;
+  profile: string | null;
+  owner: string;
+  group: string;
+  slot: string;
   request_id: string;
-  request_digest: string;
-  policy_digest: string;
-  purpose: string;
   expires_at: string;
   policy: Record<string, unknown>;
 };
@@ -39,7 +39,7 @@ function liveWorkspace(requests: Map<string, IssuedLease>, credential: string) {
   const row = [...requests.values()].find(
     (r) => r.credential === credential && !r.revoked && r.expiresAt > new Date().toISOString(),
   );
-  return row?.identity.workspace_id ?? null;
+  return row?.identity.session_id ?? null;
 }
 
 export async function createTestIssuer(
@@ -87,9 +87,10 @@ export async function createTestIssuer(
       repositories: [options.sourceUrl ?? "https://source.example/private.git"],
     };
     const requests = new Map<string, IssuedLease>();
-    const tombstones = new Set<string>();
+    const revokedGenerations = new Map<string, number>();
     const controls = {
       reply: "valid" as Reply,
+      authorization,
       beforeMint: undefined as ((input: RequestIdentity) => Promise<void>) | undefined,
       beforeRevoke: undefined as ((input: RequestIdentity) => Promise<void>) | undefined,
       captured: "",
@@ -107,21 +108,23 @@ export async function createTestIssuer(
       const allowed =
         row &&
         !row.revoked &&
+        row.identity.generation > (revokedGenerations.get(row.identity.session_id) ?? 0) &&
         row.expiresAt > new Date().toISOString() &&
-        row.identity.workspace_id === url.searchParams.get("workspace") &&
+        row.identity.session_id === url.searchParams.get("workspace") &&
         url.searchParams.get("resource") === policy.resource;
       return new Response(allowed ? "allowed" : "refused", { status: allowed ? 200 : 401 });
     }
     async function revoke(identity: RequestIdentity) {
       controls.revokeCalls++;
       await controls.beforeRevoke?.(identity);
-      const existing = requests.get(identity.request_id);
-      if (existing && digestOf(existing.identity) !== digestOf(identity))
-        return new Response("conflict", { status: 409 });
-      tombstones.add(identity.request_id);
-      if (existing) existing.revoked = true;
-      if (controls.reply === "deep-policy") return nestedReply({ ...identity, revoked: true });
-      return Response.json({ ...identity, revoked: true });
+      revokedGenerations.set(
+        identity.session_id,
+        Math.max(revokedGenerations.get(identity.session_id) ?? 0, identity.generation),
+      );
+      for (const row of requests.values())
+        if (row.identity.session_id === identity.session_id && row.identity.generation <= identity.generation)
+          row.revoked = true;
+      return new Response(null, { status: 200 });
     }
     function nestedReply(reply: Record<string, unknown>) {
       const head = JSON.stringify({ ...reply, policy: undefined }).slice(0, -1);
@@ -131,33 +134,25 @@ export async function createTestIssuer(
       });
     }
     async function mint(identity: RequestIdentity, requestUrl: string) {
-      if (tombstones.has(identity.request_id)) return new Response("revoked", { status: 409 });
-      if (identity.purpose === "setup-issuer" && !policy.repositories.includes(identity.source_url ?? ""))
-        return new Response("refused", { status: 403 });
-      if (digestOf(identity.policy) !== digestOf(policy) || identity.policy_digest !== digestOf(policy))
-        return new Response("refused", { status: 403 });
+      if (digestOf(identity.policy) !== digestOf(policy)) return new Response("refused", { status: 403 });
       controls.mintCalls++;
       await controls.beforeMint?.(identity);
-      // Revoke is a request-ID tombstone, including when mint was already in flight.
-      if (tombstones.has(identity.request_id)) return new Response("revoked", { status: 409 });
-      let row = requests.get(identity.request_id);
-      if (row && digestOf(row.identity) !== digestOf(identity)) return new Response("conflict", { status: 409 });
-      if (!row) {
-        row = {
-          identity,
-          credential: randomUUID().padEnd(controls.credentialBytes, "x"),
-          lease_id: randomUUID(),
-          revoked: false,
-          expiresAt: new Date(
-            Math.min(Date.parse(identity.expires_at), Date.now() + (controls.leaseLifetimeMs ?? 300_000)),
-          ).toISOString(),
-        };
-        requests.set(identity.request_id, row);
-      }
+      const row: IssuedLease = {
+        identity,
+        credential: randomUUID().padEnd(controls.credentialBytes, "x"),
+        lease_id: randomUUID(),
+        revoked: identity.generation <= (revokedGenerations.get(identity.session_id) ?? 0),
+        expiresAt: new Date(
+          Math.min(Date.parse(identity.expires_at), Date.now() + (controls.leaseLifetimeMs ?? 300_000)),
+        ).toISOString(),
+      };
+      requests.set(identity.request_id, row);
       controls.captured = row.credential;
       return mintReply(row, identity, requestUrl);
     }
     function mintReply(row: IssuedLease, identity: RequestIdentity, requestUrl: string) {
+      if (controls.reply === "refused") return Response.json({ refused: true }, { status: 403 });
+      if (controls.reply === "forbidden") return new Response("forbidden", { status: 403 });
       if (controls.reply === "deep-policy")
         return nestedReply({ ...identity, lease_id: row.lease_id, credential: row.credential });
       if (controls.reply === "lost") return new Response("lost response", { status: 503 });
@@ -167,16 +162,15 @@ export async function createTestIssuer(
           headers: { location: new URL("/redirect-target", requestUrl).href },
         });
       return Response.json({
-        ...identity,
-        lease_id: row.lease_id,
         credential: row.credential,
-        workspace_id: controls.reply === "wrong-workspace" ? randomUUID() : identity.workspace_id,
+        ...(controls.reply === "wrong-workspace" ? { session_id: randomUUID() } : {}),
         expires_at:
           controls.reply === "long-expiry"
-            ? new Date(Date.parse(identity.expires_at) + 60_000).toISOString()
+            ? new Date(Date.parse(identity.expires_at) + 60000).toISOString()
             : row.expiresAt,
       });
     }
+
     const server = Bun.serve({
       hostname: options.resourceHost ? "0.0.0.0" : "127.0.0.1",
       port: 0,
@@ -188,21 +182,10 @@ export async function createTestIssuer(
           controls.redirectCalls++;
           return new Response("unexpected", { status: 500 });
         }
-        if (request.headers.get("authorization") !== authorization) return new Response("refused", { status: 401 });
+        if (request.headers.get("authorization") !== controls.authorization)
+          return new Response("refused", { status: 401 });
         const input = (await request.json()) as RequestIdentity & { operation: string };
-        const identity = {
-          ...(input.managed_authority ? { managed_authority: input.managed_authority } : {}),
-          workspace_id: input.workspace_id,
-          source_url: input.source_url,
-          source_revision: input.source_revision,
-          template_digest: input.template_digest,
-          request_id: input.request_id,
-          request_digest: input.request_digest,
-          policy_digest: input.policy_digest,
-          purpose: input.purpose,
-          expires_at: input.expires_at,
-          policy: input.policy,
-        };
+        const identity = input;
         if (controls.reply === "outage") return new Response("operator-only error", { status: 503 });
         if (controls.reply === "outage-stream") {
           const body = new ReadableStream({
@@ -220,6 +203,7 @@ export async function createTestIssuer(
       },
     });
     return {
+      directory,
       url: `https://127.0.0.1:${server.port}/leases`,
       resourceUrl: `https://${options.resourceHost ?? "127.0.0.1"}:${server.port}/resource`,
       ca: cert,
@@ -232,7 +216,7 @@ export async function createTestIssuer(
             !row.revoked &&
             row.expiresAt > new Date().toISOString() &&
             new URL(request.url).pathname.startsWith(
-              `${new URL(row.identity.source_url ?? "https://invalid.example").pathname}/`,
+              `${new URL(policy.repositories[0] ?? "https://invalid.example").pathname}/`,
             ) &&
             request.headers.get("authorization") === `Bearer ${row.credential}`,
         );

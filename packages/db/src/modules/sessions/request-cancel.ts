@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ApiError, digestOf, type ExecutionRecord, executionSettled, managed } from "@pstdio/pocketcoder-contracts";
 import type {
   ManagedCancelRecord,
@@ -20,25 +21,15 @@ export function cancelReceipt(sessionId: string, requestId: string | null, cance
   return managed.CancelReceiptSchema.parse({
     sessionId,
     requestId,
-    cancelId: cancel.cancelId,
     scope: requestId === null ? "session" : "request",
     state: cancel.completedAt ? "completed" : "pending",
     acceptedAt: cancel.acceptedAt,
     completedAt: cancel.completedAt,
-    cancelDeadline: cancel.cancelDeadline,
   });
 }
 
-function stopRecord(cancelId: string, scope: ManagedCancelRecord["scope"], windowMs: number, at: Date) {
-  if (!Number.isSafeInteger(windowMs) || windowMs <= 0)
-    throw new ApiError("validation.invalid", "An explicit cancel window is required.");
-  return {
-    cancelId,
-    scope,
-    acceptedAt: at.toISOString(),
-    cancelDeadline: new Date(at.getTime() + windowMs).toISOString(),
-    completedAt: null,
-  };
+function stopRecord(scope: ManagedCancelRecord["scope"], at: Date): ManagedCancelRecord {
+  return { cancelId: randomUUID(), scope, acceptedAt: at.toISOString(), completedAt: null };
 }
 
 // Each request stopped by a session close gets its own stable execution cancel identity.
@@ -74,7 +65,6 @@ async function stopRequest(
   if (!row.managed) throw new ApiError("request.not_found", "Unknown request.");
   const known = row.managed.cancel;
   if (known) {
-    if (known.cancelId !== cancel.cancelId) throw new ApiError("idempotency.conflict", "Cancel identity changed.");
     const pending = row.execution?.cancel && !executionSettled(row.execution) ? row.execution : null;
     return { cancel: known, execution: pending };
   }
@@ -136,6 +126,7 @@ async function releaseUnboundSlots(
   const table = context.tables.managedCapacity;
   const held = (await tx.select().from(table)).filter(
     (row) =>
+      row.record.principalId === id.principalId &&
       row.workspaceId !== boundWorkspaceId &&
       row.record.sessions.some((s) => s.sessionId === id.sessionId && !s.stoppedAt),
   );
@@ -145,9 +136,14 @@ async function releaseUnboundSlots(
     const sessions = row.record.sessions.map((s) =>
       s.sessionId === id.sessionId ? { ...s, stoppedAt: s.stoppedAt ?? at.toISOString() } : s,
     );
+    const [workspace] = await tx
+      .select()
+      .from(context.tables.workspaces)
+      .where(eq(context.tables.workspaces.id, workspaceId));
+    const state = !workspace && sessions.every((s) => s.stoppedAt) ? ("released" as const) : row.record.state;
     await tx
       .update(table)
-      .set({ record: { ...row.record, sessions } })
+      .set({ record: { ...row.record, sessions, state } })
       .where(eq(table.workspaceId, workspaceId));
   }
 }
@@ -234,25 +230,21 @@ export function managedStops(context: DatabaseContext) {
   const authorize = workAuthority(context);
   const writer = sessionWriter(context);
   return {
-    async cancel(
-      keyId: string,
-      sessionId: string,
-      requestId: string,
-      command: managed.CancelCommand,
-      windowMs: number,
-      at: Date,
-    ): Promise<ManagedStopResult> {
-      command = managed.CancelCommandSchema.parse(command);
-      const proposed = stopRecord(command.cancelId, "request", windowMs, at);
+    async cancel(keyId: string, sessionId: string, requestId: string, at: Date): Promise<ManagedStopResult> {
+      const proposed = stopRecord("request", at);
       return db.transaction(async (tx) => {
         await lockStorageCapacity(context, tx);
-        const { id } = await authorize(tx, keyId, sessionId, "sessions:write");
+        const { id, row: session } = await authorize(tx, keyId, sessionId, "sessions:write", true);
+        if (session.close)
+          return {
+            receipt: cancelReceipt(sessionId, null, (await settleClose(context, tx, id, at)) ?? session.close),
+            executions: [],
+          };
         const [row] = await tx
           .select()
           .from(tables.conversationRequests)
           .where(requestKey(context, { principalId: id.principalId, conversationId: sessionId, requestId }));
         if (!row?.managed) throw new ApiError("request.not_found", "Unknown request.");
-        if (row.managed.cancel?.scope === "session") throw new ApiError("session.closed", "Session is closed.");
         const { cancel, execution } = await stopRequest(context, tx, row, proposed, at);
         return {
           receipt: cancelReceipt(sessionId, requestId, cancel),
@@ -260,20 +252,11 @@ export function managedStops(context: DatabaseContext) {
         };
       });
     },
-    async close(
-      keyId: string,
-      sessionId: string,
-      command: managed.CancelCommand,
-      windowMs: number,
-      at: Date,
-    ): Promise<ManagedStopResult> {
-      command = managed.CancelCommandSchema.parse(command);
-      const proposed = stopRecord(command.cancelId, "session", windowMs, at);
+    async close(keyId: string, sessionId: string, at: Date): Promise<ManagedStopResult> {
+      const proposed = stopRecord("session", at);
       return db.transaction(async (tx) => {
         await lockStorageCapacity(context, tx);
         const { id, row } = await authorize(tx, keyId, sessionId, "sessions:write", true);
-        if (row.close && row.close.cancelId !== command.cancelId)
-          throw new ApiError("idempotency.conflict", "Close identity changed.");
         const close = row.close ?? proposed;
         if (!row.close) {
           // Closing fences acceptance first; history and receipts stay readable.
@@ -288,6 +271,32 @@ export function managedStops(context: DatabaseContext) {
         };
       });
     },
+    async cancelSession(keyId: string, sessionId: string, at: Date): Promise<ManagedStopResult> {
+      return db.transaction(async (tx) => {
+        await lockStorageCapacity(context, tx);
+        const { id, row } = await authorize(tx, keyId, sessionId, "sessions:write", true);
+        if (row.close)
+          return {
+            receipt: cancelReceipt(sessionId, null, (await settleClose(context, tx, id, at)) ?? row.close),
+            executions: [],
+          };
+        const cancel = row.cancel ?? stopRecord("session", at);
+        const executions = await stopSessionRequests(context, tx, id, cancel, at);
+        const requests = await tx
+          .select()
+          .from(tables.conversationRequests)
+          .where(
+            and(
+              eq(tables.conversationRequests.principalId, id.principalId),
+              eq(tables.conversationRequests.conversationId, sessionId),
+            ),
+          );
+        const pending = requests.some((r) => r.managed?.cancel && r.managed.request.state !== "terminal");
+        const settled = { ...cancel, completedAt: pending ? null : (cancel.completedAt ?? at.toISOString()) };
+        await tx.update(tables.managedSessions).set({ cancel: settled }).where(writer.where(id));
+        return { receipt: cancelReceipt(sessionId, null, settled), executions };
+      });
+    },
     // Runs with each dispatcher scan: completes closes whose evidence arrived and marks missed
     // stop deadlines without claiming completion.
     async sweep(at: Date) {
@@ -298,22 +307,6 @@ export function managedStops(context: DatabaseContext) {
           and(isNotNull(tables.managedSessions.close), sql`${tables.managedSessions.close}->>'completedAt' IS NULL`),
         );
       for (const id of closing) await db.transaction((tx) => settleClose(context, tx, id, at));
-      const late = await db
-        .select()
-        .from(tables.conversationRequests)
-        .where(
-          and(
-            sql`${tables.conversationRequests.managed}->'cancel'->>'completedAt' IS NULL`,
-            sql`${tables.conversationRequests.managed}->'cancel'->>'cancelDeadline' <= ${at.toISOString()}`,
-            sql`coalesce(${tables.conversationRequests.managed}->'request'->>'reasonCode', '') <> 'cancel_deadline_exceeded'`,
-          ),
-        );
-      for (const row of late)
-        await db.transaction(async (tx) => {
-          await writer.read(tx, { principalId: row.principalId, sessionId: row.conversationId });
-          const current = await reread(context, tx, row);
-          if (current.managed) await writeManagedRequest(context, tx, current, current.managed);
-        });
     },
   };
 }

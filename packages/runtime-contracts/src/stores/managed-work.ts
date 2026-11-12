@@ -1,16 +1,18 @@
 import type { InputObjectReference, managed } from "@pstdio/pocketcoder-contracts";
 import type { ManagedSessionIdentity } from "./managed-sessions";
 
-// One durable stop command. Its identity and deadline never change after acceptance.
+// One durable stop receipt, reused by retries.
 export interface ManagedCancelRecord {
   cancelId: string;
   scope: "request" | "session";
   acceptedAt: string;
-  cancelDeadline: string;
   completedAt: string | null;
 }
 // The workspace the placement owner created for a session before it could bind it.
 export interface ManagedPlacementIntent {
+  templateName: string;
+  templateVersion: string;
+  templateDigest: string;
   workspaceId: string;
   generation: number;
   requestedAt: string;
@@ -44,6 +46,7 @@ export interface ManagedStopResult {
   executions: import("@pstdio/pocketcoder-contracts").ExecutionRecord[];
 }
 export interface ManagedRequestStore {
+  refuse(authority: import("./managed-runtime").ManagedLeaseAuthority, at: Date): Promise<void>;
   completeCleanup(workspaceId: string): Promise<void>;
   accept(
     keyId: string,
@@ -52,15 +55,8 @@ export interface ManagedRequestStore {
     limits: ManagedQueueLimits,
   ): Promise<{ replayed: boolean; request: managed.Request }>;
   get(keyId: string, sessionId: string, requestId: string): Promise<managed.Request>;
-  cancel(
-    keyId: string,
-    sessionId: string,
-    requestId: string,
-    command: managed.CancelCommand,
-    windowMs: number,
-    at: Date,
-  ): Promise<ManagedStopResult>;
-  prepare(at: Date): Promise<void>;
+  cancel(keyId: string, sessionId: string, requestId: string, at: Date): Promise<ManagedStopResult>;
+  prepare(at: Date, seedBytes?: number): Promise<void>;
 }
 export interface ManagedFileStore {
   register(
@@ -84,17 +80,24 @@ export interface ManagedCapacityIdentity extends ManagedSessionIdentity {
 }
 export interface ManagedCapacityRecord {
   principalId: string;
-  profileId: string;
-  profileRevision: number;
-  scopeIds: string[];
+  profile: string;
+  owner: string;
+  group: string;
+  templateVersion: string | null;
+  templateDigest: string;
   placementKey: string;
   sessions: { sessionId: string; generation: number; stoppedAt: string | null }[];
   state: "reserved" | "launch_claimed" | "active" | "cleanup_pending" | "released";
-  starts: { attempt: number; claimedAt: string; submitted: boolean }[];
+  launchAttempt: number;
+  submitted: boolean;
+  drainingAt: string | null;
+  lastUsedAt: string;
   cleanup: managed.CleanupReceipt | null;
-  admittedAttempt?: number;
 }
 export interface ManagedCapacityStore {
+  reserve(identity: ManagedSessionIdentity, generation: number, at: Date): Promise<ManagedPlacementIntent | null>;
+  retire(identity: ManagedSessionIdentity, at: Date): Promise<boolean>;
+  drains(): Promise<{ workspaceId: string; principalId: string }[]>;
   // A live workspace a shared session may join, or null when it needs new compute.
   joinable(identity: ManagedSessionIdentity): Promise<string | null>;
   releaseUnlaunched(workspaceId: string, at: Date): Promise<void>;

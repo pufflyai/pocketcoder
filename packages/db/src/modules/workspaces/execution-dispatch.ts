@@ -190,6 +190,7 @@ async function managedAdmission(
   else {
     try {
       const authority = await workAuthority(context)(tx, row.managed.keyId, row.conversationId, "sessions:write");
+      if (authority.profile.issuer && authority.row.session.state !== "ready") return false;
       if (!authority.row.binding || authority.row.bindingRevision !== row.managed.bindingRevision)
         throw new ApiError("operation.conflict", "Session binding changed.");
       await requireProcessCapacity(context, tx, authority.id, authority.row.binding);

@@ -99,7 +99,7 @@ test("managed Lab sessions share one machine and keep running when a sibling clo
     expect(await live()).toHaveLength(1);
 
     const client = await instances.client(instance.id);
-    await client.sessions.close(first.managedSessionId, { cancelId: randomUUID() });
+    await client.sessions.close(first.managedSessionId);
     await ask(second.sessionId, "still answering");
     expect(await live()).toHaveLength(1);
   } finally {

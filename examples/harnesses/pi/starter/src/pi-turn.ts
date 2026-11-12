@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { type PriorMessage, seedPiSession } from "./history-seed";
 import { BEARER_ENV, type ModelRoute, PROVIDER } from "./model-route";
 
 export interface TurnInput {
@@ -9,6 +12,8 @@ export interface TurnInput {
   sessionDir: string;
   // The logical session (conversation) ID. Pi keeps its history across this session's turns.
   sessionId: string;
+  turnId: string;
+  priorMessages?: PriorMessage[];
   cwd: string;
   prompt: string;
   outputDir: string;
@@ -43,6 +48,9 @@ function outcome(last: PiMessage | null, ended: boolean, aborted: boolean): Turn
 // One Pi run per accepted turn, in its own process group so a targeted cancel also stops the
 // tools it started. Other turns and sessions keep running.
 export function startTurn(input: TurnInput) {
+  mkdirSync(input.sessionDir, { recursive: true });
+  const session = join(input.sessionDir, `${input.sessionId}.jsonl`);
+  seedPiSession(session, input.priorMessages);
   const args = [
     "--provider",
     PROVIDER,
@@ -51,10 +59,8 @@ export function startTurn(input: TurnInput) {
     "--mode",
     "json",
     "--print",
-    "--session-dir",
-    input.sessionDir,
-    "--session-id",
-    input.sessionId,
+    "--session",
+    session,
     "--append-system-prompt",
     `Save every file you want to return to the user in ${input.outputDir}. Files saved elsewhere are not returned.`,
     "--approve",
@@ -65,7 +71,13 @@ export function startTurn(input: TurnInput) {
     cwd: input.cwd,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PI_CODING_AGENT_DIR: input.agentDir, [BEARER_ENV]: input.bearer },
+    env: {
+      ...process.env,
+      POCKETCODER_CONVERSATION_ID: input.sessionId,
+      POCKETCODER_TURN_ID: input.turnId,
+      PI_CODING_AGENT_DIR: input.agentDir,
+      [BEARER_ENV]: input.bearer,
+    },
   });
   let last: PiMessage | null = null;
   let ended = false;

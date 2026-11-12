@@ -18,7 +18,7 @@ export async function inputIsPinned(context: DatabaseContext, tx: QueryContext, 
           row.conversationId === registration.sessionId &&
           row.managed &&
           !row.managed.queueReleased &&
-          row.managed.input?.attachments.some((ref) => ref.inputId === fileId),
+          row.managed.input?.attachments.includes(fileId),
       )
     )
       return true;

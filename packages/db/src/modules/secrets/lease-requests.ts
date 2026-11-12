@@ -7,7 +7,7 @@ import { requiredRow } from "../../database/required-row";
 import { leaseSourceIdentity, leaseWorkspaceActive } from "./lease-authority";
 import { managedLeaseActive } from "./managed-lease-authority";
 
-const closed = ["revoked", "expired"] as const;
+const closed = ["revoked", "expired", "superseded", "revoking"] as const;
 async function enforceReferenceLimit(
   tx: Transaction,
   leases: DatabaseContext["tables"]["workspaceLeases"],
@@ -45,7 +45,7 @@ function assertRequestIdentity(row: WorkspaceLeaseRow, input: WorkspaceLeaseRequ
 }
 
 export async function requestLease({ db, tables }: DatabaseContext, input: WorkspaceLeaseRequest) {
-  const { workspaces, workspaceLeases: leases, workspaceLeaseFences: fences, secrets } = tables;
+  const { workspaces, workspaceLeases: leases, workspaceLeaseFences: fences } = tables;
   async function workspace(tx: Transaction, id: string) {
     const [row] = await tx.select().from(workspaces).where(eq(workspaces.id, id)).for("update");
     return requiredRow(row);
@@ -61,29 +61,7 @@ export async function requestLease({ db, tables }: DatabaseContext, input: Works
     const owner = await workspace(tx, input.workspaceId);
     if (await fenced(tx, owner.id)) throw new Error("Lease workspace is fenced");
     if (!leaseWorkspaceActive(owner, input.purpose, input.at)) throw new Error("Lease workspace is inactive");
-    const [issuer] = await tx
-      .select()
-      .from(secrets)
-      .where(
-        and(
-          eq(secrets.name, input.secretName),
-          ...(input.managedAuthority ? [] : [eq(secrets.versionId, input.secretVersionId)]),
-          eq(secrets.type, input.purpose),
-          isNull(secrets.retiredAt),
-        ),
-      );
-    if (!issuer) throw new Error("Lease issuer is unavailable");
-    const [pinned] = await tx
-      .select()
-      .from(tables.secretVersions)
-      .where(
-        and(
-          eq(tables.secretVersions.id, input.secretVersionId),
-          eq(tables.secretVersions.name, input.secretName),
-          eq(tables.secretVersions.type, input.purpose),
-        ),
-      );
-    if (!pinned) throw new Error("Lease issuer is unavailable");
+    if (!input.managedAuthority) await requireVaultIssuer(tx, tables, input);
     const [existing] = await tx
       .select()
       .from(leases)
@@ -104,15 +82,11 @@ export async function requestLease({ db, tables }: DatabaseContext, input: Works
       ))
     )
       throw new Error("Managed lease authority is unavailable");
-    const sourceIdentity = leaseSourceIdentity(owner, input.purpose, input.secretName);
+    const sourceIdentity = input.managedAuthority
+      ? { sourceUrl: null, sourceRevision: null }
+      : leaseSourceIdentity(owner, input.purpose, input.secretName);
     await enforceReferenceLimit(tx, leases, input);
-    const requestExpiresAt = new Date(
-      Math.min(
-        owner.deadlineAt.getTime(),
-        input.at.getTime() + 300_000,
-        input.managedAuthority ? new Date(input.managedAuthority.authorityExpiresAt).getTime() : Infinity,
-      ),
-    );
+    const requestExpiresAt = new Date(Math.min(owner.deadlineAt.getTime(), input.at.getTime() + 300_000));
     const identity = {
       managedAuthority: input.managedAuthority ?? null,
       workspaceId: owner.id,
@@ -141,4 +115,31 @@ export async function requestLease({ db, tables }: DatabaseContext, input: Works
       )[0],
     );
   });
+}
+
+async function requireVaultIssuer(tx: Transaction, tables: DatabaseContext["tables"], input: WorkspaceLeaseRequest) {
+  const { secrets } = tables;
+  const [issuer] = await tx
+    .select()
+    .from(secrets)
+    .where(
+      and(
+        eq(secrets.name, input.secretName),
+        ...(input.managedAuthority ? [] : [eq(secrets.versionId, input.secretVersionId!)]),
+        eq(secrets.type, input.purpose),
+        isNull(secrets.retiredAt),
+      ),
+    );
+  if (!issuer) throw new Error("Lease issuer is unavailable");
+  const [pinned] = await tx
+    .select()
+    .from(tables.secretVersions)
+    .where(
+      and(
+        eq(tables.secretVersions.id, input.secretVersionId!),
+        eq(tables.secretVersions.name, input.secretName),
+        eq(tables.secretVersions.type, input.purpose),
+      ),
+    );
+  if (!pinned) throw new Error("Lease issuer is unavailable");
 }

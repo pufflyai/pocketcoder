@@ -2,7 +2,6 @@ import { ApiError, managed, PARALLEL_CONVERSATION_CAPABILITIES } from "@pstdio/p
 import type { ManagedBinding, ManagedSessionIdentity } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
-import { policyOwner } from "../budgets/policy-owner";
 import { authorityContext, conflict, unavailable } from "../managed/authority-context";
 import { pendingWorkspaceLeases } from "../secrets/lease-fence";
 
@@ -28,15 +27,16 @@ export function placementChecks(context: DatabaseContext) {
     id: ManagedSessionIdentity,
     binding: ManagedBinding,
     profile: Awaited<ReturnType<typeof auth.profile>>,
+    session: managed.Session,
     producer: typeof tables.workspaces.$inferSelect.runtimeRegistration,
   ) {
     const siblings = await tx.select().from(sessions).where(eq(sessions.principalId, id.principalId));
     for (const sibling of siblings.filter(
       (s) => s.sessionId !== id.sessionId && s.binding?.workspaceId === binding.workspaceId,
     )) {
-      const other = await auth.profile(tx, id.principalId, sibling.session.profileId, sibling.session.profileRevision);
-      const a = managed.managedPlacement(id.principalId, id.sessionId, profile.profile);
-      const b = managed.managedPlacement(id.principalId, sibling.sessionId, other.profile);
+      const other = await auth.profile(tx, id.principalId, sibling.session.profile);
+      const a = managed.managedPlacement(id.principalId, { ...session, sessionId: id.sessionId }, profile.profile);
+      const b = managed.managedPlacement(id.principalId, sibling.session, other.profile);
       if (a.mode !== "shared" || b.mode !== "shared" || a.key !== b.key) throw unavailable();
       const installed = producer?.producer;
       if (!installed) throw unavailable();
@@ -59,11 +59,15 @@ export function placementChecks(context: DatabaseContext) {
     if (!Number.isSafeInteger(binding.generation) || binding.generation < 1 || binding.generation <= lastGeneration)
       throw conflict();
     const [workspace] = await tx.select().from(workspaces).where(eq(workspaces.id, binding.workspaceId)).for("update");
-    const profile = await auth.profile(tx, id.principalId, session.profileId, session.profileRevision);
+    const profile = await auth.profile(tx, id.principalId, session.profile);
+    const [capacity] = await tx
+      .select()
+      .from(tables.managedCapacity)
+      .where(eq(tables.managedCapacity.workspaceId, binding.workspaceId));
     if (
       !workspace ||
       workspace.principalId !== id.principalId ||
-      workspace.templateDigest !== profile.profile.templateDigest
+      workspace.templateDigest !== capacity?.record.templateDigest
     )
       throw unavailable();
     if (
@@ -74,9 +78,7 @@ export function placementChecks(context: DatabaseContext) {
       workspace.purgeRequestedAt
     )
       throw unavailable();
-    await auth.validateScopes(tx, id.principalId, profile.profile);
-    for (const scopeId of profile.profile.budgetScopeIds) await policyOwner(context).latest(tx, scopeId);
-    await compatibleSiblings(tx, id, binding, profile, workspace.runtimeRegistration);
+    await compatibleSiblings(tx, id, binding, profile, session, workspace.runtimeRegistration);
   }
   return { previousFenced, validate };
 }

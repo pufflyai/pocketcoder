@@ -17,6 +17,7 @@ export function composeExecutionDispatcher(
   const { store, driver, limits, readiness } = deps;
   return new ExecutionDispatcher({
     store,
+    sessionSeedBytes: deps.sessionSeedBytes,
     concurrency: Math.max(1, limits.globalActiveWorkspaces),
     canDispatch: () => !deps.maintenance?.active,
     onError: (error) => log(`execution dispatch failed: ${String(error)}`),

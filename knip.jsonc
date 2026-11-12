@@ -6,7 +6,6 @@
       "entry": [
         "scripts/ci/*.ts",
         "scripts/pstdio-demo.ts",
-        "scripts/build-managed-contract.ts",
         "deploy/image/quiesce.ts",
         "deploy/image/write-session-image.ts",
         "examples/native/artifact-memory-fixture.ts",
@@ -23,6 +22,7 @@
         "examples/e2e/managed-interruption-child.ts",
         "examples/e2e/managed-purge-bootstrap-child.ts",
         "examples/e2e/kind-purge-rbac.ts",
+        "examples/e2e/kubernetes-managed-sessions.ts",
         "examples/e2e/kubernetes-shared-probe.ts",
         "examples/**/*.test.ts"
       ]

@@ -8,7 +8,6 @@ const input = (requestId = randomUUID()) => ({
   requestId,
   message: "run tests",
   attachments: [],
-  dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
 });
 
 test("runtime fencing after terminal persistence preserves the observed outcome and waits for cleanup proof", async () => {
@@ -55,11 +54,7 @@ test("shared sessions namespace physical IDs and hold only their own serial fina
   const f = await sessionWorkFixture();
   try {
     const second = randomUUID();
-    await f.store.managed.sessions.create(f.keyId, {
-      sessionId: second,
-      profileId: f.profile.profileId,
-      profileRevision: 1,
-    });
+    await f.store.managed.sessions.create(f.keyId, { sessionId: second, profile: f.profile.name, owner: "test-owner" });
     for (const sessionId of [f.sessionId, second])
       await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId }, 0, {
         workspaceId: f.id,
@@ -92,7 +87,6 @@ test("shared sessions namespace physical IDs and hold only their own serial fina
     await f.store.executions.finalize(first.acceptance.execution, new Date());
     await f.store.managed.requests.prepare(new Date());
     expect((await f.store.managed.requests.get(f.keyId, f.sessionId, later.request.requestId)).state).toBe("waiting");
-    expect((await f.store.managed.budgets.usage(f.keyId, f.scopeId)).activeWorkspaces).toBe(1);
   } finally {
     await f.dispose();
   }
@@ -113,7 +107,12 @@ test("a materialized or proved-absent request cannot send after its dispatch dea
     await f.store.executions.claim(record.acceptance.execution, new Date());
     expect(await f.store.executions.beforeSend(record.acceptance.execution, new Date())).toBe(true);
     expect(
-      await f.store.executions.beforeSend(record.acceptance.execution, new Date(Date.parse(body.dispatchDeadline) + 1)),
+      await f.store.executions.beforeSend(
+        record.acceptance.execution,
+        new Date(
+          Date.parse((await f.store.managed.requests.get(f.keyId, f.sessionId, body.requestId)).dispatchDeadline) + 1,
+        ),
+      ),
     ).toBe(false);
     const request = await f.store.managed.requests.get(f.keyId, f.sessionId, body.requestId);
     expect(request).toMatchObject({
@@ -143,11 +142,7 @@ test("one revoked accepting key cannot stop another session, and fenced runtime 
       revokedAt: null,
       lastUsedAt: null,
     });
-    await f.store.managed.sessions.create(f.keyId, {
-      sessionId: second,
-      profileId: f.profile.profileId,
-      profileRevision: 1,
-    });
+    await f.store.managed.sessions.create(f.keyId, { sessionId: second, profile: f.profile.name, owner: "test-owner" });
     for (const sessionId of [f.sessionId, second])
       await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId }, 0, {
         workspaceId: f.id,
@@ -180,6 +175,46 @@ test("one revoked accepting key cannot stop another session, and fenced runtime 
       .from(f.context.tables.managedSessions)
       .where(eq(f.context.tables.managedSessions.sessionId, second));
     expect(cleaned?.queueCount).toBe(0);
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("a refused prepared request never dispatches after new work clears the refusal", async () => {
+  const f = await sessionWorkFixture();
+  try {
+    const identity = { principalId: f.principal.id, sessionId: f.sessionId };
+    await f.store.managed.sessions.bind(identity, 0, {
+      workspaceId: f.id,
+      incarnationId: f.runtime.incarnationId,
+      generation: 1,
+    });
+    const body = input();
+    await f.store.managed.requests.accept(f.keyId, f.sessionId, body, limits);
+    await f.store.managed.requests.prepare(new Date());
+    expect(await f.store.executions.pending()).toHaveLength(1);
+    await f.store.managed.requests.refuse(
+      {
+        ...identity,
+        generation: 1,
+        incarnationId: f.runtime.incarnationId,
+        profile: f.profile.name,
+        owner: "test-owner",
+        group: "test-owner",
+        slot: "gateway",
+        issuer: "gateway",
+      },
+      new Date(),
+    );
+    expect((await f.store.managed.requests.get(f.keyId, f.sessionId, body.requestId)).reasonCode).toBe(
+      "credentials_refused",
+    );
+    expect(await f.store.executions.pending()).toHaveLength(0);
+    const next = await f.store.managed.requests.accept(f.keyId, f.sessionId, input(), limits);
+    await f.store.managed.requests.prepare(new Date());
+    expect((await f.store.executions.pending()).map((r) => r.acceptance.execution.requestId)).toEqual([
+      next.request.turnId,
+    ]);
   } finally {
     await f.dispose();
   }

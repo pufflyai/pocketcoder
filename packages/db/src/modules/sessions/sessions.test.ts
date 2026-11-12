@@ -11,9 +11,9 @@ test("no-compute sessions replay after restart and fence old binding revisions",
     expect(session.state).toBe("provisioning");
     await store.close();
     store = await DatabaseStore.openPGlite(f.directory);
-    const input = { sessionId: f.sessionId, profileId: f.profile.profileId, profileRevision: 1 };
+    const input = { sessionId: f.sessionId, profile: f.profile.name, owner: "test-owner" };
     expect(await store.managed.sessions.create(f.keyId, input)).toEqual(session);
-    await expect(store.managed.sessions.create(f.keyId, { ...input, profileRevision: 2 })).rejects.toThrow();
+    await expect(store.managed.sessions.create(f.keyId, { ...input, owner: "other-owner" })).rejects.toThrow();
     const id = { principalId: f.principal.id, sessionId: f.sessionId };
     const binding = { workspaceId: randomUUID(), incarnationId: randomUUID(), generation: 1 };
     // Binding requires actual owned compute, never a caller-provided UUID alone.
@@ -102,11 +102,27 @@ test("binding comparisons retain generation history after detach and observation
       (
         await f.store.managed.sessions.create(f.keyId, {
           sessionId: f.sessionId,
-          profileId: f.profile.profileId,
-          profileRevision: 1,
+          profile: f.profile.name,
+          owner: "test-owner",
         })
       ).state,
     ).toBe("closed");
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("session reads and lists obey the current template grants", async () => {
+  const f = await managedFixture();
+  try {
+    await provision(f);
+    await f.store.updatePrincipal(f.principal.id, ["admin"], ["other-template"]);
+    await expect(f.store.managed.sessions.get(f.keyId, f.sessionId)).rejects.toMatchObject({
+      code: "profile.not_found",
+    });
+    expect(await f.store.managed.sessions.list(f.keyId, {})).toEqual([]);
+    await f.store.updatePrincipal(f.principal.id, ["admin"], [f.template.name]);
+    expect((await f.store.managed.sessions.list(f.keyId, {})).map((s) => s.sessionId)).toEqual([f.sessionId]);
   } finally {
     await f.dispose();
   }

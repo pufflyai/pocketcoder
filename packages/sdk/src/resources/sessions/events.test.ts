@@ -5,8 +5,9 @@ import { PocketCoderClient } from "../../client";
 const sessionId = randomUUID();
 const session = (revision: number) => ({
   sessionId,
-  profileId: randomUUID(),
-  profileRevision: 1,
+  profile: "chat",
+  group: "test-owner",
+  owner: "test-owner",
   revision,
   state: "provisioning",
   reasonCode: null,

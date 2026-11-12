@@ -5,12 +5,7 @@ const queue = z.strictObject({
   bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 export function sessionQueueConfig(raw: string | undefined) {
-  return raw === undefined ? undefined : queue.parse(JSON.parse(raw));
-}
-
-// How long a cancel or close may stay pending before it reports a missed deadline. No default.
-export function sessionStopConfig(raw: string | undefined) {
-  return raw === undefined ? undefined : z.coerce.number().int().positive().max(86400).parse(raw);
+  return raw === undefined ? { count: 8, bytes: 8388608 } : queue.parse(JSON.parse(raw));
 }
 
 // How many recent events each session keeps for replay. Unset keeps every event until history deletion.
@@ -20,21 +15,24 @@ export function sessionEventRetentionConfig(raw: string | undefined) {
 
 // The managed-session settings a built server needs from the parsed configuration.
 export function managedSessionDeps(config: {
+  sessionSeedBytes?: number;
   sessionQueueLimits?: ReturnType<typeof sessionQueueConfig>;
-  sessionStopSeconds?: number;
 }) {
   return {
     sessionQueueLimits: config.sessionQueueLimits,
-    sessionStopSeconds: config.sessionStopSeconds,
+    sessionSeedBytes: config.sessionSeedBytes,
   };
 }
 
 export type SessionConfig = ReturnType<typeof sessionConfig>;
-// Managed session settings. None of them has a default.
+// Queue and history seed defaults keep a fresh controller usable.
 export function sessionConfig(env: Record<string, string | undefined>) {
   return {
+    sessionSeedBytes:
+      env.POCKETCODER_SESSION_SEED_BYTES === undefined
+        ? 1048576
+        : z.coerce.number().int().positive().parse(env.POCKETCODER_SESSION_SEED_BYTES),
     sessionQueueLimits: sessionQueueConfig(env.POCKETCODER_SESSION_QUEUE),
-    sessionStopSeconds: sessionStopConfig(env.POCKETCODER_SESSION_STOP_SECONDS),
     sessionEventRetention: sessionEventRetentionConfig(env.POCKETCODER_SESSION_EVENT_RETENTION),
   };
 }

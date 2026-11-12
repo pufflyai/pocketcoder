@@ -18,6 +18,7 @@ export async function processDispatchFixture(
   shared?: Awaited<ReturnType<typeof executionFixture>> & { hub: Hub },
   options: {
     concurrency?: number;
+    workspaceId?: string;
     canDispatch?: () => boolean;
     capabilities?: import("@pstdio/pocketcoder-contracts").WorkloadCapability[];
     readCapacity?: import("@pstdio/pocketcoder-runtime-core").ReadStorageCapacity;
@@ -36,7 +37,7 @@ export async function processDispatchFixture(
       ];
       configure?.(source);
     },
-    { mode: "disk", base: shared, capabilities: options.capabilities },
+    { mode: "disk", base: shared, capabilities: options.capabilities, workspaceId: options.workspaceId },
   );
   root = f.directory ?? "";
   const serviceDirectory = await mkdtemp(join(tmpdir(), "pc-svc-"));
@@ -164,14 +165,15 @@ export async function processDispatchFixture(
       launch_mode: "create",
     }),
   );
+  // Match the shipped supervisor and avoid recompiling its source tree in every child startup.
+  const supervisor = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "../../../supervisor/src/index.ts")],
+    outdir: serviceDirectory,
+    target: "bun",
+  });
+  if (!supervisor.success) throw new Error("Supervisor fixture build failed");
   const child = Bun.spawn(
-    [
-      process.execPath,
-      resolve(import.meta.dir, "../../../supervisor/src/index.ts"),
-      "supervise",
-      "--launch-input",
-      input,
-    ],
+    [process.execPath, join(serviceDirectory, "index.js"), "supervise", "--launch-input", input],
     { stdout: "pipe", stderr: "pipe" },
   );
   const waitFor = async (predicate: () => Promise<boolean>) => {

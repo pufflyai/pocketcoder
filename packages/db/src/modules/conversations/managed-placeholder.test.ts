@@ -11,7 +11,7 @@ test("another principal's managed request cannot suppress an interrupted turn", 
     await f.store.managed.requests.accept(
       f.keyId,
       f.sessionId,
-      { requestId, message: "managed", attachments: [], dispatchDeadline: new Date(Date.now() + 60_000).toISOString() },
+      { requestId, message: "managed", attachments: [] },
       { count: 2, bytes: 1048576 },
     );
     const principal = await f.store.createPrincipal("other-owner", ["admin"], ["*"]);

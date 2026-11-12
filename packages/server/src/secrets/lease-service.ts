@@ -1,45 +1,80 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { ApiError, digestOf } from "@pstdio/pocketcoder-contracts";
 import type {
-  ManagedLeaseAuthority,
   ManagedRuntimeStore,
   ManagedSessionIdentity,
   WorkspaceLeasePurpose,
+  WorkspaceLeaseRow,
   WorkspaceLeaseStore,
+  WorkspaceStore,
 } from "@pstdio/pocketcoder-runtime-core";
-import type { createIssuerClient } from "./issuer-client";
+import { CredentialsRefused, type createIssuerClient } from "./issuer-client";
 import type { createSecretVault } from "./secret-vault";
 
+async function readManagedIssuer(
+  managed: ManagedRuntimeStore | undefined,
+  principalId: string,
+  name: string,
+  clusterLocalIssuers: boolean,
+) {
+  if (!managed) throw new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
+  const config = await managed.profiles.issuer(principalId, name);
+  if (new URL(config.url).protocol === "http:" && !clusterLocalIssuers)
+    throw new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
+  const token = (await readFile(config.tokenFile, "utf8")).trim();
+  if (!token) throw new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
+  return { ...config, authorization: `Bearer ${token}` };
+}
+
+type Vault = ReturnType<typeof createSecretVault>;
 export function createWorkspaceLeaseService({
   store,
   vault,
   issuer,
   now = () => new Date(),
   admissionFenced = () => false,
+  clusterLocalIssuers = false,
 }: {
-  store: WorkspaceLeaseStore & { managed?: ManagedRuntimeStore };
-  vault: ReturnType<typeof createSecretVault>;
+  store: WorkspaceLeaseStore & { managed?: ManagedRuntimeStore; getWorkspace?: WorkspaceStore["getWorkspace"] };
+  vault?: Vault;
   issuer: ReturnType<typeof createIssuerClient>;
   now?: () => Date;
   admissionFenced?: () => boolean;
+  clusterLocalIssuers?: boolean;
 }) {
   const unavailable = () => new ApiError("secret.unavailable", "Workspace issuer is unavailable.");
-  async function deliver(
-    config: Awaited<ReturnType<typeof vault.resolve>>,
-    row: Awaited<ReturnType<typeof store.requestWorkspaceLease>>,
-  ) {
+  const revocations = new Map<string, Promise<void>>();
+  const managedIssuer = (principalId: string, name: string) =>
+    readManagedIssuer(store.managed, principalId, name, clusterLocalIssuers);
+  async function configFor(row: WorkspaceLeaseRow) {
+    const a = row.managedAuthority;
+    if (a) return managedIssuer(a.principalId, a.issuer);
+    if (!vault || !row.secretVersionId) throw unavailable();
+    const config = await vault.resolveVersion(row.secretVersionId, row.purpose);
+    if (config.type === "registry") throw unavailable();
+    return { ...config.value, revoke: true };
+  }
+  async function deliver(config: Awaited<ReturnType<typeof configFor>>, row: WorkspaceLeaseRow) {
     if (
       admissionFenced() ||
-      config.type === "registry" ||
-      ["revoking", "revoked", "expired"].includes(row.state) ||
+      ["revoking", "revoked", "expired", "superseded"].includes(row.state) ||
       row.requestExpiresAt <= now() ||
       (await store.hasWorkspaceLeaseFence(row.workspaceId))
     )
       throw unavailable();
-    const result = await issuer.mint(config.value, row);
+    let result: Awaited<ReturnType<typeof issuer.mint>>;
+    try {
+      result = await issuer.mint(config, row);
+    } catch (error) {
+      await store.supersedeWorkspaceLease(row.id, now());
+      if (error instanceof CredentialsRefused && row.managedAuthority && store.managed) {
+        await store.managed.requests.refuse(row.managedAuthority, now());
+      }
+      throw error;
+    }
     const issued = await store.recordWorkspaceLeaseIssued(
       row.id,
-      result.leaseId,
       result.expiresAt,
       Buffer.byteLength(result.credential),
       now(),
@@ -47,37 +82,42 @@ export function createWorkspaceLeaseService({
     const delivered =
       !admissionFenced() && issued?.state !== "revoking" && (await store.recordWorkspaceLeaseDelivered(row.id, now()));
     if (!delivered || admissionFenced()) {
-      await revoke(row.id);
+      await store.supersedeWorkspaceLease(row.id, now());
+      if (config.revoke && (await store.hasWorkspaceLeaseFence(row.workspaceId))) await revoke(row.id).catch(() => {});
       throw unavailable();
     }
     return { lease: delivered, credential: result.credential };
   }
-  async function revoke(id: string) {
-    const row = await store.requestWorkspaceLeaseRevocation(id, now());
-    if (row.state === "revoked" || row.state === "expired") return;
-    if (await store.recordWorkspaceLeaseExpired(id, now())) return;
-    const config = await vault.resolveVersion(row.secretVersionId, row.purpose);
-    if (config.type === "registry") throw unavailable();
-    await issuer.revoke(config.value, row);
-    await store.recordWorkspaceLeaseRevoked(id, row.requestId, now());
-  }
-  async function issue(
-    workspaceId: string,
-    name: string,
-    purpose: WorkspaceLeasePurpose,
-    requestId: string = randomUUID(),
-    managedAuthority?: ManagedLeaseAuthority,
-  ) {
-    if (admissionFenced()) throw unavailable();
-    const existing = (await store.listWorkspaceLeases(workspaceId)).find(
-      (row) => row.secretName === name && row.requestId === requestId,
-    );
-    if (existing) {
-      if (existing.purpose !== purpose || digestOf(existing.managedAuthority) !== digestOf(managedAuthority ?? null))
-        throw unavailable();
-      // A lost reply must keep the issuer and policy of its recorded request.
-      return await deliver(await vault.resolveVersion(existing.secretVersionId, purpose), existing);
+  async function notifyRevocation(config: Awaited<ReturnType<typeof configFor>>, row: WorkspaceLeaseRow) {
+    if (!config.revoke || row.revokeAcknowledgedAt) return row;
+    const a = row.managedAuthority,
+      key = a ? `${a.principalId}:${a.sessionId}:${a.generation}:${a.issuer}` : row.id;
+    let pending = revocations.get(key);
+    if (!pending) {
+      pending = issuer.revoke(config, row).then(() => store.acknowledgeLeaseRevocation(row.id, now()));
+      revocations.set(key, pending);
     }
+    try {
+      await pending;
+    } finally {
+      revocations.delete(key);
+    }
+    return (await store.getWorkspaceLease(row.id)) ?? row;
+  }
+  async function revoke(id: string) {
+    let row = await store.requestWorkspaceLeaseRevocation(id, now());
+    if (["revoked", "expired"].includes(row.state)) return;
+    const config = await configFor(row);
+    row = await notifyRevocation(config, row);
+    const workspace = await store.getWorkspace?.(row.workspaceId);
+    const removed = row.removedAt || workspace?.terminalAt || workspace?.runtimeRegistration?.endedAt;
+    // A setup credential is no longer used after the issuer acknowledges its revoke.
+    if ((row.managedAuthority ? removed : config.revoke) && (!config.revoke || row.revokeAcknowledgedAt))
+      await store.recordWorkspaceLeaseRevoked(id, row.requestId, now());
+    else await store.recordWorkspaceLeaseExpired(id, now());
+  }
+  async function issue(workspaceId: string, name: string, purpose: WorkspaceLeasePurpose, _requestId = randomUUID()) {
+    if (!vault || admissionFenced()) throw unavailable();
     const config = await vault.resolve(name, purpose);
     if (config.type === "registry") throw unavailable();
     const row = await store.requestWorkspaceLease({
@@ -86,36 +126,41 @@ export function createWorkspaceLeaseService({
       secretVersionId: config.id,
       purpose,
       policyDigest: digestOf(config.value.policy),
-      requestId,
+      requestId: randomUUID(),
       at: now(),
-      ...(managedAuthority ? { managedAuthority } : {}),
     });
-    return await deliver(config, row);
+    return deliver({ ...config.value, revoke: true }, row);
   }
   async function issueManaged(
     identity: ManagedSessionIdentity,
     workspaceId: string,
     generation: number,
     slot: string,
-    requestId: string,
+    _requestId = randomUUID(),
   ) {
-    if (!store.managed) throw unavailable();
-    const bound = await store.managed.authority.leaseAuthority(identity, workspaceId, generation, slot);
-    const config = await vault.resolveVersion(bound.secretVersionId, "runtime-issuer");
-    if (config.type === "registry" || config.name !== bound.secretName) throw unavailable();
+    if (!store.managed || admissionFenced()) throw unavailable();
+    const bound = await store.managed.profiles.leaseAuthority(identity, workspaceId, generation, slot);
+    const config = await managedIssuer(identity.principalId, bound.authority.issuer);
     const row = await store.requestWorkspaceLease({
       workspaceId,
-      secretName: bound.secretName,
-      secretVersionId: bound.secretVersionId,
+      secretName: bound.authority.issuer,
+      secretVersionId: null,
       purpose: "runtime-issuer",
-      policyDigest: digestOf(config.value.policy),
-      requestId,
+      policyDigest: digestOf(config.policy),
+      requestId: randomUUID(),
       at: now(),
       managedAuthority: bound.authority,
     });
     return deliver(config, row);
   }
-  async function revokeAll(rows: Awaited<ReturnType<typeof store.listPendingWorkspaceLeases>>) {
+  async function fresh(previous: WorkspaceLeaseRow, supersede = true) {
+    if (supersede) await store.supersedeWorkspaceLease(previous.id, now());
+    const a = previous.managedAuthority;
+    return a
+      ? issueManaged({ principalId: a.principalId, sessionId: a.sessionId }, previous.workspaceId, a.generation, a.slot)
+      : issue(previous.workspaceId, previous.secretName, previous.purpose);
+  }
+  async function revokeAll(rows: WorkspaceLeaseRow[]) {
     let failed = false;
     for (const row of rows) {
       try {
@@ -129,67 +174,85 @@ export function createWorkspaceLeaseService({
   return {
     issue,
     issueManaged,
+    revoke,
+    discard: (id: string) => store.supersedeWorkspaceLease(id, now()),
+    async expire(id: string) {
+      const row = await store.getWorkspaceLease(id);
+      if (!row) return;
+      if (!row.managedAuthority) {
+        await store.recordWorkspaceLeaseExpired(id, now());
+        return;
+      }
+      const config = await configFor(row);
+      // An ordinary renewal must never send a generation-wide revoke. Keep the optional
+      // notice obligation until the generation ends, even after this credential expires.
+      if (config.revoke) await store.supersedeWorkspaceLease(id, now());
+      else await store.recordWorkspaceLeaseExpired(id, now());
+    },
     async replay(workspaceId: string, leaseId: string) {
       const row = await store.getWorkspaceLease(leaseId);
-      if (!row || row.workspaceId !== workspaceId) throw unavailable();
-      const config = await vault.resolveVersion(row.secretVersionId, row.purpose);
-      return await deliver(config, row);
+      if (
+        !row ||
+        row.workspaceId !== workspaceId ||
+        ["revoking", "revoked", "expired", "superseded"].includes(row.state)
+      )
+        throw unavailable();
+      return fresh(row);
     },
-    async renew(workspaceId: string, previousLeaseId: string, requestId: string) {
+    async renew(workspaceId: string, previousLeaseId: string, _requestId: string) {
       const previous = await store.getWorkspaceLease(previousLeaseId);
       if (!previous || previous.workspaceId !== workspaceId || previous.purpose !== "runtime-issuer")
         throw unavailable();
-      if (previous.managedAuthority) {
-        const a = previous.managedAuthority;
-        return issueManaged(
-          { principalId: a.principalId, sessionId: a.sessionId },
-          workspaceId,
-          a.generation,
-          a.slot,
-          requestId,
-        );
+      for (const row of await store.listPendingWorkspaceLeases(workspaceId)) {
+        if (
+          row.id !== previous.id &&
+          row.secretName === previous.secretName &&
+          row.managedAuthority?.sessionId === previous.managedAuthority?.sessionId &&
+          row.managedAuthority?.slot === previous.managedAuthority?.slot
+        )
+          await store.supersedeWorkspaceLease(row.id, now());
       }
-      return await issue(
-        workspaceId,
-        previous.secretName,
-        "runtime-issuer",
-        requestId,
-        previous.managedAuthority ?? undefined,
-      );
+      return fresh(previous, false);
     },
     async completeRenewal(workspaceId: string, previousLeaseId: string, leaseId: string) {
-      const previous = await store.getWorkspaceLease(previousLeaseId);
-      const installed = await store.getWorkspaceLease(leaseId);
+      const previous = await store.getWorkspaceLease(previousLeaseId),
+        installed = await store.getWorkspaceLease(leaseId);
       if (
         !previous ||
         !installed ||
         previous.id === installed.id ||
-        previous.workspaceId !== workspaceId ||
         installed.workspaceId !== workspaceId ||
-        previous.purpose !== "runtime-issuer" ||
-        installed.purpose !== "runtime-issuer" ||
+        previous.workspaceId !== workspaceId ||
+        installed.state !== "delivered" ||
         previous.secretName !== installed.secretName
       )
         throw unavailable();
-      if (previous.state === "revoked" || previous.state === "expired") return;
-      if (installed.state !== "delivered") throw unavailable();
-      await revoke(previousLeaseId);
+      // The resource lets the old credential expire. No per-credential revoke is needed.
+      await store.supersedeWorkspaceLease(previous.id, now());
     },
-    revoke,
     async completeSetup(workspaceId: string) {
-      const pending = await store.listPendingWorkspaceLeases(workspaceId);
-      for (const row of pending) {
-        if (row.purpose === "setup-issuer") await revoke(row.id);
-      }
+      await revokeAll(
+        (await store.listPendingWorkspaceLeases(workspaceId)).filter((r) => r.purpose === "setup-issuer"),
+      );
     },
     async revokeWorkspace(workspaceId: string) {
       await store.fenceWorkspaceLeases(workspaceId, now());
       await revokeAll(await store.listPendingWorkspaceLeases(workspaceId));
     },
-    // Closing one session of shared compute revokes its leases; siblings keep theirs.
     async revokeSession(workspaceId: string, sessionId: string) {
-      const pending = await store.listPendingWorkspaceLeases(workspaceId);
-      await revokeAll(pending.filter((row) => row.managedAuthority?.sessionId === sessionId));
+      await revokeAll(
+        (await store.listPendingWorkspaceLeases(workspaceId)).filter(
+          (r) => r.managedAuthority?.sessionId === sessionId,
+        ),
+      );
+    },
+    async removed(workspaceId: string, sessionId: string) {
+      await store.acknowledgeSessionLeaseRemoval(workspaceId, sessionId, now());
+      await revokeAll(
+        (await store.listPendingWorkspaceLeases(workspaceId)).filter(
+          (r) => r.managedAuthority?.sessionId === sessionId,
+        ),
+      );
     },
   };
 }

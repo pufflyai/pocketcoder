@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Hex, type WorkloadAcceptance } from "@pstdio/pocketcoder-contracts";
-import { managedPolicy, serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
+import { serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
 
 const capacity = async () => ({
@@ -57,7 +57,6 @@ test("a producer forgetting an observed running request leaves an uncertain outc
   });
   try {
     const keyId = randomUUID(),
-      scopeId = randomUUID(),
       profileId = randomUUID(),
       sessionId = randomUUID();
     await f.store.insertMachineKey({
@@ -71,17 +70,20 @@ test("a producer forgetting an observed running request leaves an uncertain outc
       lastUsedAt: null,
     });
     await f.store.publishTemplate(keyId, f.runtime.template.manifest);
-    await f.store.managed.authority.registerScope(keyId, scopeId, f.principal.id, true);
-    await f.store.managed.authority.provisionProfile(keyId, f.principal.id, {
-      profileId,
-      revision: 1,
-      isolationScopeId: randomUUID(),
-      budgetScopeIds: [scopeId],
-      templateDigest: f.runtime.template.digest,
-      credentialBindingId: null,
-    });
-    await f.store.managed.budgets.writePolicy(keyId, managedPolicy(scopeId), null);
-    await f.store.managed.sessions.create(keyId, { sessionId, profileId, profileRevision: 1 });
+    await f.store.managed.profiles.reconcile(
+      f.principal.id,
+      {
+        [profileId]: {
+          template: f.runtime.template.name,
+          templateVersion: f.runtime.template.version,
+          placement: "shared",
+          limits: { workspacesPerOwner: 1, sessionsPerWorkspace: 20 },
+          dispatchDeadlineSeconds: 600,
+        },
+      },
+      {},
+    );
+    await f.store.managed.sessions.create(keyId, { sessionId, profile: profileId, owner: "test-owner" });
     await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId }, 0, {
       workspaceId: f.id,
       incarnationId: f.runtime.incarnationId,
@@ -91,7 +93,6 @@ test("a producer forgetting an observed running request leaves an uncertain outc
       requestId: randomUUID(),
       message: "run",
       attachments: [],
-      dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
     };
     await f.store.managed.requests.accept(keyId, sessionId, body, { count: 2, bytes: 1048576 });
     await f.dispatcher.tick();
@@ -203,7 +204,6 @@ test.each([1, 5, 20])(
     );
     try {
       const keyId = randomUUID(),
-        scopeId = randomUUID(),
         profileId = randomUUID();
       await f.store.insertMachineKey({
         id: keyId,
@@ -216,26 +216,26 @@ test.each([1, 5, 20])(
         lastUsedAt: null,
       });
       await f.store.publishTemplate(keyId, f.runtime.template.manifest);
-      await f.store.managed.authority.registerScope(keyId, scopeId, f.principal.id, true);
-      await f.store.managed.authority.provisionProfile(keyId, f.principal.id, {
-        profileId,
-        revision: 1,
-        isolationScopeId: randomUUID(),
-        budgetScopeIds: [scopeId],
-        templateDigest: f.runtime.template.digest,
-        credentialBindingId: null,
-      });
-      const policy = managedPolicy(scopeId);
-      policy.limits.maxActiveWorkspaces = 1;
-      policy.limits.maxChatProcessesPerWorkspace = 20;
-      await f.store.managed.budgets.writePolicy(keyId, policy, null);
+      await f.store.managed.profiles.reconcile(
+        f.principal.id,
+        {
+          [profileId]: {
+            template: f.runtime.template.name,
+            templateVersion: f.runtime.template.version,
+            placement: "shared",
+            limits: { workspacesPerOwner: 1, sessionsPerWorkspace: 20 },
+            dispatchDeadlineSeconds: 600,
+          },
+        },
+        {},
+      );
       const sessions: string[] = [];
       const requestId = randomUUID();
       const deadline = new Date(Date.now() + 60000).toISOString();
       for (let i = 0; i < count; i++) {
         const sessionId = randomUUID();
         sessions.push(sessionId);
-        await f.store.managed.sessions.create(keyId, { sessionId, profileId, profileRevision: 1 });
+        await f.store.managed.sessions.create(keyId, { sessionId, profile: profileId, owner: "test-owner" });
         await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId }, 0, {
           workspaceId: f.id,
           incarnationId: f.runtime.incarnationId,
@@ -244,7 +244,7 @@ test.each([1, 5, 20])(
         await f.store.managed.requests.accept(
           keyId,
           sessionId,
-          { requestId, message: "original", attachments: [], dispatchDeadline: deadline },
+          { requestId, message: "original", attachments: [] },
           { count: 2, bytes: 1048576 },
         );
       }
@@ -266,7 +266,7 @@ test.each([1, 5, 20])(
       await f.store.managed.requests.accept(
         keyId,
         sessionId,
-        { requestId: randomUUID(), message: "changed by later turn", attachments: [], dispatchDeadline: deadline },
+        { requestId: randomUUID(), message: "changed by later turn", attachments: [] },
         { count: 2, bytes: 1048576 },
       );
       await f.dispatcher.tick();
@@ -276,7 +276,6 @@ test.each([1, 5, 20])(
       expect(Buffer.from(await f.store.managed.files.content(keyId, sessionId, object.exportId)).toString()).toBe(
         "original",
       );
-      expect((await f.store.managed.budgets.usage(keyId, scopeId)).activeWorkspaces).toBe(1);
       expect(f.dispatchFailed).toBe(false);
     } finally {
       await f.dispose();

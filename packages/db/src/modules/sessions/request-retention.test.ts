@@ -16,7 +16,6 @@ test("logical results survive physical purge and history deletion retains only a
       requestId: randomUUID(),
       message: "private prompt",
       attachments: [],
-      dispatchDeadline: new Date(Date.now() + 60000).toISOString(),
     };
     await f.store.managed.requests.accept(f.keyId, f.sessionId, input, { count: 2, bytes: 1048576 });
     await f.store.managed.requests.prepare(new Date());

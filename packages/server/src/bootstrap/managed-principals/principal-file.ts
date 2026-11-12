@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { PrincipalGrantsSchema } from "@pstdio/pocketcoder-contracts";
+import { managed, PrincipalGrantsSchema } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
 
 const kubernetesName = z
@@ -43,7 +43,13 @@ const ManagedPrincipalSchema = PrincipalGrantsSchema.extend({
   }),
   admission_template: z.string().min(1).max(128).optional(),
   key: ManagedKeySchema.optional(),
-});
+  issuers: z.record(managed.ProfileNameSchema, managed.SessionIssuerSchema).default({}),
+  profiles: z.record(managed.ProfileNameSchema, managed.ProfileConfigSchema).default({}),
+}).refine(
+  (principal) =>
+    Object.values(principal.profiles).every((profile) => !profile.issuer || principal.issuers[profile.issuer]),
+  { message: "Profile issuer must be declared on the same principal" },
+);
 
 export const PrincipalFileSchema = z
   .strictObject({

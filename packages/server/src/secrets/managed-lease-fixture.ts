@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  type managed,
+  managed,
   PARALLEL_CONVERSATION_CAPABILITIES,
   parseTemplateManifest,
   runtimeTemplateDefinition,
@@ -55,7 +55,7 @@ export async function credentialedProfile(
     authorityExpiresAt = new Date(Date.now() + 30_000),
     workload = false,
   }: {
-    credentialPlacement?: managed.ExecutionProfile["credentialPlacement"];
+    credentialPlacement?: "exclusive" | "shared";
     authorityExpiresAt?: Date;
     workload?: boolean;
   } = {},
@@ -95,64 +95,29 @@ export async function credentialedProfile(
       },
     })
     .where(eq(f.context.tables.workspaces.id, f.workspace.id));
-  const config = await f.vault.resolve("runtime", "runtime-issuer");
-  const scopeId = randomUUID();
-  const bindingId = randomUUID();
-  await f.store.managed.authority.registerScope(f.key.id, scopeId, f.principal.id, true);
-  await f.store.managed.authority.registerCredential(f.key.id, {
-    bindingId,
-    principalId: f.principal.id,
-    secretName: "runtime",
-    secretVersionId: config.id,
-    slots: ["runtime", "extra"],
-    authorityExpiresAt,
-  });
-  await f.store.managed.budgets.writePolicy(
-    f.key.id,
-    {
-      scopeId,
-      revision: 1,
-      period: "utc_day",
-      limits: {
-        workspaceStarts: 10,
-        maxActiveWorkspaces: 5,
-        maxRunningRequestsPerSession: 1,
-        maxChatProcessesPerWorkspace: 5,
-      },
-    },
-    null,
-  );
-  // Each call provisions a new profile on the same template, binding and scope.
+  const tokenFile = `${f.issuer.directory}/managed-issuer.token`;
+  await Bun.write(tokenFile, f.issuer.authorization.slice(7));
+  const config = { url: f.issuer.url, tokenFile, policy: f.issuer.policy, revoke: false };
+  const configured: Record<string, managed.ProfileConfig> = {};
   async function profile(placement = credentialPlacement) {
     const profileId = randomUUID();
-    await f.store.managed.authority.provisionProfile(f.key.id, f.principal.id, {
-      profileId,
-      revision: 1,
-      isolationScopeId: randomUUID(),
-      budgetScopeIds: [scopeId],
-      templateDigest: template.digest,
-      credentialBindingId: bindingId,
-      ...(placement ? { credentialPlacement: placement } : {}),
+    configured[profileId] = managed.ProfileConfigSchema.parse({
+      template: template.row.name,
+      templateVersion: template.row.version,
+      issuer: "runtime",
+      placement: placement ?? "exclusive",
+      limits: { workspacesPerOwner: 5, sessionsPerWorkspace: 5 },
     });
+    await f.store.managed.profiles.reconcile(f.principal.id, configured, { runtime: config });
     return {
       profileId,
       async session() {
         const sessionId = randomUUID();
-        await f.store.managed.sessions.create(f.key.id, { sessionId, profileId, profileRevision: 1 });
+        await f.store.managed.sessions.create(f.key.id, { sessionId, profile: profileId, owner: "test-owner" });
         return { principalId: f.principal.id, sessionId };
       },
     };
   }
   const first = await profile();
-  return {
-    template,
-    config,
-    scopeId,
-    bindingId,
-    incarnationId,
-    authorityExpiresAt,
-    profileId: first.profileId,
-    session: first.session,
-    profile,
-  };
+  return { template, config, incarnationId, profileId: first.profileId, session: first.session, profile };
 }

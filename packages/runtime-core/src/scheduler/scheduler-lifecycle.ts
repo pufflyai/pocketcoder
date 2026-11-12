@@ -64,22 +64,20 @@ export class SchedulerLifecycle {
       row.templateSnapshot.spec.persistence.checkpoint.onFailure === "retain-for-recovery";
     try {
       await store.managed.capacity.cleanupPending(row.id, row.launchAttempts, at);
-      await this.context.deps.revokeWorkspaceLeases?.(row.id);
       if (row.providerRef) {
         await stopWorkspaceProvider(store, driver, row, this.context.graceSeconds(row), at);
         await driver.purgeInput(row.id);
       } else {
         await cleanupUncommittedProvider(store, driver, row, this.context.graceSeconds(row), at);
       }
+      if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
+      await this.context.deps.revokeWorkspaceLeases?.(row.id);
       await store.managed.capacity.cleanup(
         row.id,
         row.launchAttempts,
         row.launchAttempts ? "provider_fenced" : "never_launched",
         at,
       );
-      // Stop proof precedes extraction; output storage stays allocated until the
-      // collection receipt and immutable bytes are committed together.
-      if (row.runtimeRegistration) await store.endWorkspaceRuntime(row.id, row.runtimeRegistration.incarnationId, at);
       await store.managed.requests.completeCleanup(row.id);
       await this.context.deps.finalizeOutputs?.(row);
       if (retainStorage && !this.context.deps.transferRuntime) {

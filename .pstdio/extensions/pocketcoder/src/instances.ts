@@ -6,6 +6,7 @@ import { PocketCoderClient } from "@pstdio/pocketcoder-sdk";
 import { resolveExecutable } from "./executable";
 import { inputEnvironment, validatedWorkloadLimits } from "./instance-inputs";
 import { freePort, runCli } from "./local-cli";
+import { managedConfiguration } from "./managed-configuration";
 import { createOwnerKeys, type OwnerKey } from "./owner-keys";
 
 export interface Instance {
@@ -30,12 +31,6 @@ export class PocketCoderHttpError extends Error {
   }
 }
 
-// Managed sessions need explicit queue limits and stop deadlines; these are local test values.
-const MANAGED_SESSION_ENV = {
-  POCKETCODER_SESSION_QUEUE: JSON.stringify({ count: 8, bytes: 8 * 1024 * 1024 }),
-  POCKETCODER_SESSION_STOP_SECONDS: "60",
-};
-
 // The owner's SDK client, used for managed sessions that the controller places on machines itself.
 const ownerClient = (baseUrl: string, apiKey: string) => new PocketCoderClient({ baseUrl, apiKey });
 
@@ -43,18 +38,7 @@ export const instancesFor = (projectId: string) =>
   createInstances(join(homedir(), ".local", "share", "pocketcoder-pstdio", projectId));
 
 export function createInstances(root: string) {
-  const directory = (id: string) => {
-    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
-    return join(root, id);
-  };
-  const read = async <T>(id: string, file: string) =>
-    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
-  const write = async (id: string, file: string, value: unknown) => {
-    const path = join(directory(id), file);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
-    await rename(temporary, path);
-  };
+  const { directory, read, write } = instanceFiles(root);
   const environment = (instance: Instance) => ({
     POCKETCODER_DIR: join(directory(instance.id), "data"),
     POCKETCODER_STATE_DIR: join(directory(instance.id), "state"),
@@ -64,7 +48,7 @@ export function createInstances(root: string) {
     POCKETCODER_STORAGE_BACKEND: "filesystem",
     POCKETCODER_WORKSPACE_DATA_DIR: join(directory(instance.id), "workspaces"),
     POCKETCODER_CHECKPOINT_DIR: join(directory(instance.id), "checkpoints"),
-    ...MANAGED_SESSION_ENV,
+    POCKETCODER_PRINCIPALS_FILE: join(directory(instance.id), "principals.json"),
     ...(instance.workloadLimits ? inputEnvironment(directory(instance.id), instance.workloadLimits) : {}),
   });
   const cli = async (instance: Instance, args: string[], extra: Record<string, string> = {}) => {
@@ -72,6 +56,12 @@ export function createInstances(root: string) {
     if (result.exitCode !== 0) throw new Error(result.stderr.trim() || `PocketCoder ${args[0]} failed.`);
     return result.stdout;
   };
+  const managed = managedConfiguration(
+    directory,
+    write,
+    async (id, args) => cli(await read<Instance>(id, "instance.json"), args),
+    async (id) => (await read<Instance>(id, "instance.json")).url,
+  );
   const get = async (id: string) => {
     const instance = await read<Instance>(id, "instance.json");
     try {
@@ -145,6 +135,8 @@ export function createInstances(root: string) {
     return response.json() as Promise<T>;
   };
   return {
+    managedClient: managed.client,
+    configureManagedProfile: managed.configure,
     client: async (id: string) =>
       ownerClient((await read<Instance>(id, "instance.json")).url, await ownerKeys.token(id)),
     async bindSession(sessionId: string, instanceId: string, machineId: string, conversationId?: string) {
@@ -269,4 +261,20 @@ export function createInstances(root: string) {
       return get(id);
     },
   };
+}
+
+function instanceFiles(root: string) {
+  const directory = (id: string) => {
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid PocketCoder instance ID.");
+    return join(root, id);
+  };
+  const read = async <T>(id: string, file: string) =>
+    JSON.parse(await readFile(join(directory(id), file), "utf8")) as T;
+  const write = async (id: string, file: string, value: unknown) => {
+    const path = join(directory(id), file);
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(value), { mode: 0o600 });
+    await rename(temporary, path);
+  };
+  return { directory, read, write };
 }

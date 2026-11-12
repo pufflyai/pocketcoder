@@ -28,7 +28,7 @@ export function serviceExecutionTemplate(source: WorkloadTemplate, port = 12345)
   };
 }
 
-export function executionConversationIdentity(requestId: string, conversationId = randomUUID()) {
+export function executionConversationIdentity(requestId: string, conversationId: string = randomUUID()) {
   return {
     schema: "pocketcoder.conversation/v2" as const,
     authority: "external" as const,

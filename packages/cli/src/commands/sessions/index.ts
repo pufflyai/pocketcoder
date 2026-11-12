@@ -5,14 +5,18 @@ import type { Argv } from "yargs";
 import { controlPlaneClient, fail, need } from "../../command/cli-context";
 import { addAction, addResource } from "../command";
 import { mediaTypeOf } from "../workspaces/attachments";
-import { cancelIdOf, sessionOption } from "./options";
+import { sessionOption } from "./options";
+import { addSessionReads } from "./reads";
 import { addRequestCommands } from "./requests";
 
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 
 export function addSessionCommands(parser: Argv) {
   return addResource(parser, "sessions", "Manage logical agent sessions", (commands) =>
-    [addSessionActions, addFileActions, addRequestCommands].reduce((configured, add) => add(configured), commands),
+    [addSessionActions, addSessionReads, addFileActions, addRequestCommands].reduce(
+      (configured, add) => add(configured),
+      commands,
+    ),
   );
 }
 
@@ -20,19 +24,21 @@ function addSessionActions(parser: Argv) {
   let commands = addAction(
     parser,
     "create",
-    "Create a session for an execution profile revision (replays after a lost reply)",
+    "Create a session for a configured profile (replays after a lost reply)",
     (command) =>
       command
         .option("session", { type: "string", description: "Session ID (generated when omitted)" })
-        .option("profile", { type: "string", demandOption: true, description: "Execution profile ID" })
-        .option("revision", { type: "number", demandOption: true, description: "Execution profile revision" }),
+        .option("profile", { type: "string", demandOption: true, description: "Session profile name" })
+        .option("owner", { type: "string", demandOption: true, description: "Owner ID for capacity limits" })
+        .option("group", { type: "string", description: "Sharing group (defaults to owner)" }),
     async (flags) => {
       const sessionId = typeof flags.session === "string" ? flags.session : randomUUID();
       print(
         await controlPlaneClient().sessions.create({
           sessionId,
-          profileId: need(flags, "profile"),
-          profileRevision: Number(flags.revision),
+          profile: need(flags, "profile"),
+          owner: need(flags, "owner"),
+          ...(typeof flags.group === "string" ? { group: flags.group } : {}),
         }),
       );
     },
@@ -53,10 +59,9 @@ function addSessionActions(parser: Argv) {
     commands,
     "close",
     "Close a session: reject new requests and stop its work",
-    (command) =>
-      sessionOption(command).option("cancel-id", { type: "string", description: "Stop command ID to retry" }),
+    sessionOption,
     async (flags) => {
-      print(await controlPlaneClient().sessions.close(need(flags, "session"), { cancelId: cancelIdOf(flags) }));
+      print(await controlPlaneClient().sessions.close(need(flags, "session")));
     },
   );
   commands = addAction(

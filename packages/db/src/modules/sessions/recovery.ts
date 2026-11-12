@@ -6,6 +6,7 @@ import type {
 } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, gt, ne, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
+import { authorityContext } from "../managed/authority-context";
 import { sessionWriter } from "./observations";
 import { ownedWorkspaces } from "./session-workspaces";
 import { workAuthority } from "./work-authority";
@@ -42,7 +43,7 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
             sql`${sessions.close} IS NOT NULL AND ${sessions.close}->>'completedAt' IS NULL`,
           ),
         );
-      const profiles = await db.select().from(tables.managedProfiles);
+
       const requests = tables.conversationRequests;
       const open = await db
         .select({ principalId: requests.principalId, sessionId: requests.conversationId })
@@ -55,9 +56,8 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
           closing: row.close !== null,
           ownedWorkspaceIds: row.close ? await ownedWorkspaces(context, db, id, row.binding) : [],
           openRequests: open.filter((r) => r.principalId === row.principalId && r.sessionId === row.sessionId).length,
-          templateDigest:
-            profiles.find((p) => p.profileId === row.session.profileId && p.revision === row.session.profileRevision)
-              ?.profile.templateDigest ?? "",
+          templateDigest: (await authorityContext(context).profile(db, id.principalId, row.session.profile)).profile
+            .templateDigest,
           id,
           session: row.session,
           binding: row.binding,

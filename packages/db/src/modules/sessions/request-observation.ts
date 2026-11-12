@@ -16,7 +16,7 @@ export function requestObservation(current: managed.Request, record: ExecutionRe
     record.outcome && typeof record.outcome === "object" && !Array.isArray(record.outcome) ? record.outcome : {};
   let state: managed.Request["state"] = "waiting";
   let outcome: managed.Request["outcome"] = null;
-  let reasonCode: string | null = null;
+  let reasonCode: string | null = current.reasonCode === "context_trimmed" ? "context_trimmed" : null;
   if (record.phase === "unknown" || record.phase === "dispatching") state = "checking_outcome";
   if (record.phase === "running") state = "running";
   if (["terminal", "canceled", "lost"].includes(record.phase)) {

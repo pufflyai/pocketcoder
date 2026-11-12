@@ -58,30 +58,31 @@ Applications that use PocketCoder as their agent runtime work with logical sessi
 and never name a workspace. PocketCoder places, replaces and stops compute itself.
 
 ```ts
-const session = await client.sessions.create({ sessionId, profileId, profileRevision: 1 });
-const file = await client.files.put(session.sessionId, { inputId, name: "notes.txt", mediaType: "text/plain", bytes });
-// Store this body before sending it. After a lost reply, send the identical body again.
-const body = { requestId, message: "Summarize the notes", attachments: [file.reference], dispatchDeadline };
+const session = await client.sessions.create({ sessionId, profile: "chat", owner: "user-42" });
+const file = await client.sessions.upload(session.sessionId, { inputId, name: "notes.txt", mediaType: "text/plain", bytes });
+// Keep this body for a retry after a lost reply.
+const body = { requestId, message: "Summarize the notes", attachments: [file.reference.inputId] };
 await client.requests.submit(session.sessionId, body);
-
-const { records, eventCursor } = await client.sessions.snapshot(session.sessionId);
-for await (const event of client.sessions.events(session.sessionId, { after: eventCursor, signal })) {
-  // Delivered at least once: skip resource revisions you already applied, keep event.cursor.
-}
+const feed = await client.sessions.conversation(session.sessionId);
+const changes = await client.sessions.conversation(session.sessionId, { after: feed.cursor });
+// Replace the local view when changes.reset is true; otherwise apply the changed items.
 ```
 
 | Resource | Methods |
 | --- | --- |
-| `client.sessions` | `create`, `get`, `resume`, `close`, `history`, `snapshot`, `events`, `openPreview` |
+| `client.profiles` | `get` |
+| `client.sessions` | `create`, `get`, `list`, `resume`, `cancel`, `close`, `upload`, `conversation`, `history`, `snapshot`, `events`, `openPreview` |
 | `client.requests` | `submit`, `get`, `cancel`, `collection` |
-| `client.files` | `put`, `register`, `upload`, `get`, `exports`, `content` |
-| `client.authority` | `grantScope`, `putPolicy`, `getPolicy`, `usage`, `putProfile`, `putCredentialBinding` |
+| `client.files` | `put`, `get`, `exports`, `content` |
 
-`events` resumes after the last delivered cursor (also sent as `Last-Event-ID`) when a
-stream ends. It throws `events.cursor_expired` when the cursor is no longer retained:
-read a new snapshot and follow its `eventCursor`. `cancel` and `close` return a receipt
-that stays `pending` until the stop has evidence; retry with the same `cancelId`.
-Budgets cover physical capacity only; model usage belongs to the model gateway. See the
+Profiles and issuer policy are configured by the operator in the principal file.
+Applications only need session read/write grants. Owner limits span groups and
+releases; the controller places and drains compute.
+
+`conversation` returns tagged message and request changes. Its cursor resets after
+controller restart. `events` and `history` remain available for retained exports.
+Cancel and close take no body and return a receipt that stays `pending` until the
+stop has evidence. Retry the same call. See the
 [reference consumer](../../examples/clients/managed-runtime/README.md).
 
 ## Resolve one user turn after preservation

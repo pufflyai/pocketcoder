@@ -1,43 +1,13 @@
 import { ApiError, managed } from "@pstdio/pocketcoder-contracts";
-import type { ManagedCapacityRecord } from "@pstdio/pocketcoder-runtime-contracts";
+import type { ManagedCapacityIdentity, ManagedCapacityRecord } from "@pstdio/pocketcoder-runtime-contracts";
 import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { authorityContext, unavailable } from "../managed/authority-context";
 import { sessionWriter } from "../sessions/observations";
-import { assertRoom, capacityUsage } from "./capacity-ledger";
-import { policyOwner } from "./policy-owner";
-import { lockScopes } from "./scope-locks";
 
-function knownParticipant(
-  record: ManagedCapacityRecord | undefined,
-  id: import("@pstdio/pocketcoder-runtime-contracts").ManagedCapacityIdentity,
-  placementKey: string,
-) {
-  if (!record) return false;
-  if (record.placementKey !== placementKey || record.state === "released")
-    throw new ApiError("operation.conflict", "Placement authority changed.");
-  const participant = record.sessions.find((session) => session.sessionId === id.sessionId);
-  if (!participant) return false;
-  if (participant.generation !== id.generation || participant.stoppedAt)
-    throw new ApiError("revision.stale", "Process generation changed.");
-  return true;
-}
-
-export async function placeManagedCapacity(
-  context: DatabaseContext,
-  tx: Transaction,
-  id: import("@pstdio/pocketcoder-runtime-contracts").ManagedCapacityIdentity,
-) {
-  const { tables } = context;
-  const table = tables.managedCapacity;
-  const auth = authorityContext(context);
-  const policies = policyOwner(context);
-  const write = async (tx: Transaction, workspaceId: string, record: ManagedCapacityRecord) => {
-    await tx
-      .insert(table)
-      .values({ workspaceId, record })
-      .onConflictDoUpdate({ target: table.workspaceId, set: { record } });
-  };
+export async function placeManagedCapacity(context: DatabaseContext, tx: Transaction, id: ManagedCapacityIdentity) {
+  const { tables } = context,
+    table = tables.managedCapacity;
   const [principal] = await tx
     .select()
     .from(tables.principals)
@@ -45,62 +15,72 @@ export async function placeManagedCapacity(
     .for("update");
   if (!principal || principal.disabledAt) throw unavailable();
   const session = await sessionWriter(context).read(tx, id);
-  if (session.session.state === "closed" || !Number.isSafeInteger(id.generation) || id.generation < 1)
-    throw new ApiError("session.closed", "Invalid placement generation.");
-  const profile = await auth.profile(tx, id.principalId, session.session.profileId, session.session.profileRevision);
-  await auth.validateScopes(tx, id.principalId, profile.profile);
-  const at = await lockScopes(context, tx, profile.profile.budgetScopeIds, new Date());
-  const [workspace] = await tx
-    .select()
-    .from(tables.workspaces)
-    .where(eq(tables.workspaces.id, id.workspaceId))
-    .for("update");
-  if (
-    !workspace ||
-    workspace.principalId !== id.principalId ||
-    workspace.templateDigest !== profile.profile.templateDigest ||
-    workspace.terminalAt ||
-    workspace.purgeRequestedAt ||
-    workspace.state === "terminating"
-  )
-    throw unavailable();
+  if (session.close || id.generation < 1) throw new ApiError("session.closed", "Invalid placement generation.");
+  const { profile } = await authorityContext(context).profile(tx, id.principalId, session.session.profile);
+  const placement = managed.managedPlacement(id.principalId, session.session, profile);
   const rows = await tx.select().from(table);
-  const known = rows.find((row) => row.workspaceId === id.workspaceId);
-  const placement = managed.managedPlacement(id.principalId, id.sessionId, profile.profile);
-  if (knownParticipant(known?.record, id, placement.key)) return;
+  const known = rows.find((r) => r.workspaceId === id.workspaceId);
+  if (known?.record.drainingAt || known?.record.state === "released") throw unavailable();
+  const participant = known?.record.sessions.find((s) => s.sessionId === id.sessionId && !s.stoppedAt);
+  if (participant) {
+    if (participant.generation !== id.generation) throw new ApiError("revision.stale", "Process generation changed.");
+    return;
+  }
+  if (known && (known.record.placementKey !== placement.key || placement.mode !== "shared")) throw unavailable();
   if (
     rows.some(
-      (row) =>
-        row.workspaceId !== id.workspaceId &&
-        row.record.state !== "released" &&
-        row.record.sessions.some((s) => s.sessionId === id.sessionId && !s.stoppedAt),
+      (r) =>
+        r.record.principalId === id.principalId &&
+        r.workspaceId !== id.workspaceId &&
+        r.record.state !== "released" &&
+        r.record.sessions.some((s) => s.sessionId === id.sessionId && !s.stoppedAt),
     )
   )
     throw new ApiError("operation.conflict", "Previous process capacity is still held.");
-  for (const scopeId of profile.profile.budgetScopeIds) {
-    const policy = await policies.latest(tx, scopeId);
-    const usage = await capacityUsage(context, tx, policy, at);
-    if (!known) assertRoom(policy.limits.maxActiveWorkspaces, usage.activeWorkspaces, 1);
-    assertRoom(
-      policy.limits.maxChatProcessesPerWorkspace,
-      known?.record.sessions.filter((s) => !s.stoppedAt).length ?? 0,
-      1,
-    );
-  }
-  if (known && placement.mode !== "shared") throw unavailable();
+  const own = rows.filter(
+    (r) =>
+      r.record.principalId === id.principalId &&
+      r.record.profile === session.session.profile &&
+      r.record.owner === session.session.owner &&
+      r.record.state !== "released",
+  );
+  if (
+    (!known && own.length >= profile.limits.workspacesPerOwner) ||
+    (known && known.record.sessions.filter((s) => !s.stoppedAt).length >= profile.limits.sessionsPerWorkspace)
+  )
+    throw new ApiError("operation.conflict", "Owner capacity is full.");
   const record: ManagedCapacityRecord = known?.record ?? {
     principalId: id.principalId,
-    profileId: profile.profile.profileId,
-    profileRevision: profile.profile.revision,
-    scopeIds: profile.profile.budgetScopeIds,
+    profile: session.session.profile,
+    owner: session.session.owner,
+    group: session.session.group,
+    templateVersion: profile.templateVersion,
+    templateDigest: profile.templateDigest,
     placementKey: placement.key,
     sessions: [],
     state: "reserved",
-    starts: [],
+    launchAttempt: 0,
+    submitted: false,
+    drainingAt: null,
+    lastUsedAt: new Date().toISOString(),
     cleanup: null,
   };
-  await write(tx, id.workspaceId, {
-    ...record,
-    sessions: [...record.sessions, { sessionId: id.sessionId, generation: id.generation, stoppedAt: null }],
-  });
+  await tx
+    .insert(table)
+    .values({
+      workspaceId: id.workspaceId,
+      record: {
+        ...record,
+        sessions: [...record.sessions, { sessionId: id.sessionId, generation: id.generation, stoppedAt: null }],
+      },
+    })
+    .onConflictDoUpdate({
+      target: table.workspaceId,
+      set: {
+        record: {
+          ...record,
+          sessions: [...record.sessions, { sessionId: id.sessionId, generation: id.generation, stoppedAt: null }],
+        },
+      },
+    });
 }

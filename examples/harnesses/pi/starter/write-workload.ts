@@ -36,6 +36,7 @@ const manifest = {
         "unknown-outcome",
         "parallel-conversations",
         "immutable-inputs",
+        "history-seed",
       ],
       command: ["bun", ADAPTER],
       environment: [
