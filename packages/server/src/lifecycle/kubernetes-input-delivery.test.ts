@@ -43,10 +43,12 @@ function kubernetesConfig(root: string) {
 }
 
 async function uploadedProjection(canonicalRoot: string, workspaceId: string): Promise<InputProjectionRef> {
+  const storageOwnerId = randomUUID();
   const bytes = Buffer.from("quarterly report");
   const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
   const reference = {
     workspaceId,
+    storageOwnerId,
     fileId: randomUUID(),
     objectVersion: digest,
     digest,
@@ -55,7 +57,7 @@ async function uploadedProjection(canonicalRoot: string, workspaceId: string): P
     sizeBytes: bytes.length,
     visibility: "ready" as const,
   };
-  const backing = { workspaceId, fileId: reference.fileId, versionId: randomUUID() };
+  const backing = { workspaceId: storageOwnerId, fileId: reference.fileId, versionId: randomUUID() };
   const writer = await new FilesystemInputStorage(canonicalRoot, []).create(backing);
   await writer.write(bytes);
   await writer.publish();
