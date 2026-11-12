@@ -47,6 +47,7 @@ export async function fixture(command: string[], configure?: (exec: ExecSpec, ro
       }),
     );
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

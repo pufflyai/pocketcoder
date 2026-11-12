@@ -10,6 +10,7 @@ import { createInstances } from "./instances";
 
 async function fixture(handle: (request: Request) => Response | Promise<Response>) {
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname;

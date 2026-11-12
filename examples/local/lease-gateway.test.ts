@@ -3,6 +3,7 @@ import { startLeaseGateway } from "./lease-gateway";
 
 test("gateway credentials are bound to one live workspace lease and revocation survives a late mint", async () => {
   const upstream = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (req) => Response.json({ authorization: req.headers.get("authorization") }),
   });

@@ -55,6 +55,7 @@ test.each(["transfer", "setup"])("interrupted restore during %s fails and settle
     },
   });
   const listener = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request, server) {
       const response = await controller.agentApp.fetch(request, server);

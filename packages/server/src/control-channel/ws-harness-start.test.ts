@@ -95,6 +95,7 @@ test("failed native harness spawn cannot complete a restored workspace with no r
     let connection: LiveConnection | undefined;
     const deps = { ...controller, store: f.store, pepper: "harness-start-fixture" };
     server = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       fetch(request, server) {
         if (new URL(request.url).pathname === "/v1/agent/connect") {

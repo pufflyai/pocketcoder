@@ -11,6 +11,7 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
   let accepts = 0;
   let acknowledgments = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });
@@ -68,6 +69,7 @@ test("lost service terminal acknowledgment retries the same acknowledgement afte
 test("a producer refusing an accept settles that request locally and leaves the controller ready", async () => {
   const calls: string[] = [];
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -112,6 +114,7 @@ test("a service can cancel a dispatch that was never accepted using the frozen f
   let accepts = 0;
   let cancels = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -166,6 +169,7 @@ test("a service can cancel a dispatch that was never accepted using the frozen f
 test("an incomplete service descriptor never reaches producer accept", async () => {
   let accepts = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });
@@ -201,6 +205,7 @@ test("an incomplete service descriptor never reaches producer accept", async () 
 
 test("a failing dispatch is reported on each attempt until its execution is lost, without failing readiness", async () => {
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       if (new URL(request.url).pathname === "/status") return Response.json({ status: "stable" });
@@ -233,6 +238,7 @@ test.each(["terminal", "absent"])("input pin loss keeps service %s lookup safe",
   let accepts = 0,
     acknowledgments = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;

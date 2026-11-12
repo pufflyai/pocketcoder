@@ -11,7 +11,11 @@ import { type AppEnv, errorHandler, machineAuth, requestId } from "./middleware"
 
 test("a metadata read cannot expose a revocation appended after its first remote barrier", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc93-journal-response-"));
-  const endpoint = Bun.serve({ port: 0, fetch: () => new Response() });
+  const endpoint = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const unavailable = endpoint.url.toString();
   endpoint.stop(true);
   let offline = false;

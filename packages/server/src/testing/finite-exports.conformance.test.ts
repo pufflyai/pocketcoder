@@ -19,7 +19,11 @@ import { finiteImageFixture } from "./finite-image-fixture";
 import { dockerCommand, serviceProbeImage } from "./service-image-fixture";
 
 function port() {
-  const server = Bun.serve({ port: 0, fetch: () => new Response() });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const value = Number(server.port);
   server.stop(true);
   return value;

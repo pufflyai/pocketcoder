@@ -18,6 +18,7 @@ test("a producer forgetting an observed running request leaves an uncertain outc
   let acceptance: WorkloadAcceptance | undefined;
   let accepts = 0;
   const producer = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -125,6 +126,7 @@ test.each([1, 5, 20])(
     const publicationId = randomUUID();
     const facts = new Map<string, unknown>();
     const producer = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
         const path = new URL(request.url).pathname;

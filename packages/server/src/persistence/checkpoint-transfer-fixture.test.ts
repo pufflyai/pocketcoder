@@ -126,6 +126,7 @@ export async function checkpointHttpFixture(content?: Uint8Array) {
     grantResolve = resolve;
   });
   const server = Bun.serve<{ workspaceId: string; epoch: number }>({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (new URL(request.url).pathname === "/connect") {

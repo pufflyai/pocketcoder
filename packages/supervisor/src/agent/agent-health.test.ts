@@ -4,7 +4,11 @@ import { AgentHealthMonitor } from "./agent-health";
 
 test("service readiness follows HTTP health without a terminal transcript", async () => {
   let healthy = true;
-  const server = Bun.serve({ port: 0, fetch: () => new Response("", { status: healthy ? 200 : 503 }) });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("", { status: healthy ? 200 : 503 }),
+  });
   const frames: { type: string; payload: unknown }[] = [];
   const exec = ExecSpecSchema.parse({
     setup: [],

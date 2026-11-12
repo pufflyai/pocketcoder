@@ -96,7 +96,11 @@ test("an explicitly declared constructor operation runs its command", async () =
 });
 
 test.each([false, true])("declared websites survive operation completion or targeted cancel (%s)", async (cancel) => {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+  const probe = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const port = probe.port;
   probe.stop(true);
   const f = await fixture(

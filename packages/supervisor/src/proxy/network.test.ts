@@ -12,6 +12,7 @@ test("fails before setup when the restricted network boundary is unavailable", a
   const workspaceId = randomUUID();
   const frames: string[] = [];
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

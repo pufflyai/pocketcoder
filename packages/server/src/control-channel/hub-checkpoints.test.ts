@@ -27,6 +27,7 @@ test("archive preparation uses a real control socket and retains the exact conne
     connected = resolve;
   });
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;
@@ -94,6 +95,7 @@ test("replacement and deadline cannot resolve archive declaration for another co
   const hub = new Hub();
   let epoch = 0;
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

@@ -20,6 +20,7 @@ test.each(["provider_installed", "controller_archive"])("explicit %s restore mod
   const copyInstalledFile = (marker: string) =>
     `await Bun.write(${JSON.stringify(marker)}, await Bun.file(${JSON.stringify(installedFile)}).arrayBuffer());`;
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

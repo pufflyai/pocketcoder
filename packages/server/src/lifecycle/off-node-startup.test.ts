@@ -43,7 +43,11 @@ async function privateConfig(root: string, storage: ObjectStorageConfig) {
 
 test("required authority outage leaves fresh keys and listeners absent", async () => {
   const root = await mkdtemp(join(tmpdir(), "pc94-startup-outage-"));
-  const closed = Bun.serve({ port: 0, fetch: () => new Response() });
+  const closed = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response(),
+  });
   const endpoint = closed.url.toString();
   closed.stop(true);
   try {

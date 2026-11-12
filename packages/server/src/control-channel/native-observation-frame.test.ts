@@ -59,6 +59,7 @@ test.each([2, 8])("a native observation with %s large tool results crosses the r
   const body = JSON.stringify(ProducerObservationSchema.parse(observation));
   expect(Buffer.byteLength(body)).toBeGreaterThan(786432);
   const upstream = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: () => new Response(body, { headers: { "content-type": "application/json" } }),
   });
@@ -70,7 +71,12 @@ test.each([2, 8])("a native observation with %s large tool results crosses the r
     workspaceServerUrl: "http://127.0.0.1:0",
   });
   await f.store.updateWorkspace(f.id, { reconnectDigest: digestOpaque("frame-test", "reconnect") }, new Date());
-  const server = Bun.serve({ port: 0, fetch: controller.agentApp.fetch, websocket: controller.websocket });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: controller.agentApp.fetch,
+    websocket: controller.websocket,
+  });
   const row = await f.store.getWorkspace(f.id);
   if (!row) throw new Error("Workspace missing");
   const exec = execSpecOf(row, null, "provider_installed");

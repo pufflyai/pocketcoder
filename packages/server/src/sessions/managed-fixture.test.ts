@@ -13,6 +13,7 @@ export function fakeProducer() {
   const journal: { action: string; message?: string; requestId: string }[] = [];
   const messages = new Map<string, string>();
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;

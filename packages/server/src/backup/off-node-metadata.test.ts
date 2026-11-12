@@ -19,6 +19,7 @@ async function fixture() {
   let blockCleanup = false;
   let uploads = 0;
   const proxy = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const path = new URL(request.url);

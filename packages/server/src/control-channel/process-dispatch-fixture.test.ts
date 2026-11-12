@@ -86,6 +86,7 @@ export async function processDispatchFixture(
   let runtimeReady = false;
   let epoch = 1;
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request, server) {
       if (server.upgrade(request)) return;

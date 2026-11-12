@@ -23,7 +23,11 @@ test.skipIf(process.env.RUN_S3_INTEGRATION !== "1")(
       expect(store.journalStatus().lastAcknowledgedAt).toBeInstanceOf(Date);
       expect(store.journalStatus().pendingSince).toBeNull();
       await store.close();
-      const probe = Bun.serve({ port: 0, fetch: () => new Response() });
+      const probe = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: () => new Response(),
+      });
       const endpoint = probe.url.toString();
       probe.stop(true);
       const offline = createJournalReplica({ ...fixture.config, endpoint }, account, key);
