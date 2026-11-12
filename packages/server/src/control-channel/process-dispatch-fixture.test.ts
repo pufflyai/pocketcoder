@@ -176,10 +176,17 @@ export async function processDispatchFixture(
     [process.execPath, join(serviceDirectory, "index.js"), "supervise", "--launch-input", input],
     { stdout: "pipe", stderr: "pipe" },
   );
+  // Drain child output so a full pipe cannot block readiness, and retain failure diagnostics.
+  const stderr = new Response(child.stderr).text();
+  const stdout = new Response(child.stdout).text();
   const waitFor = async (predicate: () => Promise<boolean>) => {
     const deadline = Date.now() + 4000;
     while (!(await predicate())) {
-      if (Date.now() > deadline) throw new Error("Process dispatch did not settle");
+      if (Date.now() > deadline) {
+        child.kill("SIGKILL");
+        await child.exited;
+        throw new Error(`Process dispatch did not settle: ${await stderr} ${await stdout}`);
+      }
       await Bun.sleep(10);
     }
     await pipeline;
