@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   ApiError,
+  managed,
   type ProviderInput,
   parseWorkloadTemplate,
   templateCredentialReferences,
@@ -247,7 +248,13 @@ export class SchedulerAdmission {
     const spec = row.templateSnapshot.spec;
     if (spec.setup.some((step) => Object.values(step.env).some((value) => value.startsWith("secretRef:"))))
       throw new Error("secret.unavailable: setup environment credentials are not supported");
-    if (templateCredentialReferences(row.templateSnapshot).length && !this.context.deps.revokeWorkspaceLeases)
+    // Managed sessions get credentials from their profile issuer. Any other workspace needs the controller vault.
+    const managedSession = Boolean(row.metadata?.[managed.MANAGED_SESSION_METADATA]);
+    if (
+      templateCredentialReferences(row.templateSnapshot).length &&
+      !managedSession &&
+      !this.context.deps.workspaceIssuer
+    )
       throw new Error("secret.unavailable: no runtime issuer configured");
     return [];
   }

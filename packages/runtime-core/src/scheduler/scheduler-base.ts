@@ -79,6 +79,8 @@ export interface SchedulerDeps {
   driver: WorkspaceDriver;
   storageDriver?: WorkspaceStorageDriver;
   revokeWorkspaceLeases?: (workspaceId: string) => Promise<void>;
+  // True when the controller vault can mint credentials for workspaces outside managed sessions.
+  workspaceIssuer?: boolean;
   transferRuntime?: WorkspaceTransferRuntime;
   secretResolver?: WorkspaceSecretResolver;
   connections: ConnectionHub;

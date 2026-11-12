@@ -29,7 +29,7 @@ export function composeWorkspaceRuntime(deps: BuildDeps, hub: Hub) {
   );
   const { checkpointTransfers } = checkpointRuntime;
   const transferRuntime = checkpointRuntime.transferRuntime ?? sourceRuntime(deps);
-  return { workspaceLeases, checkpointTransfers, transferRuntime };
+  return { workspaceLeases, workspaceIssuer: Boolean(vault), checkpointTransfers, transferRuntime };
 }
 
 function sourceRuntime(deps: BuildDeps) {
