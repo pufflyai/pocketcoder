@@ -4,12 +4,12 @@ import { parseDurationMs } from "../common/duration";
 import { templateServices } from "./template-runtime";
 import {
   type RuntimeTemplatePolicy,
+  RuntimeTemplatePolicySchema,
   ServiceSchema,
   type TemplateManifest,
   TemplateManifestBaseSchema,
   type TemplateService,
   type TemplateServiceRoute,
-  TemplateSpecSchema,
   type TimeoutsSchema,
 } from "./template-schema";
 import { validateTemplateSpec } from "./template-validation";
@@ -89,7 +89,7 @@ export function normalizeTemplateSnapshot(snapshot: TemplateSnapshot): TemplateS
   }
   return {
     ...snapshot,
-    spec: TemplateSpecSchema.parse(snapshot.spec),
+    spec: RuntimeTemplatePolicySchema.parse(snapshot.spec),
     ...(snapshot.services ? { services: z.record(z.string(), ServiceSchema).parse(snapshot.services) } : {}),
   };
 }

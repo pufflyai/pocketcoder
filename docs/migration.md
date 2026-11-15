@@ -1,5 +1,14 @@
 # Upgrading from coder-lite
 
+## Retained templates without a native harness
+
+Historical template policies and workspace snapshots remain readable even when
+they predate the native `harness` field. Reading them does not rewrite their
+stored content or digest and does not invent a runtime. New alpha template
+publication still requires a native harness; reading an old record does not
+authorize its execution. Qualify controller upgrades with retained templates
+and workspace snapshots as well as an empty database.
+
 This is the complete public rename delta from coder-lite to PocketCoder. The
 table is frozen through PocketCoder 0.9: no additional coder-lite names will be
 renamed or removed before that release.

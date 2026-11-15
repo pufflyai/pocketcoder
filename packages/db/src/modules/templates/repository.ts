@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import {
   ApiError,
   normalizeTemplateSnapshot,
+  RuntimeTemplatePolicySchema,
   runtimeTemplateDefinition,
   type TemplateManifest,
-  TemplateSpecSchema,
   templateCredentialReferences,
   type WorkloadTemplate,
 } from "@pstdio/pocketcoder-contracts";
@@ -26,7 +26,7 @@ export function createTemplates({ db, journal, tables: { templates, principals, 
           spec: row.spec,
           manifest: row.manifest,
         }).spec
-      : TemplateSpecSchema.parse(row.spec),
+      : RuntimeTemplatePolicySchema.parse(row.spec),
   });
   async function authorize(tx: Transaction, actorKeyId: string, name: string) {
     const { authority } = await lockKeyAuthority(tx, { principals, machineKeys }, actorKeyId);
