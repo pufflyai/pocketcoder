@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseTemplateManifest } from "@pstdio/pocketcoder-contracts";
 import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
 import { eq } from "drizzle-orm";
@@ -29,12 +30,13 @@ test.skipIf(!dockerAvailable)(
           description: null,
           spec: parsed.manifest.spec,
         });
+        const historical = parseTemplateManifest({ ...parsed.manifest, metadata: { name: "historical" } });
         const { row: legacy } = await store.upsertTemplate({
           name: "historical",
           version: parsed.manifest.spec.version,
-          digest: parsed.digest,
+          digest: historical.digest,
           description: null,
-          spec: parsed.manifest.spec,
+          spec: historical.manifest.spec,
         });
         const spec = { ...parsed.manifest.spec };
         Reflect.deleteProperty(spec, "harness");
