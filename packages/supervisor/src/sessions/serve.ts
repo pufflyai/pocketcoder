@@ -44,7 +44,7 @@ export function serveSessions(args: string[]) {
   return server;
 }
 
-async function sessionResponse(producer: SessionProducer, request: Request) {
+export async function sessionResponse(producer: SessionProducer, request: Request) {
   const path = new URL(request.url).pathname;
   if (path === "/healthz" && request.method === "GET") return Response.json({ status: "ready" });
   if (request.method !== "POST") return new Response("Not found", { status: 404 });
@@ -62,6 +62,7 @@ async function sessionResponse(producer: SessionProducer, request: Request) {
             conversationIdentity: z.unknown(),
             inputDirectory: z.string().optional(),
             priorMessages: z.array(PriorMessageSchema).optional(),
+            publicationPolicy: z.unknown().optional(),
           })
           .parse(body),
       ),

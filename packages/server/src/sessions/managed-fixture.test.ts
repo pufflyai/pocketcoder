@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { WorkloadAcceptance, WorkloadCapability } from "@pstdio/pocketcoder-contracts";
 import { serviceExecutionTemplate } from "@pstdio/pocketcoder-db/testing";
 import { processDispatchFixture } from "../control-channel/process-dispatch-fixture.test";
+import { sessionStorageCapacity } from "./storage-fixture.test";
 
 type Execution = WorkloadAcceptance["execution"];
 type Fact = { execution: Execution; fingerprint: string; phase: string; outcome?: unknown };
@@ -78,7 +79,11 @@ const CAPABILITIES: WorkloadCapability[] = [
 ];
 
 // One shared workspace and a credential-free profile.
-export async function managedFixture(port: number | undefined) {
+export async function managedFixture(port: number | undefined, options: { outputRoots?: string[] } = {}) {
+  const capabilities: WorkloadCapability[] = options.outputRoots
+    ? [...CAPABILITIES, "explicit-publication"]
+    : CAPABILITIES;
+  const readCapacity = options.outputRoots ? async () => sessionStorageCapacity() : undefined;
   const configure = (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => {
     serviceExecutionTemplate(source, Number(port));
     const run = source.spec.operations.run;
@@ -86,6 +91,7 @@ export async function managedFixture(port: number | undefined) {
     source.spec.operations = {
       message: {
         ...run,
+        outputRoots: options.outputRoots ?? [],
         inputSchema: {
           type: "object",
           properties: { message: { type: "string" } },
@@ -94,11 +100,15 @@ export async function managedFixture(port: number | undefined) {
         },
       },
     };
+    if (options.outputRoots) {
+      for (const service of Object.values(source.spec.services))
+        for (const route of service.routes) route.maxResponseBytes = 8 * 1024 * 1024;
+    }
   };
-  const f = await processDispatchFixture(configure, undefined, { capabilities: CAPABILITIES });
+  const f = await processDispatchFixture(configure, undefined, { capabilities, readCapacity });
   // Another launched workspace of the same template, sharing the store and connection hub.
   const launch = (workspaceId?: string) =>
-    processDispatchFixture(configure, f, { capabilities: CAPABILITIES, workspaceId });
+    processDispatchFixture(configure, f, { capabilities, readCapacity, workspaceId });
   const keyId = randomUUID();
   const profileId = randomUUID();
   await f.store.insertMachineKey({

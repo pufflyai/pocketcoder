@@ -16,7 +16,10 @@ RUN apt-get update \
 
 WORKDIR /opt/pi
 COPY examples/harnesses/pi/package.json examples/harnesses/pi/bun.lock ./
-RUN bun install --production --frozen-lockfile
+# This isolated install has no monorepo. Retain the standalone lock's public
+# dependencies, excluding workspace-only test dependencies from its manifest.
+RUN bun -e 'const pkg = await Bun.file("package.json").json(); for (const [name, version] of Object.entries(pkg.devDependencies)) if (version.startsWith("workspace:")) delete pkg.devDependencies[name]; await Bun.write("package.json", JSON.stringify(pkg));' \
+  && bun install --production --frozen-lockfile
 
 COPY examples/harnesses/pi/persistent-pi.ts /opt/pi/persistent-pi.ts
 COPY examples/harnesses/pi/workspace/ /opt/pocketcoder-fixtures/

@@ -6,6 +6,7 @@ import {
   executionAckEnvelope,
   executionCancelEnvelope,
   executionLookupEnvelope,
+  executionPublicationPolicy,
   executionSettled,
   ProducerObservationSchema,
 } from "@pstdio/pocketcoder-contracts";
@@ -153,7 +154,15 @@ export function conversationTransport(deps: {
         return;
       }
       const reply = await call(record, workspace, "accept", {
-        ...executionAcceptEnvelope(record.acceptance, record.conversationIdentity, inputDirectory),
+        ...executionAcceptEnvelope(
+          record.acceptance,
+          record.conversationIdentity,
+          inputDirectory,
+          executionPublicationPolicy(
+            workspace.runtimeRegistration?.template?.manifest.spec,
+            record.acceptance.operation,
+          ),
+        ),
         ...(record.priorMessages ? { priorMessages: record.priorMessages } : {}),
       });
       if ((await observe(record, workspace, reply)) === "absent")

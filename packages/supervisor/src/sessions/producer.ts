@@ -9,6 +9,9 @@ import {
   ConversationRequestIdentitySchema,
   canonicalJson,
   digestOf,
+  NATIVE_PUBLICATION_TRANSCRIPT_BYTES,
+  type NativePublicationPolicy,
+  NativePublicationPolicySchema,
   type PriorMessage,
   PriorMessageSchema,
   ProducerObservationSchema,
@@ -18,6 +21,7 @@ import {
   WorkloadExecutionReferenceSchema,
 } from "@pstdio/pocketcoder-contracts";
 import { z } from "zod";
+import { type PublicationSelection, selectPublication } from "./publication";
 
 export interface SessionRun {
   acceptance: WorkloadAcceptance;
@@ -25,6 +29,8 @@ export interface SessionRun {
   inputDirectory?: string;
   priorMessages?: PriorMessage[];
   signal: AbortSignal;
+  publicationPolicy?: NativePublicationPolicy;
+  publishFile?: (selection: PublicationSelection) => ReturnType<typeof selectPublication>;
   emit(key: string, role: ConversationMessageInput["role"], parts: ConversationPart[], fact?: ConversationFact): void;
 }
 export type SessionRunner = (run: SessionRun) => Promise<"canceled" | void>;
@@ -55,6 +61,7 @@ export class SessionProducer {
     conversationIdentity: unknown;
     inputDirectory?: string;
     priorMessages?: PriorMessage[];
+    publicationPolicy?: unknown;
   }) {
     const acceptance = WorkloadAcceptanceSchema.parse(raw.acceptance);
     const identity = ConversationRequestIdentitySchema.parse(raw.conversationIdentity);
@@ -85,12 +92,28 @@ export class SessionProducer {
       snapshot: { execution, fingerprint: acceptance.fingerprint, phase: "accepted", outcome: null, messages: [] },
     };
     const abort = new AbortController();
+    const policy =
+      raw.publicationPolicy === undefined ? undefined : NativePublicationPolicySchema.parse(raw.publicationPolicy);
+    const publication = policy ? { complete: false, objects: [] } : undefined;
+    entry.snapshot.publication = publication;
     const run: SessionRun = {
       acceptance,
       identity,
       inputDirectory: raw.inputDirectory,
       priorMessages: raw.priorMessages ? z.array(PriorMessageSchema).parse(raw.priorMessages) : undefined,
       signal: abort.signal,
+      publicationPolicy: policy,
+      ...(policy && publication
+        ? {
+            publishFile: (selection: PublicationSelection) => {
+              abort.signal.throwIfAborted();
+              if (entry.snapshot.phase !== "running") throw new Error("Publication request is no longer running");
+              const receipt = selectPublication(selection, policy, publication);
+              this.save(entry);
+              return receipt;
+            },
+          }
+        : {}),
       emit: (id, role, parts, fact) => this.emit(entry, id, role, parts, fact),
     };
     this.emit(entry, "user", "user", [
@@ -254,10 +277,11 @@ export class SessionProducer {
     });
     const candidate = [...messages];
     candidate[sequence] = message;
+    const transcriptBytes = entry.snapshot.publication ? NATIVE_PUBLICATION_TRANSCRIPT_BYTES : 4 * 1024 * 1024;
     if (
       key !== "error" &&
       key !== "terminal" &&
-      (candidate.length > 1000 || finalizedBytes(candidate) > 4 * 1024 * 1024 - 32 * 1024)
+      (candidate.length > 1000 || finalizedBytes(candidate) > transcriptBytes - 32 * 1024)
     )
       throw new Error("Session output limit exceeded");
     if (added) entry.keys.push(key);
@@ -283,6 +307,7 @@ export class SessionProducer {
     const response = entry.snapshot.messages?.findLast((message) => message.identity?.fact?.type === "final_response");
     entry.snapshot.phase = status === "canceled" ? "canceled" : "terminal";
     entry.snapshot.outcome = { status, finalResponse: response?.content ?? null };
+    if (entry.snapshot.publication) entry.snapshot.publication.complete = status === "completed";
     this.emit(entry, "terminal", "system", [], { type: "turn_terminal", outcome: status });
   }
 }

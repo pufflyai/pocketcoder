@@ -69,6 +69,8 @@
         "@earendil-works/pi-coding-agent": "0.87.1",
       },
       "devDependencies": {
+        "@pstdio/pocketcoder-contracts": "workspace:*",
+        "@pstdio/pocketcoder-supervisor": "workspace:*",
         "@types/bun": "1.4.4",
         "typescript": "5.9.3",
       },

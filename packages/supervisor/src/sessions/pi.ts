@@ -4,6 +4,7 @@ import { jsonLines } from "./json-lines";
 import { PiEvents } from "./pi-events";
 import { seedPiSession } from "./pi-history";
 import type { SessionRun, SessionRunner } from "./producer";
+import { publicationServer } from "./publication-server";
 import { sessionEnvironment } from "./session-env";
 
 // Pi owns model context in its session file. PocketCoder owns the public messages.
@@ -18,17 +19,18 @@ export function piRunner(command: string[], directory: string): SessionRunner {
       Boolean(value?.startsWith(`/run/pocketcoder/secrets/leases/sessions/${run.identity.conversation_id}/`)),
     );
     let credentialExpired = false;
-    const child = Bun.spawn([...command, "--mode", "rpc", "--session", session], {
-      env: {
+    const publication = publicationServer(run);
+    const child = startPi(
+      [...command, "--mode", "rpc", "--session", session],
+      {
         ...env,
         POCKETCODER_TURN_ID: run.identity.turn_id,
         POCKETCODER_CONVERSATION_ID: run.identity.conversation_id,
+        POCKETCODER_PUBLICATION_URL: publication?.environment.POCKETCODER_PUBLICATION_URL,
+        POCKETCODER_PUBLICATION_TOKEN: publication?.environment.POCKETCODER_PUBLICATION_TOKEN,
       },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "inherit",
-      detached: true,
-    });
+      () => publication?.stop(),
+    );
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     const abort = () => {
       killTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), 5000);
@@ -49,6 +51,9 @@ export function piRunner(command: string[], directory: string): SessionRunner {
     const files = run.acceptance.inputs.objects.map((file) => `${run.inputDirectory}/${file.fileId} (${file.name})`);
     const message =
       String(run.acceptance.input.message) +
+      (publication
+        ? `\n\nTo return a generated file, run: pocketcoder-supervisor session publish-file --file <path> --media-type <type>. This stages an immutable snapshot under this request. Its download becomes ready after the controller retains the result. Use --id <new-uuid> for a deliberate revision of an already published path. Allowed output roots: ${JSON.stringify(run.publicationPolicy?.roots)}. Total publication limit: ${run.publicationPolicy?.bytes} bytes and ${run.publicationPolicy?.files} files.`
+        : "") +
       (files.length ? `\n\nRead these immutable input files:\n${files.join("\n")}` : "");
     try {
       child.stdin.write(`${JSON.stringify({ id: run.identity.request_id, type: "prompt", message })}\n`);
@@ -56,6 +61,7 @@ export function piRunner(command: string[], directory: string): SessionRunner {
       const events = await settle(child.stdout, run);
       if (events.aborted || credentialExpired) return "canceled";
     } finally {
+      await publication?.stop();
       clearInterval(credentials);
       run.signal.removeEventListener("abort", abort);
       clearTimeout(killTimer);
@@ -71,6 +77,15 @@ export function piRunner(command: string[], directory: string): SessionRunner {
       clearTimeout(timer);
     }
   };
+}
+
+function startPi(command: string[], env: NodeJS.ProcessEnv, cleanup: () => Promise<void> | undefined) {
+  try {
+    return Bun.spawn(command, { env, stdin: "pipe", stdout: "pipe", stderr: "inherit", detached: true });
+  } catch (error) {
+    void cleanup();
+    throw error;
+  }
 }
 
 function killGroup(pid: number, signal: "SIGTERM" | "SIGKILL") {
