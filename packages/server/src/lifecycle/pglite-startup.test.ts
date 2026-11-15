@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseStore } from "@pstdio/pocketcoder-db";
 import { fixtureTemplatePersistent } from "@pstdio/pocketcoder-testkit";
+import { eq } from "drizzle-orm";
 import { loadConfig } from "../config/config";
 import { startPocketCoderServer } from "./lifecycle";
 
@@ -12,7 +13,7 @@ const dockerAvailable =
   Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
 
 test.skipIf(!dockerAvailable)(
-  "server starts, migrates and restarts from embedded data",
+  "server starts, migrates and restarts with historical templates without a native harness",
   async () => {
     const dir = await mkdtemp(join(tmpdir(), "pc-server-startup-"));
     const messages: string[] = [];
@@ -28,6 +29,19 @@ test.skipIf(!dockerAvailable)(
           description: null,
           spec: parsed.manifest.spec,
         });
+        const { row: legacy } = await store.upsertTemplate({
+          name: "historical",
+          version: parsed.manifest.spec.version,
+          digest: parsed.digest,
+          description: null,
+          spec: parsed.manifest.spec,
+        });
+        const spec = { ...parsed.manifest.spec };
+        Reflect.deleteProperty(spec, "harness");
+        // Upgrade wiring: seed the old persisted shape without using today's
+        // strict publication boundary, then exercise complete server startup.
+        const { templates } = store.context.tables;
+        await store.context.db.update(templates).set({ spec }).where(eq(templates.id, legacy.id));
       } finally {
         await store.close();
       }

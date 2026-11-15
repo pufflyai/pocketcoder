@@ -56,3 +56,23 @@ test("offline readers distinguish versions and the alpha runtime rejects canonic
   expect(parseVersionedTemplateManifest(workloadFixture()).manifest.apiVersion).toBe("pocketcoder.dev/v1");
   expect(() => parseTemplateManifest(workloadFixture())).toThrow("unsupported template format");
 });
+
+test("historical policies remain readable without relaxing new native template publication", () => {
+  const manifest = {
+    apiVersion: "pocketcoder.dev/v1alpha1",
+    kind: "Template",
+    metadata: { name: "legacy" },
+    spec: { version: "1.0.0", image: workloadFixture().spec.image, resources: { cpu: "1", memory: "1Gi" } },
+  };
+  const old = { name: "legacy", version: "1.0.0", digest: `sha256:${"a".repeat(64)}`, spec: manifest.spec };
+  const original = structuredClone(old);
+  expect(inspectTemplateSnapshot(old, ["pocketcoder.dev/v1alpha1"])).toMatchObject({
+    format: "pocketcoder.dev/v1alpha1",
+    supported: true,
+  });
+  const normalized = normalizeTemplateSnapshot(old as Parameters<typeof normalizeTemplateSnapshot>[0]);
+  expect(normalized.spec.harness).toBeUndefined();
+  expect(normalized.digest).toBe(old.digest);
+  expect(old).toEqual(original);
+  expect(() => parseTemplateManifest(manifest)).toThrow("harness");
+});

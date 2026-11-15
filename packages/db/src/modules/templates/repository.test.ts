@@ -1,5 +1,28 @@
 import { expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { createPGliteFixture } from "../../test-fixtures";
+
+test.each(["active", "available", "retired"] as const)(
+  "reads a %s historical template without inventing a harness or changing stored content",
+  async (status) => {
+    const f = await createPGliteFixture("pc-template-history");
+    try {
+      const spec = { ...f.parsed.manifest.spec, agent: { kind: "agentapi" } };
+      Reflect.deleteProperty(spec, "harness");
+      const { templates } = f.context.tables;
+      await f.context.db.update(templates).set({ spec, status }).where(eq(templates.id, f.template.id));
+
+      expect(await f.store.listTemplates(null)).toMatchObject([{ digest: f.template.digest, status }]);
+      const template = await f.store.getTemplate(f.template.name, f.template.version);
+      expect(template?.spec.harness).toBeUndefined();
+      const [stored] = await f.context.db.select().from(templates).where(eq(templates.id, f.template.id));
+      expect(stored?.spec).toEqual(spec);
+      expect(stored?.digest).toBe(f.template.digest);
+    } finally {
+      await f.dispose();
+    }
+  },
+);
 
 // Journal records replay at every PostgreSQL start, so a refused retirement must leave none.
 test("retiring an unknown version journals nothing", async () => {

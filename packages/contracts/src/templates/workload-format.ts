@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseTemplateManifest } from "./template";
-import { TemplateSpecSchema } from "./template-alpha-schema";
+import { RuntimeTemplatePolicySchema } from "./template-alpha-schema";
 import { WorkloadDigestSchema } from "./workload-capabilities";
 import { parseWorkloadTemplate, WorkloadTemplateSnapshotSchema } from "./workload-template";
 
@@ -18,7 +18,7 @@ const AlphaSnapshotSchema = z.object({
   name: z.string(),
   version: z.string(),
   digest: WorkloadDigestSchema,
-  spec: TemplateSpecSchema,
+  spec: RuntimeTemplatePolicySchema,
 });
 
 // A format check is not capability admission. Preserve original alpha bytes and
