@@ -1,5 +1,13 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.2
+
+### Patch Changes
+
+- [#176](https://github.com/pufflyai/pocketcoder/pull/176) [`753bc58`](https://github.com/pufflyai/pocketcoder/commit/753bc58f91afea5b8d6dde84cc83adacf11d96f1) Thanks [@au-re](https://github.com/au-re)! - Keep older saved templates and workspace snapshots readable when they have no native harness, so upgrading a controller does not stop startup. New template publication still requires a supported runtime.
+
+- [#175](https://github.com/pufflyai/pocketcoder/pull/175) [`8b1cd60`](https://github.com/pufflyai/pocketcoder/commit/8b1cd60babf6422e93df6dbe2834fbf4c7889307) Thanks [@au-re](https://github.com/au-re)! - Publish selected files from native agent sessions and download their retained bytes through authenticated session APIs.
+
 ## 0.15.1
 
 ### Patch Changes
