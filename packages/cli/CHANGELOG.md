@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.3
+
+### Patch Changes
+
+- [#178](https://github.com/pufflyai/pocketcoder/pull/178) [`99bdf13`](https://github.com/pufflyai/pocketcoder/commit/99bdf13d19ef364217779a4a64b919e910da92d0) Thanks [@au-re](https://github.com/au-re)! - Report released workspace placements as failed so chats can resume on fresh compute.
+
 ## 0.15.2
 
 ### Patch Changes
