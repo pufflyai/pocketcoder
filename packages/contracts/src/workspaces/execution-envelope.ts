@@ -14,6 +14,7 @@ export function executionAcceptEnvelope(
   conversationIdentity: ConversationRequestIdentity | null,
   inputDirectory?: string,
   publicationPolicy?: NativePublicationPolicy,
+  requestInputIds?: string[],
 ) {
   // Publishers use this fixed workload path, so admission can size it before pinning files.
   const directory =
@@ -24,6 +25,7 @@ export function executionAcceptEnvelope(
     conversationIdentity,
     ...(directory ? { inputDirectory: directory } : {}),
     ...(publicationPolicy ? { publicationPolicy } : {}),
+    ...(requestInputIds !== undefined ? { requestInputIds } : {}),
   };
 }
 

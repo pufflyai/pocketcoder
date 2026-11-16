@@ -162,6 +162,7 @@ export function conversationTransport(deps: {
             workspace.runtimeRegistration?.template?.manifest.spec,
             record.acceptance.operation,
           ),
+          record.requestInputIds,
         ),
         ...(record.priorMessages ? { priorMessages: record.priorMessages } : {}),
       });

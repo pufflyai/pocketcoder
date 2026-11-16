@@ -62,6 +62,7 @@ export async function sessionResponse(producer: SessionProducer, request: Reques
             conversationIdentity: z.unknown(),
             inputDirectory: z.string().optional(),
             priorMessages: z.array(PriorMessageSchema).optional(),
+            requestInputIds: z.array(z.uuid()).optional(),
             publicationPolicy: z.unknown().optional(),
           })
           .parse(body),

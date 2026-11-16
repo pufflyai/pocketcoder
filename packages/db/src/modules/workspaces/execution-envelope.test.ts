@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { digestOf, executionInputManifestId } from "@pstdio/pocketcoder-contracts";
+import { digestOf, executionAcceptEnvelope, executionInputManifestId } from "@pstdio/pocketcoder-contracts";
+import { sessionWorkFixture } from "../sessions/work-fixture.test";
 import { executionFixture } from "./execution-fixture.test";
 import { executionConversationIdentity, serviceExecutionTemplate } from "./execution-service-fixture.test";
 
@@ -71,6 +72,61 @@ test.each(["lookup", "cancel", "ack"])("service admission refuses an unusable %s
     ).rejects.toThrow("route limit");
     expect(await f.store.executions.get(acceptance.execution)).toBeNull();
     expect(await f.store.inputs.getManifest(executionInputManifestId(acceptance))).toBeNull();
+  } finally {
+    await f.dispose();
+  }
+});
+
+test("managed attachment metadata fits the route before dispatch can create a pin or claim", async () => {
+  const f = await sessionWorkFixture("memory", false, (source) => {
+    const route = source.spec.services.agent?.routes.find((route) => route.path === "/executions/accept");
+    if (!route) throw new Error("Missing accept route");
+    route.maxRequestBytes = 2048;
+  });
+  try {
+    await f.store.managed.sessions.bind({ principalId: f.principal.id, sessionId: f.sessionId }, 0, {
+      workspaceId: f.id,
+      incarnationId: f.runtime.incarnationId,
+      generation: 1,
+    });
+    const { fingerprint: _, ...facts } = f.acceptance();
+    facts.operation = "message";
+    facts.input = { message: "x" };
+    const identity = {
+      ...executionConversationIdentity(facts.execution.requestId, f.sessionId),
+      authority: "generic" as const,
+    };
+    const build = () => ({ ...facts, fingerprint: digestOf(facts) });
+    const size = Buffer.byteLength(JSON.stringify(executionAcceptEnvelope(build(), identity)));
+    facts.input = { message: "x".repeat(2048 - size + 1) };
+    expect(Buffer.byteLength(JSON.stringify(executionAcceptEnvelope(build(), identity)))).toBe(2048);
+    const accepted = await f.store.managed.requests.accept(
+      f.keyId,
+      f.sessionId,
+      {
+        requestId: randomUUID(),
+        message: String(facts.input.message),
+        attachments: [],
+      },
+      { count: 2, bytes: 1048576 },
+    );
+
+    await f.store.managed.requests.prepare(new Date());
+
+    expect(await f.store.managed.requests.get(f.keyId, f.sessionId, accepted.request.requestId)).toMatchObject({
+      state: "terminal",
+      outcome: "failed",
+      reasonCode: "execution_authority_unavailable",
+    });
+    expect(await f.store.executions.pending()).toEqual([]);
+    expect(
+      await f.store.inputs.getManifest(
+        executionInputManifestId({
+          ...facts,
+          execution: { ...facts.execution, requestId: accepted.request.turnId },
+        }),
+      ),
+    ).toBeNull();
   } finally {
     await f.dispose();
   }

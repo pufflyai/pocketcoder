@@ -13,7 +13,7 @@ if (target === "unit" || target === "typecheck") {
     "run-many",
     `--target=${target === "unit" ? "test" : target}`,
     `--projects=${projects.join(",")}`,
-    // Four runners shard the tests; each keeps the original single-package CPU and disk budget.
+    // Each shard keeps the original single-package CPU and disk budget.
     `--parallel=${target === "unit" ? 1 : 2}`,
     "--outputStyle=stream",
   ];
@@ -22,7 +22,7 @@ if (target === "unit" || target === "typecheck") {
     if (!shard) throw new Error("Unit tests require an explicit shard");
     args.push(
       "--",
-      `--shard=${shard}/4`,
+      `--shard=${shard}/5`,
       "--pass-with-no-tests",
       "--path-ignore-patterns=**/*conformance.test.ts",
       "--path-ignore-patterns=**/*.benchmark.test.ts",

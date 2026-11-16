@@ -76,6 +76,36 @@ Restore must stage new workspace-scoped references; it never migrates old refere
 or treats a checkpoint of workload home files as canonical storage. This is a
 bounded staging store, not a dataset store or an archive.
 
+## Managed session files
+
+A staged file expires at `expiresAt` if no request accepts it. Once a managed
+request accepts the file, the same logical session keeps its exact bytes pinned
+until the session closes or its history is deleted. Canceled accepted requests
+also retain their files. Staged files that no request accepted are not inherited.
+`state` reports current availability; an accepted file can remain `ready` past its
+staging expiry. Retained bytes and files stay charged against storage limits.
+
+Each managed turn freezes the files accepted by that session through its own
+request sequence. It cannot see files from another session or a later queued
+request. Replays keep the original request body, fingerprint and frozen manifest.
+A replacement workspace receives verified copies from canonical storage, rather
+than trusting old home-directory files. Existing template input and relay limits
+also bound the cumulative inventory; exceeding them fails explicitly.
+
+The current controller and native producer distinguish new attachments from that
+available inventory. This behavior requires the updated controller and workspace
+images together. Older execution records without `requestInputIds` retain their
+original manifest-only behavior. Pi relocates only exact accepted-file path tokens
+in its private user prompts to the current projection before starting a turn. It
+preserves canonical conversation history, assistant/thinking blocks, tool-call
+identities and execution receipts. Malformed or unsupported Pi session files fail
+before the producer starts.
+
+Closing a session or deleting its history releases the extra session pins. An
+already accepted execution keeps its frozen input pins until acknowledgment or
+fenced cleanup proves it stopped reading. Physical deletion releases capacity
+only after those pins and the normal retention period have ended.
+
 ## Docker projection
 
 Add `projection` to `POCKETCODER_INPUT_STORAGE` to enable the Docker publisher:
