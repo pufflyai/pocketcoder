@@ -3,7 +3,12 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 
 const UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-const INPUT_PATH = new RegExp(`(?<![A-Za-z0-9._/-])/run/pocketcoder/inputs/${UUID}/(${UUID})(?![A-Za-z0-9._/-])`, "g");
+// Non-ASCII characters can be part of a path too; never relocate its embedded suffix.
+const PATH_CHARACTER = "[A-Za-z0-9._/\\x80-\\u{10ffff}-]";
+const INPUT_PATH = new RegExp(
+  `(?<!${PATH_CHARACTER})/run/pocketcoder/inputs/${UUID}/(${UUID})(?!${PATH_CHARACTER})`,
+  "gu",
+);
 
 // Only Pi's private user prompts name old projections. The controller's history
 // and signed assistant/thinking blocks retain their original content.
