@@ -13,6 +13,12 @@ test.each([
   { name: "combining-mark suffix", prefix: "", suffix: "\u0301" },
   { name: "ASCII prefix", prefix: "/other", suffix: "" },
   { name: "ASCII suffix", prefix: "", suffix: ".txt" },
+  { name: "plus prefix", prefix: "/tmp+", suffix: "" },
+  { name: "at-sign prefix", prefix: "/tmp@", suffix: "" },
+  { name: "colon prefix", prefix: "/tmp:", suffix: "" },
+  { name: "plus suffix", prefix: "", suffix: "+notes" },
+  { name: "percent suffix", prefix: "", suffix: "%20notes" },
+  { name: "quoted path", prefix: "'", suffix: "'" },
 ])("$name preserves an unrelated path next to a relocatable input", async ({ prefix, suffix }) => {
   const directory = await mkdtemp(join(tmpdir(), "pc-pi-input-boundary-"));
   const path = join(directory, "session.jsonl");
