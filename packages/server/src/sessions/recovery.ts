@@ -107,6 +107,13 @@ export function createSessionRecovery(deps: {
   // Binds the recorded workspace once it is ready, or gives up on one that ended before that.
   async function continuePlacement(candidate: Candidate, placement: NonNullable<Candidate["placement"]>) {
     let workspace = await store.getWorkspace(placement.workspaceId);
+    // Cleanup fences this reservation permanently, even if the scheduler requeued its workspace.
+    if (candidate.placementReleased) {
+      if (workspace && !workspace.terminalAt && workspace.state !== "terminating")
+        await launcher.stop(await principalOf(candidate), workspace.id);
+      await recovery.failPlacement(candidate.id, placement.workspaceId);
+      return;
+    }
     if (!workspace) {
       const template = (await store.listTemplates(null)).find(
         (row) => row.digest === placement.templateDigest && row.status !== "retired",

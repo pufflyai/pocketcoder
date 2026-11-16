@@ -4,7 +4,7 @@ import type {
   ManagedRecoveryStore,
   ManagedSessionIdentity,
 } from "@pstdio/pocketcoder-runtime-contracts";
-import { and, gt, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, ne, or, sql } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { authorityContext } from "../managed/authority-context";
 import { sessionWriter } from "./observations";
@@ -28,14 +28,19 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
   return {
     async candidates() {
       const rows = await db
-        .select()
+        .select({ row: sessions, capacity: tables.managedCapacity.record })
         .from(sessions)
+        .leftJoin(
+          tables.managedCapacity,
+          eq(tables.managedCapacity.workspaceId, sql`(${sessions.placement}->>'workspaceId')::uuid`),
+        )
         .where(
           or(
             and(
               ne(sql`${sessions.session}->>'state'`, "closed"),
               or(
                 sql`${sessions.binding} IS NOT NULL`,
+                sql`${sessions.placement} IS NOT NULL`,
                 gt(sessions.queueCount, 0),
                 sql`${sessions.resumeRequestedAt} IS NOT NULL`,
               ),
@@ -51,7 +56,7 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
         .from(requests)
         .where(sql`${requests.managed} IS NOT NULL AND ${requests.managed}->'request'->>'state' <> 'terminal'`);
       const candidates: ManagedRecoveryCandidate[] = [];
-      for (const row of rows) {
+      for (const { row, capacity } of rows) {
         const id = { principalId: row.principalId, sessionId: row.sessionId };
         candidates.push({
           closing: row.close !== null,
@@ -66,6 +71,7 @@ export function createManagedRecovery(context: DatabaseContext): ManagedRecovery
           lastGeneration: row.lastGeneration,
           queueCount: row.queueCount,
           placement: row.placement,
+          placementReleased: capacity?.state === "released",
           resumeRequested: row.resumeRequestedAt !== null,
         });
       }

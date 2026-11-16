@@ -230,3 +230,118 @@ test("ended compute from an older release detaches before queued work is placed"
     await producer.server.stop(true);
   }
 });
+
+test("released placement capacity fails visibly and resume uses a fresh generation for unsent work", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  const sessionId = crypto.randomUUID();
+  const keys: string[] = [];
+  const errors: unknown[] = [];
+  const stopped: string[] = [];
+  const launched: Awaited<ReturnType<typeof m.launch>>[] = [];
+  const original = (await m.f.store.getWorkspace(m.f.id))!;
+  const launcher: PlacementLauncher = {
+    async create(_principal, _body, key, workspaceId) {
+      keys.push(key);
+      if (keys.length === 1) {
+        if (!workspaceId) throw Error("Missing placement workspace");
+        await m.f.store.insertWorkspace({
+          id: workspaceId,
+          principalId: m.f.principal.id,
+          externalId: key,
+          idempotencyKey: key,
+          requestDigest: key,
+          templateId: original.templateId,
+          templateSnapshot: original.templateSnapshot,
+          launchInput: null,
+          metadata: { "pocketcoder.managed-session": sessionId },
+          deadlineAt: new Date(Date.now() + 600_000),
+          createdAt: new Date(),
+        });
+        return (await m.f.store.getWorkspace(workspaceId))!;
+      }
+      const next = await placed(m, sessionId, workspaceId);
+      launched.push(next);
+      return (await m.f.store.getWorkspace(next.id))!;
+    },
+    async stop(_principal, id) {
+      stopped.push(id);
+      await m.f.store.transition(id, { from: ["queued"], to: "canceled", at: new Date() });
+    },
+  };
+  try {
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: m.profileId, owner: "test-owner" });
+    const requestId = await m.submit(sessionId, "complete after a failed launch");
+    const turnId = (await m.request(sessionId, requestId)).turnId;
+    const recovery = createSessionRecovery({ store: m.f.store, launcher, onError: (error) => errors.push(error) });
+    await recovery.tick();
+    const [candidate] = await m.f.store.managed.recovery.candidates();
+    const workspaceId = candidate!.placement!.workspaceId;
+    await m.f.store.managed.capacity.cleanupPending(workspaceId, 0, new Date());
+    await recovery.tick();
+    expect(stopped).toEqual([]);
+    expect((await m.f.store.managed.sessions.get(m.keyId, sessionId)).state).not.toBe("failed");
+    // The scheduler fenced a failed launch, then requeued its still-unbound workspace.
+    await m.f.store.managed.capacity.cleanup(workspaceId, 0, "provider_fenced", new Date());
+    await recovery.tick();
+    expect(errors).toEqual([]);
+    expect(await m.f.store.managed.sessions.get(m.keyId, sessionId)).toMatchObject({
+      state: "failed",
+      reasonCode: "placement_failed",
+    });
+    expect(stopped).toEqual([workspaceId]);
+    await recovery.tick();
+    expect(keys).toHaveLength(1);
+    await m.f.store.managed.recovery.resume(m.keyId, sessionId, new Date());
+    await recovery.tick();
+    await recovery.tick();
+    expect(keys).toEqual([`managed-session:${sessionId}:1`, `managed-session:${sessionId}:2`]);
+    expect((await m.f.store.managed.sessions.binding(m.keyId, sessionId))?.workspaceId).not.toBe(workspaceId);
+    const replacement = launched[0]!;
+    for (let i = 0; i < 3; i++) {
+      await replacement.dispatcher.tick();
+      await replacement.dispatcher.drain();
+    }
+    expect(await m.request(sessionId, requestId)).toMatchObject({ turnId, state: "terminal", outcome: "completed" });
+    expect(producer.sent("complete after a failed launch")).toHaveLength(1);
+  } finally {
+    for (const next of launched) await next.dispose();
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
+
+test("a released placement is recovered after its last queued request expires", async () => {
+  const producer = fakeProducer();
+  const m = await managedFixture(producer.server.port);
+  try {
+    const sessionId = crypto.randomUUID();
+    await m.f.store.managed.sessions.create(m.keyId, { sessionId, profile: m.profileId, owner: "test-owner" });
+    const requestId = await m.submit(sessionId, "expire before dispatch");
+    const id = { principalId: m.f.principal.id, sessionId };
+    const intent = (await m.f.store.managed.capacity.reserve(id, 1, new Date()))!;
+    await m.f.store.managed.capacity.cleanup(intent.workspaceId, 0, "never_launched", new Date());
+    const request = await m.request(sessionId, requestId);
+    await m.f.store.managed.requests.prepare(new Date(Date.parse(request.dispatchDeadline) + 1));
+    expect((await m.request(sessionId, requestId)).reasonCode).toBe("dispatch_deadline_exceeded");
+    await createSessionRecovery({
+      store: m.f.store,
+      launcher: {
+        create: async () => {
+          throw Error("Released placement must not launch");
+        },
+        stop: async () => {
+          throw Error("No workspace exists");
+        },
+      },
+    }).tick();
+    expect(await m.f.store.managed.sessions.get(m.keyId, sessionId)).toMatchObject({
+      state: "failed",
+      reasonCode: "placement_failed",
+    });
+    expect(await m.f.store.managed.recovery.candidates()).toEqual([]);
+  } finally {
+    await m.f.dispose();
+    await producer.server.stop(true);
+  }
+});
