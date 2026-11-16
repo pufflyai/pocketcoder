@@ -4,7 +4,7 @@ PR updates target a 95th-percentile completion time below five minutes, includin
 
 ## Fast PR feedback
 
-Quality checks run on every update. Nx selects changed packages and all their dependents against the tested merge candidate's first parent. Type checks and unit and route tests run for those projects. Four Bun shards divide the test files across runners. Runtime changes also run a real local echo workspace through Docker and the server.
+Quality checks run on every update. Nx selects changed packages and all their dependents against the tested merge candidate's first parent. Type checks and unit and route tests run for those projects. Five Bun shards divide the test files across runners. Runtime changes also run a real local echo workspace through Docker and the server.
 
 Root configuration, scripts, workflows, build recipes, unknown paths, and changes with no Nx owner select all projects. Changes limited to docs, changeset text, and contributor instructions still run quality checks. They receive full qualification when queued. The selection code and tests live in `scripts/ci/selection.ts` and `scripts/ci/diff.ts`. Event base metadata can lag the checkout; both Git and Nx compare with the same tested parent. The plan is recorded in the job summary.
 
