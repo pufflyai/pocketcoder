@@ -25,6 +25,12 @@ request. A resend needs no stored deadline or physical execution fingerprint.
 Possibly sent work is looked up; it is never blindly run again. Work proved never
 sent may be placed again without changing its logical request and turn IDs.
 
+If launch cleanup releases a placement's capacity before binding, the session
+reports `failed` with `placement_failed`. PocketCoder cancels any leftover
+workspace and consumes that placement generation. Resume requests fresh compute;
+it never reuses the released reservation. Unsent requests keep their request and
+turn IDs, and their original dispatch deadline still applies.
+
 `POCKETCODER_SESSION_QUEUE` defaults to `{"count":8,"bytes":8388608}`. Both limits
 must be positive when overridden. Requests retain their outcomes after queue
 space is released. Expired dispatch deadlines fail queued work without sending it.

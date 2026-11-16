@@ -76,6 +76,7 @@ export interface ManagedRecoveryCandidate {
   lastGeneration: number;
   queueCount: number;
   placement: import("./managed-work").ManagedPlacementIntent | null;
+  placementReleased: boolean;
   resumeRequested: boolean;
   templateDigest: string;
   closing: boolean;
