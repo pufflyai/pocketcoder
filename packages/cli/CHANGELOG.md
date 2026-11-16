@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.4
+
+### Patch Changes
+
+- [#180](https://github.com/pufflyai/pocketcoder/pull/180) [`5b6db80`](https://github.com/pufflyai/pocketcoder/commit/5b6db808f80a91cc522ae0a8a83122b7a1717330) Thanks [@au-re](https://github.com/au-re)! - Keep accepted session inputs readable on later turns and replacement workspaces, preserving frozen request identity, attachment metadata and cleanup boundaries.
+
 ## 0.15.3
 
 ### Patch Changes
