@@ -15,7 +15,7 @@ import { settleExecutionFailure } from "../workspaces/execution-failure";
 import { pinExecutionInputs } from "../workspaces/execution-inputs";
 import { operationAdapterCapabilities, validateExecution } from "../workspaces/execution-validation";
 import { sessionHistorySeed } from "./history-seed";
-import { pinSessionInputs } from "./request-inputs";
+import { acceptedSessionInputIds, pinSessionInputs } from "./request-inputs";
 import { writeManagedRequest } from "./request-writer";
 
 type WorkspaceRow = DatabaseContext["tables"]["workspaces"]["$inferSelect"];
@@ -86,8 +86,9 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date,
           workspace,
           binding,
           at,
+          current.managed.sequence,
         );
-        validateExecution(workspace, acceptance, at, current.identity);
+        validateExecution(workspace, acceptance, at, current.identity, current.managed.input.attachments);
         const capabilities = operationAdapterCapabilities(workspace, acceptance);
         await validateConversationExecution(
           context,
@@ -101,6 +102,7 @@ export async function prepareManagedRequests(context: DatabaseContext, at: Date,
         const seed = await firstTurnSeed(context, tx, rows, current, workspace.id, capabilities, seedBytes);
         const execution: ExecutionRecord = {
           acceptance,
+          requestInputIds: current.managed.input.attachments,
           ...(seed ? { priorMessages: seed.messages } : {}),
           conversationIdentity: current.identity,
           outcome: null,
@@ -242,11 +244,13 @@ async function managedAcceptance(
   workspace: WorkspaceRow,
   binding: ManagedBinding,
   at: Date,
+  sequence: number,
 ) {
   const operation = workspace.runtimeRegistration?.template?.manifest.spec.operations.message;
   const adapter = operation && workspace.runtimeRegistration?.template?.manifest.spec.adapters[operation.adapter];
   if (!operation || !adapter) throw new ApiError("operation.conflict", "Managed requests require a message operation.");
-  const sources = await pinSessionInputs(context, tx, id, input.attachments, at, true);
+  const references = await acceptedSessionInputIds(context, tx, id, sequence);
+  const sources = await pinSessionInputs(context, tx, id, references, at);
   const contents = {
     workspaceId: workspace.id,
     incarnationId: binding.incarnationId,

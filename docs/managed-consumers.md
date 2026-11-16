@@ -74,6 +74,13 @@ session-wide generation revoke. See [the protocol](runtime-credentials.md).
 | Stop work | `POST /v1/sessions/{id}/cancel` | `client.sessions.cancel(id)` |
 | Close | `POST /v1/sessions/{id}/close` | `client.sessions.close(id)` |
 
+Uploaded files become session inputs when a request accepts their IDs. Later
+turns in that same session can read those exact bytes without resending historical
+attachment IDs. The controller reprojects accepted inputs after workspace
+replacement. New uploads on later queued requests stay hidden until their own
+sequence. Accepted files remain pinned while session history is retained and the
+session is open; unaccepted staging still expires. See [managed input lifetime](input-storage.md#managed-session-files).
+
 A profile health check uses `client.profiles.get("chat")`. The consumer authorizes
 every call before passing its session ID to PocketCoder. Owners and groups are
 opaque IDs from those authorized records, never unchecked browser values.

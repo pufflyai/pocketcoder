@@ -5,13 +5,36 @@ import type { DatabaseContext, Transaction } from "../../database/context";
 import { readInput } from "../persistence/inputs/objects";
 import { inputIsPinned } from "../persistence/inputs/pins";
 
+export async function acceptedSessionInputIds(
+  context: DatabaseContext,
+  tx: Transaction,
+  id: ManagedSessionIdentity,
+  sequence: number,
+) {
+  const requests = context.tables.conversationRequests;
+  const rows = await tx
+    .select()
+    .from(requests)
+    .where(and(eq(requests.principalId, id.principalId), eq(requests.conversationId, id.sessionId)));
+  return [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.managed &&
+        row.managed.sequence <= sequence &&
+        (row.managed.sequence === sequence || !row.managed.contentRemoved)
+          ? (row.managed.input?.attachments ?? [])
+          : [],
+      ),
+    ),
+  ].sort();
+}
+
 export async function pinSessionInputs(
   context: DatabaseContext,
   tx: Transaction,
   id: ManagedSessionIdentity,
   references: string[],
   at: Date,
-  accepted = false,
 ) {
   const selected = [];
   const table = context.tables.sessionInputs;
@@ -28,8 +51,7 @@ export async function pinSessionInputs(
     if (
       !row ||
       input?.state !== "ready" ||
-      (input.retainedUntil <= at &&
-        !(accepted && (await inputIsPinned(context, tx, row.source.workspaceId, row.inputId))))
+      (input.retainedUntil <= at && !(await inputIsPinned(context, tx, row.source.workspaceId, row.inputId)))
     )
       throw new ApiError("attachment.not_found", "Input is not ready or has expired.");
     selected.push(row.source);

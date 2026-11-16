@@ -2,7 +2,11 @@ import { managedFixture, provision } from "../managed/fixture.test";
 import { executionFixture } from "../workspaces/execution-fixture.test";
 import { serviceExecutionTemplate } from "../workspaces/execution-service-fixture.test";
 
-export async function sessionWorkFixture(mode: "memory" | "disk" = "memory", outputs = false) {
+export async function sessionWorkFixture(
+  mode: "memory" | "disk" = "memory",
+  outputs = false,
+  configure?: (source: import("@pstdio/pocketcoder-contracts").WorkloadTemplate) => void,
+) {
   const f = await managedFixture(mode);
   const execution = await executionFixture(
     (source) => {
@@ -19,6 +23,7 @@ export async function sessionWorkFixture(mode: "memory" | "disk" = "memory", out
           },
         },
       };
+      configure?.(source);
     },
     {
       base: f,

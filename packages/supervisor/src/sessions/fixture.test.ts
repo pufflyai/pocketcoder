@@ -31,3 +31,22 @@ export function envelope() {
     },
   };
 }
+
+export function envelopeWithFiles(names: string[]) {
+  const input = envelope();
+  const objects = names.map((name) => ({
+    workspaceId: input.acceptance.execution.workspaceId,
+    objectVersion: digestOf(name),
+    fileId: crypto.randomUUID(),
+    name,
+    mediaType: "text/plain",
+    sizeBytes: 1,
+    digest: digestOf(name),
+    visibility: "ready" as const,
+  }));
+  const contents = { ...input.acceptance.inputs, objects };
+  const { digest: _, ...manifest } = contents;
+  const { fingerprint: __, ...facts } = input.acceptance;
+  const acceptance = { ...facts, inputs: { ...manifest, digest: digestOf(manifest) } };
+  return { ...input, acceptance: { ...acceptance, fingerprint: digestOf(acceptance) } };
+}

@@ -19,6 +19,7 @@ export type ExecutionPhase = z.infer<typeof ExecutionPhaseSchema>;
 export const ExecutionRecordSchema = z.strictObject({
   acceptance: WorkloadAcceptanceSchema,
   priorMessages: z.array(PriorMessageSchema).optional(),
+  requestInputIds: z.array(z.uuid()).optional(),
   conversationIdentity: ConversationRequestIdentitySchema.nullable(),
   outcome: JsonValueSchema.nullable(),
   acceptedAt: z.iso.datetime(),

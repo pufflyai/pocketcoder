@@ -88,7 +88,7 @@ export function createExecutionDispatch(context: DatabaseContext) {
         try {
           if (!(await managedAdmission(context, tx, record, at))) return null;
           await requireExecutionPrincipal(context, tx, record.acceptance.callerPrincipalId);
-          validateExecution(workspace, record.acceptance, at, record.conversationIdentity);
+          validateExecution(workspace, record.acceptance, at, record.conversationIdentity, record.requestInputIds);
           await requireExecutionInputs(context, tx, record.acceptance);
         } catch (error) {
           await settleClaimFailure(context, tx, record, error, at);

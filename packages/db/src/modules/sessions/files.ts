@@ -4,6 +4,7 @@ import type { ManagedFileStore } from "@pstdio/pocketcoder-runtime-contracts";
 import { and, eq } from "drizzle-orm";
 import type { DatabaseContext } from "../../database/context";
 import { readInput } from "../persistence/inputs/objects";
+import { inputIsPinned } from "../persistence/inputs/pins";
 import { logicalExports } from "./request-collection";
 import { workAuthority } from "./work-authority";
 
@@ -23,7 +24,11 @@ export function createManagedFiles(context: DatabaseContext): ManagedFileStore {
   ): Promise<managed.InputObject> {
     const source = await readInput(context, tx, row.source.workspaceId, row.inputId);
     let state: managed.InputObject["state"] = "uploading";
-    if (source?.state === "ready") state = source.retainedUntil > new Date() ? "ready" : "expired";
+    if (source?.state === "ready")
+      state =
+        source.retainedUntil > new Date() || (await inputIsPinned(context, tx, row.source.workspaceId, row.inputId))
+          ? "ready"
+          : "expired";
     else if (source?.state === "expired" && source.publishedAt) state = "expired";
     else if (source && source.state !== "uploading") state = "rejected";
     else if (row.expiresAt <= new Date()) state = "expired";

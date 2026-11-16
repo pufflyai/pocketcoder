@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { jsonLines } from "./json-lines";
 import { PiEvents } from "./pi-events";
 import { seedPiSession } from "./pi-history";
+import { relocatePiSessionInputs } from "./pi-inputs";
 import type { SessionRun, SessionRunner } from "./producer";
 import { publicationServer } from "./publication-server";
 import { sessionEnvironment } from "./session-env";
@@ -14,6 +15,11 @@ export function piRunner(command: string[], directory: string): SessionRunner {
     run.signal.throwIfAborted();
     const session = join(directory, `${run.identity.conversation_id}.jsonl`);
     seedPiSession(session, run.priorMessages);
+    relocatePiSessionInputs(
+      session,
+      run.inputDirectory,
+      run.acceptance.inputs.objects.map((file) => file.fileId),
+    );
     const env = sessionEnvironment(process.env, run.identity.conversation_id);
     const leasePaths = Object.values(env).filter((value): value is string =>
       Boolean(value?.startsWith(`/run/pocketcoder/secrets/leases/sessions/${run.identity.conversation_id}/`)),

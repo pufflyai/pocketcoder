@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { DatabaseContext, Transaction } from "../../database/context";
 import { readInput } from "../persistence/inputs/objects";
 import { inputIsPinned } from "../persistence/inputs/pins";
+import { acceptedSessionInputIds } from "../sessions/request-inputs";
 import { executionConflict } from "./execution-validation";
 
 export async function pinExecutionInputs(
@@ -83,12 +84,22 @@ async function executionInput(
         row.identity.turn_id === acceptance.execution.requestId &&
         row.managed,
     );
-    if (
-      !request ||
-      object?.sessionId !== request.conversationId ||
-      !request.managed?.input?.attachments.some((ref) => ref === reference.fileId)
-    )
+    if (!request?.managed || object?.sessionId !== request.conversationId)
       executionConflict("Input does not belong to this managed request.");
+    if (request.execution && request.execution.acceptance.fingerprint !== acceptance.fingerprint)
+      executionConflict("Managed execution fingerprint changed.");
+    const accepted = request.execution
+      ? request.execution.acceptance.inputs.objects.map((file) => file.fileId)
+      : await acceptedSessionInputIds(
+          context,
+          tx,
+          {
+            principalId: request.principalId,
+            sessionId: request.conversationId,
+          },
+          request.managed.sequence,
+        );
+    if (!accepted.includes(reference.fileId)) executionConflict("Input does not belong to this managed request.");
   }
   return object;
 }

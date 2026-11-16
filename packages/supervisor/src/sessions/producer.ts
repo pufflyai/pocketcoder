@@ -61,10 +61,17 @@ export class SessionProducer {
     conversationIdentity: unknown;
     inputDirectory?: string;
     priorMessages?: PriorMessage[];
+    requestInputIds?: string[];
     publicationPolicy?: unknown;
   }) {
     const acceptance = WorkloadAcceptanceSchema.parse(raw.acceptance);
     const identity = ConversationRequestIdentitySchema.parse(raw.conversationIdentity);
+    const requestInputs = raw.requestInputIds ?? acceptance.inputs.objects.map((file) => file.fileId);
+    if (
+      new Set(requestInputs).size !== requestInputs.length ||
+      requestInputs.some((id) => !acceptance.inputs.objects.some((file) => file.fileId === id))
+    )
+      throw new Error("Invalid request input IDs");
     const execution = acceptance.execution;
     if (
       execution.owner !== "conversation-request" ||
@@ -118,13 +125,15 @@ export class SessionProducer {
     };
     this.emit(entry, "user", "user", [
       { type: "text", text: acceptance.input.message },
-      ...acceptance.inputs.objects.map((file) => ({
-        type: "file" as const,
-        file_id: file.fileId,
-        name: file.name,
-        media_type: file.mediaType,
-        size_bytes: file.sizeBytes,
-      })),
+      ...requestInputs
+        .flatMap((id) => acceptance.inputs.objects.filter((file) => file.fileId === id))
+        .map((file) => ({
+          type: "file" as const,
+          file_id: file.fileId,
+          name: file.name,
+          media_type: file.mediaType,
+          size_bytes: file.sizeBytes,
+        })),
     ]);
     this.entries.set(key, entry);
     const done = Promise.resolve().then(async () => {
