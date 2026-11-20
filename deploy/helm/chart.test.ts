@@ -136,3 +136,17 @@ describe.skipIf(!helm)("Helm chart", () => {
     find(resources, "NetworkPolicy", "pc-controller");
   });
 });
+
+test.skipIf(!helm)("engine profiles carry operator grants and a separate network boundary", async () => {
+  const placement = {
+    placementProfiles: { default: {}, engine: { runtimeClassName: "kata-qemu", containerEngine: true } },
+    templatePlacement: { review: ["engine"] },
+    vmRuntimeHandlers: ["kata-qemu"],
+  };
+  const resources = await render({ ...postgres, workspace: { placement, engineBlockedCidrs: ["203.0.113.0/24"] } });
+  expect(JSON.parse(String(env(pod(resources).containers[0]).POCKETCODER_PLACEMENT_CONFIG))).toEqual(placement);
+  const policy = find(resources, "NetworkPolicy", "pc-container-engine");
+  expect(policy.spec?.podSelector).toEqual({ matchLabels: { "pocketcoder.dev/container-engine": "true" } });
+  expect(policy.spec?.ingress).toEqual([]);
+  expect(policy.spec?.policyTypes).toEqual(["Ingress", "Egress"]);
+});

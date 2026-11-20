@@ -18,6 +18,7 @@ import { createStructuredLogger, type StructuredLogger } from "../observability/
 import { SERVER_IDLE_TIMEOUT_SECONDS } from "../observability/server-timing";
 import { createRegistryResolver } from "../secrets/registry-resolver";
 import { controllerVault } from "../secrets/secret-vault";
+import { templatePlacementPolicy } from "../templates/placement-policy";
 import { builtTimerDeps, startBackgroundTimers } from "./background-timers";
 import { checkpointTransferOptions } from "./checkpoint-transfer-config";
 import { inputStorageOptions } from "./input-storage-config";
@@ -31,6 +32,7 @@ import {
   reconcileCheckpointPreserves,
   reconcileStartup,
   requireEgressImageForRestrictedTemplates,
+  verifyWorkspacePlacement,
 } from "./lifecycle-resources";
 import { loadPolicyReconciliation } from "./policy-reconciliation";
 import { startPurgingController } from "./purging-controller";
@@ -84,7 +86,12 @@ async function startupWarmPools(store: Store, config: ServerConfig, driver: Retu
 
 // Templates and principals come from operator files; both must be in place before serving.
 async function loadDeclaredState(config: ServerConfig, store: Store, log: ServerLog, logger: StructuredLogger) {
-  await loadConfiguredTemplates(store, config.templateDir, log);
+  await loadConfiguredTemplates(
+    store,
+    config.templateDir,
+    log,
+    templatePlacementPolicy(config.placement, config.driverKind),
+  );
   await requireEgressImageForRestrictedTemplates(store, config);
   return startManagedPrincipals({ config: config.principals, store, pepper: config.pepper, logger });
 }
@@ -123,6 +130,7 @@ export async function startPocketCoderServer(
     const storageDriver = createStorageDriver(config);
     const sharedStorage = storageDriver?.kind === "kubernetes-shared" ? storageDriver : undefined;
     const driver = createWorkspaceDriver(config, resolveRegistry, sharedStorage);
+    await verifyWorkspacePlacement(driver);
     const { warmPools, warmPoolContinuously } = await startupWarmPools(store, config, driver);
     const secretResolver = createSecretResolver(config);
     const readiness = new Readiness({ reconciliation: "pending" }, metrics);
@@ -144,7 +152,8 @@ export async function startPocketCoderServer(
       ...(config.clusterLocalIssuers ? { clusterLocalIssuers: true } : {}),
       eventSigningKey: config.eventSigningKey,
       egressImage: config.egressImage,
-      limits: config.limits,
+      checkPlacement: templatePlacementPolicy(config.placement, config.driverKind),
+      limits: placementLimits(config),
       workloadLimits: config.workloadLimits,
       ...managedSessionDeps(config),
       workspaceServerUrl: config.workspaceServerUrl,
@@ -327,4 +336,15 @@ async function requireReadyController(
   const { store } = initialized;
   await requireNormalController(initialized);
   if (await store.recovery.recoveryState()) throw new RecoveryRequiredError();
+}
+
+function placementLimits(config: ServerConfig) {
+  return {
+    ...config.limits,
+    perPlacementActiveWorkspaces: Object.fromEntries(
+      Object.entries(config.placement?.placementProfiles ?? {}).flatMap(([name, p]) =>
+        p.maxWorkspaces ? [[name, p.maxWorkspaces]] : [],
+      ),
+    ),
+  };
 }

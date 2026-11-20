@@ -25,6 +25,7 @@ import type {
 // request flow; scheduling, SQL, and driver logic live below this layer.
 
 export interface WorkspaceServiceDeps {
+  checkPlacement?: ReturnType<typeof import("../templates/placement-policy").templatePlacementPolicy>;
   store: TemplateStore & WorkspaceStore & Pick<Store, "managed">;
   scheduler: Scheduler;
   limits: AdmissionLimits;
@@ -140,6 +141,7 @@ export class WorkspaceService {
         `Template version ${template.name}@${template.version} is retired.`,
       );
     }
+    this.deps.checkPlacement?.(template.name, template.spec);
     return template;
   }
 

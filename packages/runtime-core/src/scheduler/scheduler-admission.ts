@@ -42,6 +42,9 @@ export class SchedulerAdmission {
   }
 
   recordAdmission(row: WorkspaceRow, counts: ActiveCounts): void {
+    const placement = row.templateSnapshot.spec.placement ?? "default";
+    counts.byPlacement ??= {};
+    counts.byPlacement[placement] = (counts.byPlacement[placement] ?? 0) + 1;
     counts.global += 1;
     counts.byPrincipal[row.principalId] = (counts.byPrincipal[row.principalId] ?? 0) + 1;
     counts.byTemplate[row.templateName] = (counts.byTemplate[row.templateName] ?? 0) + 1;
@@ -200,7 +203,13 @@ export class SchedulerAdmission {
     registrationExpiresAt: Date,
   ) {
     const { store, warmPool } = this.context.deps;
-    if (!warmPool || (await store.managed.capacity.managed(row.id))) return undefined;
+    if (
+      !warmPool ||
+      (row.templateSnapshot.spec.placement !== undefined && row.templateSnapshot.spec.placement !== "default") ||
+      this.context.deps.limits.perPlacementActiveWorkspaces?.[row.templateSnapshot.spec.placement ?? "default"] ||
+      (await store.managed.capacity.managed(row.id))
+    )
+      return undefined;
     const hit = await warmPool.tryLease(row, input, registrationDigest, registrationExpiresAt);
     if (hit === "leased") return true;
     if (hit === "deferred" || warmPool.missDecision(row) === "wait") return false;

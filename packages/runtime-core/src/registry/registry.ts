@@ -32,7 +32,11 @@ export async function loadTemplateFile(path: string) {
   return runtimeTemplateDefinition(await loadTemplateSource(path));
 }
 
-export async function loadTemplateDir(store: Store, dir: string): Promise<RegistryLoadResult> {
+export async function loadTemplateDir(
+  store: Store,
+  dir: string,
+  check?: (name: string, spec: import("@pstdio/pocketcoder-contracts").RuntimeTemplatePolicy) => unknown,
+): Promise<RegistryLoadResult> {
   const result: RegistryLoadResult = { loaded: [], errors: [] };
   let files: string[];
   try {
@@ -45,6 +49,7 @@ export async function loadTemplateDir(store: Store, dir: string): Promise<Regist
     const path = join(dir, file);
     try {
       const parsed = await loadTemplateFile(path);
+      check?.(parsed.manifest.metadata.name, parsed.policy);
       const upsert = await store.upsertTemplate({
         name: parsed.manifest.metadata.name,
         version: parsed.manifest.spec.version,

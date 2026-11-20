@@ -48,6 +48,7 @@ export const WorkloadTemplateBaseSchema = z.strictObject({
   kind: z.literal("Template"),
   metadata: z.strictObject({ name: WorkloadNameSchema, description: z.string().max(512).optional() }),
   spec: z.strictObject({
+    placement: RuntimeTemplatePolicySchema.shape.placement,
     version: z.string().regex(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/),
     image: WorkloadImageSchema,
     imagePullSecret: RuntimeTemplatePolicySchema.shape.imagePullSecret,

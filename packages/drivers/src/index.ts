@@ -36,6 +36,11 @@ export {
 } from "./kubernetes/kubernetes-evidence";
 export type { Resource as KubernetesEvidenceResource } from "./kubernetes/kubernetes-evidence-types";
 export { deleteResource, waitForDeletion } from "./kubernetes/kubernetes-identity";
+export {
+  KubernetesPlacement,
+  type KubernetesPlacementConfig,
+  type KubernetesPlacementProfile,
+} from "./kubernetes/kubernetes-placement";
 export { hasMatchingKubernetesTermination } from "./kubernetes/kubernetes-runtime-proof";
 export {
   type KubernetesSchedulingOptions,

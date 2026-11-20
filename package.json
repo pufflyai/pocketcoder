@@ -8,7 +8,8 @@
     "examples/harnesses/*",
     "packages/*",
     ".pstdio/extensions/pocketcoder",
-    ".pstdio/extensions/pocketcoder-workspaces"
+    ".pstdio/extensions/pocketcoder-workspaces",
+    ".pstdio/extensions/remote-testing"
   ],
   "scripts": {
     "candidate:controller-manifest": "bun scripts/controller-release-manifest.ts",
@@ -61,7 +62,7 @@
     "test:source:live": "bun --no-env-file scripts/test-source-live.ts",
     "test:deploy": "bun --no-env-file test --timeout 10000 deploy",
     "test:integration": "bun --no-env-file test --timeout 10000 packages/server/src/control-channel/execution-docker-conformance.test.ts packages/server/src/control-channel/execution-purge-conformance.test.ts packages/server/src/control-channel/waiting-runtime-conformance.test.ts packages/db/src/pglite-conformance.test.ts packages/db/src/modules/persistence/conformance.test.ts packages/db/src/modules/workspaces/conformance.test.ts packages/server/src/persistence/persistence-pglite-conformance.test.ts packages/drivers/src/docker/docker-registry-conformance.test.ts packages/drivers/src/docker/docker-conformance.test.ts packages/drivers/src/docker/docker-egress-conformance.test.ts packages/drivers/src/kubernetes/kubernetes.test.ts packages/egress/src/proxy/docker-conformance.test.ts packages/egress/src/proxy/kubernetes-conformance.test.ts packages/server/src/attachments/input-projection-conformance.test.ts packages/drivers/src/docker/docker-inputs-conformance.test.ts packages/drivers/src/docker/docker-input-failures-conformance.test.ts packages/server/src/testing/service-inputs.conformance.test.ts packages/server/src/persistence/preserve-inputs.conformance.test.ts",
-    "test:unit": "lerna run test --ignore pocketcoder --ignore pocketcoder-workspaces --concurrency 1 -- --path-ignore-patterns='**/*conformance.test.ts' --path-ignore-patterns='**/*.benchmark.test.ts'",
+    "test:unit": "lerna run test --ignore pocketcoder --ignore pocketcoder-workspaces --ignore remote-testing --concurrency 1 -- --path-ignore-patterns='**/*conformance.test.ts' --path-ignore-patterns='**/*.benchmark.test.ts'",
     "typecheck": "lerna run typecheck && tsc --project examples/native/tsconfig.json && tsc --project examples/e2e/tsconfig.shared.json && tsc --project scripts/tsconfig.images.json && tsc --project scripts/tsconfig.monitoring.json && tsc --project scripts/tsconfig.recovery.json && tsc --project scripts/tsconfig.ci.json && tsc --project examples/local/tsconfig.json && tsc --project examples/e2e/tsconfig.sessions.json",
     "version-packages": "changeset version",
     "db:seed": "bun scripts/build-pglite-seed.ts",
@@ -110,7 +111,7 @@
     "example:e2e:managed-scheduled-backups": "bun --no-env-file examples/e2e/managed-scheduled-backups.ts",
     "operator:bundle": "bun deploy/digitalocean/production/bundle.ts",
     "operator:cloud-init": "bun --no-env-file deploy/digitalocean/production/write-cloud-init.ts",
-    "test:extensions": "bun run build:native && bun --no-env-file test --timeout 10000 ./.pstdio/extensions/pocketcoder ./.pstdio/extensions/pocketcoder-workspaces",
+    "test:extensions": "bun run build:native && bun --no-env-file test --timeout 10000 ./.pstdio/extensions/pocketcoder ./.pstdio/extensions/pocketcoder-workspaces ./.pstdio/extensions/remote-testing",
     "ci:test": "bun --no-env-file test --timeout 10000 scripts/ci"
   },
   "devDependencies": {

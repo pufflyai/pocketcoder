@@ -6,6 +6,7 @@ import { requiredRow } from "../../database/required-row";
 import { capacityAdmission, reserveCapacityAdmission } from "../budgets/capacity-admission";
 import { appendTransition } from "./events";
 import { workspaceFromRow } from "./mapping";
+import { placementValue } from "./placement-counts";
 
 export function createAdmission(context: DatabaseContext) {
   const {
@@ -15,10 +16,15 @@ export function createAdmission(context: DatabaseContext) {
   } = context;
   function activeQuery(query: QueryContext) {
     return query
-      .select({ principalId: workspaces.principalId, templateName: workspaces.templateName, n: count() })
+      .select({
+        principalId: workspaces.principalId,
+        templateName: workspaces.templateName,
+        placement: placementValue(workspaces.templateSnapshot),
+        n: count(),
+      })
       .from(workspaces)
       .where(inArray(workspaces.state, ["provisioning", "connected", "ready", "preserving", "terminating"]))
-      .groupBy(workspaces.principalId, workspaces.templateName);
+      .groupBy(workspaces.principalId, workspaces.templateName, placementValue(workspaces.templateSnapshot));
   }
   function prepareActive() {
     return activeQuery(db).prepare("active_workspaces");
@@ -31,8 +37,9 @@ export function createAdmission(context: DatabaseContext) {
       return active.execute();
     }
     const rows = await readCounts();
-    const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
+    const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {}, byPlacement: {} };
     for (const row of rows) {
+      counts.byPlacement![row.placement] = (counts.byPlacement![row.placement] ?? 0) + row.n;
       counts.global += row.n;
       counts.byPrincipal[row.principalId] = (counts.byPrincipal[row.principalId] ?? 0) + row.n;
       counts.byTemplate[row.templateName] = (counts.byTemplate[row.templateName] ?? 0) + row.n;
@@ -101,11 +108,14 @@ export function createAdmission(context: DatabaseContext) {
 
 function admissionRoom(
   counts: ActiveCounts,
-  row: { principalId: string; templateName: string },
+  row: { principalId: string; templateName: string; templateSnapshot: { spec: { placement?: string } } },
   limits: WorkspaceAdmissionClaim["limits"],
 ) {
   const templateLimit = limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
+  const placement = row.templateSnapshot.spec.placement ?? "default";
+  const profileLimit = limits.perPlacementActiveWorkspaces?.[placement] ?? limits.globalActiveWorkspaces;
   return (
+    (counts.byPlacement?.[placement] ?? 0) < profileLimit &&
     counts.global < limits.globalActiveWorkspaces &&
     (counts.byPrincipal[row.principalId] ?? 0) < limits.perPrincipalActiveWorkspaces &&
     (counts.byTemplate[row.templateName] ?? 0) < templateLimit

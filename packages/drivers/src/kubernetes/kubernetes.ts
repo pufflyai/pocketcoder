@@ -34,12 +34,9 @@ import { jobState } from "./kubernetes-inspect";
 import { KUBERNETES_DIGEST_ANNOTATION, KUBERNETES_WORKSPACE_LABEL } from "./kubernetes-labels";
 import { legacyKubernetesProvider } from "./kubernetes-legacy";
 import { workspaceJobManifest } from "./kubernetes-manifests";
+import { KubernetesPlacement, type KubernetesPlacementConfig } from "./kubernetes-placement";
 import { applyRegistrySecret } from "./kubernetes-registry";
-import {
-  type KubernetesSchedulingOptions,
-  type KubernetesToleration,
-  validateToleration,
-} from "./kubernetes-scheduling";
+import type { KubernetesSchedulingOptions } from "./kubernetes-scheduling";
 import type { KubernetesSharedStorage } from "./kubernetes-shared-storage";
 import { stopKubernetesJob } from "./kubernetes-stop";
 import {
@@ -60,6 +57,7 @@ export {
 } from "./kubernetes-labels";
 
 export interface KubernetesDriverOptions extends EgressDriverOptions, KubernetesSchedulingOptions {
+  placement?: KubernetesPlacementConfig;
   namespace?: string;
   kubectlBin?: string;
   serviceAccountName?: string;
@@ -76,12 +74,10 @@ export class KubernetesDriver implements WorkspaceDriver {
   get inputStorageProfiles() {
     return this.sharedStorage ? (["shared-writer-readonly/v1"] as const) : ([] as const);
   }
+  private readonly placement: KubernetesPlacement;
   private readonly namespace: string;
   private readonly kubectlBin: string;
   private readonly serviceAccountName: string | undefined;
-  private readonly runtimeClassName: string | undefined;
-  private readonly nodeSelector: Record<string, string> | undefined;
-  private readonly tolerations: KubernetesToleration[] | undefined;
   private readonly imagePullPolicy: "Always" | "IfNotPresent" | "Never";
   private readonly egress: EgressDriverOptions;
   private sidecarsSupported = false;
@@ -92,6 +88,11 @@ export class KubernetesDriver implements WorkspaceDriver {
   private readonly kube = (args: string[], input?: string) => kubectl(this.kubectlBin, this.namespace, args, input);
 
   constructor(options: KubernetesDriverOptions = {}) {
+    this.placement = new KubernetesPlacement(
+      options.placement?.placementProfiles ?? { default: options },
+      options.placement?.templatePlacement,
+      options.placement?.vmRuntimeHandlers,
+    );
     this.resolveRegistry = options.resolveRegistry;
     this.sharedStorage = options.sharedStorage;
     this.captureEvidence = options.captureTerminationEvidence ?? false;
@@ -101,24 +102,14 @@ export class KubernetesDriver implements WorkspaceDriver {
     }
     this.kubectlBin = options.kubectlBin ?? "kubectl";
     this.serviceAccountName = options.serviceAccountName;
-    this.runtimeClassName = options.runtimeClassName;
-    if (this.runtimeClassName !== undefined && !isKubernetesName(this.runtimeClassName)) {
-      throw new Error("runtimeClassName must be a Kubernetes resource name");
-    }
     if (this.serviceAccountName && !isKubernetesName(this.serviceAccountName)) {
       throw new Error("serviceAccountName must be a Kubernetes resource name");
     }
-    this.nodeSelector = options.nodeSelector;
-    this.tolerations = options.tolerations;
-    for (const toleration of this.tolerations ?? []) validateToleration(toleration);
     this.imagePullPolicy = options.imagePullPolicy ?? "IfNotPresent";
     this.workloads = new KubernetesWorkloads(
       this.kube,
       {
         imagePullPolicy: this.imagePullPolicy,
-        runtimeClassName: this.runtimeClassName,
-        nodeSelector: this.nodeSelector,
-        tolerations: this.tolerations,
       },
       { sharedStorage: this.sharedStorage, inputSource: options.inputSource },
     );
@@ -140,6 +131,12 @@ export class KubernetesDriver implements WorkspaceDriver {
     this.sidecarsSupported = true;
   }
 
+  verifyPlacementProfiles() {
+    return this.placement.verifyProfiles(async (name) =>
+      JSON.parse(await this.kube(["get", "runtimeclass", name, "-o", "json"])),
+    );
+  }
+
   checkSharedStorage() {
     return checkSharedStorage(this.sharedStorage, this.namespace, this.kube);
   }
@@ -151,6 +148,7 @@ export class KubernetesDriver implements WorkspaceDriver {
     });
     const { workspace, input } = launch;
     const spec = workspace.templateSnapshot.spec;
+    const placement = this.placement.resolve(workspace.templateName, spec.placement);
     const name = resourceName(workspace.id);
     const inputSecret = `${name}-input`;
     const restricted = spec.network.mode === "restricted";
@@ -187,8 +185,9 @@ export class KubernetesDriver implements WorkspaceDriver {
         );
       }
 
-      if (this.runtimeClassName)
-        await kubectl(this.kubectlBin, this.namespace, ["get", "runtimeclass", this.runtimeClassName, "-o", "name"]);
+      await this.placement.verify(placement, async (name) =>
+        JSON.parse(await this.kube(["get", "runtimeclass", name, "-o", "json"])),
+      );
       if (restricted) await this.requireNativeSidecars();
       if (restricted) {
         await kubectl(
@@ -210,9 +209,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       const manifest = workspaceJobManifest(launch, name, inputSecret, egressSecret, {
         sharedMounts,
         serviceAccountName: this.serviceAccountName,
-        runtimeClassName: this.runtimeClassName,
-        nodeSelector: this.nodeSelector,
-        tolerations: this.tolerations,
+        ...placement,
         imagePullPolicy: this.imagePullPolicy,
         ...(spec.imagePullSecret ? { imagePullSecret: registrySecret } : {}),
         ...(this.captureEvidence ? { podFinalizers: [EVIDENCE_FINALIZER] } : {}),
@@ -230,6 +227,7 @@ export class KubernetesDriver implements WorkspaceDriver {
       const ref = {
         kind: this.kind,
         ...workloadReference(workspace),
+        ...(placement.containerEngine ? { containerEngine: true, runtimeClassName: placement.runtimeClassName } : {}),
         id: name,
         jobUid: jobUidOf(job),
         ...(storageIdentity ? { storageIdentity, workspaceId: workspace.id } : {}),
@@ -265,13 +263,16 @@ export class KubernetesDriver implements WorkspaceDriver {
   async createWarm(launch: WarmRuntimeLaunch): Promise<ProviderRef> {
     if (this.sharedStorage) throw new Error("Shared storage requires a cold workspace allocation");
     if (launch.template.spec.imagePullSecret) throw new Error("Private images cannot use warm pools");
+    const placement = this.placement.resolve(launch.template.name, launch.template.spec.placement);
+    if (placement.containerEngine) throw new Error("Container engine placements require cold workspaces");
+    await this.placement.verify(placement, async (name) =>
+      JSON.parse(await this.kube(["get", "runtimeclass", name, "-o", "json"])),
+    );
     return createKubernetesWarm(launch, {
       namespace: this.namespace,
       kubectlBin: this.kubectlBin,
       serviceAccountName: this.serviceAccountName,
-      runtimeClassName: this.runtimeClassName,
-      nodeSelector: this.nodeSelector,
-      tolerations: this.tolerations,
+      ...placement,
       imagePullPolicy: this.imagePullPolicy,
       requireNativeSidecars: () => this.requireNativeSidecars(),
       captureEvidence: this.captureEvidence,

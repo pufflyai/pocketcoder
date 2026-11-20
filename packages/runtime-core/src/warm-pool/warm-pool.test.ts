@@ -135,3 +135,12 @@ describe("warm workspace pooling", () => {
     ).rejects.toThrow("persistent mounts are not supported");
   });
 });
+
+test("named placements cannot reuse a warm runtime from an earlier operator policy", async () => {
+  const { validateWarmPoolTemplate } = await import("./warm-pool-config");
+  const store = await createStore();
+  const { template } = await seed(store);
+  expect(() => validateWarmPoolTemplate({ ...template, spec: { ...template.spec, placement: "arm" } })).toThrow(
+    "named placements require cold admission",
+  );
+});

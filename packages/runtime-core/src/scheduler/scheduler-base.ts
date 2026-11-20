@@ -43,6 +43,7 @@ function failureLogContent(error: unknown): Uint8Array {
 // routes to a shared executor.
 
 export interface AdmissionLimits {
+  perPlacementActiveWorkspaces?: Record<string, number>;
   globalActiveWorkspaces: number;
   perPrincipalActiveWorkspaces: number;
   perTemplateActiveWorkspaces: Record<string, number>;

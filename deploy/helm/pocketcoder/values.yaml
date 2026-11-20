@@ -53,6 +53,12 @@ workspace:
   serviceAccount:
     create: true
     name: pocketcoder-workspace
+  # Named profiles, operator template grants, and allowed Kata handlers.
+  placement: null
+  # Add public node, controller and cluster ranges not covered by private IP ranges.
+  engineBlockedCidrs: []
+  # Optional NodeLocal DNS addresses, such as 169.254.20.10/32 on GKE.
+  engineDnsCidrs: []
   runtimeClassName: ""
   nodeSelector: {}
   tolerations: []

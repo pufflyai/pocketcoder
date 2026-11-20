@@ -101,6 +101,10 @@ spec:
               value: {{ include "pocketcoder.workspaceNamespace" . | quote }}
             - name: POCKETCODER_KUBERNETES_SERVICE_ACCOUNT
               value: {{ .Values.workspace.serviceAccount.name | quote }}
+            {{- with .Values.workspace.placement }}
+            - name: POCKETCODER_PLACEMENT_CONFIG
+              value: {{ . | toJson | quote }}
+            {{- end }}
             {{- with .Values.workspace.runtimeClassName }}
             - name: POCKETCODER_KUBERNETES_RUNTIME_CLASS
               value: {{ . | quote }}

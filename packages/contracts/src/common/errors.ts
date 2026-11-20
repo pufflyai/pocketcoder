@@ -17,6 +17,8 @@ export const ERROR_CODES = {
   "idempotency.conflict": 409,
   "capacity.queue_full": 429,
   "capacity.waiters_full": 429,
+  placement_not_allowed: 403,
+  placement_unavailable: 503,
   "template.not_found": 404,
   "template.version_not_found": 404,
   "template.version_immutable": 409,

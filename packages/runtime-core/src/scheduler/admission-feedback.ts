@@ -8,6 +8,10 @@ export function capacityReason(row: WorkspaceRow, counts: ActiveCounts, limits: 
     return "admission_principal_capacity" as const;
   const templateLimit = limits.perTemplateActiveWorkspaces[row.templateName] ?? limits.globalActiveWorkspaces;
   if ((counts.byTemplate[row.templateName] ?? 0) >= templateLimit) return "admission_template_capacity" as const;
+  const placement = row.templateSnapshot.spec.placement ?? "default";
+  const profileLimit = limits.perPlacementActiveWorkspaces?.[placement];
+  if (profileLimit !== undefined && (counts.byPlacement?.[placement] ?? 0) >= profileLimit)
+    return "admission_profile_capacity" as const;
   return null;
 }
 
@@ -25,7 +29,12 @@ export async function recordCapacityReasons(
   let changed = false;
   for (const row of queued) {
     const reason = capacityReason(row, counts, context.deps.limits);
-    const local = ["admission_global_capacity", "admission_principal_capacity", "admission_template_capacity"];
+    const local = [
+      "admission_global_capacity",
+      "admission_principal_capacity",
+      "admission_template_capacity",
+      "admission_profile_capacity",
+    ];
     if (row.reasonCode !== reason && (reason || local.includes(row.reasonCode ?? ""))) {
       await context.deps.store.setQueuedAdmissionReason(row.id, reason, context.now());
       changed = true;

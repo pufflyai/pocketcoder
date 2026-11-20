@@ -4,6 +4,7 @@ import type { DatabaseContext } from "../../database/context";
 import { prepareSelect } from "../../database/prepared-select";
 import { requiredRow } from "../../database/required-row";
 import { workspaceFromRow } from "./mapping";
+import { placementValue } from "./placement-counts";
 
 export function createAdmissionSnapshot(context: DatabaseContext) {
   const {
@@ -27,17 +28,22 @@ export function createAdmissionSnapshot(context: DatabaseContext) {
       .as("heads");
     const active = db.$with("active_workspaces").as(
       db
-        .select({ principalId: workspaces.principalId, templateName: workspaces.templateName, n: count().as("n") })
+        .select({
+          principalId: workspaces.principalId,
+          templateName: workspaces.templateName,
+          placement: placementValue(workspaces.templateSnapshot).as("placement"),
+          n: count().as("n"),
+        })
         .from(workspaces)
         .where(inArray(workspaces.state, ["provisioning", "connected", "ready", "preserving", "terminating"]))
-        .groupBy(workspaces.principalId, workspaces.templateName),
+        .groupBy(workspaces.principalId, workspaces.templateName, placementValue(workspaces.templateSnapshot)),
     );
     const summary = db.$with("active_summary").as(
       db
         .select({
           groups: sql<
-            Array<[string, string, number]>
-          >`coalesce(jsonb_agg(jsonb_build_array(${active.principalId}, ${active.templateName}, ${active.n})), '[]'::jsonb)`.as(
+            Array<[string, string, number, string]>
+          >`coalesce(jsonb_agg(jsonb_build_array(${active.principalId}, ${active.templateName}, ${active.n}, ${active.placement})), '[]'::jsonb)`.as(
             "groups",
           ),
         })
@@ -56,8 +62,9 @@ export function createAdmissionSnapshot(context: DatabaseContext) {
     statement ??= prepare();
     const rows = await statement();
     const first = requiredRow(rows[0]);
-    const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {} };
-    for (const [principal, template, n] of first.groups) {
+    const counts: ActiveCounts = { global: 0, byPrincipal: {}, byTemplate: {}, byPlacement: {} };
+    for (const [principal, template, n, placement] of first.groups) {
+      counts.byPlacement![placement] = (counts.byPlacement![placement] ?? 0) + n;
       counts.global += n;
       counts.byPrincipal[principal] = (counts.byPrincipal[principal] ?? 0) + n;
       counts.byTemplate[template] = (counts.byTemplate[template] ?? 0) + n;

@@ -151,6 +151,7 @@ export const CheckpointHookSchema = z.object({
 });
 
 export const RuntimeTemplatePolicySchema = z.object({
+  placement: z.string().regex(NAME_RE).optional(),
   version: z.string().regex(SEMVER_RE),
   image: z.string().regex(IMAGE_DIGEST_RE, {
     message: "image must be digest-pinned (repo@sha256:<64 hex>)",

@@ -307,3 +307,12 @@ test("publishes an authored service workload without changing its immutable form
   expect(stored?.manifest?.spec.adapters.main).toMatchObject({ kind: "service", service: "agent" });
   expect((await f.publish(manifest)).status).toBe(200);
 });
+
+test("publishing cannot self-authorize a privileged placement", async () => {
+  const f = await fixture();
+  const manifest = fixtureTemplateEcho().manifest;
+  const response = await f.publish({ ...manifest, spec: { ...manifest.spec, placement: "container-engine" } });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ error: { code: "placement_not_allowed" } });
+  expect(await f.store.listTemplates(null)).toEqual([]);
+});

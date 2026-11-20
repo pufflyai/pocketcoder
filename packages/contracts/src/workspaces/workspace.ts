@@ -60,6 +60,7 @@ export const ADMISSION_REASONS = [
   "admission_global_capacity",
   "admission_principal_capacity",
   "admission_template_capacity",
+  "admission_profile_capacity",
   "admission_policy_global_capacity",
   "admission_actor_capacity",
   "admission_denied",

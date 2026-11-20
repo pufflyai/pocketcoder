@@ -10,6 +10,7 @@ O-37
 .pstdio/extensions/*
 !.pstdio/extensions/pocketcoder
 !.pstdio/extensions/pocketcoder-workspaces
+!.pstdio/extensions/remote-testing
 out
 **/.env
 **/.env.*
