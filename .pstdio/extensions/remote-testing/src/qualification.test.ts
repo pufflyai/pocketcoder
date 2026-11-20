@@ -25,7 +25,7 @@ test("candidate discovery includes computed host declarations", async () => {
   try {
     await Bun.write(
       join(root, "scripts/ci/production-platforms.ts"),
-      'const windows="win32-arm64"; export const productionDesktopPlatforms=()=>[{target:"linux-x64"},{target:windows}]; export const productionToolchainPlatforms=()=>[]; export const productionBenchmarkPlatforms=()=>[];',
+      'const windows="win32-arm64"; export const productionDesktopPlatforms=()=>[{target:"linux-x64",os:"ubuntu-24.04"},{target:windows,os:"windows-11-arm"}]; export const productionToolchainPlatforms=()=>[]; export const productionPerformanceWorkloads=()=>[{os:"ubuntu-24.04"}];',
     );
     const child = Bun.spawn(["sh", "-c", DISCOVERY_COMMAND], { cwd: root, stdout: "pipe", stderr: "pipe" });
     const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);

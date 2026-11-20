@@ -156,7 +156,12 @@
         "disconnectGrace": "5m",
         "terminateGrace": "15s"
       },
-      "maxLaunchInputBytes": 65536
+      "maxLaunchInputBytes": 65536,
+      "checkpointHook": {
+        "command": ["/usr/local/bin/bun", "/opt/pocketcoder/quiesce.ts"],
+        "timeoutSeconds": 30,
+        "env": {}
+      }
     }
   }
 }
