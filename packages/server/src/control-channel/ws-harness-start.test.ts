@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { AgentFrameSchema, PROTOCOL_VERSION, snapshotServices } from "@pstdio/pocketcoder-contracts";
 import { DockerDriver, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
@@ -17,6 +17,8 @@ test("failed native harness spawn cannot complete a restored workspace with no r
   const disk = await realpath(await mkdtemp("/tmp/pc-harness-start-"));
   const mount = join(disk, "mount");
   await mkdir(mount, { mode: 0o700 });
+  // Kubernetes temporary volumes can pass setgid to new directories.
+  await chmod(mount, 0o700);
   let worker: ReturnType<typeof spawnSupervisor> | undefined;
   let pipeline = Promise.resolve();
   let server: ReturnType<typeof Bun.serve> | undefined;
