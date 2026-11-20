@@ -9,7 +9,7 @@ import { publicationServer } from "./publication-server";
 import { sessionEnvironment } from "./session-env";
 
 // Pi owns model context in its session file. PocketCoder owns the public messages.
-export function piRunner(command: string[], directory: string): SessionRunner {
+export function piRunner(command: string[], directory: string, cancelGraceMs = 5000): SessionRunner {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   return async (run) => {
     run.signal.throwIfAborted();
@@ -39,7 +39,7 @@ export function piRunner(command: string[], directory: string): SessionRunner {
     );
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     const abort = () => {
-      killTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), 5000);
+      killTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), cancelGraceMs);
       try {
         child.stdin.write(`${JSON.stringify({ type: "abort" })}\n`);
         child.stdin.flush();

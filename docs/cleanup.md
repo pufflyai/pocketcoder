@@ -194,3 +194,12 @@ Kito K-2 owns downstream integration and hosted acceptance. Its capacity, shared
 storage, external retention, and live Kubernetes failure gates remain separate
 from the local controller release. Review delegated grants and those retention
 policies before enabling hosted deletion.
+
+## Nested test engines
+
+Engine placement runs one `dockerd` inside each workspace's Kata VM. Its data and Unix
+socket live under `/workspace`. Targeted cancellation stops the run; the collector then
+cancels its workspace unless the caller explicitly kept it. Pod deletion removes the VM,
+nested containers, networks and volumes. No host daemon needs a separate prune operation.
+The collector retains uploaded logs and result archives after deletion, including failures.
+A controller restart does not transfer engine ownership to another workspace.

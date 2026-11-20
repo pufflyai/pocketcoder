@@ -1,0 +1,170 @@
+{
+  "apiVersion": "pocketcoder.dev/v1",
+  "kind": "Template",
+  "metadata": {
+    "name": "prompt-studio-review",
+    "description": "Partial Linux qualification with an isolated Kata Docker engine and pinned Prompt Studio tools"
+  },
+  "spec": {
+    "version": "2.0.0",
+    "image": "example.invalid/pocketcoder-echo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "runtime": {
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "protocol": "pocketcoder.workload/v1"
+    },
+    "profile": "service",
+    "adapters": {
+      "session": {
+        "kind": "service",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "protocol": "pocketcoder.execution/v1",
+        "env": {},
+        "service": "session"
+      }
+    },
+    "operations": {
+      "message": {
+        "adapter": "session",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false
+        },
+        "requiredCapabilities": ["request-lookup", "deduplicated-accept", "targeted-cancel"],
+        "outputRoots": []
+      }
+    },
+    "services": {
+      "session": {
+        "baseUrl": "http://127.0.0.1:3284",
+        "required": true,
+        "healthPath": "/healthz",
+        "routes": [
+          {
+            "method": "POST",
+            "path": "/executions/accept",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/lookup",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/cancel",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          },
+          {
+            "method": "POST",
+            "path": "/executions/ack",
+            "query": [],
+            "responseMode": "buffered",
+            "maxRequestBytes": 1048576,
+            "maxResponseBytes": 8388608,
+            "deadlineSeconds": 30
+          }
+        ],
+        "process": {
+          "command": [
+            "/usr/local/bin/bun",
+            "/opt/pocketcoder/supervisor.js",
+            "session",
+            "serve",
+            "pi",
+            "--cancel-grace-seconds",
+            "180",
+            "--",
+            "/usr/local/bin/bun",
+            "/opt/pocketcoder/test-runner.js"
+          ],
+          "env": {},
+          "cwd": "/workspace"
+        }
+      }
+    },
+    "previews": {},
+    "credentialSlots": {},
+    "resources": {
+      "cpu": "8",
+      "memory": "16Gi",
+      "ephemeralStorage": "64Gi"
+    },
+    "network": {
+      "mode": "unrestricted"
+    },
+    "security": {
+      "uid": 10001,
+      "gid": 10001,
+      "readOnlyRoot": true,
+      "writableMemoryPaths": ["/tmp"],
+      "dropCapabilities": ["ALL"],
+      "allowPrivilegeEscalation": false,
+      "seccomp": "RuntimeDefault"
+    },
+    "limits": {
+      "deadlineSeconds": 7200,
+      "finalizationSeconds": 180,
+      "inputFileBytes": 16777216,
+      "stagedInputBytes": 67108864,
+      "inputFiles": 100,
+      "inFlightTransfers": 2,
+      "exportBytes": 16777216,
+      "exportFiles": 100,
+      "unreferencedInputRetentionSeconds": 3600,
+      "exportRetentionSeconds": 86400
+    },
+    "lifecycle": {
+      "persistence": {
+        "mounts": [
+          {
+            "name": "workspace",
+            "target": "/workspace",
+            "maxBytes": 64424509440,
+            "maxFiles": 2000000
+          }
+        ],
+        "conversationRestore": "filesystem_only",
+        "conversationRetention": "168h",
+        "checkpoint": {
+          "onIdle": "destroy",
+          "onDeadline": "destroy",
+          "onCleanExit": "destroy",
+          "onFailure": "destroy",
+          "retention": "168h"
+        }
+      },
+      "timeouts": {
+        "start": "10m",
+        "maxAge": "2h",
+        "idle": "30m",
+        "disconnectGrace": "5m",
+        "terminateGrace": "15s"
+      },
+      "maxLaunchInputBytes": 65536,
+      "checkpointHook": {
+        "command": ["/usr/local/bin/bun", "/opt/pocketcoder/quiesce.ts"],
+        "timeoutSeconds": 30,
+        "env": {}
+      }
+    },
+    "placement": "container-engine"
+  }
+}

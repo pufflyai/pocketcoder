@@ -7,6 +7,7 @@ import { storageInitializer } from "./kubernetes-storage-init";
 import { persistentVolumes, type ResolvedSharedMount } from "./kubernetes-volumes";
 
 interface ManifestOptions {
+  containerEngine?: boolean;
   podFinalizers?: string[];
   serviceAccountName?: string;
   imagePullPolicy: "Always" | "IfNotPresent" | "Never";
@@ -113,7 +114,10 @@ export function workspaceJobManifest(
   const persistent = persistentVolumes(launch.mounts, options.sharedMounts);
   const secrets = launch.secrets.map(volumeForSecret);
   const memory = memoryVolumes(credentialMemoryPaths(spec));
-  const labels = { [KUBERNETES_WORKSPACE_LABEL]: workspace.id };
+  const labels = {
+    [KUBERNETES_WORKSPACE_LABEL]: workspace.id,
+    ...(options.containerEngine ? { "pocketcoder.dev/container-engine": "true" } : {}),
+  };
   const annotations = { [KUBERNETES_DIGEST_ANNOTATION]: workspace.templateDigest };
   return {
     apiVersion: "batch/v1",
@@ -161,6 +165,17 @@ export function workspaceJobManifest(
                 readOnlyRootFilesystem: spec.security.readOnlyRoot,
                 allowPrivilegeEscalation: spec.security.allowPrivilegeEscalation,
                 capabilities: { drop: spec.security.dropCapabilities },
+                ...(options.containerEngine
+                  ? {
+                      privileged: true,
+                      runAsUser: 0,
+                      runAsGroup: 0,
+                      runAsNonRoot: false,
+                      allowPrivilegeEscalation: true,
+                      readOnlyRootFilesystem: false,
+                      capabilities: { drop: [] },
+                    }
+                  : {}),
               },
               volumeMounts: [
                 {
@@ -240,6 +255,17 @@ export function warmJobManifest(
                 readOnlyRootFilesystem: spec.security.readOnlyRoot,
                 allowPrivilegeEscalation: spec.security.allowPrivilegeEscalation,
                 capabilities: { drop: spec.security.dropCapabilities },
+                ...(options.containerEngine
+                  ? {
+                      privileged: true,
+                      runAsUser: 0,
+                      runAsGroup: 0,
+                      runAsNonRoot: false,
+                      allowPrivilegeEscalation: true,
+                      readOnlyRootFilesystem: false,
+                      capabilities: { drop: [] },
+                    }
+                  : {}),
               },
               volumeMounts: [
                 {

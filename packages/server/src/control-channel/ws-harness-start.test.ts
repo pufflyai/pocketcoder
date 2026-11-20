@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { AgentFrameSchema, PROTOCOL_VERSION, snapshotServices } from "@pstdio/pocketcoder-contracts";
 import { DockerDriver, FilesystemStorageDriver } from "@pstdio/pocketcoder-drivers";
@@ -17,6 +17,8 @@ test("failed native harness spawn cannot complete a restored workspace with no r
   const disk = await realpath(await mkdtemp("/tmp/pc-harness-start-"));
   const mount = join(disk, "mount");
   await mkdir(mount, { mode: 0o700 });
+  // Kubernetes temporary volumes can pass setgid to new directories.
+  await chmod(mount, 0o700);
   let worker: ReturnType<typeof spawnSupervisor> | undefined;
   let pipeline = Promise.resolve();
   let server: ReturnType<typeof Bun.serve> | undefined;
@@ -189,13 +191,20 @@ test("failed native harness spawn cannot complete a restored workspace with no r
     await pipeline;
     const workspace = await f.store.getWorkspace(id);
     const operation = await f.store.getOperation(operationId);
-    expect(await Bun.file(join(mount, "tiny")).text()).toBe("x");
+    const stderr = await new Response(worker.stderr).text();
+    const restored = await Bun.file(join(mount, "tiny"))
+      .text()
+      .catch(() => null);
+    expect(
+      restored,
+      JSON.stringify({ frames, failure: workspace?.failureLogTail, reason: operation?.reasonCode, stderr }),
+    ).toBe("x");
     expect(operation?.state).not.toBe("succeeded");
     expect(workspace?.readyAt).toBeNull();
     expect(workspace?.state).toBe("failed");
     expect(operation?.state).toBe("failed");
     expect(worker.exitCode).toBe(30);
-    expect(await new Response(worker.stderr).text()).toBe("");
+    expect(stderr).toBe("");
     expect(frames).not.toContain("process_state:running");
     expect(frames).toContain("process_state:exited");
     expect(frames.filter((type) => type === "restore_status")).toHaveLength(1);

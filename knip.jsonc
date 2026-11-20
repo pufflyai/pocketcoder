@@ -29,6 +29,10 @@
     },
     ".pstdio/extensions/pocketcoder": { "entry": ["**/*.test.ts", "src/codex-template/*.ts"] },
     ".pstdio/extensions/pocketcoder-workspaces": { "entry": ["**/*.test.ts"] },
+    ".pstdio/extensions/remote-testing": { "entry": ["**/*.test.ts"] },
+    "examples/harnesses/test-runner": {
+      "entry": ["*.test.ts", "runner.ts", "render-template.ts", "engine.ts", "display-session.ts"]
+    },
     "packages/db": {
       "entry": [
         "src/database/crash-fixture.ts",

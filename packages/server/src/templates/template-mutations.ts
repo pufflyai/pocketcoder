@@ -13,7 +13,12 @@ import { type AppEnv, requireScope } from "../http/middleware";
 import { COMMON_ERROR_RESPONSES } from "../http/shared-routes";
 import { safeTemplateItem } from "./template-item";
 
-export function registerTemplateMutations(app: OpenAPIHono<AppEnv>, store: Store, egressImage?: string | null) {
+export function registerTemplateMutations(
+  app: OpenAPIHono<AppEnv>,
+  store: Store,
+  egressImage?: string | null,
+  checkPlacement?: (name: string, spec: import("@pstdio/pocketcoder-contracts").RuntimeTemplatePolicy) => unknown,
+) {
   app.use("/v1/templates", async (c, next) => {
     if (c.req.method === "POST") return requireScope("templates:write")(c, next);
     await next();
@@ -66,6 +71,9 @@ export function registerTemplateMutations(app: OpenAPIHono<AppEnv>, store: Store
     async (c) => {
       const { manifest } = c.req.valid("json");
       const definition = runtimeTemplateDefinition(manifest);
+      checkPlacement?.(definition.manifest.metadata.name, definition.policy);
+      if (!checkPlacement && definition.policy.placement && definition.policy.placement !== "default")
+        throw new ApiError("placement_not_allowed", "No named placement is configured.");
       if (definition.policy.network.mode === "restricted" && !egressImage) {
         throw new ApiError("validation.invalid", "Restricted templates require a configured POCKETCODER_EGRESS_IMAGE.");
       }

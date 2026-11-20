@@ -35,13 +35,14 @@ test.each(["memory", "disk"] as const)(
         terminalAt: null,
       });
       expect(snapshot.queuedCount).toBe(3);
-      expect(snapshot.counts).toEqual({ global: 0, byPrincipal: {}, byTemplate: {} });
+      expect(snapshot.counts).toEqual({ global: 0, byPrincipal: {}, byTemplate: {}, byPlacement: {} });
       for (const row of [first, second, third]) {
         await fixture.store.transition(row.id, { from: ["queued"], to: "provisioning", at: new Date() });
         snapshot = await fixture.store.readAdmissionSnapshot();
         const active = [first, second, third].indexOf(row) + 1;
         expect(snapshot.queuedCount).toBe(3 - active);
         expect(snapshot.counts).toEqual({
+          byPlacement: { default: active },
           global: active,
           byPrincipal: { [fixture.principal.id]: active },
           byTemplate: { [fixture.template.name]: active },
@@ -87,6 +88,7 @@ test.each(["memory", "disk"] as const)(
       expect(snapshot.queued.map((row) => row.id)).toEqual([backlog.id]);
       expect(snapshot.queuedCount).toBe(1);
       expect(snapshot.counts).toEqual({
+        byPlacement: { default: 3 },
         global: 3,
         byPrincipal: { [fixture.principal.id]: 2, [otherPrincipal.id]: 1 },
         byTemplate: { [fixture.template.name]: 2, [template.name]: 1 },

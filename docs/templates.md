@@ -584,3 +584,12 @@ reconnects and live reload never extend lifetime. Extending a workspace does not
 extend previously issued credentials or browser grants.
 
 See [finite exports](finite-exports.md) for output ownership and cleanup.
+
+## Named placement profiles
+
+A template may set `spec.placement`, such as `container-engine` or `linux-arm64`.
+Without it, the controller uses `default`. Operators configure profiles and exact
+per-template grants with `POCKETCODER_PLACEMENT_CONFIG`; see [deployment](deployment.md#placement-profiles).
+Publishing an unauthorized profile returns `placement_not_allowed`. Removing a profile
+keeps existing pods running; new work returns `placement_unavailable`. Snapshot identity
+includes placement. Profile capacity queues work with `admission_profile_capacity`.

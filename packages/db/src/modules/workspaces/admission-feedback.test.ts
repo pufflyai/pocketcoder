@@ -2,36 +2,39 @@ import { expect, test } from "bun:test";
 import { DatabaseStore } from "../../store";
 import { createPGliteFixture, insertTestWorkspace } from "../../test-fixtures";
 
-test("queued feedback survives restart, wakes once, and cannot change canceled or purged work", async () => {
-  const fixture = await createPGliteFixture("admission-feedback", "disk");
-  try {
-    const row = await insertTestWorkspace(fixture, "queued");
-    const changed = fixture.store.waitForWorkspaceChange(row.id, row.changeSeq, 1000);
-    await fixture.store.setQueuedAdmissionReason(row.id, "admission_actor_capacity", new Date());
-    await changed;
-    const after = await fixture.store.getWorkspace(row.id);
-    await fixture.store.setQueuedAdmissionReason(row.id, "admission_actor_capacity", new Date());
-    expect(await fixture.store.getWorkspace(row.id)).toEqual(after);
-    await fixture.store.close();
-    const reopened = await DatabaseStore.openPGlite(fixture.directory);
+test.each(["admission_actor_capacity", "admission_profile_capacity"] as const)(
+  "queued %s feedback survives restart, wakes once, and cannot change canceled or purged work",
+  async (reason) => {
+    const fixture = await createPGliteFixture("admission-feedback", "disk");
     try {
-      expect(await reopened.getWorkspace(row.id)).toEqual(after);
-      await reopened.transition(row.id, {
-        from: ["queued"],
-        to: "canceled",
-        reason: "canceled_by_caller",
-        at: new Date(),
-      });
-      const canceled = await reopened.getWorkspace(row.id);
-      await reopened.setQueuedAdmissionReason(row.id, "admission_global_capacity", new Date());
-      expect(await reopened.getWorkspace(row.id)).toEqual(canceled);
+      const row = await insertTestWorkspace(fixture, "queued");
+      const changed = fixture.store.waitForWorkspaceChange(row.id, row.changeSeq, 1000);
+      await fixture.store.setQueuedAdmissionReason(row.id, reason, new Date());
+      await changed;
+      const after = await fixture.store.getWorkspace(row.id);
+      await fixture.store.setQueuedAdmissionReason(row.id, reason, new Date());
+      expect(await fixture.store.getWorkspace(row.id)).toEqual(after);
+      await fixture.store.close();
+      const reopened = await DatabaseStore.openPGlite(fixture.directory);
+      try {
+        expect(await reopened.getWorkspace(row.id)).toEqual(after);
+        await reopened.transition(row.id, {
+          from: ["queued"],
+          to: "canceled",
+          reason: "canceled_by_caller",
+          at: new Date(),
+        });
+        const canceled = await reopened.getWorkspace(row.id);
+        await reopened.setQueuedAdmissionReason(row.id, "admission_global_capacity", new Date());
+        expect(await reopened.getWorkspace(row.id)).toEqual(canceled);
+      } finally {
+        await reopened.close();
+      }
     } finally {
-      await reopened.close();
+      await fixture.dispose();
     }
-  } finally {
-    await fixture.dispose();
-  }
-});
+  },
+);
 
 test("purge fences a queued feedback write", async () => {
   const fixture = await createPGliteFixture("admission-purge");

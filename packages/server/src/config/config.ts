@@ -9,6 +9,7 @@ import { parseHttpAddress } from "./http-address";
 import { type InputStorageConfig, inputStorageConfig } from "./input-storage-config";
 import { resolveKubernetesScheduling } from "./kubernetes-scheduling-config";
 import { kubernetesSharedConfig } from "./kubernetes-shared-config";
+import { placementConfig } from "./placement-config";
 import { type PublicViewConfig, publicViewConfig } from "./public-views";
 import { type SessionConfig, sessionConfig } from "./session-queue";
 import { type StoreConfig, storeConfig } from "./store-config";
@@ -16,6 +17,7 @@ import { type StoreConfig, storeConfig } from "./store-config";
 type Environment = Record<string, string | undefined>;
 
 export interface ServerConfig extends Partial<SessionConfig> {
+  placement?: ReturnType<typeof placementConfig>;
   kubernetesSharedStorage?: ReturnType<typeof kubernetesSharedConfig>;
   inputStorage?: InputStorageConfig;
   offNodeConfigFile?: string;
@@ -355,6 +357,7 @@ export function loadConfig(env: Environment = process.env): ServerConfig {
     kubernetesNodeSelector: scheduling.nodeSelector ?? null,
     kubernetesTolerations: scheduling.tolerations ?? [],
     kubernetesRuntimeClass: scheduling.runtimeClassName ?? null,
+    placement: placementConfig(env),
     workspaceServerUrl: httpUrlEnv(
       env,
       "POCKETCODER_WORKSPACE_SERVER_URL",

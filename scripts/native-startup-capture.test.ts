@@ -33,7 +33,11 @@ test.skipIf(process.platform !== "linux")(
       expect(records).toHaveLength(result.samples);
       expect(records[0].processes[0].pid).toBe(result.pid);
       expect(records[0].cpu[0].values.every(Number.isFinite)).toBe(true);
-      expect(records[0].pressure.cpu[0].values.total).toBeGreaterThanOrEqual(0);
+      if (await Bun.file("/proc/pressure/cpu").exists()) {
+        expect(records[0].pressure.cpu[0].values.total).toBeGreaterThanOrEqual(0);
+      } else {
+        expect(records[0].pressure.cpu).toBeNull();
+      }
       await Bun.sleep(200);
       expect(await Bun.file(path).text()).toBe(content);
     } finally {

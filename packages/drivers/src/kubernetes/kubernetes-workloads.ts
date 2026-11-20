@@ -35,6 +35,7 @@ export interface WorkspacePod {
   metadata: { uid: string; deletionTimestamp?: string; ownerReferences?: { uid: string }[] };
   spec: {
     nodeName?: string;
+    runtimeClassName?: string;
     containers: Container[];
     volumes?: { name: string; persistentVolumeClaim?: { claimName: string } }[];
   };
@@ -141,19 +142,27 @@ export class KubernetesWorkloads {
     const snapshot = WorkloadTemplateSnapshotSchema.parse(ref.workloadTemplate);
     const spec = parseWorkloadTemplate(snapshot.manifest).manifest.spec;
     const container = workspaceContainer(pod);
+    const engine =
+      ref.containerEngine === true &&
+      typeof ref.runtimeClassName === "string" &&
+      pod.spec.runtimeClassName === ref.runtimeClassName &&
+      spec.placement !== undefined;
     // The pinned reference is the evidence: containerd verifies pulled content
     // against its digest, while status.imageID differs between image import paths.
     if (
       !container ||
       container.image !== spec.image ||
-      !container.securityContext?.readOnlyRootFilesystem ||
-      !container.securityContext.capabilities?.drop?.includes("ALL") ||
-      container.securityContext.capabilities.add?.length ||
-      container.securityContext.privileged ||
-      container.securityContext.allowPrivilegeEscalation !== false
+      (engine
+        ? container.securityContext?.privileged !== true
+        : !container.securityContext?.readOnlyRootFilesystem ||
+          !container.securityContext.capabilities?.drop?.includes("ALL") ||
+          container.securityContext.capabilities.add?.length ||
+          container.securityContext.privileged ||
+          container.securityContext.allowPrivilegeEscalation !== false)
     )
       throw new Error("Installed workload image or isolation differs from its declaration.");
     const descriptor = await this.image(spec.image, {
+      runtimeClassName: pod.spec.runtimeClassName,
       uid: spec.security.uid,
       gid: spec.security.gid,
       ...(pod.spec.nodeName ? { nodeName: pod.spec.nodeName } : {}),
@@ -187,7 +196,10 @@ export class KubernetesWorkloads {
     });
   }
 
-  private image(image: string, options: Pick<ImageProbeOptions, "uid" | "gid" | "nodeName" | "pullSecret">) {
+  private image(
+    image: string,
+    options: Pick<ImageProbeOptions, "uid" | "gid" | "nodeName" | "pullSecret" | "runtimeClassName">,
+  ) {
     let pending = this.images.get(image);
     if (!pending) {
       pending = this.readImage(image, { ...this.probe, ...options });

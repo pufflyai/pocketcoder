@@ -50,6 +50,10 @@ export function warmPoolFingerprint(template: TemplateRow, driverKind: string): 
 }
 
 export function validateWarmPoolTemplate(template: TemplateRow): void {
+  if (template.spec.placement && template.spec.placement !== "default")
+    throw new Error(
+      `warm pool ${template.name}@${template.version} is ineligible: named placements require cold admission`,
+    );
   if (template.spec.persistence.mounts.length > 0) {
     throw new Error(
       `warm pool ${template.name}@${template.version} is ineligible: persistent mounts are not supported`,

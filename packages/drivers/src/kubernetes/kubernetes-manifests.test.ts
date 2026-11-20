@@ -131,3 +131,25 @@ describe("Kubernetes Job manifests", () => {
     }
   });
 });
+
+test("engine privilege is limited to the explicitly selected VM profile", () => {
+  const ordinary = workspaceJobManifest(workspaceLaunch(), "workspace", "input", "egress", options);
+  const engine = workspaceJobManifest(workspaceLaunch(), "workspace", "input", "egress", {
+    ...options,
+    runtimeClassName: "kata-qemu",
+    containerEngine: true,
+  });
+  expect(podSpec(ordinary).containers[0]?.securityContext).toMatchObject({
+    runAsNonRoot: true,
+    allowPrivilegeEscalation: false,
+    capabilities: { drop: ["ALL"] },
+  });
+  expect(podSpec(engine).runtimeClassName).toBe("kata-qemu");
+  expect(podSpec(engine).containers[0]?.securityContext).toMatchObject({
+    privileged: true,
+    runAsUser: 0,
+    runAsNonRoot: false,
+  });
+  expect(podSpec(engine).automountServiceAccountToken).toBe(false);
+  expect(podSpec(engine).volumes.some((v) => "hostPath" in v)).toBe(false);
+});

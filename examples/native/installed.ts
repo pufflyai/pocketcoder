@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { command } from "../e2e/local-process";
@@ -11,6 +11,11 @@ export async function checkInstalledNative(artifact: string, commit: string) {
   const directory = await mkdtemp(join(tmpdir(), "pocketcoder-installed-"));
   const controller = await nativeController(join(artifact, "pocketcoder"), directory);
   try {
+    if ((await stat(controller.executable)).size > 150_000_000) throw new Error("Executable exceeds 150 MB");
+    if ((await readdir(directory)).sort().join(",") !== "pocketcoder,tools")
+      throw new Error("Controller requires adjacent assets");
+    if ((await readdir(join(directory, "tools"))).join(",") !== "docker")
+      throw new Error("Controller PATH contains tools besides Docker");
     if ((await controller.run(["--version"])).trim() !== record.version) throw new Error("Binary version differs");
     await controller.start();
     const ownerArgs = [

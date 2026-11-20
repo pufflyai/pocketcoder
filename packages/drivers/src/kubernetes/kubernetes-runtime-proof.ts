@@ -1,7 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { hasNoPodAdmission } from "./kubernetes-empty-evidence";
-import { EVIDENCE_FINALIZER, podHasStopped } from "./kubernetes-evidence";
+import { EVIDENCE_FINALIZER } from "./kubernetes-evidence";
 import type { Resource } from "./kubernetes-evidence-types";
+import { podHasStopped } from "./kubernetes-pod-termination";
 
 // A provider name can be reused. Only its immutable admission identity can bind a saved exit proof.
 export function hasMatchingKubernetesTermination(

@@ -17,12 +17,14 @@ export function registerCatalogRoutes({
   app,
   store,
   egressImage,
+  checkPlacement,
 }: {
   app: OpenAPIHono<AppEnv>;
   store: Store;
   egressImage?: string | null;
+  checkPlacement?: Parameters<typeof registerTemplateMutations>[3];
 }) {
-  registerTemplateMutations(app, store, egressImage);
+  registerTemplateMutations(app, store, egressImage, checkPlacement);
   app.openapi(
     createRoute({
       method: "get",

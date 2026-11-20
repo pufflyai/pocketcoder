@@ -102,6 +102,7 @@ export interface WorkspaceListFilter {
 }
 
 export interface ActiveCounts {
+  byPlacement?: Record<string, number>;
   global: number;
   byPrincipal: Record<string, number>;
   byTemplate: Record<string, number>;
@@ -116,6 +117,7 @@ export interface WorkspaceAdmissionClaim {
     globalActiveWorkspaces: number;
     perPrincipalActiveWorkspaces: number;
     perTemplateActiveWorkspaces: Record<string, number>;
+    perPlacementActiveWorkspaces?: Record<string, number>;
   };
 }
 

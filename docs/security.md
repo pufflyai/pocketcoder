@@ -293,3 +293,20 @@ output or credential files.
 See [managed sessions](managed-runtime.md), [consumer setup](managed-consumers.md)
 and [runtime credentials](runtime-credentials.md). Model access and spend remain
 with the consumer's gateway.
+
+## Container engine placement
+
+An operator may grant a named template an engine profile. Only that profile relaxes the
+workspace container security context, inside a Kata VM. The configured RuntimeClass and
+actual handler must be on the operator's Kata allowlist. The default profile remains
+unprivileged. Template authors cannot grant engine authority to themselves.
+
+Each engine pod owns its daemon, socket, filesystem and nested resources. The daemon must
+never use a node or operator socket. Configure Kata without host device passthrough and
+keep node, metadata, other workspaces and the controller operator API outside its network
+boundary. See [placement deployment](deployment.md#placement-profiles). VM isolation and
+network policy need live probes; a rendered manifest alone does not prove isolation.
+
+Source bundles and evidence uploads use expiring URLs for individual objects. Operator
+Git, storage and cloud credentials stay on the host. Ledgers retain object identity and
+local evidence paths, not signed URLs.

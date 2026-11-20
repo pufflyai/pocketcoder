@@ -22,6 +22,7 @@ export function workloadLifecycle(manifest: WorkloadTemplate) {
       "/run/pocketcoder/input",
     ],
     version: spec.version,
+    placement: spec.placement,
     image: spec.image,
     imagePullSecret: spec.imagePullSecret,
     resources: spec.resources,

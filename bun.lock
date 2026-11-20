@@ -54,6 +54,18 @@
         "typescript": "5.9.3",
       },
     },
+    ".pstdio/extensions/remote-testing": {
+      "name": "remote-testing",
+      "version": "0.1.0",
+      "dependencies": {
+        "@pstdio/sdk": "0.48.0-nightly.20261117030256",
+      },
+      "devDependencies": {
+        "@pstdio/pocketcoder-example-test-runner": "workspace:*",
+        "@types/bun": "1.4.2",
+        "typescript": "5.9.3",
+      },
+    },
     "examples/harnesses/onefin": {
       "name": "@pstdio/pocketcoder-example-onefin-native",
       "version": "0.0.0",
@@ -75,13 +87,24 @@
         "typescript": "5.9.3",
       },
     },
+    "examples/harnesses/test-runner": {
+      "name": "@pstdio/pocketcoder-example-test-runner",
+      "version": "0.0.0",
+      "dependencies": {
+        "zod": "^4.0.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.2",
+        "typescript": "5.9.3",
+      },
+    },
     "packages/auth": {
       "name": "@pstdio/pocketcoder-auth",
       "version": "0.1.0",
     },
     "packages/cli": {
       "name": "@pstdio/pocketcoder-cli",
-      "version": "0.12.0",
+      "version": "0.15.4",
       "bin": {
         "pcd": "dist/bin.js",
       },
@@ -182,7 +205,7 @@
     },
     "packages/sdk": {
       "name": "@pstdio/pocketcoder-sdk",
-      "version": "0.8.0",
+      "version": "0.11.1",
       "dependencies": {
         "zod": "^4.0.0",
       },
@@ -681,6 +704,8 @@
 
     "@pstdio/pocketcoder-example-pi-native": ["@pstdio/pocketcoder-example-pi-native@workspace:examples/harnesses/pi"],
 
+    "@pstdio/pocketcoder-example-test-runner": ["@pstdio/pocketcoder-example-test-runner@workspace:examples/harnesses/test-runner"],
+
     "@pstdio/pocketcoder-manager": ["@pstdio/pocketcoder-manager@workspace:packages/manager"],
 
     "@pstdio/pocketcoder-runtime-contracts": ["@pstdio/pocketcoder-runtime-contracts@workspace:packages/runtime-contracts"],
@@ -758,6 +783,8 @@
     "@smithy/types": ["@smithy/types@4.20.0", "", { "dependencies": { "tslib": "^2.6.2" } }, "sha512-lCA6QG22dPk9ecHbv91jDQZsmtPUjdS1aE2Il6NNPqe7DrYc0dZQi6DhcESk2KYXH2sp5xbAcGdYMZDFnuzA2A=="],
 
     "@stablelib/base64": ["@stablelib/base64@1.0.1", "", {}, "sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ=="],
+
+    "@tanstack/query-core": ["@tanstack/query-core@5.90.20", "", {}, "sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg=="],
 
     "@tufjs/canonical-json": ["@tufjs/canonical-json@2.0.0", "", {}, "sha512-yVtV8zsdo8qFHe+/3kw81dSLyF7D576A5cCFCi4X7B39tWT7SekaEFUnvnWJHz+9qO7qJTah1JbrDjWKqFtdWA=="],
 
@@ -1565,6 +1592,8 @@
 
     "redent": ["redent@3.0.0", "", { "dependencies": { "indent-string": "^4.0.0", "strip-indent": "^3.0.0" } }, "sha512-6tDA8g98We0zd0GvVeMT9arEOnTw9qM03L9cJXaCjrip1OO764RDBLBfrB4cwzNGDj5OA5ioymC9GkizgWJDUg=="],
 
+    "remote-testing": ["remote-testing@workspace:.pstdio/extensions/remote-testing"],
+
     "require-directory": ["require-directory@2.1.1", "", {}, "sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q=="],
 
     "resolve": ["resolve@1.22.12", "", { "dependencies": { "es-errors": "^1.3.0", "is-core-module": "^2.16.1", "path-parse": "^1.0.7", "supports-preserve-symlinks-flag": "^1.0.0" }, "bin": { "resolve": "bin/resolve" } }, "sha512-TyeJ1zif53BPfHootBGwPRYT1RUt6oGWsaQr8UyZW/eAm9bKoijtvruSDEmZHm92CwS9nj7/fWttqPCgzep8CA=="],
@@ -2062,6 +2091,8 @@
     "read-pkg-up/find-up": ["find-up@2.1.0", "", { "dependencies": { "locate-path": "^2.0.0" } }, "sha512-NWzkk0jSJtTt08+FBFMvXoeZnOJD+jTtsRmBYbAIzJdX6l7dLgR7CTubCM5/eDdPUBvLCeVasP1brfVR/9/EZQ=="],
 
     "read-yaml-file/js-yaml": ["js-yaml@3.15.0", "", { "dependencies": { "argparse": "^1.0.7", "esprima": "^4.0.0" }, "bin": { "js-yaml": "bin/js-yaml.js" } }, "sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog=="],
+
+    "remote-testing/@pstdio/sdk": ["@pstdio/sdk@0.48.0-nightly.20261117030256", "", { "dependencies": { "@noble/hashes": "^2.4.0", "@tanstack/query-core": "5.90.20", "mustache": "^4.2.0", "yjs": "^13.6.29", "zod": "^4.3.6" }, "peerDependencies": { "@tanstack/react-query": "^5.0.0", "react": "19.2.4" }, "optionalPeers": ["@tanstack/react-query", "react"] }, "sha512-ITn5Eo0kJf/txv2Fc5J0zGxDtdYAc005WCADVEVGkXY9VCU0x3WnFhGgi/sTuFDjXP6NPV+VwDvEaLDAn6sBnw=="],
 
     "rolldown/@oxc-project/types": ["@oxc-project/types@0.143.0", "", {}, "sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA=="],
 

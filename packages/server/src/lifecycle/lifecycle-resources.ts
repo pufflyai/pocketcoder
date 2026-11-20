@@ -62,9 +62,14 @@ async function initializeStore(
   return store;
 }
 
-export async function loadConfiguredTemplates(store: Store, templateDir: string | null, log: ServerLog): Promise<void> {
+export async function loadConfiguredTemplates(
+  store: Store,
+  templateDir: string | null,
+  log: ServerLog,
+  checkPlacement?: ReturnType<typeof import("../templates/placement-policy").templatePlacementPolicy>,
+): Promise<void> {
   if (!templateDir) return;
-  const result = await loadTemplateDir(store, templateDir);
+  const result = await loadTemplateDir(store, templateDir, checkPlacement);
   for (const row of result.loaded) {
     log(`template loaded: ${row.name}@${row.version} (${row.digest.slice(0, 19)}...)`);
   }
@@ -103,6 +108,7 @@ export function createWorkspaceDriver(
         : {}),
       inputSource: kubernetesInputSource(config),
       ...egress,
+      placement: config.placement,
       namespace: config.kubernetesNamespace,
       captureTerminationEvidence: true,
       nodeSelector: config.kubernetesNodeSelector ?? undefined,
@@ -277,4 +283,8 @@ export async function reconcileCheckpointPreserves(
 
 export function configuredIssuer(config: ServerConfig) {
   return createIssuerClient(config.issuerCaFile ? { ca: readFileSync(config.issuerCaFile, "utf8") } : {});
+}
+
+export async function verifyWorkspacePlacement(driver: ReturnType<typeof createWorkspaceDriver>) {
+  if (driver instanceof KubernetesDriver) await driver.verifyPlacementProfiles();
 }

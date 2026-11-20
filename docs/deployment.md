@@ -679,3 +679,58 @@ for the PVC, network boundary, publisher and cleanup contract. The default
   auto-deleted.
 
 The controller needs namespaced Pod patch permission to retain termination evidence, plus read-only Node identity access. Bind `pocketcoder-node-identity` to the controller ServiceAccount in the deployed namespace. Workspace ServiceAccounts have no API token. Missing evidence keeps cleanup and capacity release pending.
+
+## Placement profiles
+
+`POCKETCODER_PLACEMENT_CONFIG` replaces global scheduling for deployments that need more
+than one node pool or runtime. Its JSON contains `placementProfiles`, `templatePlacement`
+and `vmRuntimeHandlers`. The Helm equivalent is `workspace.placement`.
+
+```json
+{
+  "placementProfiles": {
+    "default": { "runtimeClassName": "gvisor" },
+    "container-engine": {
+      "runtimeClassName": "kata-qemu",
+      "nodeSelector": { "pocketcoder.dev/pool": "container-engine", "kubernetes.io/arch": "amd64" },
+      "tolerations": [{ "key": "pocketcoder/container-engine", "operator": "Exists", "effect": "NoSchedule" }],
+      "containerEngine": true,
+      "maxWorkspaces": 2
+    },
+    "linux-arm64": {
+      "runtimeClassName": "kata-qemu",
+      "nodeSelector": { "pocketcoder.dev/pool": "container-engine", "kubernetes.io/arch": "arm64" },
+      "tolerations": [{ "key": "pocketcoder/container-engine", "operator": "Exists", "effect": "NoSchedule" }],
+      "containerEngine": true,
+      "maxWorkspaces": 2
+    }
+  },
+  "templatePlacement": { "prompt-studio-review": ["container-engine"], "prompt-studio-review-arm64": ["linux-arm64"] },
+  "vmRuntimeHandlers": ["kata-qemu"]
+}
+```
+
+If this configuration is absent, the existing runtime class, node selector and toleration
+environment variables supply the `default` profile. The default cannot enable an engine.
+A named profile requires an exact template grant. Configured caps count workspaces across
+template versions and principals, including terminating work until cleanup completes.
+Named profiles and capped profiles use cold admission. This rechecks current placement
+authority on every launch and claims caps atomically in the database.
+
+Install Kata on a dedicated, tainted node pool with working virtualization. The controller
+checks each engine RuntimeClass and its actual handler against the operator's Kata
+allowlist at startup and before launching a pod. RuntimeClass aliases are supported;
+only the actual handler grants VM authority. Configure containerd with `privileged_without_host_devices = true`,
+as described by [Kata's privileged-container guide](https://github.com/kata-containers/kata-containers/blob/main/docs/how-to/privileged.md).
+Never map a host Docker socket, host network, host PID namespace or host devices.
+
+The Helm chart adds a deny-ingress engine policy and allows DNS, the agent port and public
+internet egress. Private, metadata and loopback ranges are blocked. Add public node,
+controller and cluster CIDRs under `workspace.engineBlockedCidrs`. Keep the controller's
+operator API ingress policy enabled. DNS permits `kube-dns` and `node-local-dns` Pods.
+Set `workspace.engineDnsCidrs` for a host-network DNS listener (for example
+`169.254.20.10/32` on GKE). Network policies combine their allowed
+traffic: no other policy selecting engine pods may grant broader private access. Use a
+CNI that enforces policy for Kata traffic.
+Cluster support and these boundaries must be probed on the target pool before publishing
+an engine template for use. This change does not provision or qualify a Kata node pool.

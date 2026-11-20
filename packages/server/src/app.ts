@@ -61,6 +61,7 @@ import { registerSecretRoutes } from "./secrets/secret-routes";
 import { controllerVault } from "./secrets/secret-vault";
 import { composeSessionRecovery, type ManagedSessionDeps, registerManagedSessionRoutes } from "./sessions/compose";
 import { registerCatalogRoutes } from "./templates/catalog-routes";
+import { placementLaunchPolicy } from "./templates/placement-policy";
 import { terminalCallbacks } from "./terminals/terminal-audit";
 import { terminalConnectValidator, terminalWsEvents } from "./terminals/terminal-ws";
 import { composeWorkspaceRuntime, workspaceSecretFactory } from "./workspace-runtime";
@@ -73,6 +74,7 @@ export interface BuildDeps extends ManagedSessionDeps {
   inputStorageOptions?: InputStorageOptions;
   screenshotOptions?: ScreenshotOptions;
   publicViews?: import("./config/public-views").PublicViewConfig;
+  checkPlacement?: ReturnType<typeof import("./templates/placement-policy").templatePlacementPolicy>;
   authorizeLaunch?: SchedulerDeps["authorizeLaunch"];
   store: Store;
   driver: WorkspaceDriver & { cleanupInput?(workspaceId: string): Promise<void> };
@@ -170,7 +172,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const scheduler = new Scheduler({
     workloadLimits: deps.workloadLimits,
     admissionFenced: () => deps.maintenance?.fenced ?? false,
-    ...(deps.authorizeLaunch ? { authorizeLaunch: deps.authorizeLaunch } : {}),
+    authorizeLaunch: placementLaunchPolicy(deps.checkPlacement, deps.authorizeLaunch),
     store,
     driver,
     ...(deps.storageDriver ? { storageDriver: deps.storageDriver } : {}),
@@ -194,6 +196,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
     onError: (context, err) => log(`scheduler ${context}: ${String(err)}`),
   });
   const service = new WorkspaceService({
+    checkPlacement: deps.checkPlacement,
     store,
     scheduler,
     limits,
@@ -305,7 +308,7 @@ function composeServer(deps: BuildDeps & { readiness: Readiness }): BuiltServer 
   const vault = controllerVault(store, deps);
   if (vault) registerSecretRoutes(app, vault);
   registerManagedSessionRoutes(app, { ...deps, store, executionDispatcher, inputs, previews, liveTurns });
-  registerCatalogRoutes({ app, store, egressImage: deps.egressImage });
+  registerCatalogRoutes({ app, store, egressImage: deps.egressImage, checkPlacement: deps.checkPlacement });
   registerPrincipalRoutes(app, store);
   registerKeyRoutes(app, store, pepper);
   registerKeyRotationRoutes(app, store, pepper);

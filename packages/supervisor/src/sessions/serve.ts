@@ -17,10 +17,14 @@ export function serveSessions(args: string[]) {
   const adapter = options[0];
   if (adapter !== "echo" && adapter !== "pi") throw new Error("session serve requires echo or pi");
   if (adapter === "pi" && !command.length) throw new Error("Pi requires its native RPC command after --");
+  const graceIndex = options.indexOf("--cancel-grace-seconds");
+  const grace = graceIndex < 0 ? 5 : Number(options[graceIndex + 1]);
+  if (!Number.isInteger(grace) || grace < 1 || grace > 180)
+    throw new Error("Cancellation grace must be 1 to 180 seconds");
   const directory = process.env.POCKETCODER_SESSION_DIRECTORY ?? "/tmp/pocketcoder-sessions";
   const producer = new SessionProducer(
     `${directory}/requests`,
-    adapter === "echo" ? echoRunner : piRunner(command, `${directory}/pi`),
+    adapter === "echo" ? echoRunner : piRunner(command, `${directory}/pi`, grace * 1000),
     publishMessage,
   );
   const server = Bun.serve({

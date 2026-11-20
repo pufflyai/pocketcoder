@@ -1,6 +1,7 @@
 import { ADMISSION_ANNOTATION, hasNoPodAdmission } from "./kubernetes-empty-evidence";
-import type { ContainerStatus, Resource } from "./kubernetes-evidence-types";
+import type { Resource } from "./kubernetes-evidence-types";
 import { deleteResource, type KubernetesCommand } from "./kubernetes-identity";
+import { podHasStopped, podTerminationProof } from "./kubernetes-pod-termination";
 
 export const EVIDENCE_FINALIZER = "pocketcoder.dev/termination-evidence";
 export const EVIDENCE_ANNOTATION = "pocketcoder.dev/termination-evidence";
@@ -21,68 +22,6 @@ async function podsFor(run: Command, name: string) {
 
 function owned(pod: Resource, uid: string) {
   return pod.metadata.ownerReferences?.some((owner) => owner.uid === uid && owner.kind === "Job" && owner.controller);
-}
-
-export function podHasStopped(pod: Resource) {
-  const groups = [
-    [pod.spec.containers, pod.status?.containerStatuses],
-    [pod.spec.initContainers, pod.status?.initContainerStatuses],
-    [pod.spec.ephemeralContainers, pod.status?.ephemeralContainerStatuses],
-  ] as const;
-  if (!pod.spec.containers?.length) return false;
-  // Kubernetes binding rejects deletionTimestamp: this Pod can no longer start.
-  if (!pod.spec.nodeName && pod.metadata.deletionTimestamp) return groups.every(([, statuses]) => !statuses?.length);
-  return groups.every(
-    ([spec, statuses]) =>
-      (spec?.length ?? 0) === (statuses?.length ?? 0) &&
-      (spec ?? []).every((container) => {
-        const status = statuses?.find((candidate) => candidate.name === container.name);
-        return (
-          status?.containerID &&
-          status.state.terminated?.containerID === status.containerID &&
-          !["ContainerStatusUnknown", "NodeLost"].includes(status.state.terminated?.reason ?? "") &&
-          status.state.terminated?.finishedAt &&
-          Number.isInteger(status.state.terminated.exitCode)
-        );
-      }),
-  );
-}
-
-export function podTerminationProof(pod: Resource) {
-  // Never persist launch environment, volumes or delegated input in evidence.
-  return {
-    metadata: {
-      uid: pod.metadata.uid,
-      ownerReferences: pod.metadata.ownerReferences,
-      deletionTimestamp: pod.metadata.deletionTimestamp,
-    },
-    spec: {
-      nodeName: pod.spec.nodeName,
-      containers: pod.spec.containers?.map(({ name }) => ({ name })),
-      initContainers: pod.spec.initContainers?.map(({ name }) => ({ name })),
-      ephemeralContainers: pod.spec.ephemeralContainers?.map(({ name }) => ({ name })),
-    },
-    status: {
-      containerStatuses: statusEvidence(pod.status?.containerStatuses),
-      initContainerStatuses: statusEvidence(pod.status?.initContainerStatuses),
-      ephemeralContainerStatuses: statusEvidence(pod.status?.ephemeralContainerStatuses),
-    },
-  };
-}
-
-function statusEvidence(statuses: ContainerStatus[] | undefined) {
-  return statuses?.map((status) => ({
-    name: status.name,
-    containerID: status.containerID,
-    state: {
-      terminated: {
-        exitCode: status.state.terminated?.exitCode,
-        finishedAt: status.state.terminated?.finishedAt,
-        containerID: status.state.terminated?.containerID,
-        reason: status.state.terminated?.reason,
-      },
-    },
-  }));
 }
 
 async function updatePod<T>(run: Command, pod: Resource, update: (current: Resource) => Promise<T>): Promise<T> {
