@@ -11,9 +11,12 @@ FROM node:24.22.1-bookworm-slim AS node
 FROM mcr.microsoft.com/playwright:v1.60.0-noble
 LABEL dev.pocketcoder.bun="1.4.4" dev.pocketcoder.node="24.22.1" dev.pocketcoder.playwright="1.60.0" dev.pocketcoder.docker="28.5.2"
 ENV POCKETCODER_PLAYWRIGHT_VERSION=1.60.0 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb iptables iproute2 kmod e2fsprogs util-linux \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb sudo iptables iproute2 kmod e2fsprogs util-linux \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 runner && useradd --uid 10001 --gid 10001 --home-dir /workspace/home runner
+# The candidate configures Electron's sandbox inside its VM, as its Linux CI does.
+RUN printf '%s\n' 'runner ALL=(root) NOPASSWD: /usr/bin/chown, /usr/bin/chmod' > /etc/sudoers.d/pocketcoder-runner \
+ && chmod 0440 /etc/sudoers.d/pocketcoder-runner
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

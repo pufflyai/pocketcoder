@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 
 async function run(...command: string[]) {
   const child = Bun.spawn(command, { stdout: "pipe", stderr: "pipe" });
@@ -25,6 +25,22 @@ test("the Kata workspace supports private IPv6 loopback listeners", async () => 
 
 test("the review runtime supplies the pinned Bun package runner", async () => {
   expect(await run("bunx", "--version")).toBe(Bun.version);
+});
+
+test("the review worker configures the desktop sandbox inside its VM", async () => {
+  expect(process.getuid?.()).toBe(10001);
+  const directory = await mkdtemp("/workspace/desktop-sandbox-");
+  const sandbox = `${directory}/chrome-sandbox`;
+  try {
+    await writeFile(sandbox, "sandbox fixture");
+    await run("sudo", "-n", "chown", "root:root", sandbox);
+    await run("sudo", "-n", "chmod", "4755", sandbox);
+    const file = await stat(sandbox);
+    expect(file.uid).toBe(0);
+    expect(file.mode & 0o7777).toBe(0o4755);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("the workspace init reaps orphaned test processes", async () => {

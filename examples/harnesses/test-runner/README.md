@@ -94,3 +94,9 @@ macOS and Windows workers are tracked in PC-197. Until those exist, qualificatio
 those targets as `no_worker`, with `coverage: partial` and `status: incomplete`. Linux
 success is not full qualification. Live Kata isolation, cancellation, restart recovery,
 Chromium, both Linux full plans and review duration require proof on the target cluster.
+
+
+The review image includes non-interactive guest-root `chown` and `chmod` through
+`sudo`. Prompt Studio's unchanged Linux desktop setup needs them for Electron's
+sandbox. This permission stays inside the already authorized Kata VM. It does
+not grant a node or controller shell.
