@@ -106,3 +106,8 @@ Result paths accept relative glob patterns. Discovery does not follow symbolic
 links or include `node_modules` or `.git`. The companion uses shallow patterns to
 retain monorepo browser traces without scanning dependency trees. Review clones
 use the same patterns within that run's private temporary directory.
+
+The review worker starts one private Xvfb display and Openbox window manager as
+the runner user before its supervisor. Desktop commands inherit `DISPLAY` and
+its workspace-local X authority. The X server uses a Unix socket and does not
+listen on TCP. Stopping the workspace signals the display and runtime together.

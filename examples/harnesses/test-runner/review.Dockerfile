@@ -5,13 +5,14 @@ COPY . .
 RUN bun install --frozen-lockfile \
  && bun build packages/supervisor/src/index.ts --target bun --outfile /out/supervisor.js \
  && bun build examples/harnesses/test-runner/runner.ts --target bun --outfile /out/test-runner.js \
- && bun build examples/harnesses/test-runner/engine.ts --target bun --outfile /out/engine.js
+ && bun build examples/harnesses/test-runner/engine.ts --target bun --outfile /out/engine.js \
+ && bun build examples/harnesses/test-runner/display-session.ts --target bun --outfile /out/display-session.js
 FROM docker:28.5.2-dind AS engine
 FROM node:24.22.1-bookworm-slim AS node
 FROM mcr.microsoft.com/playwright:v1.60.0-noble
 LABEL dev.pocketcoder.bun="1.4.4" dev.pocketcoder.node="24.22.1" dev.pocketcoder.playwright="1.60.0" dev.pocketcoder.docker="28.5.2"
-ENV POCKETCODER_PLAYWRIGHT_VERSION=1.60.0 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb sudo iptables iproute2 kmod e2fsprogs util-linux \
+ENV POCKETCODER_PLAYWRIGHT_VERSION=1.60.0 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright POCKETCODER_VIRTUAL_DISPLAY=1
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb sudo openbox x11-utils iptables iproute2 kmod e2fsprogs util-linux \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 runner && useradd --uid 10001 --gid 10001 --home-dir /workspace/home runner
 # The candidate configures Electron's sandbox inside its VM, as its Linux CI does.

@@ -43,6 +43,14 @@ test("the review worker configures the desktop sandbox inside its VM", async () 
   }
 });
 
+test("the review worker supplies a private X11 display and window manager", async () => {
+  const display = process.env.DISPLAY ?? "";
+  expect(display).toMatch(/^:\d+$/);
+  const socket = `/tmp/.X11-unix/X${display.slice(1)}`;
+  expect((await stat(socket)).isSocket()).toBe(true);
+  expect(await run("xprop", "-root", "_NET_SUPPORTING_WM_CHECK")).toMatch(/window id # 0x[0-9a-f]*[1-9a-f]/i);
+});
+
 test("the workspace init reaps orphaned test processes", async () => {
   const pid = Number(await run("sh", "-c", "sleep 30 >/dev/null 2>&1 & echo $!"));
   const alive = () => {
