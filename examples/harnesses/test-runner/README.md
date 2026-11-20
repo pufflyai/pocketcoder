@@ -110,4 +110,4 @@ use the same patterns within that run's private temporary directory.
 The review worker starts one private Xvfb display and Openbox window manager as
 the runner user before its supervisor. Desktop commands inherit `DISPLAY` and
 its workspace-local X authority. The X server uses a Unix socket and does not
-listen on TCP. Stopping the workspace signals the display and runtime together.
+listen on TCP. Stopping the workspace lets the supervisor finish its shutdown hooks before the display stops.

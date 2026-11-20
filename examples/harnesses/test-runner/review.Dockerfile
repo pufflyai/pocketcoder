@@ -26,7 +26,7 @@ COPY --from=engine /usr/local/bin/docker-init /usr/local/bin/docker-init
 COPY --from=engine /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY --from=engine /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=build /out/ /opt/pocketcoder/
-COPY examples/harnesses/test-runner/engine.conformance.test.ts /opt/pocketcoder/engine.conformance.test.ts
+COPY examples/harnesses/test-runner/*.conformance.test.ts /opt/pocketcoder/
 RUN mkdir -p /opt/pocketcoder/browser \
  && cd /opt/pocketcoder/browser && bun add --exact playwright@1.60.0
 COPY deploy/image/write-session-image.ts deploy/image/quiesce.ts /opt/pocketcoder/

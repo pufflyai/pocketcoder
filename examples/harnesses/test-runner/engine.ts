@@ -47,13 +47,7 @@ process.setgid?.(10001);
 process.setuid?.(10001);
 const command = process.argv.slice(2);
 if (process.env.POCKETCODER_VIRTUAL_DISPLAY === "1")
-  command.unshift(
-    "/usr/bin/xvfb-run",
-    "-a",
-    "--error-file=/workspace/xvfb.log",
-    "/usr/local/bin/bun",
-    "/opt/pocketcoder/display-session.js",
-  );
+  command.unshift("/usr/local/bin/bun", "/opt/pocketcoder/display-session.js");
 const supervisor = Bun.spawn(command, {
   detached: true,
   env: { ...process.env, HOME: "/workspace/home", DOCKER_HOST: "unix:///workspace/docker-run/docker.sock" },
@@ -61,13 +55,6 @@ const supervisor = Bun.spawn(command, {
   stdout: "inherit",
   stderr: "inherit",
 });
-// The display wrapper and runtime must stop together.
-for (const signal of ["SIGTERM", "SIGINT"] as const)
-  process.on(signal, () => {
-    try {
-      process.kill(-supervisor.pid, signal);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
-  });
+// The display owner waits for the supervisor before stopping X11.
+for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => supervisor.kill(signal));
 process.exit(await supervisor.exited);
