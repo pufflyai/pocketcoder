@@ -41,7 +41,7 @@ export async function uploadResults(
   signal.throwIfAborted();
   const paths = await resultPaths(repo, request.results.paths);
   // An empty archive distinguishes a successful collection with no files from lost evidence.
-  const args = paths.length ? paths : ["-T", "/dev/null"];
+  const args = paths.length ? paths.map((path) => `./${path}`) : ["-T", "/dev/null"];
   if (temporaryRoot) {
     for (const path of await resultPaths(temporaryRoot, request.results.temporaryPaths ?? [])) {
       signal.throwIfAborted();

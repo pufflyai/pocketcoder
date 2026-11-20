@@ -98,6 +98,7 @@ test("retains nested monorepo traces without archiving dependencies", async () =
     await Bun.write(join(root, "packages/e2e/test-results/failure/trace.zip"), "nested-trace");
     await Bun.write(join(root, "clients/desktop/test-results/failure/error-context.md"), "desktop-context");
     await Bun.write(join(root, "node_modules/tool/test-results/excluded.txt"), "dependency-report");
+    await Bun.write(join(root, "--exclude=packages/e2e/test-results"), "literal report operand");
     const archive = join(root, "collected.tar.gz");
     await uploadResults(
       {
@@ -118,6 +119,7 @@ test("retains nested monorepo traces without archiving dependencies", async () =
     expect(entries).toContain("test-results/execution.json");
     expect(entries).toContain("packages/e2e/test-results/failure/trace.zip");
     expect(entries).toContain("clients/desktop/test-results/failure/error-context.md");
+    expect(entries).toContain("./--exclude=packages/e2e/test-results");
     expect(entries).not.toContain("node_modules");
   } finally {
     server.stop(true);
