@@ -30,8 +30,6 @@ export { hasNoPodAdmission } from "./kubernetes/kubernetes-empty-evidence";
 export {
   captureTermination,
   EVIDENCE_FINALIZER,
-  podHasStopped,
-  podTerminationProof,
   readTerminationEvidence,
 } from "./kubernetes/kubernetes-evidence";
 export type { Resource as KubernetesEvidenceResource } from "./kubernetes/kubernetes-evidence-types";
@@ -41,6 +39,7 @@ export {
   type KubernetesPlacementConfig,
   type KubernetesPlacementProfile,
 } from "./kubernetes/kubernetes-placement";
+export { podHasStopped, podTerminationProof } from "./kubernetes/kubernetes-pod-termination";
 export { hasMatchingKubernetesTermination } from "./kubernetes/kubernetes-runtime-proof";
 export {
   type KubernetesSchedulingOptions,
