@@ -149,4 +149,7 @@ test.skipIf(!helm)("engine profiles carry operator grants and a separate network
   expect(policy.spec?.podSelector).toEqual({ matchLabels: { "pocketcoder.dev/container-engine": "true" } });
   expect(policy.spec?.ingress).toEqual([]);
   expect(policy.spec?.policyTypes).toEqual(["Ingress", "Egress"]);
+  expect(policy.spec?.egress[0].to[0].podSelector).toEqual({
+    matchExpressions: [{ key: "k8s-app", operator: "In", values: ["kube-dns", "node-local-dns"] }],
+  });
 });

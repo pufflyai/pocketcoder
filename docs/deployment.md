@@ -727,8 +727,9 @@ Never map a host Docker socket, host network, host PID namespace or host devices
 The Helm chart adds a deny-ingress engine policy and allows DNS, the agent port and public
 internet egress. Private, metadata and loopback ranges are blocked. Add public node,
 controller and cluster CIDRs under `workspace.engineBlockedCidrs`. Keep the controller's
-operator API ingress policy enabled. Set `workspace.engineDnsCidrs` for a NodeLocal DNS
-listener (for example `169.254.20.10/32` on GKE). Network policies combine their allowed
+operator API ingress policy enabled. DNS permits `kube-dns` and `node-local-dns` Pods.
+Set `workspace.engineDnsCidrs` for a host-network DNS listener (for example
+`169.254.20.10/32` on GKE). Network policies combine their allowed
 traffic: no other policy selecting engine pods may grant broader private access. Use a
 CNI that enforces policy for Kata traffic.
 Cluster support and these boundaries must be probed on the target pool before publishing

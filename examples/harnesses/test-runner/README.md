@@ -65,7 +65,7 @@ The VM and its nested containers, volumes and networks disappear with the pod.
 On a real engine workspace, run the adjacent regression test as UID 10001:
 
 ```sh
-bun test --timeout 120000 examples/harnesses/test-runner/engine.conformance.test.ts
+bun test --timeout 120000 /opt/pocketcoder/engine.conformance.test.ts
 ```
 
 Run it in two workspaces at once with different `ROLE` values. Both create the same

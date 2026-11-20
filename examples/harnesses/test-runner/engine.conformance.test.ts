@@ -33,7 +33,7 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
   );
   process.env.DOCKER_BUILDKIT = "1";
   await run("docker", "build", "--no-cache", "--build-arg", `OWNER=${owner}`, "-t", "pc195-engine-check:local", root);
-  expect(await run("docker", "run", "--rm", "pc195-engine-check:local")).toBe(owner);
+  expect(await run("docker", "run", "--rm", "--init", "pc195-engine-check:local")).toBe(owner);
   expect(
     await run(
       "docker",
@@ -107,6 +107,7 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
       services: {
         probe: {
           image: "pc195-compose-check:local",
+          init: true,
           build: { context: ".", args: { OWNER: owner } },
           volumes: ["./owner:/proof:ro"],
           command: ["cat", "/proof"],
