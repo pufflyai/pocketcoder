@@ -11,14 +11,16 @@ FROM node:24.22.1-bookworm-slim AS node
 FROM mcr.microsoft.com/playwright:v1.60.0-noble
 LABEL dev.pocketcoder.bun="1.4.4" dev.pocketcoder.node="24.22.1" dev.pocketcoder.playwright="1.60.0" dev.pocketcoder.docker="28.5.2"
 ENV POCKETCODER_PLAYWRIGHT_VERSION=1.60.0 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb iptables iproute2 kmod \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git strace xvfb iptables iproute2 kmod e2fsprogs util-linux \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 runner && useradd --uid 10001 --gid 10001 --home-dir /workspace/home runner
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=engine /usr/local/bin/docker /usr/local/bin/dockerd /usr/local/bin/containerd /usr/local/bin/containerd-shim-runc-v2 /usr/local/bin/ctr /usr/local/bin/runc /usr/local/bin/docker-proxy /usr/local/bin/
 COPY --from=engine /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY --from=engine /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=build /out/ /opt/pocketcoder/
+COPY examples/harnesses/test-runner/engine.conformance.test.ts /opt/pocketcoder/engine.conformance.test.ts
 RUN mkdir -p /opt/pocketcoder/browser \
  && cd /opt/pocketcoder/browser && bun add --exact playwright@1.60.0
 COPY deploy/image/write-session-image.ts deploy/image/quiesce.ts /opt/pocketcoder/

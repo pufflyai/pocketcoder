@@ -56,7 +56,21 @@ The engine image starts its own `dockerd` in the workspace container, inside its
 then drops the supervisor to UID/GID 10001. The daemon uses `/workspace/docker` and a
 workspace-local Unix socket. It sees the same absolute paths as the tests. There is no
 host socket, TCP daemon listener, shared daemon, host network or device passthrough.
+The Docker store uses a 32 GiB sparse ext4 disk at `/workspace/docker.ext4`, mounted
+inside the VM. Kata's shared filesystem cannot directly back Docker's overlay2 driver.
+The disk consumes workspace storage, not a memory-backed volume. Buildx and Compose
+come from the same pinned Docker image as the daemon.
 The VM and its nested containers, volumes and networks disappear with the pod.
+
+On a real engine workspace, run the adjacent regression test as UID 10001:
+
+```sh
+bun test --timeout 120000 examples/harnesses/test-runner/engine.conformance.test.ts
+```
+
+Run it in two workspaces at once with different `ROLE` values. Both create the same
+container, network and volume names; each must retain its own contents. Delete one
+workspace and verify the other daemon and its resources still work.
 
 ## Partial qualification
 
