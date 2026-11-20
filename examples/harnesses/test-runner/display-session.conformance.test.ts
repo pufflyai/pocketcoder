@@ -39,3 +39,28 @@ test("the private display waits for supervisor cleanup on TERM", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("canceling display startup does not launch the supervisor", async () => {
+  const directory = await mkdtemp("/workspace/tmp/display-startup-");
+  const launched = `${directory}/launched`;
+  const session = Bun.spawn(
+    [
+      "bun",
+      "/opt/pocketcoder/display-session.js",
+      "bun",
+      "-e",
+      `await Bun.write(${JSON.stringify(launched)}, "launched")`,
+    ],
+    { stdout: "ignore", stderr: "ignore" },
+  );
+  try {
+    await Bun.sleep(20);
+    session.kill("SIGTERM");
+    await session.exited;
+    expect(await Bun.file(launched).exists()).toBe(false);
+  } finally {
+    if (session.exitCode === null) session.kill("SIGKILL");
+    await session.exited;
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
