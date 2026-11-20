@@ -66,6 +66,10 @@ test("requires a failed init that cannot restart before accepting waiting status
   expect(podHasStopped({ ...pod, spec: { ...pod.spec, restartPolicy: "OnFailure" } })).toBe(false);
   pod.spec.initContainers![0]!.restartPolicy = "Always";
   expect(podHasStopped(pod)).toBe(false);
+  pod.spec.initContainers![0]!.restartPolicy = "OnFailure";
+  expect(podHasStopped(pod)).toBe(false);
+  pod.spec.initContainers![0]!.restartPolicy = "Never";
+  expect(podHasStopped(pod)).toBe(false);
   delete pod.spec.initContainers![0]!.restartPolicy;
   pod.status!.initContainerStatuses![0]!.state.terminated!.exitCode = 0;
   expect(podHasStopped(pod)).toBe(false);

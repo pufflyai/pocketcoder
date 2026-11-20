@@ -99,6 +99,6 @@ function failedInitPreventsStartup(pod: Resource) {
   // A failed, non-restartable init prevents regular startup even if PodGC marks stale status Failed.
   return (pod.spec.initContainers ?? []).some((init) => {
     const status = pod.status?.initContainerStatuses?.find((s) => s.name === init.name);
-    return init.restartPolicy !== "Always" && terminated(status) && status?.state.terminated?.exitCode !== 0;
+    return init.restartPolicy === undefined && terminated(status) && status?.state.terminated?.exitCode !== 0;
   });
 }
