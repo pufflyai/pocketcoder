@@ -27,8 +27,13 @@ export const RunRequestSchema = z.object({
     .max(6 * 3600),
   deadlineAt: z.iso.datetime(),
   runtime: z.object({ template: z.string(), image: z.string(), placement: z.string() }),
-  log: z.object({ url: z.url() }),
-  results: z.object({ url: z.url(), paths: z.array(z.string()).min(1).max(16), maxBytes: z.number().int().positive() }),
+  log: z.object({ url: z.url(), checkpointUrl: z.url().optional() }),
+  results: z.object({
+    url: z.url(),
+    checkpointUrl: z.url().optional(),
+    paths: z.array(z.string()).min(1).max(16),
+    maxBytes: z.number().int().positive(),
+  }),
 });
 export type RunRequest = z.infer<typeof RunRequestSchema>;
 export type RunStatus =

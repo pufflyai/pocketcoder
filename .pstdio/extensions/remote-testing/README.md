@@ -76,6 +76,11 @@ Runs transfer the history through pinned `origin/main` plus a thin head bundle. 
 upload is a head commit with an uncommitted overlay. Logs and `test-results/` are retained
 under the extension's `runs/` folder. GET URLs expire after 30 minutes; PUT URLs expire at
 the run timeout plus 30 minutes, bounded by the workspace deadline. The saved ledger contains no signed URLs.
+While tests run, the runner saves partial logs and results every 30 seconds. Each results
+snapshot is limited to 64 MiB and 20 seconds. Captures run one at a time and add some archive
+and upload work. Separate objects keep snapshots from replacing final results. After a lost
+runtime, the collector can retain the latest snapshot as `partial` evidence. Partial evidence
+never proves a passing run. The archive includes `evidence-snapshot.json` with its capture time.
 
 ```sh
 pst pocketcoder.remote-testing run --path <repo> --ref <sha> --requires git-history,docker,browsers --command "bun install --frozen-lockfile && bun run test:review --base origin/main"
@@ -93,7 +98,9 @@ A discovery run executes the candidate's own stable platform exports from
 `scripts/ci/production-platforms.ts` on a workspace. Computed targets are included; missing
 exports fail discovery. Candidate code never runs on the operator host. The suite pins
 one head and base for discovery and every target. Each target uses its own template and
-checks its actual OS and architecture before running `bun scripts/test.ts --stage full`.
+checks its actual OS and architecture, generates the candidate full-stage plan, and calls
+the candidate executor with every row assigned to that host. The complete plan, source,
+digest, assigned run IDs, and execution report remain in `test-results/qualification/`.
 macOS and Windows have no workers in
 PC-195; PC-197 tracks those. They remain `no_worker`, and the suite is `incomplete` with
 partial coverage. Failures and reruns keep separate run IDs. A suite can pass only when

@@ -29,7 +29,7 @@ function finishedRun(stopAfterRun: boolean) {
       } as never;
     },
     storage: {
-      async download() {
+      async download(_path: string): Promise<Uint8Array | null> {
         return new Uint8Array();
       },
     },
@@ -81,4 +81,40 @@ test("later workspace expiry cannot replace an already reported test failure", a
       ? ({ state: "expired", reason_code: "deadline_expired" } as never)
       : original(input);
   expect((await checkRun(deps, record))?.status).toBe("failed");
+});
+
+test("an expired lost runtime retains snapshots and never reports complete evidence", async () => {
+  const { deps, record } = finishedRun(false);
+  deps.api = async ({ path }) =>
+    path === "/v1/workspaces/env"
+      ? ({ state: "expired", reason_code: "deadline_expired" } as never)
+      : ({
+          finalizedAt: new Date().toISOString(),
+          acceptance: { execution: {} },
+          outcome: { status: "lost" },
+        } as never);
+  deps.storage.download = async (path: string) =>
+    path.startsWith("checkpoints/") ? new TextEncoder().encode("partial evidence") : null;
+  const summary = await checkRun(deps, record);
+  expect(summary).toMatchObject({
+    status: "timed_out",
+    evidenceStatus: "partial",
+    logPath: "test.log",
+    resultsPath: "test.tar.gz",
+    tail: "partial evidence",
+  });
+});
+
+test("snapshots cannot replace final evidence for a passing result", async () => {
+  const { deps, record } = finishedRun(false);
+  const original = deps.api;
+  deps.api = async (input) => {
+    const receipt = await original(input);
+    const parsed = receipt as { outcome: { finalResponse: string } };
+    const result = JSON.parse(parsed.outcome.finalResponse.slice("REMOTE_TEST_RESULT ".length));
+    parsed.outcome.finalResponse = `REMOTE_TEST_RESULT ${JSON.stringify({ ...result, status: "passed", exitCode: 0 })}`;
+    return receipt;
+  };
+  deps.storage.download = async (path: string) => (path.startsWith("checkpoints/") ? new Uint8Array() : null);
+  expect(await checkRun(deps, record)).toMatchObject({ status: "error", evidenceStatus: "partial" });
 });

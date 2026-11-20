@@ -158,9 +158,21 @@ async function requestFor(
       input.requires ?? (/\btest:review\b/.test(command) ? ["git-history", "docker", "browsers"] : ["git-history"]),
     ...(input.target ? { target: input.target } : {}),
     runtime: { template: `${ready.template.name}@${ready.template.version}`, image: "unknown", placement: "unknown" },
-    log: { url: await deps.storage.signedUrl("PUT", `logs/${runId}.log`, expiry(timeoutSeconds + 1800)) },
+    log: {
+      url: await deps.storage.signedUrl("PUT", `logs/${runId}.log`, expiry(timeoutSeconds + 1800)),
+      checkpointUrl: await deps.storage.signedUrl(
+        "PUT",
+        `checkpoints/logs/${runId}.log`,
+        expiry(timeoutSeconds + 1800),
+      ),
+    },
     results: {
       url: await deps.storage.signedUrl("PUT", `results/${runId}.tar.gz`, expiry(timeoutSeconds + 1800)),
+      checkpointUrl: await deps.storage.signedUrl(
+        "PUT",
+        `checkpoints/results/${runId}.tar.gz`,
+        expiry(timeoutSeconds + 1800),
+      ),
       paths: ["test-results"],
       maxBytes: 2 * 1024 ** 3,
     },

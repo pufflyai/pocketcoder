@@ -53,6 +53,7 @@ export interface RunSummary {
   environmentId: string;
   status: RunStatus;
   resultsPath: string | null;
+  evidenceStatus?: "complete" | "partial" | "missing";
   evidence?: RunResult;
   exitCode: number | null;
   durationMs: number;
@@ -113,13 +114,11 @@ async function summarize(deps: RunCollectionDeps, record: RunRecord, receipt: Re
   } catch {
     /* A malformed result is an error with its original log retained. */
   }
-  const log = await deps.storage.download(logs(record.runId));
-  const text = log ? new TextDecoder().decode(log) : "";
-  const logPath = log ? await deps.saveLog(record.runId, text) : null;
-  const results = await deps.storage.download(`results/${record.runId}.tar.gz`);
-  const resultsPath = results ? await deps.saveResults(record.runId, results) : null;
+  const artifacts = await collectArtifacts(deps, record.runId);
+  const { finalLog, finalResults, text, logPath, resultsPath, evidenceStatus } = artifacts;
   const base = {
     resultsPath,
+    evidenceStatus,
     ...(result ? { evidence: result } : {}),
     runId: record.runId,
     environmentId: record.environmentId,
@@ -145,10 +144,24 @@ async function summarize(deps: RunCollectionDeps, record: RunRecord, receipt: Re
   if (!valid || result.runId !== record.runId) return { ...base, status: "error", error: "Invalid run result" };
   if (
     status === "passed" &&
-    (result.exitCode !== 0 || !result.log.uploaded || !result.results.uploaded || !log || !results)
+    (result.exitCode !== 0 || !result.log.uploaded || !result.results.uploaded || !finalLog || !finalResults)
   )
     return { ...base, status: "error", error: "Passing result is missing successful execution or evidence" };
   return { ...base, status, ...(result.error ? { error: result.error } : {}) };
+}
+
+async function collectArtifacts(deps: RunCollectionDeps, runId: string) {
+  const finalLog = await deps.storage.download(logs(runId));
+  const log = finalLog ?? (await deps.storage.download(`checkpoints/logs/${runId}.log`));
+  const text = log ? new TextDecoder().decode(log) : "";
+  const logPath = log ? await deps.saveLog(runId, text) : null;
+  const finalResults = await deps.storage.download(`results/${runId}.tar.gz`);
+  const results = finalResults ?? (await deps.storage.download(`checkpoints/results/${runId}.tar.gz`));
+  const resultsPath = results ? await deps.saveResults(runId, results) : null;
+  let evidenceStatus: NonNullable<RunSummary["evidenceStatus"]> = "missing";
+  if (finalLog && finalResults) evidenceStatus = "complete";
+  else if (log || results) evidenceStatus = "partial";
+  return { finalLog, finalResults, text, logPath, resultsPath, evidenceStatus };
 }
 
 export async function cancelRun(deps: RunDeps, record: RunRecord) {

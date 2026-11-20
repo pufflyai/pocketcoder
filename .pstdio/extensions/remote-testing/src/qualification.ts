@@ -1,8 +1,8 @@
 import type { RunStatus } from "@pstdio/pocketcoder-example-test-runner/protocol";
 import type { ExtensionStorageApi } from "@pstdio/sdk/extensions";
+import { QUALIFICATION_COMMAND } from "./qualification-plan";
 import type { RunDeps } from "./runs";
 import { awaitRun, checkRun, readRun, startRun } from "./runs";
-
 import { DISCOVERY_COMMAND, requiredTargets } from "./target-discovery";
 
 export { requiredTargets } from "./target-discovery";
@@ -99,7 +99,7 @@ export async function startQualification(
             ref: head,
             baseSha: base,
             sessionId: input.sessionId,
-            command: "bun install --frozen-lockfile && bun scripts/test.ts --stage full",
+            command: QUALIFICATION_COMMAND,
             template,
             requires: ["git-history", "docker", "browsers"],
             target: { os: os!, arch: arch! },
