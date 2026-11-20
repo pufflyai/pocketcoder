@@ -44,7 +44,7 @@ export async function startQualification(
   const head = await git("rev-parse", "--verify", "--end-of-options", `${input.ref ?? "HEAD"}^{commit}`);
   const base = await git("rev-parse", "refs/remotes/origin/main");
 
-  const templates = JSON.parse(deps.settings.qualificationTemplates ?? "{}");
+  const templates = deps.settings.qualificationTemplates ?? {};
   const suite: SuiteRecord = {
     suiteId: crypto.randomUUID(),
     root: input.root,

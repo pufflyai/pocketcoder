@@ -1,5 +1,7 @@
+import type { TemplateRef } from "./branch-templates";
+
 export interface Settings {
-  qualificationTemplates?: string;
+  qualificationTemplates?: Record<string, TemplateRef>;
   templateName: string;
   templateVersion: string;
   testCommand: string;
@@ -10,11 +12,11 @@ export interface Settings {
 
 export const settingsSchema = {
   qualificationTemplates: {
-    type: "string",
+    type: "object",
     title: "Qualification templates",
     scope: "project",
-    default: "{}",
-    description: "JSON map from host target to an approved template name and version. Missing targets have no worker.",
+    default: {},
+    description: "Map from host target to an approved template name and version. Missing targets have no worker.",
   },
   templateName: {
     type: "string",
@@ -65,7 +67,7 @@ export function readSettings(values: Partial<Record<keyof Settings, unknown>>) {
     return typeof value === "string" ? value.trim() : "";
   };
   const settings: Settings = {
-    qualificationTemplates: text("qualificationTemplates"),
+    qualificationTemplates: (values.qualificationTemplates ?? {}) as Record<string, TemplateRef>,
     templateName: text("templateName"),
     templateVersion: text("templateVersion"),
     testCommand: text("testCommand"),
