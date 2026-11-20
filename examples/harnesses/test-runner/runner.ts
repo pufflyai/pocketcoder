@@ -1,4 +1,4 @@
-import { appendFile, mkdir, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { startCheckpoints } from "./checkpoints";
 import { type CommandRun, runCommand } from "./command";
@@ -43,10 +43,11 @@ async function runLocked(request: RunRequest, signal: AbortSignal) {
   const outcome = result(request.runId),
     started = Date.now();
   const repo = join(root, "repo"),
-    log = join(root, "runs", `${request.runId}.log`),
-    temporary = join(root, "tmp", request.runId);
+    log = join(root, "runs", `${request.runId}.log`);
   await mkdir(join(root, "runs"), { recursive: true });
-  await mkdir(temporary, { recursive: true });
+  await mkdir(join(root, "tmp"), { recursive: true });
+  // Chromium adds private directories and Unix sockets below TMPDIR.
+  const temporary = await mkdtemp(join(root, "tmp", "r-"));
   await Bun.write(log, "");
   try {
     outcome.status = "source_unavailable";

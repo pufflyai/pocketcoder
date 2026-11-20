@@ -111,3 +111,7 @@ The review worker starts one private Xvfb display and Openbox window manager as
 the runner user before its supervisor. Desktop commands inherit `DISPLAY` and
 its workspace-local X authority. The X server uses a Unix socket and does not
 listen on TCP. Stopping the workspace lets the supervisor finish its shutdown hooks before the display stops.
+
+Each run gets a short, private directory below the workspace disk TMPDIR. This
+leaves room for Chromium's nested Unix socket paths. Kept workspaces still
+collect only the current run's temporary reports.

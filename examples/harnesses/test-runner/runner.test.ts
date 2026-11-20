@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
 import { runnerFixture } from "./runner-fixture";
 
 const cleanup: (() => Promise<void>)[] = [];
@@ -134,4 +135,35 @@ test("kept workspace runs collect only their own temporary evidence", async () =
   const archive = new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(second.uploads.get("/results")!)));
   expect(archive).toContain("second-only");
   expect(archive).not.toContain("first-only");
+});
+
+test("run temporary paths leave room for nested Chromium Unix sockets", async () => {
+  const workspace = await mkdtemp("/tmp/rt-");
+  const f = await runnerFixture(
+    {
+      "package.json": "{}",
+      "socket.ts": `
+      import { mkdir, stat } from "node:fs/promises";
+      import { createServer } from "node:net";
+      import { join } from "node:path";
+      const directory = join(process.env.TMPDIR!, "extension-smoke-cleanup-XXXXXX", "org.chromium.Chromium.XXXXXX");
+      await mkdir(directory, { recursive: true });
+      const socket = join(directory, "SingletonSocket");
+      const server = createServer();
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(socket, resolve);
+      });
+      if (!(await stat(socket)).isSocket()) throw new Error("The socket path was truncated");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      console.log("SOCKET_READY");
+    `,
+    },
+    { workspace },
+  );
+  cleanup.push(f.cleanup, () => rm(workspace, { recursive: true, force: true }));
+  f.request.command = "node socket.ts";
+  f.start();
+  expect(await f.settled).toMatchObject({ status: "passed", exitCode: 0 });
+  expect(new TextDecoder().decode(f.uploads.get("/log"))).toContain("SOCKET_READY");
 });
