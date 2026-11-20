@@ -40,7 +40,9 @@ test("the managed upgrade clears old profiles and preserves the principal", asyn
   const db = await PGlite.create();
   try {
     const client = pgliteSqlClient(db);
-    await migrateDatabase(client, migrations.slice(0, -1));
+    const managedUpgrade = migrations.findIndex((migration) => migration.name === "20261112091552_melted_namorita");
+    expect(managedUpgrade).toBeGreaterThan(0);
+    await migrateDatabase(client, migrations.slice(0, managedUpgrade));
     const principal = crypto.randomUUID();
     await client.query(
       "INSERT INTO pocketcoder.principals (id,name,scopes,template_names,created_at) VALUES ($1,'upgrade-test',ARRAY['admin'],ARRAY['*'],now())",
@@ -50,7 +52,7 @@ test("the managed upgrade clears old profiles and preserves the principal", asyn
       "INSERT INTO pocketcoder.managed_profiles (profile_id,revision,principal_id,profile,business_slots) VALUES ($1,1,$2,'{}','[]')",
       [crypto.randomUUID(), principal],
     );
-    expect(await migrateDatabase(client)).toEqual([migrations.at(-1)!.name]);
+    expect(await migrateDatabase(client)).toEqual(migrations.slice(managedUpgrade).map((migration) => migration.name));
     expect(await client.query("SELECT name FROM pocketcoder.principals WHERE id=$1", [principal])).toEqual([
       { name: "upgrade-test" },
     ]);
