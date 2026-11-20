@@ -25,7 +25,11 @@ test.skipIf(process.platform !== "linux")(
     const root = await mkdtemp(join(tmpdir(), "snapshot-changing-"));
     try {
       await Bun.write(join(root, "changing.txt"), new Uint8Array(1024 * 1024));
-      const args = ["changing.txt", "--checkpoint=1", "--checkpoint-action=exec=touch changing.txt"];
+      const args = [
+        "changing.txt",
+        "--checkpoint=10",
+        `--checkpoint-action=exec=printf x >> ${join(root, "changing.txt")}`,
+      ];
       const archive = join(root, "output.tar.gz");
       await writeResultArchive(root, args, archive, 2 * 1024 * 1024, AbortSignal.timeout(5000), true);
       const listed = Bun.spawn(["tar", "-tzf", archive], { stdout: "pipe" });
