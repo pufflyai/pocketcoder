@@ -59,9 +59,13 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
     "--label",
     `pc195.owner=${owner}`,
     "pc195-engine-check:local",
-    "sh",
-    "-c",
-    "mkdir /www; cp /owner /www/index.html; exec httpd -f -p 8080 -h /www",
+    "nc",
+    "-lk",
+    "-p",
+    "8080",
+    "-e",
+    "/bin/cat",
+    "/owner",
   );
   expect(
     await run(
@@ -71,9 +75,11 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
       "--network",
       "pc195-smoke",
       "pc195-engine-check:local",
-      "wget",
-      "-qO-",
-      "http://pc195-sentinel:8080",
+      "nc",
+      "-w",
+      "3",
+      "pc195-sentinel",
+      "8080",
     ),
   ).toBe(owner);
   await run("docker", "volume", "create", "pc195-volume");
