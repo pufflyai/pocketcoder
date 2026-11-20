@@ -60,6 +60,9 @@ The Docker store uses a 32 GiB sparse ext4 disk at `/workspace/docker.ext4`, mou
 inside the VM. Kata's shared filesystem cannot directly back Docker's overlay2 driver.
 The disk consumes workspace storage, not a memory-backed volume. Buildx and Compose
 come from the same pinned Docker image as the daemon.
+Before starting Docker, the entrypoint moves itself into an init cgroup and
+enables the guest's cgroup v2 controllers. Nested memory and PID limits are
+checked by the live regression test.
 The VM and its nested containers, volumes and networks disappear with the pod.
 
 On a real engine workspace, run the adjacent regression test as UID 10001:

@@ -39,6 +39,19 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
       "docker",
       "run",
       "--rm",
+      "--memory=32m",
+      "--pids-limit=32",
+      "pc195-engine-check:local",
+      "sh",
+      "-c",
+      "cat /sys/fs/cgroup/memory.max /sys/fs/cgroup/pids.max",
+    ),
+  ).toBe("33554432\n32");
+  expect(
+    await run(
+      "docker",
+      "run",
+      "--rm",
       "--mount",
       `type=bind,src=${root},dst=/proof,readonly`,
       "pc195-engine-check:local",
