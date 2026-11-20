@@ -56,7 +56,8 @@ directory. The review companion retains the candidate's temporary `checks.json` 
 `source/test-results/`, including JUnit, execution reports and traces, without copying
 the disposable source tree. Kept workspaces cannot mix these artifacts between runs.
 
-The engine image starts its own `dockerd` in the workspace container, inside its Kata VM,
+The image starts Docker's pinned init binary as PID 1 to reap orphaned test processes.
+It starts its own `dockerd` in the workspace container, inside its Kata VM,
 then drops the supervisor to UID/GID 10001. The daemon uses `/workspace/docker` and a
 workspace-local Unix socket. It sees the same absolute paths as the tests. There is no
 host socket, TCP daemon listener, shared daemon, host network or device passthrough.

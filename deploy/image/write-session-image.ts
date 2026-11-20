@@ -43,7 +43,7 @@ const descriptor = {
     artifact: runtime,
     command: ["/usr/local/bin/bun", runtime, "supervise", "--launch-input", "/run/pocketcoder/input"],
     entrypoint: options.includes("--engine")
-      ? ["/usr/local/bin/bun", "/opt/pocketcoder/engine.js"]
+      ? ["/usr/local/bin/docker-init", "--", "/usr/local/bin/bun", "/opt/pocketcoder/engine.js"]
       : ["/usr/local/bin/docker-entrypoint.sh"],
     capabilities: ["workspace-services", ...(mode === "pi" ? ["explicit-publication"] : [])],
   },

@@ -27,6 +27,23 @@ test("the review runtime supplies the pinned Bun package runner", async () => {
   expect(await run("bunx", "--version")).toBe(Bun.version);
 });
 
+test("the workspace init reaps orphaned test processes", async () => {
+  const pid = Number(await run("sh", "-c", "sleep 30 >/dev/null 2>&1 & echo $!"));
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      return false;
+    }
+  };
+  process.kill(pid, "SIGKILL");
+  const deadline = Date.now() + 2000;
+  while (alive() && Date.now() < deadline) await Bun.sleep(10);
+  expect(alive()).toBe(false);
+});
+
 test("the Kata workspace builds and runs nested containers with disk storage, bind mounts and Compose", async () => {
   expect(process.getuid?.()).toBe(10001);
   expect(process.env.DOCKER_HOST).toBe("unix:///workspace/docker-run/docker.sock");

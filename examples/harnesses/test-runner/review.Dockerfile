@@ -31,5 +31,5 @@ RUN chmod 0755 /usr/local/bin/pocketcoder-supervisor && bun /opt/pocketcoder/wri
 ENV TMPDIR=/workspace/tmp
 WORKDIR /
 USER 0:0
-ENTRYPOINT ["/usr/local/bin/bun", "/opt/pocketcoder/engine.js"]
+ENTRYPOINT ["/usr/local/bin/docker-init", "--", "/usr/local/bin/bun", "/opt/pocketcoder/engine.js"]
 CMD ["/usr/local/bin/bun", "/opt/pocketcoder/supervisor.js", "supervise", "--launch-input", "/run/pocketcoder/input"]
