@@ -18,7 +18,7 @@ export interface Environment {
 
 const PURPOSE = "remote-testing";
 const ACTIVE = ["queued", "provisioning", "connected", "ready"];
-const ENDED = ["succeeded", "failed", "canceled", "expired", "preserved"];
+export const ENDED = ["succeeded", "failed", "canceled", "expired", "preserved"];
 const path = (id: string) => `/v1/workspaces/${encodeURIComponent(id)}`;
 
 export async function listEnvironments(api: Api, settings: Settings) {

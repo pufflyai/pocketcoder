@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createMemoryStorage } from "@pstdio/sdk/testing";
+import { PocketCoderError } from "./connection";
 import { checkRun, type RunRecord } from "./runs";
 
 function finishedRun(stopAfterRun: boolean) {
@@ -41,6 +42,24 @@ function finishedRun(stopAfterRun: boolean) {
     },
   } satisfies Parameters<typeof checkRun>[0];
   return { deps, record, apiCalls };
+}
+
+for (const state of ["ready", "canceled"]) {
+  test(`an unaccepted submission remains pending until its environment ends: ${state}`, async () => {
+    const { deps, record } = finishedRun(false);
+    deps.api = async ({ path }) => {
+      if (path.includes("/requests/")) throw new PocketCoderError(404, "Agent request not found.");
+      return { state } as never;
+    };
+    deps.storage.download = async () => null;
+    const summary = await checkRun(deps, record);
+    if (state === "ready") expect(summary).toBeNull();
+    else {
+      expect(summary).toMatchObject({ status: "error", evidenceStatus: "missing", exitCode: null });
+      expect(summary?.error).toContain("not accepted");
+      expect(await deps.store.get(`run:${record.runId}`)).toMatchObject({ summary: { status: "error" } });
+    }
+  });
 }
 
 test("completed runs stop the environment by default even when the suite fails", async () => {

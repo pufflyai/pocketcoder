@@ -6,8 +6,8 @@ import {
 } from "@pstdio/pocketcoder-example-test-runner/protocol";
 import type { ExtensionProcessApi, ExtensionStorageApi } from "@pstdio/sdk/extensions";
 import type { BranchKind, BranchSource, TemplateRef } from "./branch-templates";
-import type { Api } from "./connection";
-import { readEnvironment, releaseEnvironment, stopEnvironment } from "./environments";
+import { type Api, PocketCoderError } from "./connection";
+import { ENDED, readEnvironment, releaseEnvironment, stopEnvironment } from "./environments";
 import { logTail } from "./run-tail";
 import type { Settings } from "./settings";
 import type { RunStorage } from "./storage";
@@ -90,14 +90,33 @@ export async function awaitRun(deps: RunDeps, record: RunRecord, signal?: AbortS
 // whose caller went away still gets its summary and log.
 export async function checkRun(deps: RunCollectionDeps, record: RunRecord, signal?: AbortSignal) {
   if (record.summary) return record.summary;
-  const receipt = await deps.api<Receipt>({ method: "GET", path: requestPath(record), signal });
-  if (!receipt.finalizedAt) return null;
+  let receipt: Receipt | undefined;
+  try {
+    receipt = await deps.api<Receipt>({ method: "GET", path: requestPath(record), signal });
+  } catch (error) {
+    if (!(error instanceof PocketCoderError) || error.status !== 404) throw error;
+  }
+  if (receipt && !receipt.finalizedAt) return null;
   const environment = await readEnvironment(deps.api, record.environmentId, signal);
-  const summary = await summarize(deps, record, receipt);
+  if (!receipt && !ENDED.includes(environment.state)) return null;
+  const summary: RunSummary = receipt
+    ? await summarize(deps, record, receipt)
+    : {
+        runId: record.runId,
+        environmentId: record.environmentId,
+        status: "error",
+        exitCode: null,
+        durationMs: Date.now() - Date.parse(record.startedAt),
+        evidenceStatus: "missing",
+        logPath: null,
+        resultsPath: null,
+        tail: "",
+        error: "Run request was not accepted before the workspace ended.",
+      };
   if (!summary.evidence && (environment.state === "expired" || environment.reason_code === "deadline_expired"))
     summary.status = "timed_out";
   // A rejected concurrent request owns no runtime and must never stop the active owner.
-  if (record.stopAfterRun && summary.evidence?.reason !== "environment_busy")
+  if (receipt && record.stopAfterRun && summary.evidence?.reason !== "environment_busy")
     await stopEnvironment(deps.api, record.environmentId, signal);
   await deps.store.set(`run:${record.runId}`, { ...record, summary });
   await releaseEnvironment(deps.store, record.environmentId, record.runId);
