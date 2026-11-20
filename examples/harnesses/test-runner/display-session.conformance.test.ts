@@ -27,7 +27,7 @@ test("the private display waits for supervisor cleanup on TERM", async () => {
   try {
     const deadline = Date.now() + 25_000;
     while (!(await Bun.file(ready).exists()) && session.exitCode === null && Date.now() < deadline) await Bun.sleep(25);
-    expect(await Bun.file(ready).exists()).toBe(true);
+    if (!(await Bun.file(ready).exists())) throw new Error(`Display startup failed: ${await stdout}\n${await stderr}`);
     session.kill("SIGTERM");
     expect(await session.exited).toBe(0);
     expect(await Bun.file(complete).text()).toBe("complete");

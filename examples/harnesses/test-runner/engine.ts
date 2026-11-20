@@ -43,6 +43,10 @@ if (!ready) {
   throw new Error("The workspace Docker daemon did not become ready");
 }
 await chmod("/workspace/docker-run", 0o711);
+if (process.env.POCKETCODER_VIRTUAL_DISPLAY === "1") {
+  await mkdir("/tmp/.X11-unix", { recursive: true, mode: 0o1777 });
+  await chmod("/tmp/.X11-unix", 0o1777);
+}
 process.setgid?.(10001);
 process.setuid?.(10001);
 const command = process.argv.slice(2);
