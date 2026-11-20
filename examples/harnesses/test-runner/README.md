@@ -62,7 +62,8 @@ The Docker store and temporary test files use a 32 GiB sparse ext4 disk at
 Docker's overlay2 driver and slows down file-heavy scratch work.
 The disk consumes workspace storage, not a memory-backed volume. Buildx and Compose
 come from the same pinned Docker image as the daemon.
-Before starting Docker, the entrypoint moves itself into an init cgroup and
+The entrypoint enables private IPv6 loopback so tests can bind `::1` even when
+Kata inherits an IPv4-only pod network. Before starting Docker, it moves itself into an init cgroup and
 enables the guest's cgroup v2 controllers. Nested memory and PID limits are
 checked by the live regression test.
 The VM and its nested containers, volumes and networks disappear with the pod.

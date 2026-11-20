@@ -1,11 +1,13 @@
 import { chmod, chown, mkdir } from "node:fs/promises";
 import { prepareEngineCgroups } from "./engine-cgroups";
+import { prepareEngineLoopback } from "./engine-loopback";
 import { prepareEngineStorage } from "./engine-storage";
 
 // This entrypoint runs only in an operator-authorized Kata VM. The daemon and the
 // test processes see the same paths; no socket or daemon is shared with the node.
 if (process.getuid?.() !== 0) throw new Error("The container engine needs the VM's root user");
 await prepareEngineCgroups();
+await prepareEngineLoopback();
 await mkdir("/workspace/home", { recursive: true });
 await chown("/workspace/home", 10001, 10001);
 await prepareEngineStorage();

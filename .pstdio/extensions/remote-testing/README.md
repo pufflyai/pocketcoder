@@ -81,6 +81,10 @@ snapshot is limited to 64 MiB and 20 seconds. Captures run one at a time and add
 and upload work. Separate objects keep snapshots from replacing final results. After a lost
 runtime, the collector can retain the latest snapshot as `partial` evidence. Partial evidence
 never proves a passing run. The archive includes `evidence-snapshot.json` with its capture time.
+The URL signer needs object-create permission for uploads. Replacing a snapshot also needs
+`storage.objects.delete` on the `checkpoints/` object prefix. Scope that permission with a
+bucket IAM condition on `resource.name`; each workspace still receives only a signed PUT
+URL for its own run object, bounded by its deadline.
 
 ```sh
 pst pocketcoder.remote-testing run --path <repo> --ref <sha> --requires git-history,docker,browsers --command "bun install --frozen-lockfile && bun run test:review --base origin/main"

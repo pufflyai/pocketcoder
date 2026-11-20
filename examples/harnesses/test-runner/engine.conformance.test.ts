@@ -14,6 +14,15 @@ async function run(...command: string[]) {
 
 // Run inside the review image through engine.ts on a real Kata worker. The
 // named resources remain alive so the operator can verify VM isolation/deletion.
+test("the Kata workspace supports private IPv6 loopback listeners", async () => {
+  const server = Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response("loopback-ok") });
+  try {
+    expect(await (await fetch(`http://[::1]:${server.port}/`)).text()).toBe("loopback-ok");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("the Kata workspace builds and runs nested containers with disk storage, bind mounts and Compose", async () => {
   expect(process.getuid?.()).toBe(10001);
   expect(process.env.DOCKER_HOST).toBe("unix:///workspace/docker-run/docker.sock");
