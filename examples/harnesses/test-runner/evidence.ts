@@ -1,5 +1,5 @@
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import type { RunRequest } from "./protocol";
 import { writeResultArchive } from "./result-archive";
 
@@ -21,6 +21,7 @@ export async function uploadResults(
   archive: string,
   signal: AbortSignal,
   snapshot = false,
+  temporaryRoot?: string,
 ) {
   const paths: string[] = [];
   for (const path of request.results.paths) {
@@ -37,6 +38,16 @@ export async function uploadResults(
   }
   // An empty archive distinguishes a successful collection with no files from lost evidence.
   const args = paths.length ? paths : ["-T", "/dev/null"];
+  if (temporaryRoot) {
+    for (const pattern of request.results.temporaryPaths ?? []) {
+      if (!pattern || isAbsolute(pattern) || pattern.split(/[\\/]/).some((p) => p === ".." || p === ".git"))
+        throw new Error("Unsafe temporary results path");
+      for await (const path of new Bun.Glob(pattern).scan({ cwd: temporaryRoot, onlyFiles: false })) {
+        signal.throwIfAborted();
+        args.push("-C", dirname(temporaryRoot), join(basename(temporaryRoot), path));
+      }
+    }
+  }
   const metadata = `${archive}.metadata`;
   try {
     signal.throwIfAborted();

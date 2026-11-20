@@ -74,7 +74,8 @@ or browser pin fails preflight; it never shrinks the test selection.
 
 Runs transfer the history through pinned `origin/main` plus a thin head bundle. A dirty
 upload is a head commit with an uncommitted overlay. Logs and `test-results/` are retained
-under the extension's `runs/` folder. GET URLs expire after 30 minutes; PUT URLs expire at
+under the extension's `runs/` folder. Review runs also collect the candidate's detailed
+reports from their private disk-backed temporary directory. GET URLs expire after 30 minutes; PUT URLs expire at
 the run timeout plus 30 minutes, bounded by the workspace deadline. The saved ledger contains no signed URLs.
 While tests run, the runner saves partial logs and results every 30 seconds. Each results
 snapshot is limited to 64 MiB and 20 seconds. Captures run one at a time and add some archive

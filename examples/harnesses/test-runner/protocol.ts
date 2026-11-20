@@ -32,6 +32,7 @@ export const RunRequestSchema = z.object({
     url: z.url(),
     checkpointUrl: z.url().optional(),
     paths: z.array(z.string()).min(1).max(16),
+    temporaryPaths: z.array(z.string()).max(16).optional(),
     maxBytes: z.number().int().positive(),
   }),
 });

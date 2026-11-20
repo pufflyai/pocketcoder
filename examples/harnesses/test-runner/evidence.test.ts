@@ -37,3 +37,43 @@ test("uploads a self-described partial archive before final results exist", asyn
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("collects declared temporary reports without copying the disposable source tree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "evidence-temporary-"));
+  const repo = join(root, "repo"),
+    temporary = join(root, "tmp");
+  let bytes = Buffer.alloc(0);
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      bytes = Buffer.from(await request.arrayBuffer());
+      return new Response();
+    },
+  });
+  try {
+    await mkdir(repo);
+    await Bun.write(join(temporary, "private-review/checks.json"), '{"outcome":"failure"}');
+    await Bun.write(join(temporary, "private-review/source/test-results/browser/trace.zip"), "retained-trace");
+    await Bun.write(join(temporary, "private-review/source/node_modules/large.bin"), "excluded");
+    const request = {
+      results: {
+        url: `http://127.0.0.1:${server.port}`,
+        paths: ["test-results"],
+        temporaryPaths: ["*/checks.json", "*/source/test-results"],
+        maxBytes: 1024 * 1024,
+      },
+    };
+    const archive = join(root, "collected.tar.gz");
+    await uploadResults(request, repo, archive, AbortSignal.timeout(2000), false, temporary);
+    await Bun.write(archive, bytes);
+    const child = Bun.spawn(["tar", "-tzf", archive], { stdout: "pipe" });
+    const entries = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    expect(entries).toContain("tmp/private-review/checks.json");
+    expect(entries).toContain("tmp/private-review/source/test-results/browser/trace.zip");
+    expect(entries).not.toContain("node_modules");
+  } finally {
+    server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+});

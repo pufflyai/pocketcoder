@@ -174,6 +174,7 @@ async function requestFor(
         expiry(timeoutSeconds + 1800),
       ),
       paths: ["test-results"],
+      ...(/\btest:review\b/.test(command) ? { temporaryPaths: ["*/checks.json", "*/source/test-results"] } : {}),
       maxBytes: 2 * 1024 ** 3,
     },
   };

@@ -43,9 +43,10 @@ async function runLocked(request: RunRequest, signal: AbortSignal) {
   const outcome = result(request.runId),
     started = Date.now();
   const repo = join(root, "repo"),
-    log = join(root, "runs", `${request.runId}.log`);
+    log = join(root, "runs", `${request.runId}.log`),
+    temporary = join(root, "tmp", request.runId);
   await mkdir(join(root, "runs"), { recursive: true });
-  await mkdir(join(root, "tmp"), { recursive: true });
+  await mkdir(temporary, { recursive: true });
   await Bun.write(log, "");
   try {
     outcome.status = "source_unavailable";
@@ -77,6 +78,7 @@ async function runLocked(request: RunRequest, signal: AbortSignal) {
                   join(root, "runs", `${request.runId}.snapshot.tar.gz`),
                   signal,
                   true,
+                  temporary,
                 ),
               ]);
               const failures = uploads.filter((item) => item.status === "rejected");
@@ -91,7 +93,7 @@ async function runLocked(request: RunRequest, signal: AbortSignal) {
           logPath: log,
           timeoutSeconds: request.timeoutSeconds,
           signal,
-          env: { ...process.env, CI: "1", TMPDIR: join(root, "tmp"), BUN_INSTALL_CACHE_DIR: join(root, ".bun-cache") },
+          env: { ...process.env, CI: "1", TMPDIR: temporary, BUN_INSTALL_CACHE_DIR: join(root, ".bun-cache") },
           onOutput(tail) {
             if (Date.now() - lastUpdate < 2000) return;
             lastUpdate = Date.now();
@@ -122,7 +124,10 @@ async function runLocked(request: RunRequest, signal: AbortSignal) {
   // One budget covers the archive and both uploads; leave time to emit the terminal report.
   const finalization = AbortSignal.timeout(165_000);
   const uploads = [
-    ["results", () => uploadResults(request, repo, join(root, "runs", `${request.runId}.tar.gz`), finalization)],
+    [
+      "results",
+      () => uploadResults(request, repo, join(root, "runs", `${request.runId}.tar.gz`), finalization, false, temporary),
+    ],
     ["log", () => uploadFile(request.log.url, log, "text/plain", finalization)],
   ] as const;
   await Promise.all(

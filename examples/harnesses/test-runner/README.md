@@ -50,7 +50,11 @@ review performance. Both templates live for two hours and become idle after 30 m
 The run timeout remains 60 minutes. A run reserves three minutes for evidence collection.
 The runner adapter allows that finalization grace on cancellation; ordinary Pi cancellation
 keeps its five-second limit. Archive and concurrent uploads share a 165-second budget,
-leaving time to report the outcome.
+leaving time to report the outcome. Each run gets a private `TMPDIR` beneath the disk-backed
+scratch directory. Requests can declare `results.temporaryPaths` globs relative to that
+directory. The review companion retains the candidate's temporary `checks.json` and
+`source/test-results/`, including JUnit, execution reports and traces, without copying
+the disposable source tree. Kept workspaces cannot mix these artifacts between runs.
 
 The engine image starts its own `dockerd` in the workspace container, inside its Kata VM,
 then drops the supervisor to UID/GID 10001. The daemon uses `/workspace/docker` and a

@@ -117,3 +117,21 @@ test("an explicitly kept workspace releases ownership for its next run", async (
   second.start();
   expect((await second.settled).status).toBe("passed");
 });
+
+test("kept workspace runs collect only their own temporary evidence", async () => {
+  const first = await fixture();
+  first.request.releaseAfterRun = true;
+  first.request.results.temporaryPaths = ["*/checks.json"];
+  first.request.command = 'mkdir -p "$TMPDIR/review-first"; echo first-only > "$TMPDIR/review-first/checks.json"';
+  first.start();
+  expect((await first.settled).status).toBe("passed");
+  const second = await runnerFixture({ "package.json": "{}" }, { workspace: `${first.root}/workspace` });
+  cleanup.push(second.cleanup);
+  second.request.results.temporaryPaths = ["*/checks.json"];
+  second.request.command = 'mkdir -p "$TMPDIR/review-second"; echo second-only > "$TMPDIR/review-second/checks.json"';
+  second.start();
+  expect((await second.settled).status).toBe("passed");
+  const archive = new TextDecoder().decode(Bun.gunzipSync(new Uint8Array(second.uploads.get("/results")!)));
+  expect(archive).toContain("second-only");
+  expect(archive).not.toContain("first-only");
+});
