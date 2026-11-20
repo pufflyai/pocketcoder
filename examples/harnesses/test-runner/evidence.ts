@@ -1,4 +1,4 @@
-import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import type { RunRequest } from "./protocol";
 import { writeResultArchive } from "./result-archive";
@@ -15,6 +15,21 @@ export async function uploadFile(url: string, path: string, type: string, signal
   if (!response.ok) throw new Error(`Evidence upload failed with HTTP ${response.status}`);
   return { uploaded: true, bytes };
 }
+async function resultPaths(root: string, patterns: string[]) {
+  const matches = new Set<string>();
+  for (const pattern of patterns) {
+    if (!pattern || isAbsolute(pattern) || pattern.split(/[\\/]/).some((p) => p === ".." || p === ".git"))
+      throw new Error("Unsafe results path");
+    for await (const path of new Bun.Glob(pattern).scan({ cwd: root, onlyFiles: false, followSymlinks: false })) {
+      if (!path.split(/[\\/]/).some((part) => part === "node_modules" || part === ".git")) matches.add(path);
+    }
+  }
+  // A report directory can match more than one declaration. Include its tree once.
+  return [...matches]
+    .sort()
+    .filter((path, index, paths) => !paths.slice(0, index).some((parent) => path.startsWith(`${parent}/`)));
+}
+
 export async function uploadResults(
   request: Pick<RunRequest, "results">,
   repo: string,
@@ -23,29 +38,14 @@ export async function uploadResults(
   snapshot = false,
   temporaryRoot?: string,
 ) {
-  const paths: string[] = [];
-  for (const path of request.results.paths) {
-    signal.throwIfAborted();
-    if (!path || isAbsolute(path) || path.split(/[\\/]/).some((p) => p === ".." || p === ".git"))
-      throw new Error("Unsafe results path");
-    if (
-      await access(join(repo, path)).then(
-        () => true,
-        () => false,
-      )
-    )
-      paths.push(path);
-  }
+  signal.throwIfAborted();
+  const paths = await resultPaths(repo, request.results.paths);
   // An empty archive distinguishes a successful collection with no files from lost evidence.
   const args = paths.length ? paths : ["-T", "/dev/null"];
   if (temporaryRoot) {
-    for (const pattern of request.results.temporaryPaths ?? []) {
-      if (!pattern || isAbsolute(pattern) || pattern.split(/[\\/]/).some((p) => p === ".." || p === ".git"))
-        throw new Error("Unsafe temporary results path");
-      for await (const path of new Bun.Glob(pattern).scan({ cwd: temporaryRoot, onlyFiles: false })) {
-        signal.throwIfAborted();
-        args.push("-C", dirname(temporaryRoot), join(basename(temporaryRoot), path));
-      }
+    for (const path of await resultPaths(temporaryRoot, request.results.temporaryPaths ?? [])) {
+      signal.throwIfAborted();
+      args.push("-C", dirname(temporaryRoot), join(basename(temporaryRoot), path));
     }
   }
   const metadata = `${archive}.metadata`;

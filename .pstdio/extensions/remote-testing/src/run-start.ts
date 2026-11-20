@@ -173,8 +173,17 @@ async function requestFor(
         `checkpoints/results/${runId}.tar.gz`,
         expiry(timeoutSeconds + 1800),
       ),
-      paths: ["test-results"],
-      ...(/\btest:review\b/.test(command) ? { temporaryPaths: ["*/checks.json", "*/source/test-results"] } : {}),
+      paths: ["test-results", "*/test-results", "*/*/test-results"],
+      ...(/\btest:review\b/.test(command)
+        ? {
+            temporaryPaths: [
+              "*/checks.json",
+              "*/source/test-results",
+              "*/source/*/test-results",
+              "*/source/*/*/test-results",
+            ],
+          }
+        : {}),
       maxBytes: 2 * 1024 ** 3,
     },
   };

@@ -26,7 +26,8 @@ A workspace lock owns the checkout and daemon through teardown. Only an explicit
 workspace releases its lock after collection; a rejected concurrent request cannot stop
 the owner. Host claims use atomic creation and updates as an early guard.
 
-A run uploads the complete log and an archive of `test-results/`, even after failure,
+A run uploads the complete log and declared result folders, including `test-results/`
+and the same folder one or two levels below the checkout, even after failure,
 cancellation or timeout. Missing evidence prevents a `passed` result. The final Pi
 message contains one `REMOTE_TEST_RESULT` line with source identity, target host, runtime
 pins, preflight checks, exit status, timing and upload outcomes. Signed URLs never enter
@@ -100,3 +101,8 @@ The review image includes non-interactive guest-root `chown` and `chmod` through
 `sudo`. Prompt Studio's unchanged Linux desktop setup needs them for Electron's
 sandbox. This permission stays inside the already authorized Kata VM. It does
 not grant a node or controller shell.
+
+Result paths accept relative glob patterns. Discovery does not follow symbolic
+links or include `node_modules` or `.git`. The companion uses shallow patterns to
+retain monorepo browser traces without scanning dependency trees. Review clones
+use the same patterns within that run's private temporary directory.

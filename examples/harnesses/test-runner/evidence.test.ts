@@ -54,12 +54,16 @@ test("collects declared temporary reports without copying the disposable source 
     await mkdir(repo);
     await Bun.write(join(temporary, "private-review/checks.json"), '{"outcome":"failure"}');
     await Bun.write(join(temporary, "private-review/source/test-results/browser/trace.zip"), "retained-trace");
+    await Bun.write(
+      join(temporary, "private-review/source/packages/e2e/test-results/failure/trace.zip"),
+      "nested-review-trace",
+    );
     await Bun.write(join(temporary, "private-review/source/node_modules/large.bin"), "excluded");
     const request = {
       results: {
         url: `http://127.0.0.1:${server.port}`,
         paths: ["test-results"],
-        temporaryPaths: ["*/checks.json", "*/source/test-results"],
+        temporaryPaths: ["*/checks.json", "*/source/test-results", "*/source/*/*/test-results"],
         maxBytes: 1024 * 1024,
       },
     };
@@ -71,6 +75,49 @@ test("collects declared temporary reports without copying the disposable source 
     expect(await child.exited).toBe(0);
     expect(entries).toContain("tmp/private-review/checks.json");
     expect(entries).toContain("tmp/private-review/source/test-results/browser/trace.zip");
+    expect(entries).toContain("tmp/private-review/source/packages/e2e/test-results/failure/trace.zip");
+    expect(entries).not.toContain("node_modules");
+  } finally {
+    server.stop(true);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("retains nested monorepo traces without archiving dependencies", async () => {
+  const root = await mkdtemp(join(tmpdir(), "evidence-nested-"));
+  let bytes = Buffer.alloc(0);
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      bytes = Buffer.from(await request.arrayBuffer());
+      return new Response();
+    },
+  });
+  try {
+    await Bun.write(join(root, "test-results/execution.json"), "root-report");
+    await Bun.write(join(root, "packages/e2e/test-results/failure/trace.zip"), "nested-trace");
+    await Bun.write(join(root, "clients/desktop/test-results/failure/error-context.md"), "desktop-context");
+    await Bun.write(join(root, "node_modules/tool/test-results/excluded.txt"), "dependency-report");
+    const archive = join(root, "collected.tar.gz");
+    await uploadResults(
+      {
+        results: {
+          url: `http://127.0.0.1:${server.port}`,
+          paths: ["test-results", "*/test-results", "*/*/test-results"],
+          maxBytes: 1024 * 1024,
+        },
+      },
+      root,
+      archive,
+      AbortSignal.timeout(2000),
+    );
+    await Bun.write(archive, bytes);
+    const child = Bun.spawn(["tar", "-tzf", archive], { stdout: "pipe" });
+    const entries = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    expect(entries).toContain("test-results/execution.json");
+    expect(entries).toContain("packages/e2e/test-results/failure/trace.zip");
+    expect(entries).toContain("clients/desktop/test-results/failure/error-context.md");
     expect(entries).not.toContain("node_modules");
   } finally {
     server.stop(true);
