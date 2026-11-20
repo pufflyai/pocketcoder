@@ -50,7 +50,7 @@
     "images:smoke": "bun --no-env-file scripts/image-smoke.ts",
     "images:publish": "bun --no-env-file scripts/publish-candidate-images.ts",
     "images:release": "bun --no-env-file scripts/release-images.ts",
-    "images:check:test": "bun --no-env-file test --timeout 10000 scripts/image-policy.test.ts scripts/release-images.test.ts scripts/image-smoke.test.ts scripts/native-startup-hooks.test.ts scripts/native-startup-runner.test.ts scripts/native-startup-capture.test.ts",
+    "images:check:test": "bun --no-env-file test --timeout 10000 scripts/image-policy.test.ts scripts/release-images.test.ts scripts/image-smoke.test.ts scripts/native-startup-hooks.test.ts scripts/native-startup-runner.test.ts scripts/native-startup-capture.test.ts scripts/native-startup-sample.test.ts",
     "packages": "lerna list --all",
     "release": "bun run build && bun run pack:check && changeset publish",
     "start": "bun run --filter '@pstdio/pocketcoder-server' start",

@@ -10,8 +10,16 @@ async function counters(path: string) {
     });
 }
 
-async function pressure(resource: string) {
-  return (await readFile(`/proc/pressure/${resource}`, "utf8"))
+export async function readPressure(path: string) {
+  // Minimal VM kernels can omit PSI. Missing counters must stay distinct from zero pressure.
+  let content: string;
+  try {
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return null;
+  }
+  return content
     .trim()
     .split("\n")
     .map((line) => {
@@ -67,9 +75,9 @@ export async function startupSample(rootPid: number) {
   const [cpu, disks, cpuPressure, ioPressure, memoryPressure] = await Promise.all([
     counters("/proc/stat"),
     readFile("/proc/diskstats", "utf8"),
-    pressure("cpu"),
-    pressure("io"),
-    pressure("memory"),
+    readPressure("/proc/pressure/cpu"),
+    readPressure("/proc/pressure/io"),
+    readPressure("/proc/pressure/memory"),
   ]);
   return {
     epochMs,
