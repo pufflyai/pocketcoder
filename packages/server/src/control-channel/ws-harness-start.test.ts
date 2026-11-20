@@ -189,13 +189,20 @@ test("failed native harness spawn cannot complete a restored workspace with no r
     await pipeline;
     const workspace = await f.store.getWorkspace(id);
     const operation = await f.store.getOperation(operationId);
-    expect(await Bun.file(join(mount, "tiny")).text()).toBe("x");
+    const stderr = await new Response(worker.stderr).text();
+    const restored = await Bun.file(join(mount, "tiny"))
+      .text()
+      .catch(() => null);
+    expect(
+      restored,
+      JSON.stringify({ frames, failure: workspace?.failureLogTail, reason: operation?.reasonCode, stderr }),
+    ).toBe("x");
     expect(operation?.state).not.toBe("succeeded");
     expect(workspace?.readyAt).toBeNull();
     expect(workspace?.state).toBe("failed");
     expect(operation?.state).toBe("failed");
     expect(worker.exitCode).toBe(30);
-    expect(await new Response(worker.stderr).text()).toBe("");
+    expect(stderr).toBe("");
     expect(frames).not.toContain("process_state:running");
     expect(frames).toContain("process_state:exited");
     expect(frames.filter((type) => type === "restore_status")).toHaveLength(1);
