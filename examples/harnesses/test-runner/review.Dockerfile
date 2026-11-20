@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 runner && useradd --uid 10001 --gid 10001 --home-dir /workspace/home runner
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=engine /usr/local/bin/docker /usr/local/bin/dockerd /usr/local/bin/containerd /usr/local/bin/containerd-shim-runc-v2 /usr/local/bin/ctr /usr/local/bin/runc /usr/local/bin/docker-proxy /usr/local/bin/
 COPY --from=engine /usr/local/bin/docker-init /usr/local/bin/docker-init

@@ -23,6 +23,10 @@ test("the Kata workspace supports private IPv6 loopback listeners", async () => 
   }
 });
 
+test("the review runtime supplies the pinned Bun package runner", async () => {
+  expect(await run("bunx", "--version")).toBe(Bun.version);
+});
+
 test("the Kata workspace builds and runs nested containers with disk storage, bind mounts and Compose", async () => {
   expect(process.getuid?.()).toBe(10001);
   expect(process.env.DOCKER_HOST).toBe("unix:///workspace/docker-run/docker.sock");
