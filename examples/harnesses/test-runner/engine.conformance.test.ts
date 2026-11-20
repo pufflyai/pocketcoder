@@ -18,6 +18,7 @@ test("the Kata workspace builds and runs nested containers with disk storage, bi
   expect(process.getuid?.()).toBe(10001);
   expect(process.env.DOCKER_HOST).toBe("unix:///workspace/docker-run/docker.sock");
   expect(await readFile("/proc/mounts", "utf8")).toMatch(/ \/workspace\/docker ext4 /);
+  expect(await readFile("/proc/mounts", "utf8")).toMatch(/ \/workspace\/tmp ext4 /);
   expect(await run("docker", "info", "--format", "{{.Driver}}")).toBe("overlay2");
   expect(await run("docker", "info", "--format", "{{.DockerRootDir}}")).toBe("/workspace/docker");
   expect(await run("docker", "buildx", "version")).toContain("buildx");

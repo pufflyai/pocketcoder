@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { chown, mkdir } from "node:fs/promises";
 
 async function run(command: string[]) {
   const child = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
@@ -7,7 +7,7 @@ async function run(command: string[]) {
 }
 
 export async function prepareEngineStorage() {
-  await mkdir("/workspace/docker", { recursive: true });
+  await mkdir("/workspace/engine", { recursive: true });
   // Kata shares emptyDir over virtiofs, which cannot back overlay2. The sparse
   // ext4 disk stays on workspace storage; its loop device belongs to this VM.
   for (const [path, kind, major, minor] of [
@@ -16,7 +16,13 @@ export async function prepareEngineStorage() {
   ] as const) {
     if (!existsSync(path)) await run(["mknod", path, kind, major, minor]);
   }
-  await run(["truncate", "-s", "32G", "/workspace/docker.ext4"]);
-  await run(["mkfs.ext4", "-F", "/workspace/docker.ext4"]);
-  await run(["mount", "-o", "loop", "/workspace/docker.ext4", "/workspace/docker"]);
+  await run(["truncate", "-s", "32G", "/workspace/engine.ext4"]);
+  await run(["mkfs.ext4", "-F", "/workspace/engine.ext4"]);
+  await run(["mount", "-o", "loop", "/workspace/engine.ext4", "/workspace/engine"]);
+  for (const name of ["docker", "tmp"]) {
+    await mkdir(`/workspace/engine/${name}`, { recursive: true });
+    await mkdir(`/workspace/${name}`, { recursive: true });
+    await run(["mount", "--bind", `/workspace/engine/${name}`, `/workspace/${name}`]);
+  }
+  await chown("/workspace/tmp", 10001, 10001);
 }
