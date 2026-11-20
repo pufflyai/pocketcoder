@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { browserPin } from "./browser-pin";
 import type { RunRequest, RunResult } from "./protocol";
 import { git } from "./source";
 
@@ -50,11 +51,10 @@ export async function preflight(request: RunRequest, repo: string) {
     const e2e = await Bun.file(join(repo, "packages/e2e/package.json"))
       .json()
       .catch(() => ({}));
-    const pin =
-      pkg.devDependencies?.playwright ??
-      pkg.dependencies?.playwright ??
-      e2e.devDependencies?.playwright ??
-      e2e.dependencies?.playwright;
+    const lock = await Bun.file(join(repo, "bun.lock"))
+      .text()
+      .catch(() => "{}");
+    const pin = browserPin([pkg, e2e], lock);
     check("playwright-pin", Boolean(pin) && pin === playwright);
     const script =
       'const {chromium}=require("/opt/pocketcoder/browser/node_modules/playwright"); chromium.launch({headless:true,args:["--no-sandbox"]}).then(async b=>{await b.close(); console.log("ok")}).catch(()=>process.exit(1))';
