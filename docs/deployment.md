@@ -564,7 +564,7 @@ replay it so a restore cannot revive deleted data.
 | `POCKETCODER_MAX_ACTIVE_WORKSPACES` | `100` | Global concurrency limit |
 | `POCKETCODER_MAX_ACTIVE_PER_PRINCIPAL` | `20` | Per-principal concurrency limit |
 | `POCKETCODER_MAX_QUEUED_WORKSPACES` | `1000` | Durable queue bound |
-| `POCKETCODER_SCHEDULER_INTERVAL_MS` | `1000` | Admission/sweep tick |
+| `POCKETCODER_SCHEDULER_INTERVAL_MS` | `1000` | Interval for the independent scheduling and execution reconciliation timers |
 | `POCKETCODER_OUTBOX_INTERVAL_MS` | `1000` | Event delivery tick |
 | `POCKETCODER_WARM_POOLS` | `[]` | Operator-only JSON array of stateless template pools |
 
@@ -581,9 +581,10 @@ The operator listener serves two unauthenticated probes:
 `failed` or `disabled`), so the failing part is named; `reasons` says why when a
 check can. The checks are `database`, `schema`, `reconciliation`, `coordinator`,
 `execution-dispatch`, `cleanup`, `policy-reconciliation` and `shared-storage`.
-`execution-dispatch` fails only for controller-wide trouble: requests failing in more
-than one workspace for five minutes, or input capacity stuck past its five-minute wait.
-One producer refusing or failing its requests affects only those requests.
+`execution-dispatch` reports `failed` if the controller cannot scan pending execution
+records, requests fail in more than one workspace for five minutes, or input
+capacity stays blocked past its five-minute wait. One producer refusing or
+failing its requests affects only those requests.
 `policy-reconciliation` is the external admission hook set by
 `POCKETCODER_LAUNCH_POLICY_URL`. It reads `failed` while the hook is down or
 answers `provider-unavailable`. `shared-storage` checks Kubernetes shared input

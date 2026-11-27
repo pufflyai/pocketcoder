@@ -110,6 +110,67 @@ function serviceFixture(port: number, configure?: (source: WorkloadTemplate) => 
   });
 }
 
+test("a completed dispatch cannot clear readiness after an execution scan fails", async () => {
+  let acceptance: WorkloadAcceptance | undefined;
+  const releaseAccept = Promise.withResolvers<void>();
+  const producer = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/status") return Response.json({ status: "stable" });
+      if (path === "/executions/accept") {
+        acceptance = ((await request.json()) as { acceptance: WorkloadAcceptance }).acceptance;
+        await releaseAccept.promise;
+      }
+      if (!acceptance) throw new Error("Producer has no accepted request");
+      return Response.json({
+        execution: acceptance.execution,
+        fingerprint: acceptance.fingerprint,
+        phase: "running",
+        outcome: null,
+      });
+    },
+  });
+  const f = await serviceFixture(Number(producer.url.port)).catch(async (error) => {
+    await producer.stop(true);
+    throw error;
+  });
+  const pending = f.store.executions.pending;
+  try {
+    const input = f.acceptance();
+    await f.store.executions.accept(input, new Date(), executionConversationIdentity(input.execution.requestId, f.id));
+    await f.dispatcher.tick();
+    await f.waitFor(async () => Boolean(acceptance));
+
+    f.store.executions.pending = async () => {
+      throw new Error("Pending execution scan unavailable");
+    };
+    await expect(f.dispatcher.tick()).rejects.toThrow("Pending execution scan unavailable");
+    const failedDuringScan = f.dispatchFailed;
+
+    releaseAccept.resolve();
+    await f.dispatcher.drain();
+    expect((await f.store.executions.get(input.execution))?.phase).toBe("running");
+    expect({ failedDuringScan, failedAfterDispatch: f.dispatchFailed }).toEqual({
+      failedDuringScan: true,
+      failedAfterDispatch: true,
+    });
+
+    f.store.executions.pending = pending;
+    await f.dispatcher.tick();
+    expect(f.dispatchFailed).toBe(false);
+  } finally {
+    f.store.executions.pending = pending;
+    releaseAccept.resolve();
+    try {
+      await f.dispose();
+    } finally {
+      await producer.stop(true);
+    }
+  }
+});
+
 test("a service can cancel a dispatch that was never accepted using the frozen fingerprint", async () => {
   let accepts = 0;
   let cancels = 0;

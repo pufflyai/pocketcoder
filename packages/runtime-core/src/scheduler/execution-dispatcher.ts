@@ -39,6 +39,7 @@ type DispatchTask = { workspaceId: string; promise: Promise<void> };
 // including when the same execution is still publishing inputs or awaiting accept.
 export class ExecutionDispatcher {
   private scan: Promise<void> | null = null;
+  private scanFailed = false;
   private dirty = false;
   private stopped = false;
   private readonly ordinary = new Map<string, DispatchTask>();
@@ -68,10 +69,22 @@ export class ExecutionDispatcher {
   tick(): Promise<void> {
     if (!this.allowed()) return Promise.resolve();
     this.dirty = true;
-    this.scan ??= this.scanPending().finally(() => {
-      this.scan = null;
-      if (this.dirty && this.allowed()) return this.tick();
-    });
+    this.scan ??= this.scanPending()
+      .then(
+        () => {
+          this.scanFailed = false;
+          this.deps.onHealth?.(this.unhealthy());
+        },
+        (error) => {
+          this.scanFailed = true;
+          this.deps.onHealth?.(true);
+          throw error;
+        },
+      )
+      .finally(() => {
+        this.scan = null;
+        if (this.dirty && this.allowed()) return this.tick();
+      });
     return this.scan;
   }
 
@@ -149,7 +162,6 @@ export class ExecutionDispatcher {
       if (!keys.has(identity) && !this.ordinary.has(identity) && !this.controls.has(identity)) this.settled(key);
     }
     for (const key of this.capacityWaits.keys()) if (!keys.has(key)) this.capacityWaits.delete(key);
-    this.deps.onHealth?.(this.unhealthy());
   }
 
   private clock() {
@@ -175,10 +187,9 @@ export class ExecutionDispatcher {
     this.retries.delete(failureKey);
   }
 
-  // Readiness reflects controller-wide trouble only: input capacity stuck past its wait, or requests failing in
-  // more than one workspace for longer than a single producer's trouble explains.
+  // Readiness reflects a failed scan, stuck input capacity, or sustained failures across multiple workspaces.
   private unhealthy() {
-    return executionUnhealthy(this.failures.values(), this.capacityWaits.values(), this.clock());
+    return this.scanFailed || executionUnhealthy(this.failures.values(), this.capacityWaits.values(), this.clock());
   }
 
   private pump() {

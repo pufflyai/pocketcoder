@@ -7,7 +7,7 @@ import { reconcileSetupLeases } from "./setup-lease-reconciliation";
 type Coordinator = Pick<
   ReturnType<typeof buildServer>,
   "scheduler" | "persistence" | "workspaceLeases" | "checkpointTransfers" | "metrics"
-> & { store: Store; readiness: Readiness; executionDispatcher?: ReturnType<typeof buildServer>["executionDispatcher"] };
+> & { store: Store; readiness: Readiness };
 
 export function createCoordinatorTick(deps: Coordinator) {
   const { store, scheduler, persistence, workspaceLeases, checkpointTransfers, readiness, metrics } = deps;
@@ -26,7 +26,6 @@ export function createCoordinatorTick(deps: Coordinator) {
       const purges = await persistence.retryPurges(false);
       readiness.set("cleanup", purges + leases + preserves + transfers > 0 ? "pending" : "ok");
       metrics.observe("purge.pending", purges);
-      await deps.executionDispatcher?.tick();
       readiness.set("coordinator", "ok");
     } catch (error) {
       readiness.set("coordinator", "failed");

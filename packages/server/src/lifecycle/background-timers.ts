@@ -24,6 +24,7 @@ export function startBackgroundTimers(
     config: ServerConfig;
     inputs?: import("../attachments/input-storage").InputStorage;
     liveTurns: import("../conversations/live-turns").LiveTurns;
+    executionDispatcher: import("../app").BuiltServer["executionDispatcher"];
     sessionRecovery: { tick(): Promise<void> };
     maintenance: Maintenance;
     log: ServerLog;
@@ -34,11 +35,23 @@ export function startBackgroundTimers(
     warmPool?: WarmPoolManager;
   },
 ) {
-  const { config, maintenance, log, outbox, policyReconciliation, warmPool, readiness, persistence } = deps;
+  const {
+    config,
+    maintenance,
+    log,
+    outbox,
+    policyReconciliation,
+    warmPool,
+    readiness,
+    persistence,
+    executionDispatcher,
+  } = deps;
   const start = (intervalMs: number, task: () => Promise<void>, errorContext: string) =>
     startExclusiveTimer(intervalMs, maintenance.pausable(task), errorContext, log);
   const timers = [
     start(config.schedulerIntervalMs, createCoordinatorTick(deps), "scheduler tick failed"),
+    // Provider launches can wait for a pod to start while another workspace has a result to collect.
+    start(config.schedulerIntervalMs, () => executionDispatcher.tick(), "execution dispatch tick failed"),
     start(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed"),
     start(config.schedulerIntervalMs, () => closeEndedTurns(deps), "conversation sweep failed"),
     start(config.schedulerIntervalMs, () => deps.sessionRecovery.tick(), "session placement failed"),
@@ -86,7 +99,7 @@ export function startBackgroundTimers(
     async stop() {
       for (const timer of timers) clearInterval(timer);
       await policyReconciliation?.drain();
-      await deps.executionDispatcher?.stop();
+      await executionDispatcher.stop();
     },
   };
 }
