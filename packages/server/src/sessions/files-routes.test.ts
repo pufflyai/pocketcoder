@@ -33,7 +33,8 @@ test.each(["memory", "disk"] as const)("public session files upload exact bytes 
       stagedBytes: 8388608,
       files: 16,
       transfers: 2,
-      transferMs: 1000,
+      // Use the documented deployment value. Transfer expiry has its own test suite.
+      transferMs: 30_000,
       retentionMs: 600000,
     },
     capacity: async () => ({
@@ -74,7 +75,7 @@ test.each(["memory", "disk"] as const)("public session files upload exact bytes 
     expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain", "../escape")).status).toBe(400);
     expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "invalid")).status).toBe(400);
     const uploaded = await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain");
-    expect(uploaded.status).toBe(200);
+    expect(uploaded.status, await uploaded.clone().text()).toBe(200);
     const registered = managed.InputObjectSchema.parse(await uploaded.json());
     expect(registered.state).toBe("ready");
     expect((await call(`${base}/inputs/${input.inputId}`, "PUT", bytes, "text/plain")).status).toBe(200);
