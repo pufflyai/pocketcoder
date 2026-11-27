@@ -8,7 +8,7 @@
 
 # Bun embeds TLS and compression. Drop unused system OpenSSL and its zlib
 # dependency rather than carrying their vulnerable code into the runtime.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2 AS glibc-base
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2 AS glibc-base
 FROM --platform=$BUILDPLATFORM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS glibc-runtime
 COPY --from=glibc-base / /rootfs/
 RUN rm /rootfs/usr/lib/*/libz.so.* \
@@ -29,7 +29,7 @@ LABEL org.opencontainers.image.title="PocketCoder workspace" \
   io.pstdio.pocketcoder.bun.version="1.4.4" \
   dev.pstdio.pocketcoder.libc="glibc" \
   dev.pstdio.pocketcoder.glibc.root="/opt/glibc" \
-  dev.pstdio.pocketcoder.glibc.base.digest="sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2"
+  dev.pstdio.pocketcoder.glibc.base.digest="sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2"
 # Openbox needs a passwd record for the UID enforced by the workspace driver.
 RUN addgroup -g 10001 pocketcoder \
   && adduser -D -H -u 10001 -G pocketcoder -h /tmp pocketcoder
