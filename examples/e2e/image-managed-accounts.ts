@@ -123,15 +123,17 @@ export async function probeManagerImage(
       const retry = (await (await create()).json()) as typeof row;
       if (row.account.id !== retry.account.id || row.operation.id !== retry.operation.id)
         throw new Error("Image manager duplicated account intent");
-      let lastOperation: { state: string; phase?: string; errorCode?: string } | undefined;
+      type ProvisioningStatus = { state: string; phase?: string; errorCode?: string };
+      let lastOperation: ProvisioningStatus | undefined;
       await waitFor(
         async () => {
           const response = await request(`/v1/operations/${row.operation.id}`);
           if (!response.ok) throw new Error(`Image manager operation read failed with HTTP ${response.status}`);
-          lastOperation = await response.json();
-          if (lastOperation?.state === "failed")
-            throw new Error(`Image manager provisioning failed: ${lastOperation.errorCode}`);
-          return lastOperation?.state === "succeeded";
+          const operation = (await response.json()) as ProvisioningStatus;
+          lastOperation = operation;
+          if (operation.state === "failed")
+            throw new Error(`Image manager provisioning failed: ${operation.errorCode}`);
+          return operation.state === "succeeded";
         },
         30_000,
         "candidate manager account controller",
