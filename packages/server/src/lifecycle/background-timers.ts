@@ -51,18 +51,7 @@ export function startBackgroundTimers(
   const timers = [
     start(config.schedulerIntervalMs, createCoordinatorTick(deps), "scheduler tick failed"),
     // Provider launches can wait for a pod to start while another workspace has a result to collect.
-    start(
-      config.schedulerIntervalMs,
-      async () => {
-        try {
-          await executionDispatcher.tick();
-        } catch (error) {
-          readiness.set("execution-dispatch", "failed");
-          throw error;
-        }
-      },
-      "execution dispatch tick failed",
-    ),
+    start(config.schedulerIntervalMs, () => executionDispatcher.tick(), "execution dispatch tick failed"),
     start(config.outboxIntervalMs, () => outbox.tick(), "outbox tick failed"),
     start(config.schedulerIntervalMs, () => closeEndedTurns(deps), "conversation sweep failed"),
     start(config.schedulerIntervalMs, () => deps.sessionRecovery.tick(), "session placement failed"),
