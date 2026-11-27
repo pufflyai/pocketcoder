@@ -63,12 +63,20 @@ export class KubernetesAccounts {
       ...accountManifests(account, addresses, provider, privateConfig.destinations),
       ...privateConfig.resources,
     ];
-    for (const resource of resources) {
-      const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
-      if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);
-      const prior = await this.command(args);
-      if (prior && JSON.parse(prior).metadata.labels?.["pocketcoder.dev/account"] !== account.id)
-        throw new Error("Account resource identity mismatch");
+    // Ownership checks are independent. Bound the kubectl processes and finish all checks before applying resources.
+    const concurrentReads = 4;
+    for (let i = 0; i < resources.length; i += concurrentReads) {
+      const checks = await Promise.allSettled(
+        resources.slice(i, i + concurrentReads).map(async (resource) => {
+          const args = ["get", resource.kind, resource.metadata.name, "--ignore-not-found", "-o", "json"];
+          if ("namespace" in resource.metadata) args.push("-n", resource.metadata.namespace);
+          const prior = await this.command(args);
+          if (prior && JSON.parse(prior).metadata.labels?.["pocketcoder.dev/account"] !== account.id)
+            throw new Error("Account resource identity mismatch");
+        }),
+      );
+      const failure = checks.find((check) => check.status === "rejected");
+      if (failure) throw failure.reason;
     }
     for (const resource of resources)
       await this.command(
