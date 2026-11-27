@@ -1,5 +1,11 @@
 # @pstdio/pocketcoder-cli
 
+## 0.15.5
+
+### Patch Changes
+
+- [#183](https://github.com/pufflyai/pocketcoder/pull/183) [`61078b7`](https://github.com/pufflyai/pocketcoder/commit/61078b70d8cd0a72035728cb1ad31e312898a26f) Thanks [@au-re](https://github.com/au-re)! - Finalize completed execution receipts while other workspaces are starting.
+
 ## 0.15.4
 
 ### Patch Changes
