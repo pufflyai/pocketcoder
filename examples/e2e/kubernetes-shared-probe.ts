@@ -9,9 +9,9 @@ import { FilesystemInputStorage, KubernetesDriver, KubernetesSharedStorage } fro
 import type { InputProjectionRef, ProviderRef, WorkspaceRow } from "@pstdio/pocketcoder-runtime-core";
 import { measureSharedCapacity } from "./kubernetes-shared-capacity";
 import { diagnoseSharedPods } from "./kubernetes-shared-diagnostics";
+import { kube, runInPod, sharedNamespace, waitForWorkspacePod } from "./kubernetes-shared-pods";
 import { crashAndRestartPublisher, resumePublisher } from "./kubernetes-shared-publisher";
 
-const namespace = "pc-shared";
 const nodes = (process.env.FIXTURE_NODES ?? "").split(",");
 const root = "/data/shared";
 const shared = new KubernetesSharedStorage({
@@ -72,30 +72,10 @@ async function workspace() {
   if (inserted.kind !== "created") throw new Error("Fixture workspace conflict");
   return inserted.workspace;
 }
-async function kube(args: string[]) {
-  const proc = Bun.spawn(["kubectl", "-n", namespace, "--request-timeout=30s", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [output, error, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code) throw new Error(error);
-  return output.trim();
-}
-async function pod(ref: ProviderRef) {
-  await kube(["wait", "--for=condition=Ready", "pod", "-l", `job-name=${ref.id}`, "--timeout=30s"]);
-  return JSON.parse(await kube(["get", "pods", "-l", `job-name=${ref.id}`, "-o", "json"])).items[0];
-}
-async function run(podName: string, code: string) {
-  return kube(["exec", podName, "--", "bun", "-e", code]);
-}
 const active: { driver: KubernetesDriver; ref: ProviderRef }[] = [];
 function driver(node: string) {
   return new KubernetesDriver({
-    namespace,
+    namespace: sharedNamespace,
     sharedStorage: shared,
     runtimeClassName: "pc-runc",
     nodeSelector: { "kubernetes.io/hostname": node },
@@ -137,7 +117,7 @@ async function launch(row: WorkspaceRow, node: string) {
     },
   });
   active.push({ driver: runtime, ref });
-  return { allocation, runtime, ref, pod: await pod(ref) };
+  return { allocation, runtime, ref, pod: await waitForWorkspacePod(ref) };
 }
 try {
   await new Promise<void>((resolve, reject) => {
@@ -156,7 +136,7 @@ try {
   console.log("Trusted publisher reaches the live NFS endpoint");
   const row = await workspace();
   const unsupported = new KubernetesDriver({
-    namespace,
+    namespace: sharedNamespace,
     sharedStorage: new KubernetesSharedStorage({ ...shared.options, storageClassName: "unsupported-storage" }),
   });
   await assert.rejects(
@@ -166,7 +146,7 @@ try {
   assert.equal(await kube(["get", "secret", `pocketcoder-ws-${row.id}-input`, "--ignore-not-found", "-o", "json"]), "");
   const first = await launch(row, nodes[0] as string);
   assert.equal(
-    await run(
+    await runInPod(
       first.pod.metadata.name,
       "await Bun.write('/outputs/probe.txt','writable');console.log(await Bun.file('/outputs/probe.txt').text())",
     ),
@@ -180,7 +160,7 @@ try {
   assert.equal(first.pod.spec.automountServiceAccountToken, false);
   assert.equal(first.pod.spec.initContainers?.length ?? 0, 0);
   assert.equal(
-    await run(
+    await runInPod(
       first.pod.metadata.name,
       `const {connect}=await import('node:net');await new Promise(resolve=>{const socket=connect({host:${JSON.stringify(process.env.STORAGE_ADDRESS)},port:2049});socket.setTimeout(1000);socket.on('connect',()=>{console.log('REACHABLE');socket.destroy();resolve()});socket.on('timeout',()=>{console.log('DENIED');socket.destroy();resolve()});socket.on('error',()=>{console.log('DENIED');resolve()})})`,
     ),
@@ -212,7 +192,7 @@ try {
   await crashAndRestartPublisher(import.meta.path, projection, shared, canonical);
   const projected = `${INPUT_PROJECTION_TARGET}/${projection.manifestId}/${reference.fileId}`;
   assert.equal(
-    await run(first.pod.metadata.name, `console.log(await Bun.file(${JSON.stringify(projected)}).text())`),
+    await runInPod(first.pod.metadata.name, `console.log(await Bun.file(${JSON.stringify(projected)}).text())`),
     bytes.toString(),
   );
   for (const operation of [
@@ -221,7 +201,7 @@ try {
     `await (await import('node:fs/promises')).rename(${JSON.stringify(projected)},'${INPUT_PROJECTION_TARGET}/replaced')`,
   ]) {
     assert.equal(
-      await run(
+      await runInPod(
         first.pod.metadata.name,
         `try { ${operation}; console.log('WRITABLE') } catch(e) { console.log(e.code) }`,
       ),
@@ -229,24 +209,24 @@ try {
     );
   }
   assert.match(
-    await run(
+    await runInPod(
       first.pod.metadata.name,
       `try { await (await import('node:fs/promises')).link(${JSON.stringify(projected)},'/outputs/alias');console.log('WRITABLE') } catch(e) { console.log(e.code) }`,
     ),
     /^(EXDEV|EROFS)$/,
   );
   assert.equal(
-    await run(
+    await runInPod(
       first.pod.metadata.name,
       `const fs=await import('node:fs/promises');await fs.symlink(${JSON.stringify(projected)},'/outputs/input-link');try {await Bun.write('/outputs/input-link','changed');console.log('WRITABLE')}catch(e){console.log(e.code)}`,
     ),
     "EROFS",
   );
-  await run(first.pod.metadata.name, "await Bun.write('/outputs/result.txt','retained output')");
+  await runInPod(first.pod.metadata.name, "await Bun.write('/outputs/result.txt','retained output')");
   const siblingRow = await workspace();
   const sibling = await launch(siblingRow, nodes[1] as string);
   assert.equal(
-    await run(
+    await runInPod(
       sibling.pod.metadata.name,
       `console.log((await (await import('node:fs/promises')).readdir('${INPUT_PROJECTION_TARGET}')).length)`,
     ),
@@ -278,14 +258,14 @@ try {
     },
   });
   active.push({ driver: resumed, ref });
-  const second = await pod(ref);
+  const second = await waitForWorkspacePod(ref);
   assert.equal(second.spec.nodeName, nodes[1]);
   assert.equal(
-    await run(second.metadata.name, `console.log(await Bun.file(${JSON.stringify(projected)}).text())`),
+    await runInPod(second.metadata.name, `console.log(await Bun.file(${JSON.stringify(projected)}).text())`),
     bytes.toString(),
   );
   assert.equal(
-    await run(second.metadata.name, "console.log(await Bun.file('/outputs/result.txt').text())"),
+    await runInPod(second.metadata.name, "console.log(await Bun.file('/outputs/result.txt').text())"),
     "retained output",
   );
   await resumed.stop(ref, 1);
