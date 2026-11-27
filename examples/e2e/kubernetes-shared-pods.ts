@@ -8,13 +8,20 @@ export async function kube(args: string[], timeoutMs = 30_000) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [output, error, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code) throw new Error(error);
-  return output.trim();
+  // Kubectl's request timeout applies to each API request, including discovery.
+  const timer = setTimeout(() => proc.kill("SIGKILL"), timeoutMs);
+  try {
+    const [output, error, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (proc.signalCode === "SIGKILL") throw new Error(`Kubectl exceeded its ${timeoutMs} ms process deadline`);
+    if (code) throw new Error(error);
+    return output.trim();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 type ProbePod = {
